@@ -11,10 +11,15 @@ DataService.Profiles = {} -- [player] = data table
 local STORE_NAME = "TPFC_PlayerData_v1"
 local LOCK_TIMEOUT = 300
 local store
-local storeOk = pcall(function()
+-- Explicit Studio test sessions use temporary profiles and never acquire a live save lock.
+local isolatedStudioTest = game:GetService("RunService"):IsStudio()
+	and (workspace:FindFirstChild("AutoTest") ~= nil or workspace:FindFirstChild("SanctuaryTest") ~= nil or workspace:GetAttribute("SanctuaryTest") == true)
+local storeOk = not isolatedStudioTest and pcall(function()
 	store = DataStoreService:GetDataStore(STORE_NAME)
 end)
-if not storeOk then
+if isolatedStudioTest then
+	print("[DataService] Isolated Studio test: in-memory profiles; saving disabled.")
+elseif not storeOk then
 	warn("[DataService] DataStores unavailable (enable Studio API access). Using temporary data.")
 end
 

@@ -1,0 +1,13 @@
+{
+  "universeId": 10778324663,
+  "testFlag": false,
+  "details": 610,
+  "placeId": 129975585465401,
+  "scripts": 43,
+  "fog": 0.3100000023841858,
+  "reviewFlag": false,
+  "testScript": false,
+  "build": "Sanctuary_UI_Atmosphere_2026_11_22",
+  "savedVersion": 6,
+  "menuOnlyHUD": true
+}

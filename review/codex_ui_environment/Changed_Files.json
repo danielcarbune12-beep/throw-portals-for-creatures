@@ -1,0 +1,23 @@
+[
+  ".gitignore",
+  "DESIGN.md",
+  "IMPLEMENTATION_STATUS.md",
+  "PRODUCT.md",
+  "README.md",
+  "rokit.toml",
+  "selene.toml",
+  "src/ReplicatedStorage/Shared/SanctuaryLook.lua",
+  "src/ServerScriptService/Server/SanctuaryDetails.lua",
+  "src/ServerScriptService/Server/SanctuaryHub.lua",
+  "src/StarterPlayer/StarterPlayerScripts/Client/CaughtPresentation.lua",
+  "src/StarterPlayer/StarterPlayerScripts/Client/ClientMain.client.lua",
+  "src/StarterPlayer/StarterPlayerScripts/Client/Effects.lua",
+  "src/StarterPlayer/StarterPlayerScripts/Client/HUD.lua",
+  "src/StarterPlayer/StarterPlayerScripts/Client/Panels.lua",
+  "src/StarterPlayer/StarterPlayerScripts/Client/ThrowController.lua",
+  "src/StarterPlayer/StarterPlayerScripts/Client/UIIcons.lua",
+  "src/StarterPlayer/StarterPlayerScripts/Client/UIKit.lua",
+  "src/StarterPlayer/StarterPlayerScripts/Client/UITheme.lua",
+  "src/StarterPlayer/StarterPlayerScripts/Client/WorldFx.lua",
+  "tests/studio/UIReview.client.lua"
+]

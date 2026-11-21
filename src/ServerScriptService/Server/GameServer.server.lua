@@ -31,6 +31,11 @@ local RequestRF = Instance.new("RemoteFunction"); RequestRF.Name = "Request"; Re
 Remotes.Parent = ReplicatedStorage
 
 ---------------------------------------------------------------- world
+-- sculpted pet meshes load in the background; species fall back to procedural models until ready
+task.spawn(function()
+	local ok, err = pcall(function() require(script.Parent.PetMeshLoader).Load() end)
+	if not ok then warn("[GameServer] PetMeshLoader:", err) end
+end)
 BaseBuilder.BuildAll()
 WorldBuilder.BuildAll()
 
@@ -143,13 +148,15 @@ local function rollCreature(portalId, worldId, dist)
 end
 
 ---------------------------------------------------------------- throwing
+-- LANDING-SURFACE CONTRACT: the lane floor is Terrain. Landing queries only ever hit Terrain, so
+-- floating islands, arches, props, gates and camera scenery can never be chosen as the floor
+-- (previously a ray from y=150 could land a creature on a floating island above the lane).
 local rayParams = RaycastParams.new()
-rayParams.FilterType = Enum.RaycastFilterType.Exclude
+rayParams.FilterType = Enum.RaycastFilterType.Include
+rayParams.FilterDescendantsInstances = { workspace.Terrain }
+rayParams.IgnoreWater = false
 
 local function groundAt(pos)
-	local list = {}
-	for _, p in ipairs(Players:GetPlayers()) do if p.Character then table.insert(list, p.Character) end end
-	rayParams.FilterDescendantsInstances = list
 	local hit = workspace:Raycast(pos + Vector3.new(0, 150, 0), Vector3.new(0, -300, 0), rayParams)
 	return hit and hit.Position or Vector3.new(pos.X, 0, pos.Z)
 end
@@ -412,11 +419,35 @@ local function liftProp(player, st, index)
 		part.Parent = model
 		return part
 	end
-	local bar = p(Enum.PartType.Cylinder, Vector3.new(2.6 * s, 0.3, 0.3), Color3.fromRGB(70, 70, 80))
-	local plateMat = index >= 4 and Enum.Material.Neon or Enum.Material.Metal
-	for side = -1, 1, 2 do
-		local plate = p(Enum.PartType.Cylinder, Vector3.new(0.45 * s, 1.3 * s, 1.3 * s), station.color, plateMat)
-		local w = Instance.new("Weld"); w.Part0 = bar; w.Part1 = plate; w.C0 = CFrame.new(side * 1.1 * s, 0, 0); w.Parent = plate
+	-- the held prop matches the owned equipment (dumbbell / barbell / kettlebell / crystal / gravity core)
+	local function attachTo(part0, part1, c0)
+		local w = Instance.new("Weld"); w.Part0 = part0; w.Part1 = part1; w.C0 = c0; w.Parent = part1
+	end
+	local barCol = index == 1 and Color3.fromRGB(150, 105, 60) or Color3.fromRGB(70, 70, 80)
+	local bar = p(Enum.PartType.Cylinder, Vector3.new((index == 3 and 1.2 or 2.6) * s, 0.3, 0.3), barCol, index == 1 and Enum.Material.Wood or Enum.Material.Metal)
+	if index == 1 then
+		for side = -1, 1, 2 do attachTo(bar, p(Enum.PartType.Ball, Vector3.new(1, 1, 1) * s, station.color, Enum.Material.Wood), CFrame.new(side * 1.1 * s, 0, 0)) end
+	elseif index == 2 then
+		for side = -1, 1, 2 do
+			for k = 0, 1 do
+				attachTo(bar, p(Enum.PartType.Cylinder, Vector3.new(0.22 * s, (1.4 - k * 0.35) * s, (1.4 - k * 0.35) * s), Color3.fromRGB(55, 58, 66)), CFrame.new(side * (0.95 + k * 0.24) * s, 0, 0))
+			end
+		end
+	elseif index == 3 then
+		local bell = p(Enum.PartType.Ball, Vector3.new(1.5, 1.5, 1.5) * s, station.color)
+		attachTo(bar, bell, CFrame.new(0, -0.95 * s, 0))
+		for side = -1, 1, 2 do attachTo(bar, p(Enum.PartType.Cylinder, Vector3.new(0.7 * s, 0.25, 0.25), station.color), CFrame.new(side * 0.6 * s, -0.35 * s, 0) * CFrame.Angles(0, 0, side * 1.2)) end
+	elseif index == 4 then
+		for side = -1, 1, 2 do
+			local crystal = p(Enum.PartType.Block, Vector3.new(0.4, 1.1, 1.1) * s, station.color, Enum.Material.Glass)
+			crystal.Transparency = 0.15
+			attachTo(bar, crystal, CFrame.new(side * 1.1 * s, 0, 0) * CFrame.Angles(math.rad(45), 0, 0))
+			attachTo(bar, p(Enum.PartType.Block, Vector3.new(0.42, 0.15, 0.9) * s, Color3.fromRGB(220, 200, 255), Enum.Material.Neon), CFrame.new(side * 1.1 * s, 0, 0) * CFrame.Angles(math.rad(45), 0, 0))
+		end
+	else
+		local core = p(Enum.PartType.Ball, Vector3.new(1.1, 1.1, 1.1) * s, Color3.new(1, 1, 1), Enum.Material.Neon)
+		attachTo(bar, core, CFrame.identity)
+		for k = 1, 2 do attachTo(bar, p(Enum.PartType.Cylinder, Vector3.new(0.1, 1.9 * s, 1.9 * s), station.color, Enum.Material.Neon), CFrame.Angles(k * 0.9, k * 0.6, 0)) end
 	end
 	if index == 5 then
 		local fx = Instance.new("ParticleEmitter")

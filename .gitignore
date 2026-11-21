@@ -8,3 +8,10 @@
 .DS_Store
 Thumbs.db
 .vscode/
+
+# offline test scratch
+tests/lune/tmp/
+backups/
+
+# generated test places (rebuild with build-place.ps1 -Test)
+*Test.rbxlx

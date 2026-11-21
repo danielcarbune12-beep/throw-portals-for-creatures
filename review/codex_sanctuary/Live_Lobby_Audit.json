@@ -1,0 +1,25 @@
+{
+  "portalParts": {
+    "Galaxy": 214,
+    "Rainbow": 158,
+    "Forest": 192,
+    "Secret": 182,
+    "Basic": 158,
+    "Lava": 198,
+    "Divine": 215,
+    "Dark": 198,
+    "Ice": 198
+  },
+  "rootCounts": {
+    "bases": 1,
+    "maps": 1,
+    "spawns": 1
+  },
+  "failures": [],
+  "lobby": {
+    "lights": 15,
+    "emitters": 1,
+    "parts": 5194
+  },
+  "passed": 251
+}

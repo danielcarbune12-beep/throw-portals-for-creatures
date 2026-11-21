@@ -1,11 +1,13 @@
 # Builds ThrowPortalsForCreatures.rbxlx from src/ (same mapping as default.project.json).
 # Run:  powershell -ExecutionPolicy Bypass -File .\build-place.ps1
 #       add -Test to build ThrowPortalsForCreatures_Test.rbxlx with the automated play-test scripts
-param([switch]$Test)
+#       add -Sanctuary for the focused lobby/nine-portal test build (isolated Studio data)
+param([switch]$Test, [switch]$Sanctuary)
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $src = Join-Path $root "src"
-$out = Join-Path $root ($(if ($Test) { "ThrowPortalsForCreatures_Test.rbxlx" } else { "ThrowPortalsForCreatures.rbxlx" }))
+$isTestBuild = $Test -or $Sanctuary
+$out = Join-Path $root ($(if ($Sanctuary) { "ThrowPortalsForCreatures_SanctuaryTest.rbxlx" } elseif ($Test) { "ThrowPortalsForCreatures_Test.rbxlx" } else { "ThrowPortalsForCreatures.rbxlx" }))
 $script:ref = 0
 function Next-Ref { $script:ref++; return "RBX$($script:ref)" }
 function Esc([string]$s) { return [System.Security.SecurityElement]::Escape($s) }
@@ -33,16 +35,19 @@ function Service([string]$class, [string]$inner) {
 
 $xml = "<roblox xmlns:xmime=`"http://www.w3.org/2005/05/xmlmime`" version=`"4`">`n"
 $marker = ""
-if ($Test) { $marker = "<Item class=`"BoolValue`" referent=`"$(Next-Ref)`"><Properties><string name=`"Name`">AutoTest</string><bool name=`"Value`">true</bool></Properties></Item>" }
+if ($isTestBuild) {
+    $markerName = if ($Sanctuary) { "SanctuaryTest" } else { "AutoTest" }
+    $marker = "<Item class=`"BoolValue`" referent=`"$(Next-Ref)`"><Properties><string name=`"Name`">$markerName</string><bool name=`"Value`">true</bool></Properties></Item>"
+}
 $xml += "<Item class=`"Workspace`" referent=`"$(Next-Ref)`"><Properties><string name=`"Name`">Workspace</string><bool name=`"StreamingEnabled`">false</bool></Properties>$marker</Item>`n"
 $xml += "<Item class=`"Lighting`" referent=`"$(Next-Ref)`"><Properties><string name=`"Name`">Lighting</string><token name=`"Technology`">4</token><bool name=`"GlobalShadows`">true</bool></Properties></Item>`n"
 $xml += Service "ReplicatedStorage" (Folder-Item "$src\ReplicatedStorage\Shared" "Shared")
 $sss = Folder-Item "$src\ServerScriptService\Server" "Server"
-if ($Test) { foreach ($f in Get-ChildItem "$root\tests\server" -File -Filter *.lua) { $sss += Script-Item $f } }
+if ($isTestBuild) { foreach ($f in Get-ChildItem "$root\tests\server" -File -Filter *.lua) { $sss += Script-Item $f } }
 $xml += Service "ServerScriptService" $sss
 $sps = "<Item class=`"StarterPlayerScripts`" referent=`"$(Next-Ref)`"><Properties><string name=`"Name`">StarterPlayerScripts</string></Properties>`n"
 $sps += Folder-Item "$src\StarterPlayer\StarterPlayerScripts\Client" "Client"
-if ($Test) { foreach ($f in Get-ChildItem "$root\tests\client" -File -Filter *.lua) { $sps += Script-Item $f } }
+if ($isTestBuild) { foreach ($f in Get-ChildItem "$root\tests\client" -File -Filter *.lua) { $sps += Script-Item $f } }
 $sps += "</Item>`n"
 $xml += Service "StarterPlayer" $sps
 $xml += "</roblox>`n"

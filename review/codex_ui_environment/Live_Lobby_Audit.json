@@ -1,0 +1,20 @@
+{
+  "portalParts": {
+    "Galaxy": 214,
+    "Rainbow": 158,
+    "Forest": 192,
+    "Secret": 182,
+    "Basic": 158,
+    "Lava": 198,
+    "Divine": 215,
+    "Dark": 198,
+    "Ice": 198
+  },
+  "failures": [],
+  "passed": 251,
+  "lobby": {
+    "lights": 15,
+    "emitters": 9,
+    "parts": 5804
+  }
+}

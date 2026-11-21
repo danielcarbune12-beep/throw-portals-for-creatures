@@ -1,0 +1,9 @@
+{
+  "basis": "Stable released lobby scene plus menu-only UI; concurrent biome/config work preserved separately",
+  "binarySources": 43,
+  "different": {},
+  "extra": {},
+  "missing": {},
+  "packagedSources": 43,
+  "passed": true
+}
