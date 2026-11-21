@@ -1,0 +1,10 @@
+# test build of the place (contains the automated test scripts)
+*_Test.rbxlx
+# Roblox Studio lock/backup files
+*.rbxlx.lock
+*.rbxl.lock
+*.lock
+# OS / editor junk
+.DS_Store
+Thumbs.db
+.vscode/
