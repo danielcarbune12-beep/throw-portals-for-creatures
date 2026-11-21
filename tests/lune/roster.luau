@@ -22,8 +22,8 @@ for _, c in ipairs(CreatureData.List) do
 	check(Profiles.All[c.id] ~= nil, "missing species profile for " .. c.id)
 	check(#c.c == 3, "palette must have 3 colours: " .. c.id)
 end
-check(#CreatureData.List == 74, "roster must be 74, got " .. #CreatureData.List)
-for _, w in ipairs(Config.WorldOrder) do check(worldCount[w] == 8, w .. " must have 8 creatures") end
+check(#CreatureData.List == 90, "roster must be 90, got " .. #CreatureData.List)
+for _, w in ipairs(Config.WorldOrder) do check(worldCount[w] == 10, w .. " must have 10 creatures") end
 check(worldCount.Any == 10, "Any pool must have 10")
 local nSecret, nDivine = 0, 0
 for _, c in ipairs(CreatureData.ByWorld.Any) do

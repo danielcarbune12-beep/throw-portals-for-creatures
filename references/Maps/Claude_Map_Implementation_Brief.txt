@@ -1,0 +1,83 @@
+CLAUDE MAP ART AND IMPLEMENTATION BRIEF
+
+Scope: upgrade the EXISTING Roblox map to match the reference sheets. These are newly generated environment concepts, not screenshots or tested place files. Aim for exceptional art direction through composition, readable landmarks, material craft and polished environmental motion. 'GOTY quality' is an aspiration, not a claim about awards or achieved runtime quality.
+
+Read the current repository and the root Claude_Master_Prompt_V2_Blocky.txt plus Art_Direction_for_Claude.txt first. Keep the badass blocky pet direction, all 74 IDs, saved progress, server-controlled rolls/rewards, one pending throw, automatic catches, eight bases and the existing progression. Implement src changes before regenerating .rbxlx. Do not publish without a separate request.
+
+AUTHORITATIVE MAP REFERENCE FILES
+00_Portal_Sanctuary_Hub.png — hub architecture and owner plots.
+01_Forest_Biome.png — ancient oak / garden ruins / green valley.
+02_Volcano_Biome.png — jagged basalt / lavafall / volcanic ruins.
+03_Frozen_Biome.png — ice citadel / frozen waterfall / pines.
+04_Crystal_Biome_Final.png — open split geode / mineral pools; NO creature landmark.
+05_Candy_Biome_Final.png — ONE side palace / chocolate waterfall; NO base rows or hall.
+07_Shadow_Biome.png — cathedral ruins / restrained teal runes.
+06_Space_Biome.png — orbital observatory / lunar ground / distant planet.
+08_Heaven_Biome.png — celestial marble sanctuary / gold trim / cloud gardens.
+09_Complete_Eight_Biome_Lane.png — schematic world order, not a metric or construction drawing.
+
+The sequence is Forest, Volcano, Frozen, Crystal, Candy, Space, Shadow, Heaven. Top views and front views are illustrative. Written code coordinates and rules take precedence if a perspective drawing compresses distance or hides one of the eight hub plots. Do not infer a second hub, combat boss, a required walking path through the throwing lane or new player plots from a decorative structure. No pets, bosses or statues of bosses are required in map geometry.
+
+IMMUTABLE GAMEPLAY GEOMETRY
+The lane travels +Z, from 0 to 3200 studs. Landing X is clamped to -30..30. Current map half-width is 70. Keep an empty visual center corridor wide enough for maximum-size reveals and camera framing. Tall scenery, overhangs and skyline props belong on the sides. The whole center needs valid flat or gently varying landing ground; a cliff, bridge, hole, roof or floating island must never become the server's hit surface.
+
+Zone intervals in studs:
+Forest [0,150); Volcano [150,350); Frozen [350,600); Crystal [600,900); Candy [900,1300); Space [1300,1800); Shadow [1800,2400); Heaven [2400,3200].
+Existing signs may use m as a game label; do not add a unit conversion or change distance math.
+
+Hub approximately Z -470..0, half-width 105. Base centers remain X +/-63 and Z -84,-160,-236,-312. All eight entrances face the central street. Hall half-width 28, back Z -36, throw region Z -34..4, barrier Z 6. Keep collision behavior and checks consistent. Players normally remain in the hub; distant biomes serve throw-flight and reveal compositions. Do not add walking quests, combat or world teleporters.
+
+SHARED WORLD LANGUAGE
+Use large block/wedge architectural forms, layered rock silhouettes, clean planar trims, stylized canopy masses and a limited original material palette. The hub's violet/gold portal architecture is a recognizable shared civilization motif, expressed more sparsely in the biomes. Each biome has one clear main landmark, two supporting environmental forms and a quiet reveal foreground. Keep faces/paws of pets readable against the chosen floor; biome beauty must not drown out the collectible.
+
+Use roughly 70% quiet mass, 20% structural variation and 10% focal detail as a composition guide. This is a visual hierarchy target, not a literal Instance count. Avoid equal visual noise across every surface, repeated generic floating islands in every zone, overly dark fog, exposure-blown white/gold, and replacing geometry with particle haze. Hero landmarks can use more detail; distant silhouettes use a simplified version.
+
+Build one reusable construction kit: foundation blocks, cliff wedges, wall/column modules, trim/cap pieces, original rune insets, channel segments, arch segments, sign supports, tree trunk/bough pieces, canopy groups, ground-cover clusters, crystals and lamp holders. Make derived thematic kits rather than recoloring one identical prop set. No invented mesh or audio IDs. The complete procedural fallback must work without uploads. Optional meshes can be documented separately, never silently required.
+
+HUB / LAUNCH HALL / BASES
+Build the street and hall silhouette first with untextured geometry. Verify that spawn sees the hall's forward direction immediately. Define the local owner's base with restrained sign accent and guide cue. The base needs a clear owner sign, central crystal fountain, current pet slots, collect pad front-left, gym front-right, cottage back-left, pond back-right. Keep entering and collecting usable on touch devices. No hedge/fountain/cottage collisions should trap the player.
+
+Use a layered marble floor, two structural violet side bays, warm recessed lighting, a commanding open front arch and visible launch-line channels in the hall. The barrier remains translucent and collidable; it is not a bright opaque wall. Roof pieces must not force the cinematic camera inside a solid structure. Either keep sightlines naturally open or implement a scoped temporary roof fade with a guaranteed reset. Only the thrower's local presentation should claim their camera/charge effects.
+
+Plot dressing is shared, but owner data selects floor/decor/equipment. Keep 24 indexed slot references and current model paths used by scripts. Prefer diffing cosmetic changes over rebuilding every asset on each money sync. Large blocky pets need sensible roaming zones around buildings, with a small obstacle avoidance solution or authored navigable regions. Cosmetic scale changes cannot change income, rarity or ownership capacity.
+
+EIGHT BIOME BUILD ORDER AND FOCAL DETAIL
+1. Forest: a monumental side oak, broken garden arch/ruins, shallow side stream. Four tree silhouette variants, layered roots and modest plants. Calm grass landing area with pale stone breaks for green-pet contrast. Finish canopy planes and root composition before adding flowers. Branches make slow restrained wind motion, local stream highlight/leaf effects remain sparse.
+2. Volcano: jagged side volcano, diagonal lavafall and cooled basalt colonnades. Separate dark structural rock from inset orange molten channels. Keep the landing region stable dark basalt, with readable edges. Local vent pulses are long and staggered; no global quake or ambient screen flash. No damage mechanics or altered projectile physics.
+3. Frozen: tall side ice citadel, off-lane ice arch and frozen-waterfall shelves. Pale-blue deep shadow planes keep white shapes readable. Sparse pines and a few snowman vignettes are environmental props, not new pets. Glass is selective; main structures remain opaque enough to read. No slippery-ground mechanic added.
+4. Crystal: huge open side geode with rough outer rock and composed cyan/magenta crystal fans; small mineral side pools and original rune monoliths. Cavern illusion comes from side walls/distant silhouette, not a low central roof. NO giant Hydra/creature/boss landmark. The center is quiet dark mineral stone, leaving transparent pets visible.
+5. Candy: ONE grand side chocolate/cream palace, molded chocolate waterfall/canal opposite it, angular sugar rocks and candy trees. The lane is continuous quiet pink/cream ground. No player plots, launch hall, home/gym signs, road-of-houses, or repeated hub buildings in this biome. Separate chocolate, icing, sugar and candy surfaces by material/color/shape. Do not infer extra m-distance signs from rejected drafts.
+6. Space: side orbital observatory, crashed instrument/satellite and crater-ring structure; a distant ringed planet on the skyline. Solid lunar landing ground with low craters that do not trap reveals or redirect raycasts. Maintain original gravity/throw formula; floating asteroids are side scenery. Black pets need a restrained pale rim/background contrast.
+7. Shadow: fractured cathedral on the side, broken obelisks, twisted angular trees and decorative side chasm. Quiet lavender/plum center stone, narrow teal runes, sparse red/purple accents. Use form/material hierarchy rather than setting ambient light near zero. Bounded slow rune/stone motion; no constant glitch storm.
+8. Heaven: monumental side celestial sanctuary, rhythmic colonnades, architectonic wing details, small cloud gardens and side waterfalls. Continuous cream stone floor, pale-blue shadows, restrained gold edges. Do not use a neon-white material on every piece. White Divine pets must remain readable. End the lane cleanly and preserve the server's near-end distance clamp.
+
+TRANSITIONS
+Keep exact zone boundaries; blend side scenery over a short decorative margin without moving the interval semantics. Forest->Volcano: scorched roots and darker rock. Volcano->Frozen: cooled rock and pale steam/frost. Frozen->Crystal: blue mineral veins and deeper rock. Crystal->Candy: rounded pink mineral/sugar insets. Candy->Space: darker chocolate strata becoming lunar rock and fewer candy props. Space->Shadow: fractured side rock and muted stars. Shadow->Heaven: warm light in cracks and pale stone columns. A transition never adds an extra portal or a new biome.
+
+ENVIRONMENT MOTION AND ACTION SPECIFICATIONS
+Use a shared client scheduler with staggered update rates and local quality levels. Static far scenery is acceptable and preferable to an expensive effect that cannot be seen. No blanket camera-following ambient particles; the source explicitly records their removal on request.
+
+Hub crystal idle: 4s bob cycle, +/-0.25 studs, slow 10–15 degrees/second yaw; fountain spray local and capped. Collect confirmation: one 0.12s ring brightening, 0.35s coin arc toward money display, 0.35s fade; rewards remain server-confirmed. Hall charge: floor channels energize toward arch over the existing charge phase; one local gold accent on perfect release, recover over 0.3s. Barrier approach: one 0.35s local ripple plus hint, cooldown to avoid flicker.
+
+Forest branches: 5–8s wind cycle, 1–3 degree joint sway. Volcano vent: 0.5s warm-up, 0.4s local emission, 2s settle, 7–13s rest. Frozen glint: 0.15s brighten, 0.5s fade on one local face; never synchronized across the whole zone. Crystal core group: 3s controlled sequential light pulse, no blinking every frame. Candy chocolate surface: slow 4–6s local highlight/plane movement; no physical waves under a pet. Space rings: 3–6 degrees/second with very slow independent orbit, no global sky-spin. Shadow rune: 0.4s warm-up, 1s hold, 1.2s fade, long staggered rest. Heaven rays: local soft intensity over 6–10s; no exposure whiteout.
+
+Throw/reveal camera path: charge is local to the owner, flight follows authoritative endpoints, landing closes into a quiet readable composition, reveal frames the entire species bounds, capture follows confirmed award, camera restores on every exit. Use original charge thresholds, server flight duration, entrance/catch timing and rarity windows. Legendary/Mythical pets get the most beautifully composed main-biome reveals, with signature anatomy unobscured. Lower tiers keep a shorter restrained flourish. Additional VFX cannot alter odds or rewards.
+
+Sound uses configured permitted assets only. A landmark can imply a sound role in a manifest, but do not fabricate rbxassetid values. Prioritize one clean motif/event, capped simultaneous voices and appropriate distance falloff. Audio and effects degrade gracefully if optional assets are unavailable.
+
+TECHNICAL IMPLEMENTATION STAGES
+A. Inspect WorldBuilder.lua, BaseBuilder.lua, Effects.lua, ThrowController.lua, CreatureRenderer.lua, Config.lua and current remotes. Record the existing build map and user edits. Do not overwrite unrelated work.
+B. Make graybox geometry and tag/query eligible landing surfaces. Verify endpoints at X=-30,0,+30 for each boundary. Use explicit filters/tags/appropriate query properties rather than hoping decorative geometry never intersects a ray.
+C. Build and validate the shared architecture/prop kit, deterministic per-biome seeds and theme material plan. Terrain:SetMaterialColor is global per material; Crystal and Shadow cannot depend on separate simultaneous Slate tints.
+D. Complete hub/hall/eight bases, then Forest as the representative biome. Check flight and reveal camera compositions in Studio before spreading the pattern.
+E. Build Volcano, Frozen, Crystal, Candy, Space, Shadow and Heaven; finish a landmark and landing composition before secondary density. Maintain a completion row per biome and per prop family.
+F. Add local animation and quality controls, then scripted camera transitions, collect/gym polish and context-sensitive guidance. Avoid one RenderStepped connection for each leaf/prop.
+G. Test eight populated bases, simultaneous throws, distant cameras, mobile layouts, reset/respawn and repeated effects. Measure on actual declared hardware/emulation; no unmeasured FPS promises.
+H. Rebuild production/test place files, verify embedded sources match src, confirm no test marker in production, update README and provide actual Studio evidence or explicitly mark it unrun.
+
+QUALITY AND ACCEPTANCE
+With text labels/VFX hidden, every biome must still be recognizable from its landmark/materials. With the actual pet visible, eye/face/legs/tails must separate from the background. At every scripted camera angle, the corridor and hero silhouette must stay clear. No fake HDR bloom may hide missing geometry. Camera owners, transient parts/lights/sounds and connections are cleaned after every interrupted reveal. Settings reduce secondary effects without removing essential event clarity.
+
+Record visible geometry count, emitters, lights, memory and frame-time samples for hub and each biome. Aim for smooth desktop and stable low-end mobile presentation through adaptive detail, but report targets as targets. Current place disables streaming; do not enable StreamingEnabled casually without adapting and testing client assumptions. Prefer static distant scenery and scheduled local animation first.
+
+Deliver changed code, current buildable .rbxlx, per-biome/prop checklist, reference comparison screenshots, actual test/build results and any unrun device checks. No TODO-only environment kit and no 'repeat for remaining maps' omissions. These images are a design target; completion requires working code and verified gameplay preservation.

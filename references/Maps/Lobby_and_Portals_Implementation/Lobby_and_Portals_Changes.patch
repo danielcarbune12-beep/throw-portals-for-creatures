@@ -1,0 +1,2603 @@
+--- a/build-place.ps1
++++ b/build-place.ps1
+@@ -1,11 +1,13 @@
+ # Builds ThrowPortalsForCreatures.rbxlx from src/ (same mapping as default.project.json).
+ # Run:  powershell -ExecutionPolicy Bypass -File .\build-place.ps1
+ #       add -Test to build ThrowPortalsForCreatures_Test.rbxlx with the automated play-test scripts
+-param([switch]$Test)
++#       add -Sanctuary for the focused lobby/nine-portal test build (isolated Studio data)
++param([switch]$Test, [switch]$Sanctuary)
+ $ErrorActionPreference = "Stop"
+ $root = Split-Path -Parent $MyInvocation.MyCommand.Path
+ $src = Join-Path $root "src"
+-$out = Join-Path $root ($(if ($Test) { "ThrowPortalsForCreatures_Test.rbxlx" } else { "ThrowPortalsForCreatures.rbxlx" }))
++$isTestBuild = $Test -or $Sanctuary
++$out = Join-Path $root ($(if ($Sanctuary) { "ThrowPortalsForCreatures_SanctuaryTest.rbxlx" } elseif ($Test) { "ThrowPortalsForCreatures_Test.rbxlx" } else { "ThrowPortalsForCreatures.rbxlx" }))
+ $script:ref = 0
+ function Next-Ref { $script:ref++; return "RBX$($script:ref)" }
+ function Esc([string]$s) { return [System.Security.SecurityElement]::Escape($s) }
+@@ -33,16 +35,19 @@
+ 
+ $xml = "<roblox xmlns:xmime=`"http://www.w3.org/2005/05/xmlmime`" version=`"4`">`n"
+ $marker = ""
+-if ($Test) { $marker = "<Item class=`"BoolValue`" referent=`"$(Next-Ref)`"><Properties><string name=`"Name`">AutoTest</string><bool name=`"Value`">true</bool></Properties></Item>" }
++if ($isTestBuild) {
++    $markerName = if ($Sanctuary) { "SanctuaryTest" } else { "AutoTest" }
++    $marker = "<Item class=`"BoolValue`" referent=`"$(Next-Ref)`"><Properties><string name=`"Name`">$markerName</string><bool name=`"Value`">true</bool></Properties></Item>"
++}
+ $xml += "<Item class=`"Workspace`" referent=`"$(Next-Ref)`"><Properties><string name=`"Name`">Workspace</string><bool name=`"StreamingEnabled`">false</bool></Properties>$marker</Item>`n"
+ $xml += "<Item class=`"Lighting`" referent=`"$(Next-Ref)`"><Properties><string name=`"Name`">Lighting</string><token name=`"Technology`">4</token><bool name=`"GlobalShadows`">true</bool></Properties></Item>`n"
+ $xml += Service "ReplicatedStorage" (Folder-Item "$src\ReplicatedStorage\Shared" "Shared")
+ $sss = Folder-Item "$src\ServerScriptService\Server" "Server"
+-if ($Test) { foreach ($f in Get-ChildItem "$root\tests\server" -File -Filter *.lua) { $sss += Script-Item $f } }
++if ($isTestBuild) { foreach ($f in Get-ChildItem "$root\tests\server" -File -Filter *.lua) { $sss += Script-Item $f } }
+ $xml += Service "ServerScriptService" $sss
+ $sps = "<Item class=`"StarterPlayerScripts`" referent=`"$(Next-Ref)`"><Properties><string name=`"Name`">StarterPlayerScripts</string></Properties>`n"
+ $sps += Folder-Item "$src\StarterPlayer\StarterPlayerScripts\Client" "Client"
+-if ($Test) { foreach ($f in Get-ChildItem "$root\tests\client" -File -Filter *.lua) { $sps += Script-Item $f } }
++if ($isTestBuild) { foreach ($f in Get-ChildItem "$root\tests\client" -File -Filter *.lua) { $sps += Script-Item $f } }
+ $sps += "</Item>`n"
+ $xml += Service "StarterPlayer" $sps
+ $xml += "</roblox>`n"
+--- a/IMPLEMENTATION_STATUS.md
++++ b/IMPLEMENTATION_STATUS.md
+@@ -1,11 +1,18 @@
+ # Implementation status — creature/visual upgrade (2026-11-21)
+ 
+ Honest status of the brief in `Claude_Master_Prompt_V2_Blocky.txt` / the original implementation prompt.
+-**Nothing here was play-tested in Roblox Studio.** Studio's plugin HTTP is blocked and the Rojo Connect click
+-could not be performed unattended, so verification is offline (Lune running the real module code with Roblox
+-datatypes) plus an offline geometry renderer (`roster_preview.png`). Run the Studio checks below before shipping.
++The earlier creature work below was verified offline. The Codex lobby/portal pass has now been tested in
++Roblox Studio: 95 focused lifecycle assertions and 251 lobby/geometry assertions passed. All nine portal
++types completed real charge/throw/open/award/close flows. Those results do not approve the 74 creature
++designs against their images; creature art remains a separate phase. See `review/codex_sanctuary/` for evidence.
+ 
+-## Verified (actually run)
++## Earlier creature-phase record (historical)
++
++The sections below record the earlier creature pass. Their old 24-script counts and blanket Studio/map
++limitations predate the lobby work. Current lobby evidence and exact 38/41-script build parity are in
++`review/codex_sanctuary/README.txt`. Mobile and eight-player stress testing still remain.
++
++### Earlier checks (actually run)
+ - `lune run tests/lune/roster` — **2,821 checks, 0 failed**: 74 unique IDs / 8 per biome / 5 Secret + 5 Divine;
+   canonical ID↔name pairs; economy + CatchDelay constants unchanged; every pet built at 0.6×/1×/1.6× with an anchored
+   root, no collidable/anchored visual pieces, finite bind transforms; full animator lifecycle per pet (idle, move,
+@@ -19,7 +26,7 @@
+ - `build-place.ps1` (+ `-Test`) regenerated; `python tests/verify_place.py` — 24/24 embedded scripts identical to `src/`,
+   test harness + AutoTest marker only in the test build.
+ 
+-## Not verified / not done
++### Earlier outstanding work
+ - Studio play-test, screenshots/clips, real ViewportFrame previews, R6/R15, touch/gamepad, mobile layouts, FPS/memory
+   profiling, 8-player stress — **not run**. Upgraded `tests/*/AutoTest*.lua` now assert (roster in engine, 9 forced
+   throws incl. one per showcase anatomy, camera restore, wild cleanup, terrain landing, base references).
+@@ -29,7 +36,7 @@
+   hand-authored clips; the 3,229-keyframe CSV from the reference pack was not imported.
+ - Inventory/Index/Shop UI polish, settings UI panel (settings module exists, defaults safe), audio palette.
+ 
+-## Studio checks to run
++### Remaining creature Studio checks
+ 1. `rojo serve` in this folder → Rojo plugin **Connect** in the open Studio (or open `ThrowPortalsForCreatures_Test.rbxlx`).
+ 2. Play (F5) the test build; read `[AUTOTEST]` lines — expect `ASSERTIONS: N passed, 0 failed`.
+ 3. Look at every pet (Index panel + forced throws via Admin `forcenext`), especially the 5 showcase anatomies.
+--- a/src/ReplicatedStorage/Shared/PortalBuilder.lua
++++ b/src/ReplicatedStorage/Shared/PortalBuilder.lua
+@@ -9,136 +9,33 @@
+ local FIRE = "rbxasset://textures/particles/fire_main.dds"
+ 
+ local RAINBOW = ColorSequence.new({
+-	ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 70, 70)), ColorSequenceKeypoint.new(0.2, Color3.fromRGB(255, 170, 40)),
+-	ColorSequenceKeypoint.new(0.4, Color3.fromRGB(255, 240, 70)), ColorSequenceKeypoint.new(0.6, Color3.fromRGB(70, 230, 110)),
+-	ColorSequenceKeypoint.new(0.8, Color3.fromRGB(70, 150, 255)), ColorSequenceKeypoint.new(1, Color3.fromRGB(200, 90, 255)) })
++	ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 70, 70)),
++	ColorSequenceKeypoint.new(0.2, Color3.fromRGB(255, 170, 40)),
++	ColorSequenceKeypoint.new(0.4, Color3.fromRGB(255, 240, 70)),
++	ColorSequenceKeypoint.new(0.6, Color3.fromRGB(70, 230, 110)),
++	ColorSequenceKeypoint.new(0.8, Color3.fromRGB(70, 150, 255)),
++	ColorSequenceKeypoint.new(1, Color3.fromRGB(200, 90, 255)),
++})
+ 
+-local function part(model, name, size, color, mat, meshType, transp)
+-	local p = Instance.new("Part")
+-	p.Name = name
+-	p.Size = size
+-	p.Color = color
+-	p.Material = mat or Enum.Material.Neon
+-	p.Transparency = transp or 0
+-	p.CanCollide, p.CanQuery, p.CanTouch, p.Massless = false, false, false, true
+-	p.CastShadow = false
+-	local m = Instance.new("SpecialMesh")
+-	m.MeshType = meshType or Enum.MeshType.Sphere
+-	m.Parent = p
+-	p.Parent = model
+-	return p, m
+-end
+-
+-local function weld(a, b, c0)
+-	local w = Instance.new("Weld")
+-	w.Part0, w.Part1, w.C0 = a, b, c0
+-	w.Parent = b
+-	return w
+-end
+-
+----------------------------------------------------------------- per-portal theme (shape, not just colour)
+--- frameMat/frameCol restyle the gate ring; dress() adds the portal's own silhouette pieces.
+-local PI = math.pi
+ local THEME = {
+-	Basic   = { frameMat = Enum.Material.Glass, frameCol = Color3.fromRGB(225, 240, 255) },
+-	Forest  = { frameMat = Enum.Material.Wood, frameCol = Color3.fromRGB(120, 85, 50) },
+-	Lava    = { frameMat = Enum.Material.Basalt, frameCol = Color3.fromRGB(45, 32, 34) },
+-	Ice     = { frameMat = Enum.Material.Ice, frameCol = Color3.fromRGB(200, 235, 255) },
+-	Galaxy  = { frameMat = Enum.Material.SmoothPlastic, frameCol = Color3.fromRGB(30, 20, 60) },
+-	Dark    = { frameMat = Enum.Material.Slate, frameCol = Color3.fromRGB(45, 25, 60) },
++	Basic = { frameMat = Enum.Material.Glass, frameCol = Color3.fromRGB(225, 240, 255) },
++	Forest = { frameMat = Enum.Material.Wood, frameCol = Color3.fromRGB(120, 85, 50) },
++	Lava = { frameMat = Enum.Material.Basalt, frameCol = Color3.fromRGB(45, 32, 34) },
++	Ice = { frameMat = Enum.Material.Ice, frameCol = Color3.fromRGB(200, 235, 255) },
++	Galaxy = { frameMat = Enum.Material.SmoothPlastic, frameCol = Color3.fromRGB(30, 20, 60) },
++	Dark = { frameMat = Enum.Material.Slate, frameCol = Color3.fromRGB(45, 25, 60) },
+ 	Rainbow = { frameMat = Enum.Material.SmoothPlastic, frameCol = Color3.fromRGB(245, 242, 250) },
+-	Divine  = { frameMat = Enum.Material.Marble, frameCol = Color3.fromRGB(248, 245, 235) },
+-	Secret  = { frameMat = Enum.Material.SmoothPlastic, frameCol = Color3.fromRGB(28, 28, 34) },
++	Divine = { frameMat = Enum.Material.Marble, frameCol = Color3.fromRGB(248, 245, 235) },
++	Secret = { frameMat = Enum.Material.SmoothPlastic, frameCol = Color3.fromRGB(28, 28, 34) },
+ }
+ 
+-local function diamondOn(model, hub, name, len, w, thick, color, cf, mat)
+-	-- two mirrored wedge pairs = faceted rhombus in the XY plane
+-	local R = cf * CFrame.Angles(0, PI / 2, 0)
+-	for _, up in ipairs({ 1, -1 }) do
+-		local base = R * CFrame.new(0, up * len / 4, 0) * (up < 0 and CFrame.Angles(0, 0, PI) or CFrame.identity)
+-		for _, side in ipairs({ -1, 1 }) do
+-			local p = part(model, name, Vector3.new(thick, len / 2, w / 2), color, mat or Enum.Material.SmoothPlastic, Enum.MeshType.Wedge)
+-			weld(hub, p, base * CFrame.new(0, 0, side * w / 4) * (side > 0 and CFrame.Angles(0, PI, 0) or CFrame.identity))
+-		end
+-	end
+-end
+-
+--- adds theme silhouette pieces around a ring of radius R (gate) or around an orb of radius R
+-local function dress(model, hub, portalId, R, isGate)
+-	local P = Config.Portals[portalId]
+-	local k = isGate and 1 or 0.45
+-	if portalId == "Forest" then
+-		for i = 1, isGate and 6 or 3 do
+-			local a = i / (isGate and 6 or 3) * PI * 2 + 0.3
+-			diamondOn(model, hub, "Leaf", R * 0.55 * k + 0.4, R * 0.28 * k + 0.2, 0.08, Color3.fromRGB(110, 210, 90),
+-				CFrame.new(math.cos(a) * R * 1.15, math.sin(a) * R * 1.15, -0.1) * CFrame.Angles(0, 0, a - PI / 2))
+-		end
+-		if isGate then
+-			for s = -1, 1, 2 do -- root branches at the base
+-				local root = part(model, "Root", Vector3.new(R * 0.9, 0.35, 0.35), Color3.fromRGB(100, 70, 40), Enum.Material.Wood, Enum.MeshType.Cylinder)
+-				weld(hub, root, CFrame.new(s * R * 0.6, -R * 1.05, 0) * CFrame.Angles(0, 0, s * 0.5))
+-			end
+-		end
+-	elseif portalId == "Lava" then
+-		for i = 1, isGate and 10 or 6 do
+-			local a = i / (isGate and 10 or 6) * PI * 2
+-			local crack = part(model, "Crack", Vector3.new(R * 0.32 * k + 0.15, 0.08, 0.1), P.color2, Enum.Material.Neon, Enum.MeshType.Brick)
+-			weld(hub, crack, CFrame.new(math.cos(a) * R * 1.02, math.sin(a) * R * 1.02, -R * 0.22 * k) * CFrame.Angles(0, 0, a))
+-		end
+-	elseif portalId == "Ice" then
+-		for i = 1, isGate and 8 or 4 do
+-			local a = i / (isGate and 8 or 4) * PI * 2
+-			diamondOn(model, hub, "IceSpoke", R * 0.6 * k + 0.4, R * 0.18 * k + 0.15, 0.12, Color3.fromRGB(220, 245, 255),
+-				CFrame.new(math.cos(a) * R * 1.2, math.sin(a) * R * 1.2, 0) * CFrame.Angles(0, 0, a - PI / 2), Enum.Material.Ice)
+-		end
+-	elseif portalId == "Galaxy" or portalId == "Basic" then
+-		local n = portalId == "Galaxy" and 5 or 0
+-		for i = 1, n do
+-			local a = i * 1.3
+-			local star = part(model, "Star", Vector3.new(0.25, 0.25, 0.25) * (isGate and 1.6 or 1), Color3.new(1, 1, 1), Enum.Material.Neon)
+-			weld(hub, star, CFrame.new(math.cos(a) * R * 1.25, math.sin(a) * R * 1.25, -0.1))
+-		end
+-	elseif portalId == "Dark" then
+-		for i = 1, isGate and 8 or 4 do
+-			local a = i / (isGate and 8 or 4) * PI * 2
+-			local seam = part(model, "Seam", Vector3.new(0.08, R * 0.3 * k + 0.2, 0.08), P.color2, Enum.Material.Neon, Enum.MeshType.Brick)
+-			weld(hub, seam, CFrame.new(math.cos(a) * R, math.sin(a) * R, -R * 0.22 * k) * CFrame.Angles(0, 0, a))
+-		end
+-	elseif portalId == "Rainbow" then
+-		local cols = { Color3.fromRGB(255, 80, 80), Color3.fromRGB(255, 160, 50), Color3.fromRGB(255, 230, 70), Color3.fromRGB(90, 220, 110),
+-			Color3.fromRGB(80, 170, 255), Color3.fromRGB(110, 100, 255), Color3.fromRGB(200, 100, 255) }
+-		if isGate then
+-			for b = 1, 7 do
+-				for i = 1, 20 do
+-					local a = i / 20 * PI * 2
+-					local rr = R * (1.02 + b * 0.055)
+-					local seg = part(model, "Band", Vector3.new(0.2, 0.2, 2 * PI * rr / 20 * 1.1), cols[b], Enum.Material.Neon, Enum.MeshType.Brick)
+-					weld(hub, seg, CFrame.new(math.cos(a) * rr, math.sin(a) * rr, 0.05) * CFrame.Angles(0, 0, a) * CFrame.Angles(PI / 2, 0, 0))
+-				end
+-			end
+-		end
+-	elseif portalId == "Divine" then
+-		for s = -1, 1, 2 do
+-			for f = 1, isGate and 3 or 1 do
+-				diamondOn(model, hub, "Feather", R * (0.7 - f * 0.12) * k + 0.4, R * 0.22 * k + 0.15, 0.1, f == 1 and Color3.fromRGB(255, 215, 90) or Color3.new(1, 1, 1),
+-					CFrame.new(s * R * (1.15 + f * 0.12), -R * 0.1 + f * R * 0.22 * k, 0) * CFrame.Angles(0, 0, s * (0.6 + f * 0.25)), Enum.Material.Marble)
+-			end
+-		end
+-		local halo = part(model, "Halo", Vector3.new(0.12, R * 0.9 * k + 0.6, R * 0.9 * k + 0.6), Color3.fromRGB(255, 225, 120), Enum.Material.Neon, Enum.MeshType.Cylinder, 0.1)
+-		weld(hub, halo, CFrame.new(0, R * 1.35, 0) * CFrame.Angles(0, 0, PI / 2))
+-	elseif portalId == "Secret" then
+-		for i = 1, isGate and 12 or 6 do
+-			local a = i / (isGate and 12 or 6) * PI * 2
+-			local seg = part(model, "Circuit", Vector3.new(0.1, R * 0.12 * k + 0.12, R * 0.3 * k + 0.2), i % 2 == 0 and Color3.fromRGB(0, 255, 200) or Color3.fromRGB(255, 0, 170), Enum.Material.Neon, Enum.MeshType.Brick)
+-			weld(hub, seg, CFrame.new(math.cos(a) * R * 1.0, math.sin(a) * R * 1.0, -R * 0.25 * k) * CFrame.Angles(0, 0, a))
+-		end
+-	end
+-end
+ PortalBuilder.Theme = THEME
+ 
+ function PortalBuilder.ColorSeq(portalId)
+ 	local P = Config.Portals[portalId]
+-	if P.fx == "Rainbow" then return RAINBOW end
++	if P.fx == "Rainbow" then
++		return RAINBOW
++	end
+ 	return ColorSequence.new(P.color, P.color2)
+ end
+ 
+@@ -160,116 +57,4 @@
+ 	return pe
+ end
+ 
+--- Small glowing orb that gets thrown. Returns model, refs.
+-function PortalBuilder.BuildOrb(portalId: string, scale: number?)
+-	local P = Config.Portals[portalId]
+-	local s = scale or 1
+-	local model = Instance.new("Model")
+-	model.Name = "PortalOrb"
+-	local core = part(model, "Core", Vector3.new(1.6, 1.6, 1.6) * s, P.color2, Enum.Material.Neon)
+-	core.Anchored = true
+-	model.PrimaryPart = core
+-	local shell = part(model, "Shell", Vector3.new(2.2, 2.2, 2.2) * s, P.color, Enum.Material.Glass, nil, 0.35)
+-	weld(core, shell, CFrame.identity)
+-	-- two orbiting rings of beads
+-	local rings = {}
+-	for r = 1, 2 do
+-		local hub = part(model, "RingHub", Vector3.new(0.1, 0.1, 0.1), P.color, Enum.Material.Neon, nil, 1)
+-		local w = weld(core, hub, CFrame.Angles(r == 1 and 0.5 or -0.9, 0, r == 1 and 0.3 or -0.4))
+-		for i = 1, 10 do
+-			local a = i / 10 * math.pi * 2
+-			local b = part(model, "Bead", Vector3.new(0.28, 0.28, 0.28) * s, i % 2 == 0 and P.color or P.color2, Enum.Material.Neon)
+-			weld(hub, b, CFrame.new(math.cos(a) * 1.6 * s, 0, math.sin(a) * 1.6 * s))
+-		end
+-		table.insert(rings, { w = w, base = w.C0, dir = r == 1 and 1 or -1 })
+-	end
+-	local light = Instance.new("PointLight")
+-	light.Color, light.Range, light.Brightness = P.color, 12, 2
+-	light.Parent = core
+-	local a0 = Instance.new("Attachment"); a0.Position = Vector3.new(0, 0.7, 0) * s; a0.Parent = core
+-	local a1 = Instance.new("Attachment"); a1.Position = Vector3.new(0, -0.7, 0) * s; a1.Parent = core
+-	local trail = Instance.new("Trail")
+-	trail.Attachment0, trail.Attachment1 = a0, a1
+-	trail.Color = PortalBuilder.ColorSeq(portalId)
+-	trail.LightEmission = 1
+-	trail.Lifetime = 0.45
+-	trail.Transparency = NumberSequence.new(0.1, 1)
+-	trail.WidthScale = NumberSequence.new(1, 0)
+-	trail.FaceCamera = true
+-	trail.Enabled = false
+-	trail.Parent = core
+-	local pe = PortalBuilder.Emitter(core, portalId, 10, 0.5 * s, 2)
+-	local dressHub = part(model, "DressHub", Vector3.new(0.1, 0.1, 0.1), P.color, Enum.Material.Neon, nil, 1)
+-	weld(core, dressHub, CFrame.identity)
+-	dress(model, dressHub, portalId, 1.15 * s, false)
+-	return model, { core = core, rings = rings, trail = trail, emitter = pe, light = light }
+-end
+-
+--- Vertical portal gate (opens on landing; also used in shop previews). Faces -Z.
+-function PortalBuilder.BuildGate(portalId: string, radius: number?)
+-	local P = Config.Portals[portalId]
+-	local R = radius or 4
+-	local model = Instance.new("Model")
+-	model.Name = "PortalGate"
+-	local root = part(model, "Root", Vector3.new(0.2, 0.2, 0.2), P.color, Enum.Material.Neon, nil, 1)
+-	root.Anchored = true
+-	model.PrimaryPart = root
+-	local frameHub = part(model, "FrameHub", Vector3.new(0.1, 0.1, 0.1), P.color, Enum.Material.Neon, nil, 1)
+-	local frameW = weld(root, frameHub, CFrame.identity)
+-	local n = 28
+-	local th = THEME[portalId] or THEME.Basic
+-	for i = 1, n do
+-		local a = i / n * math.pi * 2
+-		-- structural rim in the portal's own material; a thin neon inner edge carries the colour
+-		local col = th.frameCol:Lerp(P.color, (i % 2 == 0) and 0.12 or 0)
+-		local seg = part(model, "Frame", Vector3.new(R * 0.36, R * 0.36, R * 0.42), col, th.frameMat)
+-		weld(frameHub, seg, CFrame.new(math.cos(a) * R, math.sin(a) * R, 0) * CFrame.Angles(0, 0, a))
+-		local edge = part(model, "Edge", Vector3.new(R * 0.12, R * 0.12, R * 0.44), P.fx == "Rainbow" and Color3.fromHSV(i / n, 0.75, 1) or P.color, Enum.Material.Neon)
+-		weld(frameHub, edge, CFrame.new(math.cos(a) * R * 0.84, math.sin(a) * R * 0.84, 0) * CFrame.Angles(0, 0, a))
+-	end
+-	dress(model, frameHub, portalId, R, true)
+-	-- outer glass rim for depth
+-	for i = 1, 14 do
+-		local a = i / 14 * math.pi * 2
+-		local rim = part(model, "Rim", Vector3.new(R * 0.5, R * 0.5, R * 0.3), P.color2, Enum.Material.Glass, nil, 0.4)
+-		weld(frameHub, rim, CFrame.new(math.cos(a) * R * 1.12, math.sin(a) * R * 1.12, 0.1))
+-	end
+-	-- swirling inner discs
+-	local discs = {}
+-	for i = 1, 3 do
+-		local d = part(model, "Swirl", Vector3.new(R * 2 * (1 - i * 0.22), 0.1 + i * 0.02, R * 2 * (1 - i * 0.22)),
+-			i % 2 == 1 and P.color or P.color2, Enum.Material.Neon, Enum.MeshType.Cylinder, 0.15 + i * 0.12)
+-		local w = weld(root, d, CFrame.new(0, 0, -0.05 * i) * CFrame.Angles(math.pi / 2, 0, 0))
+-		table.insert(discs, { w = w, base = w.C0, dir = i % 2 == 1 and 1 or -1, speed = 1 + i * 0.7 })
+-		-- spiral arms on each disc
+-		for k = 1, 3 do
+-			local arm = part(model, "SwirlArm", Vector3.new(R * 0.9 * (1 - i * 0.2), 0.2, R * 0.18), P.color2:Lerp(Color3.new(1, 1, 1), 0.3), Enum.Material.Neon, nil, 0.3)
+-			weld(d, arm, CFrame.Angles(0, k / 3 * math.pi * 2, 0) * CFrame.new(R * 0.35 * (1 - i * 0.2), 0.12, 0) * CFrame.Angles(0, 0.6, 0))
+-		end
+-	end
+-	local light = Instance.new("PointLight")
+-	light.Color, light.Range, light.Brightness = P.color, R * 5, 3
+-	light.Parent = root
+-	local pe = PortalBuilder.Emitter(root, portalId, 40, 0.9, 6)
+-	pe.Shape = Enum.ParticleEmitterShape.Disc
+-	pe.ShapeStyle = Enum.ParticleEmitterShapeStyle.Surface
+-	pe.EmissionDirection = Enum.NormalId.Front
+-	return model, { root = root, frame = { w = frameW, base = frameW.C0 }, discs = discs, emitter = pe, light = light, radius = R }
+-end
+-
+--- Rotates the gate's swirl each frame
+-function PortalBuilder.Spin(refs, t: number)
+-	if refs.discs then
+-		for _, d in ipairs(refs.discs) do
+-			d.w.C0 = d.base * CFrame.Angles(0, t * d.speed * d.dir * 2, 0)
+-		end
+-		refs.frame.w.C0 = refs.frame.base * CFrame.Angles(0, 0, t * 0.6)
+-	end
+-	if refs.rings then
+-		for _, r in ipairs(refs.rings) do
+-			r.w.C0 = r.base * CFrame.Angles(0, t * 4 * r.dir, 0)
+-		end
+-	end
+-end
+-
+-return PortalBuilder
++return require(script.Parent.PortalDesign)(PortalBuilder, Config)
+--- /dev/null
++++ b/src/ReplicatedStorage/Shared/PortalDesign.lua
+@@ -0,0 +1,520 @@
++-- Architectural portals and faceted throw orbs. No uploaded meshes or textures required.
++-- API refs deliberately match ThrowController/UIKit. Structural frames do not spin.
++local V, CF, A = Vector3.new, CFrame.new, CFrame.Angles
++local PI, M = math.pi, Enum.Material
++local GOLD = Color3.fromRGB(218, 174, 85)
++local IVORY = Color3.fromRGB(235, 228, 218)
++local INK = Color3.fromRGB(31, 24, 48)
++local function make(model, name, size, color, mat, transparency, class)
++	local p = Instance.new(class or "Part")
++	p.Name, p.Size, p.Color, p.Material = name, size, color, mat or M.SmoothPlastic
++	p.Transparency = transparency or 0
++	p.Anchored, p.CanCollide, p.CanQuery, p.CanTouch, p.Massless = false, false, false, false, true
++	p.TopSurface, p.BottomSurface = Enum.SurfaceType.Smooth, Enum.SurfaceType.Smooth
++	p.CastShadow = false
++	p.Parent = model
++	return p
++end
++local function weld(parent, p, cf, name)
++	local w = Instance.new("Weld")
++	w.Name, w.Part0, w.Part1, w.C0 = name or "Bind", parent, p, cf
++	w.Parent = p
++	return w
++end
++local function block(model, hub, name, size, cf, color, mat, tr)
++	local p = make(model, name, size, color, mat, tr)
++	weld(hub, p, cf)
++	return p
++end
++local function beam(model, hub, name, p0, p1, width, depth, color, mat)
++	local d = p1 - p0
++	return block(
++		model,
++		hub,
++		name,
++		V(width, d.Magnitude + width * 0.12, depth),
++		CF((p0 + p1) / 2, p1) * A(PI / 2, 0, 0),
++		color,
++		mat
++	)
++end
++local function triangle(model, hub, name, a, b, c, color, mat, thickness, transparency)
++	-- Two native solid wedges fill a triangle. The longest edge is the base, ensuring
++	-- the perpendicular projection stays within it, with no negative or sliver dimensions.
++	local ab, ac, bc = (b - a).Magnitude, (c - a).Magnitude, (c - b).Magnitude
++	if ac > ab and ac > bc then
++		b, c = c, b
++	elseif bc > ab then
++		a, c = c, a
++	end
++	local z = (b - a).Unit
++	local foot = a + z * (c - a):Dot(z)
++	local y = (c - foot).Unit
++	local h = (c - foot).Magnitude
++	for _, point in ipairs({ a, b }) do
++		local width = (foot - point).Magnitude
++		if width > 0.0001 then
++			local zz = (foot - point).Unit
++			local x = y:Cross(zz)
++			local cf = CFrame.fromMatrix((point + foot) / 2 + y * h / 2, x, y, zz)
++			local p = make(model, name, V(thickness or 0.04, h, width), color, mat, transparency, "WedgePart")
++			weld(hub, p, cf)
++		end
++	end
++end
++local function diamond(model, hub, name, cf, length, width, depth, color, mat)
++	local top, bottom = cf * V(0, length / 2, 0), cf * V(0, -length / 2, 0)
++	triangle(model, hub, name, cf * V(-width / 2, 0, 0), bottom, top, color, mat, depth)
++	triangle(model, hub, name, cf * V(width / 2, 0, 0), top, bottom, color, mat, depth)
++end
++local function ring(model, hub, name, radius, radialWidth, depth, z, color, mat, n, tr)
++	n = n or 24
++	local length = 2 * radius * math.tan(PI / n) * 1.015
++	for i = 0, n - 1 do
++		local angle = (i + 0.5) / n * PI * 2
++		local col = type(color) == "function" and color(i, n) or color
++		block(
++			model,
++			hub,
++			name,
++			V(length, radialWidth, depth),
++			CF(math.cos(angle) * radius, math.sin(angle) * radius, z) * A(0, 0, angle + PI / 2),
++			col,
++			mat,
++			tr
++		)
++	end
++end
++local function disk(model, hub, name, radius, z, color, mat, tr)
++	local p = make(model, name, V(0.055, radius * 2, radius * 2), color, mat, tr)
++	p.Shape = Enum.PartType.Cylinder -- native cylinder axis X, rotated onto portal normal Z
++	weld(hub, p, CF(0, 0, z) * A(0, PI / 2, 0))
++	return p
++end
++local function rotor(model, root, name, base, speed, direction)
++	local p = make(model, name, V(0.05, 0.05, 0.05), INK, M.SmoothPlastic, 1)
++	local w = weld(root, p, base, "PortalRotor")
++	w:SetAttribute("Rate", speed * direction)
++	w:SetAttribute("Axis", "Z")
++	return p, { w = w, base = base, speed = speed, dir = direction, axis = "Z" }
++end
++
++-- A regular icosahedron provides real planar orb faces, rather than a round glass ball.
++local phi = (1 + math.sqrt(5)) / 2
++local ico = {
++	V(-1, phi, 0),
++	V(1, phi, 0),
++	V(-1, -phi, 0),
++	V(1, -phi, 0),
++	V(0, -1, phi),
++	V(0, 1, phi),
++	V(0, -1, -phi),
++	V(0, 1, -phi),
++	V(phi, 0, -1),
++	V(phi, 0, 1),
++	V(-phi, 0, -1),
++	V(-phi, 0, 1),
++}
++for i, p in ipairs(ico) do
++	ico[i] = p.Unit
++end
++local faces, edges = {}, {}
++for a = 1, 10 do
++	for b = a + 1, 11 do
++		for c = b + 1, 12 do
++			local normal = (ico[b] - ico[a]):Cross(ico[c] - ico[a])
++			local positive, negative = false, false
++			for j, p in ipairs(ico) do
++				if j ~= a and j ~= b and j ~= c then
++					local d = normal:Dot(p - ico[a])
++					positive = positive or d > 0.0001
++					negative = negative or d < -0.0001
++				end
++			end
++			if not (positive and negative) then
++				table.insert(faces, { a, b, c })
++				for _, pair in ipairs({ { a, b }, { b, c }, { a, c } }) do
++					local x, y = math.min(pair[1], pair[2]), math.max(pair[1], pair[2])
++					edges[x .. ":" .. y] = { x, y }
++				end
++			end
++		end
++	end
++end
++
++return function(API, Config)
++	local function themeDetails(model, hub, id, r, p)
++		if id == "Forest" then
++			for side = -1, 1, 2 do
++				for j = 0, 3 do
++					local angle = side * (0.5 + j * 0.48)
++					diamond(
++						model,
++						hub,
++						"CarvedLeaf",
++						CF(math.sin(angle) * r * 1.12, math.cos(angle) * r * 1.1, -r * 0.09) * A(0.22, 0, -angle),
++						r * 0.62,
++						r * 0.24,
++						r * 0.07,
++						j % 2 == 0 and p.color or p.color2,
++						M.SmoothPlastic
++					)
++				end
++				beam(
++					model,
++					hub,
++					"BranchRoot",
++					V(side * r * 0.55, -r * 0.95, 0),
++					V(side * r * 1.35, -r * 1.17, -0.15),
++					r * 0.18,
++					r * 0.18,
++					Color3.fromRGB(101, 70, 43),
++					M.Wood
++				)
++			end
++		elseif id == "Lava" or id == "Dark" or id == "Ice" then
++			for i = 0, 7 do
++				local a = i / 8 * PI * 2
++				local ice = id == "Ice"
++				local col = ice and Color3.fromRGB(190, 230, 245)
++					or (id == "Lava" and Color3.fromRGB(46, 37, 42) or INK)
++				diamond(
++					model,
++					hub,
++					ice and "FrostCrystal" or "ArmoredSpine",
++					CF(math.sin(a) * r * 1.14, math.cos(a) * r * 1.14, 0) * A(0, 0, -a),
++					r * (ice and 0.70 or (id == "Dark" and (i % 2 == 0 and 0.95 or 0.35) or 0.54)),
++					r * 0.26,
++					r * 0.19,
++					col,
++					ice and M.Ice or API.Theme[id].frameMat
++				)
++				block(
++					model,
++					hub,
++					"InsetEnergySeam",
++					V(r * 0.055, r * 0.22, r * 0.035),
++					CF(math.sin(a) * r, math.cos(a) * r, -r * 0.20) * A(0, 0, -a),
++					p.color2,
++					M.Neon
++				)
++			end
++		elseif id == "Galaxy" then
++			ring(model, hub, "Astrolabe", r * 1.32, r * 0.035, r * 0.035, 0.16, GOLD, M.Metal, 32)
++			for i = 0, 5 do
++				local a = i / 6 * PI * 2
++				diamond(
++					model,
++					hub,
++					"StarMarker",
++					CF(math.sin(a) * r * 1.32, math.cos(a) * r * 1.32, -0.06) * A(0, 0, -a),
++					r * 0.24,
++					r * 0.12,
++					0.04,
++					p.color2,
++					M.Neon
++				)
++			end
++		elseif id == "Divine" then
++			for side = -1, 1, 2 do
++				for j = 0, 3 do
++					local bladeCF = CF(side * r * (1.08 + j * 0.13), r * (0.10 + j * 0.23), 0.02)
++						* A(0, 0, -side * (0.8 - j * 0.12))
++					diamond(
++						model,
++						hub,
++						"ArchitecturalWingBlade",
++						bladeCF,
++						r * (0.9 - j * 0.10),
++						r * 0.21,
++						r * 0.07,
++						j == 0 and GOLD or IVORY,
++						M.SmoothPlastic
++					)
++					beam(
++						model,
++						hub,
++						"FeatherGoldVein",
++						bladeCF * V(0, -r * (0.40 - j * 0.04), -r * 0.05),
++						bladeCF * V(0, r * (0.40 - j * 0.04), -r * 0.05),
++						r * 0.027,
++						r * 0.027,
++						GOLD,
++						M.Metal
++					)
++				end
++			end
++			local halo = block(model, hub, "HaloMount", V(0.05, 0.05, 0.05), CF(0, r * 1.48, 0), GOLD, M.Metal, 1)
++			ring(model, halo, "DivineHalo", r * 0.30, r * 0.035, r * 0.055, 0, GOLD, M.Metal, 16)
++		elseif id == "Secret" then
++			for i = 0, 11 do
++				local a = i / 12 * PI * 2
++				block(
++					model,
++					hub,
++					"BrokenCircuitPlate",
++					V(r * 0.33, r * 0.15, r * 0.22),
++					CF(math.sin(a) * r * 1.18, math.cos(a) * r * 1.18, i % 2 == 0 and 0.15 or -0.10) * A(0, 0, -a),
++					INK,
++					M.Metal
++				)
++				block(
++					model,
++					hub,
++					"CircuitInset",
++					V(r * 0.23, r * 0.025, 0.025),
++					CF(math.sin(a) * r * 1.18, math.cos(a) * r * 1.18, -r * 0.14) * A(0, 0, -a),
++					i % 2 == 0 and p.color or p.color2,
++					M.Neon
++				)
++			end
++		end
++	end
++	function API.BuildOrb(id: string, scale: number?)
++		local p = assert(Config.Portals[id], "Unknown portal " .. tostring(id))
++		local s = scale or 1
++		local model = Instance.new("Model")
++		model.Name = "PortalOrb"
++		local root = make(model, "Core", V(0.12, 0.12, 0.12), p.color, M.SmoothPlastic, 1)
++		root.Anchored = true
++		model.PrimaryPart = root
++		for i, face in ipairs(faces) do
++			local col = p.fx == "Rainbow" and Color3.fromHSV(i / #faces, 0.55, 0.85)
++				or p.color:Lerp(p.color2, (i % 4) * 0.12)
++			triangle(
++				model,
++				root,
++				"CrystalFacet",
++				ico[face[1]] * s,
++				ico[face[2]] * s,
++				ico[face[3]] * s,
++				col,
++				M.SmoothPlastic,
++				0.035 * s
++			)
++		end
++		local trim = (id == "Lava" or id == "Dark" or id == "Secret") and p.color2 or GOLD
++		for _, edge in pairs(edges) do
++			beam(
++				model,
++				root,
++				"InlaidCage",
++				ico[edge[1]] * s * 1.025,
++				ico[edge[2]] * s * 1.025,
++				0.065 * s,
++				0.065 * s,
++				trim,
++				M.Metal
++			)
++		end
++		local hub, ringRef = rotor(model, root, "OrbitRuneAssembly", CF(), 0.7, 1)
++		for j = 0, 2 do
++			local a = j / 3 * PI * 2
++			diamond(
++				model,
++				hub,
++				"OrbitRune",
++				CF(math.cos(a) * 1.26 * s, math.sin(a) * 1.26 * s, 0) * A(0, 0, a),
++				0.30 * s,
++				0.13 * s,
++				0.04 * s,
++				p.color2,
++				M.Neon
++			)
++		end
++		local light = Instance.new("PointLight")
++		light.Color, light.Range, light.Brightness = p.color, 9 * s, 0.7
++		light.Parent = root
++		local a0, a1 = Instance.new("Attachment"), Instance.new("Attachment")
++		a0.Position, a1.Position, a0.Parent, a1.Parent = V(0, 0.5, 0) * s, V(0, -0.5, 0) * s, root, root
++		local trail = Instance.new("Trail")
++		trail.Attachment0, trail.Attachment1, trail.Color = a0, a1, API.ColorSeq(id)
++		trail.Lifetime, trail.LightEmission, trail.FaceCamera, trail.Enabled = 0.28, 0.8, true, false
++		trail.Transparency, trail.WidthScale = NumberSequence.new(0.3, 1), NumberSequence.new(0.65, 0)
++		trail.Parent = root
++		local pe = API.Emitter(root, id, 4, 0.15 * s, 0.8)
++		model:SetAttribute("PortalId", id)
++		model:SetAttribute("DesignVersion", 2)
++		return model, { core = root, rings = { ringRef }, trail = trail, emitter = pe, light = light }
++	end
++	function API.BuildGate(id: string, radius: number?, options)
++		local p = assert(Config.Portals[id], "Unknown portal " .. tostring(id))
++		local r = radius or 4
++		assert(r > 0 and r < 100, "Portal radius out of bounds")
++		local sanctuary = options and options.sanctuary
++		if sanctuary then
++			p = { color = Color3.fromRGB(143, 84, 217), color2 = Color3.fromRGB(214, 177, 255), fx = "Stars" }
++		end
++		local th = API.Theme[id]
++		local model = Instance.new("Model")
++		model.Name = sanctuary and "SanctuaryPortal" or "PortalGate"
++		local root = make(model, "Root", V(0.05, 0.05, 0.05), INK, M.SmoothPlastic, 1)
++		root.Anchored = true
++		model.PrimaryPart = root
++		local frameHub = make(model, "FrameHub", V(0.05, 0.05, 0.05), INK, M.SmoothPlastic, 1)
++		local fw = weld(root, frameHub, CF())
++		local frameColor = sanctuary and Color3.fromRGB(83, 50, 129) or th.frameCol
++		local function frameRing(modelArg, hub, name, rr, width, depth, z, color, mat, n, tr)
++			if not sanctuary then
++				ring(modelArg, hub, name, rr, width, depth, z, color, mat, n, tr)
++				return
++			end
++			local pieces = 16
++			for i = 0, pieces - 1 do
++				local angle = (i + 0.5) / pieces * PI
++				block(
++					modelArg,
++					hub,
++					name,
++					V(2 * rr * math.tan(PI / (pieces * 2)) * 1.015, width, depth),
++					CF(math.cos(angle) * rr, math.sin(angle) * rr, z) * A(0, 0, angle + PI / 2),
++					color,
++					mat,
++					tr
++				)
++			end
++			for side = -1, 1, 2 do
++				block(modelArg, hub, name, V(width, rr, depth), CF(side * rr, -rr / 2, z), color, mat, tr)
++			end
++		end
++		local framePaint = id == "Rainbow" and function(i, n)
++			return Color3.fromHSV(i / n, 0.45, 0.94)
++		end or frameColor
++		frameRing(
++			model,
++			frameHub,
++			"Frame",
++			r,
++			r * 0.20,
++			r * 0.23,
++			0,
++			framePaint,
++			sanctuary and M.SmoothPlastic or th.frameMat,
++			24
++		)
++		frameRing(model, frameHub, "OuterMolding", r * 1.105, r * 0.055, r * 0.29, 0, GOLD, M.Metal, 24)
++		frameRing(model, frameHub, "InnerMolding", r * 0.89, r * 0.035, r * 0.12, -r * 0.15, GOLD, M.Metal, 24)
++		frameRing(
++			model,
++			frameHub,
++			"EnergyInlay",
++			r * 0.855,
++			r * 0.025,
++			r * 0.035,
++			-r * 0.17,
++			id == "Rainbow" and function(i, n)
++				return Color3.fromHSV(i / n, 0.6, 1)
++			end or p.color,
++			M.Neon,
++			24,
++			0.2
++		)
++		for i = 0, 7 do
++			local a = sanctuary and (i / 7 - 0.5) * PI or i / 8 * PI * 2
++			block(
++				model,
++				frameHub,
++				"RadialClasp",
++				V(r * 0.16, r * 0.29, r * 0.29),
++				CF(math.sin(a) * r, math.cos(a) * r, -r * 0.02) * A(0, 0, -a),
++				GOLD,
++				M.Metal
++			)
++		end
++		for side = -1, 1, 2 do
++			block(
++				model,
++				frameHub,
++				"Footing",
++				V(r * 0.42, r * 0.30, r * 0.48),
++				CF(side * r * (sanctuary and 1 or 0.78), -r * 0.94, 0),
++				sanctuary and IVORY or frameColor,
++				M.SmoothPlastic
++			)
++		end
++		diamond(
++			model,
++			frameHub,
++			"CrownSetting",
++			CF(0, r * 1.16, -r * 0.12),
++			r * 0.64,
++			r * 0.36,
++			r * 0.12,
++			GOLD,
++			M.Metal
++		)
++		diamond(
++			model,
++			frameHub,
++			"CrownCrystal",
++			CF(0, r * 1.16, -r * 0.20),
++			r * 0.43,
++			r * 0.21,
++			r * 0.055,
++			p.color,
++			M.SmoothPlastic
++		)
++		if not sanctuary then
++			themeDetails(model, frameHub, id, r, p)
++		end
++		disk(
++			model,
++			root,
++			"ApertureDepth",
++			r * 0.86,
++			0.06,
++			p.color:Lerp(INK, id == "Rainbow" and 0.93 or 0.80),
++			M.SmoothPlastic,
++			sanctuary and 1 or 0.08
++		)
++		disk(model, root, "EnergyVeil", r * 0.85, -r * 0.07, p.color, M.Neon, sanctuary and 1 or 0.93)
++		local discs = {}
++		for arm = 0, 3 do
++			local hub, ref = rotor(model, root, "VortexArm" .. arm, CF(0, 0, -r * (0.09 + arm * 0.005)), 0.65, 1)
++			table.insert(discs, ref)
++			for j = 1, 9 do
++				local t0, t1 = (j - 1) / 9, j / 9
++				local function point(t)
++					local a = arm / 4 * PI * 2 + t * 2.85
++					local rr = r * (0.02 + t * 0.77)
++					return V(math.cos(a) * rr, math.sin(a) * rr, 0)
++				end
++				local d = point(t1) - point(t0)
++				block(
++					model,
++					hub,
++					"VortexRibbon",
++					V(d.Magnitude * 1.20, r * (0.06 + 0.14 * math.sin((t0 + t1) / 2 * PI)), r * 0.008),
++					CF((point(t0) + point(t1)) / 2) * A(0, 0, math.atan2(d.Y, d.X)),
++					id == "Rainbow" and Color3.fromHSV((arm / 4 + t0 * 0.30) % 1, 0.5, 1)
++						or p.color2:Lerp(Color3.new(1, 1, 1), 0.55 - t0 * 0.30),
++					M.Neon,
++					sanctuary and 1 or 0.12 + j * 0.042
++				)
++			end
++		end
++		local light = Instance.new("PointLight")
++		light.Color, light.Range, light.Brightness = p.color, math.min(r * 3, 40), sanctuary and 0.5 or 1.1
++		light.Parent = root
++		local pe = API.Emitter(root, id, sanctuary and 0 or 8, 0.25, 1.5)
++		pe.Shape, pe.ShapeStyle, pe.EmissionDirection =
++			Enum.ParticleEmitterShape.Disc, Enum.ParticleEmitterShapeStyle.Surface, Enum.NormalId.Front
++		model:SetAttribute("PortalId", id)
++		model:SetAttribute("DesignVersion", 2)
++		return model,
++			{ root = root, frame = { w = fw, base = fw.C0 }, discs = discs, emitter = pe, light = light, radius = r }
++	end
++	function API.Spin(refs, t: number)
++		-- Architecture stays planted. Only the aperture and small orbit runes move.
++		local root = refs.root or refs.core
++		local scale = 1
++		if typeof(game) == "Instance" and root and root.Parent then
++			scale = root.Parent:GetScale()
++		end
++		for _, d in ipairs(refs.discs or refs.rings or {}) do
++			d.w.C0 = CF(d.base.Position * scale) * d.base.Rotation * A(0, 0, t * d.speed * d.dir)
++		end
++	end
++	API.Geometry = { triangle = triangle, icoFaces = #faces, icoVertices = #ico }
++	return API
++end
+--- a/src/ServerScriptService/Server/BaseBuilder.lua
++++ b/src/ServerScriptService/Server/BaseBuilder.lua
+@@ -13,10 +13,6 @@
+ local BaseBuilder = {}
+ BaseBuilder.Bases = {}
+ 
+-local HALF = 34
+-local SLOT_RADIUS = 14
+-local MAX_SLOTS = 24
+-local COLLECT_POS = Vector3.new(-19, 0, -21)
+ local DECOR_SPOTS = {
+ 	Vector3.new(-30, 0, -4), Vector3.new(30, 0, -4), Vector3.new(-30, 0, 9), Vector3.new(30, 0, 9),
+ 	Vector3.new(-7, 0, 29), Vector3.new(7, 0, 29), Vector3.new(0, 0, 22), Vector3.new(0, 22, 4),
+@@ -48,225 +44,9 @@
+ end
+ local function light(p, color, range, b) local l = Instance.new("PointLight"); l.Color = color; l.Range = range; l.Brightness = b or 1.4; l.Parent = p; return l end
+ 
+-local function billboard(adornee, text, size, offset, color, maxDist)
+-	local bb = Instance.new("BillboardGui")
+-	bb.Size = size or UDim2.fromScale(8, 2)
+-	bb.StudsOffset = offset or Vector3.new(0, 4, 0)
+-	bb.MaxDistance = maxDist or 140
+-	bb.LightInfluence = 0
+-	local t = Instance.new("TextLabel")
+-	t.Name = "Label"
+-	t.Size = UDim2.fromScale(1, 1)
+-	t.BackgroundTransparency = 1
+-	t.Font = Enum.Font.FredokaOne
+-	t.TextScaled = true
+-	t.RichText = true
+-	t.Text = text
+-	t.TextColor3 = color or Color3.new(1, 1, 1)
+-	local st = Instance.new("UIStroke"); st.Thickness = 3; st.Color = Color3.fromRGB(30, 20, 40); st.Parent = t
+-	t.Parent = bb
+-	bb.Parent = adornee
+-	return t
+-end
+-
+ ---------------------------------------------------------------- one base
+ local function buildBase(index)
+-	local side = (index <= 4) and -1 or 1
+-	local row = (index - 1) % 4
+-	local pos = Vector3.new(side * 63, 0, -84 - row * 76)
+-	local cf = CFrame.lookAt(pos, Vector3.new(0, 0, pos.Z)) -- -Z faces the street (entrance)
+-	local L = function(x, y, z) return cf * CFrame.new(x, y, z) end
+-
+-	local model = Instance.new("Model")
+-	model.Name = "Base" .. index
+-
+-	-- foundation + grass floor
+-	local stone = Color3.fromRGB(210, 205, 198)
+-	part(model, Vector3.new(HALF * 2 + 3, 1.2, HALF * 2 + 3), L(0, 0.3, 0), stone, Enum.Material.Cobblestone)
+-	local floor = part(model, Vector3.new(HALF * 2, 1, HALF * 2), L(0, 0.5, 0), Color3.fromRGB(120, 200, 95), Enum.Material.Grass)
+-	floor.Name = "Floor"
+-	model.PrimaryPart = floor
+-
+-	-- flowering hedges (gap at the entrance)
+-	local hedgeCol = Color3.fromRGB(70, 155, 75)
+-	local function hedge(hcf, len)
+-		ball(model, 1, hcf * CFrame.new(0, 3, 0), hedgeCol, Enum.Material.Grass).Size = Vector3.new(len, 5, 4)
+-		for k = 1, math.floor(len / 4) do
+-			ball(model, 1, hcf * CFrame.new(-len / 2 + k * 4 - 2, 5.4, (k % 2 == 0) and 1.2 or -1.2), Color3.fromHSV((k * 0.17) % 1, 0.5, 1), nil, false)
+-		end
+-	end
+-	hedge(L(0, 0.5, HALF), HALF * 2)
+-	hedge(L(-HALF, 0.5, 0) * CFrame.Angles(0, math.rad(90), 0), HALF * 2)
+-	hedge(L(HALF, 0.5, 0) * CFrame.Angles(0, math.rad(90), 0), HALF * 2)
+-	for _, s in ipairs({ -1, 1 }) do hedge(L(s * (HALF / 2 + 5), 0.5, -HALF), HALF - 10) end
+-
+-	-- ENTRANCE GATEWAY: crystal pillars + rainbow arch + name sign
+-	-- stone gateway: plinths, columns with gold caps, a curved segmented arch and two warm lanterns
+-	local gold = Color3.fromRGB(214, 172, 86)
+-	for _, s in ipairs({ -1, 1 }) do
+-		part(model, Vector3.new(4.6, 1.4, 4.6), L(s * 8, 1.2, -HALF), stone:Lerp(Color3.new(0, 0, 0), 0.08), Enum.Material.Marble)
+-		part(model, Vector3.new(3.2, 13, 3.2), L(s * 8, 8.4, -HALF), stone, Enum.Material.Marble)
+-		part(model, Vector3.new(4, 0.8, 4), L(s * 8, 15.2, -HALF), gold, Enum.Material.Metal, false)
+-		local lantern = part(model, Vector3.new(1.1, 1.5, 1.1), L(s * 8, 13.5, -HALF - 2.1), Color3.fromRGB(255, 214, 150), Enum.Material.Glass, false, nil, 0.15)
+-		part(model, Vector3.new(0.3, 0.3, 1.6), L(s * 8, 14.4, -HALF - 1.4), Color3.fromRGB(48, 44, 56), Enum.Material.Metal, false)
+-		light(lantern, Color3.fromRGB(255, 205, 150), 16, 1)
+-	end
+-	for i = 1, 12 do
+-		local a0, a1 = (i - 1) / 12 * math.pi, i / 12 * math.pi
+-		local p0 = Vector3.new(math.cos(a0) * 8, 15.6 + math.sin(a0) * 4.5, 0)
+-		local p1 = Vector3.new(math.cos(a1) * 8, 15.6 + math.sin(a1) * 4.5, 0)
+-		local d = p1 - p0
+-		part(model, Vector3.new(d.Magnitude + 0.35, 1.4, 2.4), L((p0.X + p1.X) / 2, (p0.Y + p1.Y) / 2, -HALF) * CFrame.Angles(0, 0, math.atan2(d.Y, d.X)), stone, Enum.Material.Marble, false)
+-	end
+-	part(model, Vector3.new(2, 2, 0.6), L(0, 20.4, -HALF - 1.1) * CFrame.Angles(0, 0, math.rad(45)), Color3.fromRGB(150, 110, 230), Enum.Material.Glass, false)
+-	local signBoard = part(model, Vector3.new(14, 3.4, 0.6), L(0, 12.5, -HALF), Color3.fromRGB(255, 248, 230), Enum.Material.SmoothPlastic)
+-	signBoard.Name = "Sign"
+-	local sg = Instance.new("SurfaceGui")
+-	sg.Face = Enum.NormalId.Front
+-	sg.CanvasSize = Vector2.new(480, 110)
+-	sg.LightInfluence = 0
+-	local sl = Instance.new("TextLabel")
+-	sl.Name = "Owner"
+-	sl.Size = UDim2.fromScale(1, 1)
+-	sl.BackgroundTransparency = 1
+-	sl.Font = Enum.Font.FredokaOne
+-	sl.TextScaled = true
+-	sl.TextColor3 = Color3.fromRGB(110, 60, 170)
+-	sl.Text = "Empty Base"
+-	sl.Parent = sg
+-	sg.Parent = signBoard
+-	local sg2 = sg:Clone(); sg2.Face = Enum.NormalId.Back; sg2.Parent = signBoard
+-	local incomeLabel = billboard(signBoard, "+$0/s", UDim2.fromScale(12, 2.4), Vector3.new(0, 9, 0), Color3.fromRGB(130, 255, 150))
+-
+-	-- stone path from the entrance to the fountain
+-	part(model, Vector3.new(6, 0.2, HALF - 6), L(0, 1.05, -HALF / 2 - 3), Color3.fromRGB(205, 195, 180), Enum.Material.Cobblestone, false)
+-	for z = -HALF + 4, -10, 6 do
+-		for _, s in ipairs({ -1, 1 }) do
+-			ball(model, 0.9, L(s * 3.6, 1.4, z), Color3.fromRGB(255, 220, 140), Enum.Material.Neon, false)
+-		end
+-	end
+-
+-	-- CENTRAL FOUNTAIN with a floating income crystal
+-	cyl(model, L(0, 1, 0), 1.4, 12, stone, Enum.Material.Marble, true)
+-	cyl(model, L(0, 2.3, 0), 0.2, 10.6, Color3.fromRGB(90, 200, 255), Enum.Material.Glass, false, 0.25)
+-	cyl(model, L(0, 1, 0), 5, 1.8, stone, Enum.Material.Marble, true)
+-	local crystal = part(model, Vector3.new(2.6, 4.6, 2.6), L(0, 10, 0) * CFrame.Angles(0, math.rad(45), math.rad(10)), Color3.fromRGB(120, 255, 170), Enum.Material.Neon, false)
+-	crystal.Name = "IncomeCrystal"
+-	light(crystal, Color3.fromRGB(120, 255, 170), 26, 2)
+-	local spray = Instance.new("ParticleEmitter")
+-	spray.Texture = SPARKLE
+-	spray.Color = ColorSequence.new(Color3.fromRGB(150, 220, 255))
+-	spray.Rate = 25; spray.Speed = NumberRange.new(6, 9); spray.SpreadAngle = Vector2.new(20, 20)
+-	spray.Acceleration = Vector3.new(0, -18, 0); spray.Lifetime = NumberRange.new(0.8, 1.2); spray.LightEmission = 1
+-	spray.Size = NumberSequence.new(0.5, 0.1)
+-	local sprayAnchor = part(model, Vector3.new(0.2, 0.2, 0.2), L(0, 6.2, 0), Color3.new(1, 1, 1), nil, false, nil, 1)
+-	spray.Parent = sprayAnchor
+-	local crystalLabel = billboard(crystal, "", UDim2.fromScale(14, 3.2), Vector3.new(0, 4.5, 0), Color3.fromRGB(200, 255, 210), 90)
+-
+-	-- glowing pet slots in a ring around the fountain
+-	local slots = {}
+-	local slotFolder = Instance.new("Folder"); slotFolder.Name = "Slots"; slotFolder.Parent = model
+-	for i = 1, MAX_SLOTS do
+-		local a = (i - 1) / MAX_SLOTS * math.pi * 2 + math.pi / 2
+-		local x, z = math.cos(a) * SLOT_RADIUS, math.sin(a) * SLOT_RADIUS
+-		local pad = cyl(slotFolder, L(x, 0.98, z), 0.12, 3.2, Color3.fromRGB(245, 242, 250), Enum.Material.Marble, false)
+-		pad.Name = "Slot" .. i
+-		pad:SetAttribute("Index", i)
+-		local ring = cyl(slotFolder, L(x, 0.96, z), 0.12, 3.7, Color3.fromRGB(150, 120, 255), Enum.Material.Neon, false)
+-		ring.Name = "SlotRing" .. i
+-		slots[i] = L(x, 1.1, z)
+-	end
+-
+-	-- money collect pad (front-left)
+-	local collect = cyl(model, L(COLLECT_POS.X, 1, COLLECT_POS.Z), 0.4, 9, Color3.fromRGB(80, 230, 120), Enum.Material.Neon, false)
+-	collect.Name = "CollectPad"
+-	local collectLabel = billboard(collect, "$0", UDim2.fromScale(10, 2.4), Vector3.new(0, 5, 0), Color3.fromRGB(120, 255, 140))
+-	billboard(collect, "STEP TO COLLECT", UDim2.fromScale(8, 1), Vector3.new(0, 3, 0), Color3.new(1, 1, 1))
+-	for k = 1, 7 do
+-		local a = k * 0.9
+-		local coin = cyl(model, L(COLLECT_POS.X + math.cos(a) * 2, 1.2 + k * 0.08, COLLECT_POS.Z + math.sin(a) * 2), 0.3, 1.4, Color3.fromRGB(255, 205, 50), Enum.Material.Metal, false)
+-		coin.CFrame *= CFrame.Angles(0.3, 0, 0)
+-	end
+-
+-	-- PERSONAL GYM floor (front-right); the equipment itself is built in Refresh by level
+-	local g = Config.GymOffset
+-	local gymPad = part(model, Vector3.new(15, 0.3, 15), L(g.X, 1.1, g.Z), Color3.fromRGB(45, 40, 55), Enum.Material.Rubber, false)
+-	gymPad.Name = "GymPad"
+-	for _, e in ipairs({ { 0, 7.5, 15, 0.4 }, { 0, -7.5, 15, 0.4 }, { 7.5, 0, 0.4, 15 }, { -7.5, 0, 0.4, 15 } }) do
+-		part(model, Vector3.new(e[3], 0.35, e[4]), L(g.X + e[1], 1.3, g.Z + e[2]), Color3.fromRGB(255, 120, 60), Enum.Material.Neon, false)
+-	end
+-	local gymSign = part(model, Vector3.new(0.2, 0.2, 0.2), L(g.X, 9, g.Z), Color3.new(1, 1, 1), nil, false, nil, 1)
+-	local gymLabel = billboard(gymSign, "💪 GYM", UDim2.fromScale(12, 3), Vector3.new(0, 0, 0), Color3.fromRGB(255, 200, 140), 80)
+-
+-	-- PET COTTAGE (back-left)
+-	local hc = L(-20, 1, 24)
+-	part(model, Vector3.new(13, 8, 9), hc * CFrame.new(0, 4, 0), Color3.fromRGB(255, 236, 205), Enum.Material.WoodPlanks)
+-	for _, s in ipairs({ -1, 1 }) do
+-		part(model, Vector3.new(14.5, 0.8, 6.5), hc * CFrame.new(0, 10, s * 2.4) * CFrame.Angles(math.rad(s * 38), 0, 0), Color3.fromRGB(220, 90, 110), Enum.Material.Slate)
+-	end
+-	part(model, Vector3.new(3, 5, 0.4), hc * CFrame.new(0, 2.5, -4.6), Color3.fromRGB(120, 80, 50), Enum.Material.Wood)
+-	for _, s in ipairs({ -1, 1 }) do
+-		local win = part(model, Vector3.new(2.4, 2.4, 0.3), hc * CFrame.new(s * 4, 4.6, -4.6), Color3.fromRGB(255, 220, 120), Enum.Material.Neon, false)
+-		light(win, Color3.fromRGB(255, 210, 140), 10, 1)
+-	end
+-	part(model, Vector3.new(1.6, 4, 1.6), hc * CFrame.new(4, 12, 1.5), Color3.fromRGB(160, 110, 90), Enum.Material.Brick)
+-	billboard(part(model, Vector3.new(0.2, 0.2, 0.2), hc * CFrame.new(0, 15, 0), Color3.new(1, 1, 1), nil, false, nil, 1), "🏠 Pet Cottage", UDim2.fromScale(9, 1.8), Vector3.zero, Color3.fromRGB(255, 220, 240), 70)
+-
+-	-- POND (back-right)
+-	local pc = L(21, 1, 23)
+-	cyl(model, pc, 0.8, 14, stone, Enum.Material.Cobblestone, false)
+-	cyl(model, pc * CFrame.new(0, 0.1, 0), 0.75, 12.4, Color3.fromRGB(60, 180, 230), Enum.Material.Glass, false, 0.2)
+-	for k = 1, 4 do
+-		local a = k * 1.4
+-		cyl(model, pc * CFrame.new(math.cos(a) * 3.5, 0.85, math.sin(a) * 3.5), 0.1, 1.8, Color3.fromRGB(90, 190, 90), Enum.Material.Grass, false)
+-		ball(model, 0.6, pc * CFrame.new(math.cos(a) * 3.5, 1.1, math.sin(a) * 3.5), Color3.fromRGB(255, 160, 210), Enum.Material.Neon, false)
+-	end
+-	for k = 1, 5 do
+-		ball(model, 2.4, pc * CFrame.new(5 + (k % 2), 1.2 + k * 0.3, -2 + k), Color3.fromRGB(140, 140, 150), Enum.Material.Slate, false)
+-	end
+-
+-	-- corner lamps + string lights along the hedges
+-	local corners = {}
+-	for _, c in ipairs({ { -1, -1 }, { 1, -1 }, { 1, 1 }, { -1, 1 } }) do
+-		local p = L(c[1] * (HALF - 2.5), 1, c[2] * (HALF - 2.5))
+-		part(model, Vector3.new(0.7, 11, 0.7), p * CFrame.new(0, 5.5, 0), Color3.fromRGB(50, 45, 60), Enum.Material.Metal)
+-		local orb = ball(model, 2, p * CFrame.new(0, 11.4, 0), Color3.fromRGB(255, 215, 150), Enum.Material.Neon, false)
+-		light(orb, Color3.fromRGB(255, 210, 150), 22, 1.5)
+-		table.insert(corners, (p * CFrame.new(0, 11, 0)).Position)
+-	end
+-	for i = 1, 4 do
+-		local a, b = corners[i], corners[i % 4 + 1]
+-		if i ~= 1 then -- leave the entrance side (corner1 -> corner2) open for the gateway
+-			for k = 1, 13 do
+-				local t = k / 14
+-				local p = a:Lerp(b, t) - Vector3.new(0, math.sin(t * math.pi) * 2.5, 0)
+-				ball(model, 0.7, CFrame.new(p), Color3.fromHSV((k * 0.13 + i * 0.2) % 1, 0.45, 1), Enum.Material.Neon, false)
+-			end
+-		end
+-	end
+-
+-	local center = Instance.new("Part")
+-	center.Name = "Center"
+-	center.Size = Vector3.new(1, 1, 1)
+-	center.CFrame = L(0, 1, 0)
+-	center.Transparency = 1
+-	center.Anchored = true
+-	center.CanCollide = false
+-	center.CanQuery = false
+-	center.Parent = model
+-
+-	local decor = Instance.new("Folder"); decor.Name = "Decor"; decor.Parent = model
+-	local gym = Instance.new("Folder"); gym.Name = "Gym"; gym.Parent = model
+-
+-	model:SetAttribute("Index", index)
+-	model.Parent = workspace:FindFirstChild("Bases")
+-	return {
+-		index = index, model = model, cf = cf, floor = floor, slots = slots, slotFolder = slotFolder,
+-		collect = collect, collectLabel = collectLabel, incomeLabel = incomeLabel, crystalLabel = crystalLabel,
+-		signLabels = { sl, sg2.Owner }, decor = decor, gym = gym, gymLabel = gymLabel, owner = nil,
+-		training = gym, -- (old name, kept so nothing else breaks)
+-		spawnCF = cf * CFrame.new(0, 4, -HALF + 6) * CFrame.Angles(0, math.pi, 0),
+-	}
++	return require(script.Parent.SanctuaryBase).Build(index)
+ end
+ 
+ ---------------------------------------------------------------- gym equipment (by level)
+@@ -468,9 +248,16 @@
+ 
+ ---------------------------------------------------------------- public API
+ function BaseBuilder.BuildAll()
++	for _, old in ipairs(workspace:GetChildren()) do
++		if old.Name == "Bases" and old:IsA("Folder") and (old:GetAttribute("TPFCGenerated") or old:FindFirstChild("Base1")) then old:Destroy() end
++	end
++	BaseBuilder.Bases = {}
+ 	local f = Instance.new("Folder"); f.Name = "Bases"; f.Parent = workspace
++	f:SetAttribute("TPFCGenerated", true)
+ 	for i = 1, Config.MaxBases do
+ 		BaseBuilder.Bases[i] = buildBase(i)
++		buildGymEquipment(BaseBuilder.Bases[i], 1)
++		task.wait()
+ 	end
+ end
+ 
+@@ -488,10 +275,11 @@
+ 
+ function BaseBuilder.Release(base)
+ 	base.owner = nil
+-	for _, l in ipairs(base.signLabels) do l.Text = "Empty Base" end
++	for _, l in ipairs(base.signLabels) do l.Text = "UNCLAIMED GARDEN" end
+ 	base.model:SetAttribute("OwnerId", nil)
+ 	base.decor:ClearAllChildren()
+ 	base.gym:ClearAllChildren()
++	buildGymEquipment(base, 1)
+ 	base.gymLabel.Text = "💪 GYM"
+ 	base.crystalLabel.Text = ""
+ 	base.collectLabel.Text = "$0"
+@@ -508,7 +296,7 @@
+ 	end
+ 	for _, theme in ipairs(Config.FloorThemes) do
+ 		if theme.id == data.FloorTheme then
+-			base.floor.Color = theme.color
++			base.floor.Color = theme.id == "Meadow" and Color3.fromRGB(108, 161, 76) or theme.color
+ 			base.floor.Material = theme.material
+ 		end
+ 	end
+--- a/src/ServerScriptService/Server/DataService.lua
++++ b/src/ServerScriptService/Server/DataService.lua
+@@ -11,10 +11,15 @@
+ local STORE_NAME = "TPFC_PlayerData_v1"
+ local LOCK_TIMEOUT = 300
+ local store
+-local storeOk = pcall(function()
++-- Explicit Studio test sessions use temporary profiles and never acquire a live save lock.
++local isolatedStudioTest = game:GetService("RunService"):IsStudio()
++	and (workspace:FindFirstChild("AutoTest") ~= nil or workspace:FindFirstChild("SanctuaryTest") ~= nil or workspace:GetAttribute("SanctuaryTest") == true)
++local storeOk = not isolatedStudioTest and pcall(function()
+ 	store = DataStoreService:GetDataStore(STORE_NAME)
+ end)
+-if not storeOk then
++if isolatedStudioTest then
++	print("[DataService] Isolated Studio test: in-memory profiles; saving disabled.")
++elseif not storeOk then
+ 	warn("[DataService] DataStores unavailable (enable Studio API access). Using temporary data.")
+ end
+ 
+--- /dev/null
++++ b/src/ServerScriptService/Server/SanctuaryArchitecture.lua
+@@ -0,0 +1,184 @@
++-- Original block/wedge architecture matching Maps/00_Portal_Sanctuary_Hub.png.
++-- Shared by the public sanctuary and the eight gardens. All decoration is non-queryable.
++local K = require(script.Parent.WorldKit)
++local Art = {}
++local V, CF, A, PI = Vector3.new, CFrame.new, CFrame.Angles, math.pi
++local M = Enum.Material
++local C = Color3.fromRGB
++Art.Palette = {
++	ivory = C(227, 219, 205),
++	light = C(243, 235, 219),
++	stone = C(172, 158, 153),
++	gold = C(202, 157, 74),
++	goldLight = C(234, 196, 111),
++	violet = C(87, 56, 135),
++	roof = C(71, 49, 112),
++	lilac = C(168, 109, 231),
++	mint = C(104, 190, 184),
++	grass = C(108, 161, 76),
++	leaf = C(80, 133, 63),
++	pink = C(200, 117, 165),
++	water = C(93, 182, 203),
++}
++local P = Art.Palette
++
++function Art.Beam(a, b, width, depth, color, material)
++	local y = (b - a).Unit
++	local normal = math.abs(y.Z) > 0.98 and V(1, 0, 0) or V(0, 0, 1)
++	local x = y:Cross(normal).Unit
++	local z = x:Cross(y).Unit
++	return K.block(CFrame.fromMatrix((a + b) / 2, x, y, z), V(width, (b - a).Magnitude, depth), color, material)
++end
++function Art.Gable(cf, width, rise, depth, color)
++	-- Wedge high faces meet at the ridge. The older shared helper made a valley roof.
++	K.wedge(cf * CF(-width / 4, rise / 2, 0) * A(0, PI / 2, 0), V(depth, rise, width / 2), color, M.SmoothPlastic)
++	K.wedge(cf * CF(width / 4, rise / 2, 0) * A(0, -PI / 2, 0), V(depth, rise, width / 2), color, M.SmoothPlastic)
++end
++function Art.Diamond(cf, height, width, depth, color, material)
++	-- Solid planar rhombus, long axis Y; four wedges, shared styling on every crest.
++	for _, sign in ipairs({ -1, 1 }) do
++		local c = cf * CF(0, sign * height / 4, 0) * A(0, PI / 2, sign < 0 and PI or 0)
++		for _, side in ipairs({ -1, 1 }) do
++			K.wedge(
++				c * CF(0, 0, side * width / 4) * A(0, side > 0 and PI or 0, 0),
++				V(depth, height / 2, width / 2),
++				color,
++				material
++			)
++		end
++	end
++end
++function Art.Crest(cf, h)
++	Art.Diamond(cf, h, h * 0.58, 0.22, P.gold, M.Metal)
++	Art.Diamond(cf * CF(0, 0, -0.15), h * 0.69, h * 0.35, 0.10, P.lilac, M.SmoothPlastic)
++end
++function Art.Column(cf, h, width)
++	K.block(cf * CF(0, 0.5, 0), V(width * 1.45, 1, width * 1.45), P.stone, M.Limestone, true)
++	K.block(cf * CF(0, 1.15, 0), V(width * 1.25, 0.35, width * 1.25), P.gold, M.Metal)
++	K.block(cf * CF(0, h / 2 + 1.3, 0), V(width, h, width), P.ivory, M.Limestone, true)
++	for _, side in ipairs({ -1, 1 }) do
++		K.block(
++			cf * CF(side * width * 0.34, h / 2 + 1.3, -width * 0.51),
++			V(width * 0.12, h * 0.84, 0.07),
++			P.light,
++			M.SmoothPlastic
++		)
++	end
++	K.block(cf * CF(0, h + 1.5, 0), V(width * 1.32, 0.55, width * 1.32), P.gold, M.Metal)
++	K.block(cf * CF(0, h + 2, 0), V(width * 1.48, 0.45, width * 1.48), P.light, M.Limestone)
++end
++function Art.Lantern(cf, scale, pointLight)
++	local s = scale or 1
++	K.block(cf * CF(0, 0.35 * s, 0), V(2.0, 0.7, 2.0) * s, P.ivory, M.Limestone)
++	K.block(cf * CF(0, 2.4 * s, 0), V(0.52, 4, 0.52) * s, P.roof, M.Metal)
++	local glow = K.block(cf * CF(0, 5 * s, 0), V(0.90, 1.75, 0.90) * s, C(255, 214, 151), M.Neon, false, 0.12)
++	for _, x in ipairs({ -1, 1 }) do
++		for _, z in ipairs({ -1, 1 }) do
++			K.block(cf * CF(x * 0.52 * s, 5 * s, z * 0.52 * s), V(0.14, 2.05, 0.14) * s, P.gold, M.Metal)
++		end
++	end
++	K.block(cf * CF(0, 6.05 * s, 0), V(1.45, 0.2, 1.45) * s, P.gold, M.Metal)
++	K.pyramid(cf * CF(0, 6.15 * s, 0), 1.65 * s, 0.65 * s, P.roof, M.SmoothPlastic)
++	if pointLight then
++		K.lamp(glow, C(255, 217, 163), 16 * s, 0.65)
++	end
++	return glow
++end
++function Art.Banner(cf, h, w)
++	K.block(cf * CF(0, -h / 2, 0), V(w, h, 0.18), P.violet, M.Fabric)
++	K.block(cf * CF(0, 0.2, 0), V(w + 0.55, 0.30, 0.40), P.gold, M.Metal)
++	for _, side in ipairs({ -1, 1 }) do
++		K.block(cf * CF(side * (w / 2 - 0.13), -h / 2, -0.12), V(0.15, h, 0.08), P.goldLight, M.SmoothPlastic)
++	end
++	Art.Diamond(cf * CF(0, -h, 0), h * 0.30, w, 0.18, P.violet, M.Fabric)
++	Art.Diamond(cf * CF(0, -h * 0.52, -0.15), math.min(w * 1.1, h * 0.45), w * 0.62, 0.08, P.goldLight, M.Metal)
++	Art.Diamond(cf * CF(0, -h * 0.52, -0.21), math.min(w * 0.73, h * 0.30), w * 0.35, 0.04, P.violet, M.SmoothPlastic)
++end
++function Art.Crystal(cf, w, h, color)
++	local original = K.Folder()
++	local model = Instance.new("Model")
++	model.Name = "FacetedCrystal"
++	K.SetFolder(model)
++	local core = K.block(cf * CF(0, h * 0.47, 0) * A(0, PI / 4, 0), V(w, h * 0.50, w), color, M.SmoothPlastic)
++	model.PrimaryPart = core
++	K.pyramid(cf * CF(0, h * 0.72, 0) * A(0, PI / 4, 0), w, h * 0.35, K.light(color, 0.18), M.SmoothPlastic)
++	K.pyramid(cf * CF(0, h * 0.22, 0) * A(PI, PI / 4, 0), w, h * 0.22, K.dark(color, 0.13), M.SmoothPlastic)
++	K.SetFolder(original)
++	model.Parent = original
++	return core, model
++end
++function Art.Fountain(cf, scale, name)
++	local s = scale or 1
++	local original = K.Folder()
++	local model = Instance.new("Model")
++	model.Name = name or "CrystalFountain"
++	K.SetFolder(model)
++	local function at(x, y, z)
++		return cf * CF(x * s, y * s, z * s)
++	end
++	local function polygon(radius, y, height, color, material, n, thickness)
++		n = n or 12
++		for i = 0, n - 1 do
++			local a = i / n * PI * 2
++			K.block(
++				at(math.sin(a) * radius, y, math.cos(a) * radius) * A(0, a, 0),
++				V(2 * radius * math.tan(PI / n) + 0.1, height, thickness or 0.8) * s,
++				color,
++				material
++			)
++		end
++	end
++	K.vcyl((at(0, 0, 0)).Position, 0.5 * s, 21 * s, P.stone, M.Limestone)
++	K.vcyl((at(0, 0.5, 0)).Position, 0.5 * s, 19.6 * s, P.light, M.Limestone)
++	K.vcyl((at(0, 0.9, 0)).Position, 0.18 * s, 17.8 * s, P.water, M.SmoothPlastic)
++	polygon(9.25, 1.12, 0.70, P.ivory, M.Limestone)
++	polygon(9.70, 0.62, 0.15, P.gold, M.Metal, 12, 0.25)
++	for i = 0, 7 do
++		local a = i / 8 * PI * 2
++		K.block(at(math.sin(a) * 4.8, 3.0, math.cos(a) * 4.8), V(0.60, 3.6, 0.60) * s, P.light, M.Limestone)
++		K.block(
++			at(math.sin(a + 0.18) * 5.1, 2.8, math.cos(a + 0.18) * 5.1) * A(0, a + 0.18, 0),
++			V(1.55, 3.2, 0.055) * s,
++			C(136, 220, 231),
++			M.Glass,
++			false,
++			0.42
++		)
++	end
++	K.vcyl((at(0, 4.4, 0)).Position, 0.50 * s, 11.8 * s, P.light, M.Limestone)
++	K.vcyl((at(0, 4.9, 0)).Position, 0.14 * s, 10.8 * s, P.water, M.SmoothPlastic)
++	polygon(5.65, 4.9, 0.48, P.ivory, M.Limestone, 12, 0.50)
++	polygon(5.80, 4.45, 0.15, P.gold, M.Metal, 12, 0.20)
++	K.vcyl((at(0, 4.8, 0)).Position, 1.1 * s, 3.4 * s, P.violet, M.SmoothPlastic)
++	local core, crystals = Art.Crystal(at(0, 6.2, 0), 1.8 * s, 5.2 * s, P.lilac)
++	crystals.Name = "IncomeCrystalAssembly"
++	K.tag(crystals, "TPFC_Bob", { Amp = 0.18 * s, Period = 4, Spin = 10 })
++	for _, side in ipairs({ -1, 1 }) do
++		Art.Crystal(
++			at(side * 1.8, 5.6, 0.3) * A(0, 0, -side * 0.25),
++			1.1 * s,
++			3.3 * s,
++			side < 0 and C(155, 108, 216) or C(191, 148, 239)
++		)
++	end
++	K.SetFolder(original)
++	model.Parent = original
++	return core, model
++end
++function Art.Planter(cf, length, pink)
++	K.block(cf * CF(0, 0.45, 0), V(4.8, 0.9, length), P.ivory, M.Limestone)
++	K.block(cf * CF(0, 0.92, 0), V(4.4, 0.08, length - 0.4), P.gold, M.Metal)
++	K.block(cf * CF(0, 1.1, 0), V(3.8, 0.30, length - 0.8), C(65, 72, 49), M.Ground)
++	for z = -length / 2 + 2, length / 2 - 1, 3 do
++		K.bush((cf * CF(0, 1.2, z)).Position, 0.8, P.leaf)
++		for i = 0, 2 do
++			K.block(
++				cf * CF(-0.85 + i * 0.8, 2.4 + (i % 2) * 0.35, z + i * 0.35),
++				V(0.45, 1.1, 0.45),
++				pink and P.pink or P.lilac,
++				M.SmoothPlastic
++			)
++		end
++	end
++end
++return Art
+--- /dev/null
++++ b/src/ServerScriptService/Server/SanctuaryBase.lua
+@@ -0,0 +1,204 @@
++-- The eight reference gardens. Cosmetic construction with the original BaseBuilder reference contract.
++local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
++local K = require(script.Parent.WorldKit)
++local Art = require(script.Parent.SanctuaryArchitecture)
++local Base = {}
++local V, CF, A, PI = Vector3.new, CFrame.new, CFrame.Angles, math.pi
++local C, M, P = Color3.fromRGB, Enum.Material, Art.Palette
++
++local function label(parent, text, size, offset, color, distance)
++	local gui = Instance.new("BillboardGui")
++	gui.Size, gui.StudsOffset, gui.MaxDistance = size, offset, distance or 45
++	gui.LightInfluence, gui.AlwaysOnTop = 0, false
++	local t = Instance.new("TextLabel")
++	t.Name, t.Size, t.BackgroundTransparency = "Label", UDim2.fromScale(1, 1), 1
++	t.Font, t.TextScaled, t.RichText, t.Text = Enum.Font.GothamMedium, true, true, text
++	t.TextColor3 = color or P.light
++	local stroke = Instance.new("UIStroke")
++	stroke.Thickness, stroke.Transparency = 1, 0.25
++	stroke.Color = P.roof
++	stroke.Parent = t
++	t.Parent, gui.Parent = gui, parent
++	return t
++end
++local function ownerLabel(part, face)
++	local gui = Instance.new("SurfaceGui")
++	gui.Face, gui.CanvasSize, gui.LightInfluence = face, Vector2.new(600, 120), 0.5
++	local t = Instance.new("TextLabel")
++	t.Name, t.Size, t.BackgroundTransparency = "Owner", UDim2.fromScale(0.92, 0.80), 1
++	t.Position, t.Font, t.TextScaled = UDim2.fromScale(0.04, 0.1), Enum.Font.GothamMedium, true
++	t.TextColor3, t.Text = P.light, "UNCLAIMED GARDEN"
++	t.Parent, gui.Parent = gui, part
++	return t
++end
++
++function Base.Build(index)
++	local side, row = index <= 4 and -1 or 1, (index - 1) % 4
++	local pos = V(side * 63, 0, -84 - row * 76)
++	local cf = CFrame.lookAt(pos, V(0, 0, pos.Z))
++	local function L(x, y, z)
++		return cf * CF(x, y, z)
++	end
++	local model = Instance.new("Model")
++	model.Name = "Base" .. index
++	K.SetFolder(model)
++	K.mirror = false
++	K.Seed(7400 + index)
++	local function b(name, size, at, color, mat, collide)
++		local p = K.block(at, size, color, mat, collide)
++		p.Name = name
++		return p
++	end
++	b("Foundation", V(71, 1.0, 71), L(0, 0.25, 0), P.stone, M.Limestone, true)
++	local floor = b("Floor", V(68, 1, 68), L(0, 0.5, 0), P.grass, M.Grass, true)
++	floor.CanQuery, model.PrimaryPart = true, floor
++	-- Low clipped hedges and pale retaining edges, with a full 20-stud street entrance.
++	local function border(at, len)
++		b("GardenCoping", V(len, 0.65, 2.7), at * CF(0, 0.9, 0), P.light, M.Limestone)
++		b("GardenGoldEdge", V(len, 0.11, 0.18), at * CF(0, 1.28, -1.22), P.gold, M.Metal)
++		b("ClippedHedge", V(len - 0.8, 1.55, 1.9), at * CF(0, 2.05, 0), P.leaf, M.SmoothPlastic)
++		for x = -len / 2 + 2, len / 2 - 1, 7 do
++			b("HedgeTop", V(3.8, 0.55, 2.0), at * CF(x, 3.0, 0), C(103, 157, 69), M.SmoothPlastic)
++		end
++	end
++	border(L(0, 0, 34), 68)
++	border(L(-34, 0, 0) * A(0, PI / 2, 0), 68)
++	border(L(34, 0, 0) * A(0, PI / 2, 0), 68)
++	for _, sd in ipairs({ -1, 1 }) do
++		border(L(sd * 22, 0, -34), 24)
++	end
++	for _, sd in ipairs({ -1, 1 }) do
++		Art.Column(L(sd * 8.5, 0.7, -34), 8.3, 2.0)
++		Art.Lantern(L(sd * 11, 0.5, -33.8), 0.8, false)
++	end
++	local sign = b("Sign", V(14, 2.8, 0.65), L(0, 10.4, -34), P.violet, M.SmoothPlastic)
++	b("SignGoldCap", V(14.6, 0.3, 0.86), L(0, 12.0, -34), P.gold, M.Metal)
++	Art.Crest(L(0, 13.1, -34.2), 2.4)
++	local sl, sl2 = ownerLabel(sign, Enum.NormalId.Front), ownerLabel(sign, Enum.NormalId.Back)
++	local income = label(sign, "", UDim2.fromScale(10, 1.25), V(0, 2.4, 0), C(204, 229, 182), 48)
++	b("GardenWalk", V(6.8, 0.14, 25), L(0, 1.08, -20.5), P.ivory, M.Limestone)
++	for _, sd in ipairs({ -1, 1 }) do
++		b("WalkInlay", V(0.14, 0.035, 24), L(sd * 3.25, 1.17, -20.5), P.gold, M.Metal)
++	end
++	-- Two-tier flowing basin and actual multi-facet violet crystal cluster.
++	local crystal = Art.Fountain(L(0, 1.0, 0), 0.69, "GardenCrystalFountain")
++	crystal.Name = "IncomeCrystal"
++	local crystalLabel = label(crystal, "", UDim2.fromScale(9, 1.4), V(0, 3, 0), P.light, 45)
++	local slotFolder = Instance.new("Folder")
++	slotFolder.Name = "Slots"
++	slotFolder.Parent = model
++	local slots = {}
++	K.SetFolder(slotFolder)
++	for i = 1, 24 do
++		local a = (i - 1) / 24 * PI * 2 + PI / 2
++		local x, z = math.cos(a) * 14, math.sin(a) * 14
++		local ring = K.vcyl(L(x, 1.015, z).Position, 0.055, 2.9, C(153, 142, 169), M.SmoothPlastic, false, 0.55)
++		ring.Name = "SlotRing" .. i
++		local pad = K.vcyl(L(x, 1.05, z).Position, 0.05, 2.5, P.light, M.SmoothPlastic, false, 0.4)
++		pad.Name = "Slot" .. i
++		pad:SetAttribute("Index", i)
++		slots[i] = L(x, 1.1, z)
++	end
++	K.SetFolder(model)
++	-- Square green collect pad, gold corners, restrained world text close to the player.
++	local cp = V(-19, 0, -21)
++	b("CollectFoundation", V(9.6, 0.45, 9.6), L(cp.X, 1.2, cp.Z), P.ivory, M.Limestone)
++	local collect = b("CollectPad", V(8.1, 0.16, 8.1), L(cp.X, 1.53, cp.Z), C(87, 190, 96), M.SmoothPlastic)
++	for _, sd in ipairs({ -1, 1 }) do
++		for _, zz in ipairs({ -1, 1 }) do
++			b("CollectCorner", V(1.3, 0.25, 1.3), L(cp.X + sd * 4.2, 1.48, cp.Z + zz * 4.2), P.gold, M.Metal)
++		end
++		b(
++			"CollectMark",
++			V(0.12, 0.035, 5),
++			L(cp.X + sd * 1.77, 1.64, cp.Z) * A(0, sd * PI / 4, 0),
++			C(216, 249, 185),
++			M.Neon
++		)
++	end
++	local collectLabel = label(collect, "$0", UDim2.fromScale(5, 1.25), V(0, 3.0, 0), C(222, 248, 185), 30)
++	label(collect, "COLLECT", UDim2.fromScale(4, 0.7), V(0, 1.9, 0), P.light, 24)
++	local g = Config.GymOffset
++	b("GymFoundation", V(16.4, 0.45, 16.4), L(g.X, 1.15, g.Z), P.ivory, M.Limestone)
++	b("GymPad", V(15, 0.14, 15), L(g.X, 1.48, g.Z), C(58, 45, 76), M.SmoothPlastic)
++	for _, sd in ipairs({ -1, 1 }) do
++		b("GymTrim", V(15.4, 0.10, 0.24), L(g.X, 1.58, g.Z + sd * 7.6), P.gold, M.Metal)
++		b("GymTrim", V(0.24, 0.10, 15.4), L(g.X + sd * 7.6, 1.58, g.Z), P.gold, M.Metal)
++	end
++	local gymSign = b("GymSign", V(0.1, 0.1, 0.1), L(g.X, 8, g.Z + 4), P.light)
++	gymSign.Transparency = 1
++	local gymLabel = label(gymSign, "GYM", UDim2.fromScale(8, 1.8), V(0, 0, 0), P.goldLight, 42)
++	-- Cottage: violet ridge roof, cream gable, framed warm windows and gold eaves.
++	local hc = L(-20, 1.0, 24)
++	b("CottageFoundation", V(14.6, 0.7, 10.6), hc * CF(0, 0.35, 0), P.stone, M.Limestone, true)
++	b("CottageWalls", V(13, 7.5, 9), hc * CF(0, 4.1, 0), C(202, 177, 135), M.SmoothPlastic, true)
++	Art.Gable(hc * CF(0, 7.8, 0), 15.5, 5, 11, P.roof)
++	Art.Gable(hc * CF(0, 7.8, -4.55), 12.7, 4.1, 0.20, P.ivory)
++	for _, sd in ipairs({ -1, 1 }) do
++		Art.Beam(
++			(hc * CF(0, 12.8, -5.6)).Position,
++			(hc * CF(sd * 7.75, 7.8, -5.6)).Position,
++			0.38,
++			0.40,
++			P.gold,
++			M.Metal
++		)
++		b("CottagePillar", V(0.7, 7.6, 0.7), hc * CF(sd * 6.15, 4.1, -4.3), P.ivory, M.Limestone)
++		b("WindowFrame", V(2.7, 3.2, 0.32), hc * CF(sd * 3.8, 4.4, -4.65), P.roof, M.SmoothPlastic)
++		b("WindowLight", V(2.25, 2.7, 0.12), hc * CF(sd * 3.8, 4.4, -4.86), C(245, 204, 132), M.SmoothPlastic)
++		b("WindowMullion", V(0.15, 2.8, 0.14), hc * CF(sd * 3.8, 4.4, -4.96), P.gold, M.Metal)
++		b("WindowMullion", V(2.3, 0.15, 0.14), hc * CF(sd * 3.8, 4.4, -4.96), P.gold, M.Metal)
++	end
++	b("CottageDoor", V(2.5, 5.3, 0.30), hc * CF(0, 3.0, -4.7), P.roof, M.SmoothPlastic)
++	Art.Crest(hc * CF(0, 9.2, -4.83), 1.65)
++	-- Pond, lily pads and a stepped stone rim. No fake neon water or cloud of sparkles.
++	local pc = L(21, 1.10, 23)
++	K.vcyl(pc.Position, 0.25, 13.2, P.stone, M.Limestone)
++	K.vcyl((pc * CF(0, 0.28, 0)).Position, 0.12, 11.7, P.water, M.SmoothPlastic)
++	for i = 0, 7 do
++		local a = i / 8 * PI * 2
++		b(
++			"PondRim",
++			V(4.8, 0.38, 0.8),
++			pc * CF(math.sin(a) * 6.35, 0.36, math.cos(a) * 6.35) * A(0, a, 0),
++			P.light,
++			M.Limestone
++		)
++	end
++	for i = 1, 3 do
++		local px, pz = 2.6 * math.cos(i * 2), 2.6 * math.sin(i * 2)
++		b("LilyPad", V(1.4, 0.10, 1.4), pc * CF(px, 0.42, pz) * A(0, i, 0), P.leaf, M.SmoothPlastic)
++		b("LilyFlower", V(0.60, 0.18, 0.60), pc * CF(px, 0.55, pz), P.pink, M.SmoothPlastic)
++	end
++	K.tree(L(27, 1, 5).Position, 0.72, P.pink, nil, true)
++	for _, x in ipairs({ -29, 29 }) do
++		Art.Lantern(L(x, 1, 29), 0.85, false)
++	end
++	local center = b("Center", V(0.1, 0.1, 0.1), L(0, 1, 0), P.ivory)
++	center.Transparency = 1
++	local decor, gym = Instance.new("Folder"), Instance.new("Folder")
++	decor.Name, gym.Name, decor.Parent, gym.Parent = "Decor", "Gym", model, model
++	model:SetAttribute("Index", index)
++	model:SetAttribute("SanctuaryVersion", 2)
++	model.Parent = workspace:FindFirstChild("Bases")
++	return {
++		index = index,
++		model = model,
++		cf = cf,
++		floor = floor,
++		slots = slots,
++		slotFolder = slotFolder,
++		collect = collect,
++		collectLabel = collectLabel,
++		incomeLabel = income,
++		crystalLabel = crystalLabel,
++		signLabels = { sl, sl2 },
++		decor = decor,
++		gym = gym,
++		gymLabel = gymLabel,
++		owner = nil,
++		training = gym,
++		spawnCF = L(0, 4, -28) * A(0, PI, 0),
++	}
++end
++return Base
+--- /dev/null
++++ b/src/ServerScriptService/Server/SanctuaryHub.lua
+@@ -0,0 +1,310 @@
++-- Portal Sanctuary: a composed, walkable lobby, built from the supplied hub reference.
++-- Plot centers, throw zone, collision barrier and lane direction retain their existing contracts.
++local RS = game:GetService("ReplicatedStorage")
++local Config = require(RS.Shared.Config)
++local Portals = require(RS.Shared.PortalBuilder)
++local K = require(script.Parent.WorldKit)
++local Art = require(script.Parent.SanctuaryArchitecture)
++local Hub = {}
++local V, CF, A, PI = Vector3.new, CFrame.new, CFrame.Angles, math.pi
++local M, C = Enum.Material, Color3.fromRGB
++local P = Art.Palette
++
++local function walkable(cf, size, color, material, name)
++	local p = K.block(cf, size, color, material, true)
++	p.Name, p.CanQuery = name or "SanctuaryPaving", true
++	p:SetAttribute("HubWalkable", true)
++	return p
++end
++local function arch(z, width, height, depth)
++	local half = width / 2
++	local points = {
++		V(-half, 2, z),
++		V(-half, height * 0.59, z),
++		V(-half * 0.83, height * 0.78, z),
++		V(-half * 0.43, height * 0.94, z),
++		V(0, height, z),
++		V(half * 0.43, height * 0.94, z),
++		V(half * 0.83, height * 0.78, z),
++		V(half, height * 0.59, z),
++		V(half, 2, z),
++	}
++	for i = 1, #points - 1 do
++		Art.Beam(points[i], points[i + 1], 4.6, depth, P.ivory, M.Limestone)
++		Art.Beam(
++			points[i] + V(0, 0, -depth / 2 - 0.10),
++			points[i + 1] + V(0, 0, -depth / 2 - 0.10),
++			2.75,
++			0.32,
++			P.violet,
++			M.SmoothPlastic
++		)
++		Art.Beam(
++			points[i] + V(0, 0, -depth / 2 - 0.32),
++			points[i + 1] + V(0, 0, -depth / 2 - 0.32),
++			0.42,
++			0.16,
++			P.goldLight,
++			M.Metal
++		)
++	end
++	for _, side in ipairs({ -1, 1 }) do
++		Art.Column(CF(side * half, 0.9, z), height * 0.56, 3.8)
++		Art.Banner(CF(side * half, height * 0.56, z - depth / 2 - 0.40), height * 0.32, 2.1)
++		Art.Lantern(CF(side * (half + 3.6), 0.2, z - 3), 1.15, true)
++	end
++	Art.Crest(CF(0, height + 0.3, z - depth / 2 - 0.55), 8)
++	if height > 35 then
++		Art.Crystal(CF(0, height - 3, z - depth / 2 - 0.5), 2.1, 7.5, P.lilac)
++	end
++end
++local function window(cf, w, h)
++	K.block(cf, V(w + 0.8, h + 0.8, 0.40), P.gold, M.Metal)
++	K.block(cf * CF(0, 0, -0.24), V(w, h, 0.18), C(255, 208, 137), M.SmoothPlastic)
++	for _, x in ipairs({ -0.24, 0.24 }) do
++		K.block(cf * CF(x * w, 0, -0.37), V(0.17, h, 0.16), P.roof, M.SmoothPlastic)
++	end
++	K.block(cf * CF(0, 0, -0.38), V(w, 0.18, 0.12), P.roof, M.SmoothPlastic)
++	Art.Gable(cf * CF(0, h / 2 + 0.35, -0.06), w + 1.1, 2.4, 0.65, P.gold)
++end
++local function hall(folder, label)
++	local hw, back, front = Config.HallHalfWidth, Config.HallBackZ, Config.BarrierZ
++	local middle, depth = (back + front) / 2, front - back
++	walkable(CF(0, 0.6, middle), V(hw * 2, 1.2, depth), P.light, M.Limestone, "HallFloor")
++	for x = -24, 24, 8 do
++		for z = back + 4, front - 3, 8 do
++			K.block(CF(x, 1.215, z), V(7.86, 0.03, 7.86), ((x + z) % 3 < 1) and P.ivory or P.light, M.SmoothPlastic)
++		end
++	end
++	for _, side in ipairs({ -1, 1 }) do
++		K.block(CF(side * (hw - 1.3), 1.24, middle), V(0.34, 0.08, depth - 1), P.gold, M.Metal)
++		-- Side bays frame a genuinely open central hall. Roofs stay off the throw/camera axis.
++		local x = side * (hw + 10)
++		walkable(CF(x, 0.7, middle), V(21, 1.4, depth + 2), P.stone, M.Limestone, "HallBayFoundation")
++		K.block(CF(x, 12.5, middle), V(20, 24, depth), P.ivory, M.Limestone, true)
++		K.block(CF(x, 4.2, back - 0.6), V(20.5, 3.6, 1.4), P.stone, M.Limestone)
++		K.block(CF(x, 24.5, middle), V(22, 1.2, depth + 2), P.gold, M.Metal)
++		Art.Gable(CF(x, 25.1, middle), 24, 5.6, depth + 4, P.roof)
++		K.block(CF(x, 30.8, middle), V(0.6, 0.55, depth + 5), P.gold, M.Metal)
++		for _, z in ipairs({ back + 2, middle, front - 2 }) do
++			for _, roofSide in ipairs({ -1, 1 }) do
++				Art.Beam(V(x, 30.85, z), V(x + roofSide * 12, 25.25, z), 0.22, 0.28, P.gold, M.Metal)
++			end
++		end
++		for _, z in ipairs({ back + 2, front - 2 }) do
++			for _, xx in ipairs({ x - 8, x + 8 }) do
++				Art.Column(CF(xx, 0.7, z), 23, 1.8)
++			end
++		end
++		for _, offset in ipairs({ -3.4, 3.4 }) do
++			window(CF(x + offset, 13.5, back - 0.62), 4.7, 8)
++			window(CF(x + offset, 13.5, front + 0.62) * A(0, PI, 0), 4.7, 8)
++		end
++		Art.Banner(CF(side * (hw + 0.8), 23, back - 1.25), 12, 2.8)
++	end
++	arch(back - 0.9, 39, 39, 4.5)
++	arch(front + 1.7, 48, 31, 3.2)
++	local sign = K.block(CF(0, 28, back - 3.3), V(23, 2.1, 0.3), P.roof, M.SmoothPlastic)
++	label(sign, "PORTAL SANCTUARY", P.goldLight, Enum.NormalId.Front)
++	-- Compass inlay: large intentional geometric motif, quiet enough for avatars and charge feedback.
++	local centerZ = (Config.ThrowZone.minZ + Config.ThrowZone.maxZ) / 2
++	for i = 0, 7 do
++		local a = i / 8 * PI * 2
++		K.block(
++			CF(math.sin(a) * 9.8, 1.275, centerZ + math.cos(a) * 9.8) * A(0, a, 0),
++			V(8.3, 0.05, 0.24),
++			P.gold,
++			M.Metal
++		)
++	end
++	for i = -2, 2 do
++		local channel = K.block(CF(i * 4.2, 1.29, centerZ), V(0.22, 0.055, 31), P.lilac, M.Neon, false, 0.74)
++		channel.Name = "ChargeChannel"
++		K.tag(channel, "TPFC_ChargeChannel", { Index = i })
++	end
++	K.block(CF(0, 1.31, front - 2), V(hw * 2 - 4, 0.06, 0.36), P.goldLight, M.Neon, false, 0.35).Name = "LaunchLine"
++	local pad = K.block(
++		CF(0, 1.26, centerZ),
++		V(hw * 2 - 4, 0.03, Config.ThrowZone.maxZ - Config.ThrowZone.minZ - 2),
++		P.lilac,
++		M.SmoothPlastic,
++		false,
++		1
++	)
++	pad.Name = "ThrowZonePad"
++	-- The functional barrier retains its exact plane and broad collision extents.
++	local barrier = K.block(CF(0, 60, front), V(Config.StartHalfWidth * 2 + 40, 140, 2), P.lilac, M.ForceField, true, 1)
++	barrier.Name, barrier.CanQuery = "Barrier", true
++	K.block(CF(0, 1.4, front), V(hw * 2, 0.16, 0.25), P.lilac, M.Neon, false, 0.55).Name = "BarrierGlow"
++	local gate = Portals.BuildGate("Basic", 17.5, { sanctuary = true })
++	gate.Name = "SanctuaryAperture"
++	local rootCF = CF(0, 19.3, front - 0.35)
++	local solved = { [gate.PrimaryPart] = rootCF }
++	gate.PrimaryPart.CFrame = rootCF
++	local links = {}
++	for _, d in ipairs(gate:GetDescendants()) do
++		if d:IsA("Weld") then
++			links[d.Part0] = links[d.Part0] or {}
++			table.insert(links[d.Part0], d)
++		end
++	end
++	local queue = { gate.PrimaryPart }
++	local n = 1
++	while queue[n] do
++		local p = queue[n]
++		for _, w in ipairs(links[p] or {}) do
++			w.Part1.CFrame = solved[p] * w.C0 * w.C1:Inverse()
++			solved[w.Part1] = w.Part1.CFrame
++			table.insert(queue, w.Part1)
++			if w.Name == "PortalRotor" then
++				K.tag(w.Part1, "TPFC_Rotor")
++			end
++		end
++		n += 1
++	end
++	gate.Parent = folder
++	for _, p in ipairs(gate:GetDescendants()) do
++		if p:IsA("BasePart") and p.Name == "EnergyInlay" then
++			p.Transparency = 0.8
++			K.tag(p, "TPFC_ChargeChannel", { Index = p.Position.Y * 0.1 })
++		end
++	end
++end
++local function avenue()
++	local depth = Config.StartDepth
++	walkable(CF(0, 0.02, -(depth + 36) / 2), V(45, 0.24, depth - 36), P.stone, M.Limestone)
++	for row = 0, 49 do
++		local z = -41 - row * 8.4
++		for col = -2, 2 do
++			local tone = ((row * 7 + col * 3) % 5) / 5
++			K.block(CF(col * 8.5, 0.16, z), V(8.35, 0.12, 8.23), P.ivory:Lerp(P.light, tone * 0.6), M.SmoothPlastic)
++		end
++		if row % 10 == 9 then
++			task.wait()
++		end
++	end
++	for _, side in ipairs({ -1, 1 }) do
++		K.block(CF(side * 22.5, 0.22, -246), V(0.42, 0.12, 420), P.gold, M.Metal)
++		K.block(CF(side * 23.6, 0.30, -246), V(1.2, 0.38, 420), P.light, M.Limestone)
++		for _, z in ipairs({ -122, -198, -274, -350 }) do
++			Art.Planter(CF(side * 26.8, 0, z), 22, z == -198)
++			Art.Lantern(CF(side * 25.5, 0, z + 15), 1.2, true)
++			local banner = CF(side * 26.5, 10, z - 12) * A(0, side < 0 and -PI / 2 or PI / 2, 0)
++			K.block(banner * CF(0, -4.6, 0.15), V(0.35, 10, 0.35), P.roof, M.Metal)
++			Art.Banner(banner, 5.2, 1.8)
++		end
++		for _, z in ipairs({ -84, -160, -236, -312 }) do
++			walkable(CF(side * 27, 0.13, z), V(9, 0.32, 13), P.ivory, M.Limestone, "GardenApproach")
++			for _, edge in ipairs({ -1, 1 }) do
++				K.block(CF(side * 27, 0.33, z + edge * 6.5), V(9, 0.12, 0.30), P.gold, M.Metal)
++			end
++		end
++	end
++	for _, z in ipairs({ -62, -198, -350 }) do
++		Art.Crest(CF(0, 0.35, z) * A(-PI / 2, 0, 0), 6)
++	end
++end
++local function perimeter()
++	K.Seed(46021)
++	for _, side in ipairs({ -1, 1 }) do
++		for i = 0, 10 do
++			local z = -49 - i * 36
++			local h = 25 + (i * 13 % 23)
++			local x = side * 110
++			K.block(CF(x, h / 2 - 2, z) * A(0.03, side * 0.13, side * -0.08), V(15, h, 39), C(105, 99, 116), M.Slate)
++			K.wedge(
++				CF(x - side * 4, h * 0.50, z + 5) * A(0, side * PI / 2, 0),
++				V(24, h * 0.65, 13),
++				C(133, 121, 137),
++				M.Slate
++			)
++			-- Broken sloped peaks and shallow front facets avoid a flat castle-wall silhouette.
++			K.corner(
++				CF(x + side * 0.8, h + 0.5, z - 7) * A(0, side * PI / 2, 0),
++				V(14, 9 + i % 4, 24),
++				C(125, 115, 133),
++				M.Slate
++			)
++			Art.Diamond(
++				CF(x - side * 7.9, h * 0.48, z - 4) * A(0, side < 0 and -PI / 2 or PI / 2, -0.22),
++				h * 0.66,
++				13,
++				0.18,
++				C(126, 117, 134),
++				M.Slate
++			)
++			K.block(CF(x - side * 5.5, 2.2, z), V(3.2, 3.5, 37), P.ivory, M.Limestone)
++			if i % 3 == 1 then
++				local cf = CF(x - side * 8.5, h - 1, z) * A(0, side < 0 and -PI / 2 or PI / 2, 0)
++				Art.Banner(cf, 14, 4)
++				K.block(cf * CF(0, 1.1, 0), V(5.5, 0.5, 1.0), P.gold, M.Metal)
++			end
++			if i % 2 == 0 then
++				K.tree(V(side * 100, 1, z - 14), 1.12, i % 4 == 0 and P.pink or P.leaf, nil, true)
++			end
++		end
++		for _, z in ipairs({ -124, -278 }) do
++			K.block(CF(side * 101.8, 12, z), V(0.12, 22, 7.3), C(114, 211, 225), M.Glass, false, 0.30)
++			K.block(CF(side * 102.2, 23.2, z), V(4, 1.2, 10), P.stone, M.Limestone)
++			K.vcyl(V(side * 100, 0.2, z), 0.2, 11, P.water, M.SmoothPlastic)
++		end
++		task.wait()
++	end
++	-- Rear garden closes the composition with an arcade and two skyline pillars.
++	for x = -90, 90, 30 do
++		Art.Column(CF(x, 0, -452), 23 + (x == 0 and 4 or 0), 3)
++		if x < 90 then
++			Art.Beam(V(x, 22, -452), V(x + 15, 30, -452), 2.5, 2, P.ivory, M.Limestone)
++			Art.Beam(V(x + 15, 30, -452), V(x + 30, 22, -452), 2.5, 2, P.ivory, M.Limestone)
++		end
++	end
++end
++local function garden()
++	-- Viewer-left looking down +Z is WORLD +X. Keep the asymmetric public fountain on that side.
++	walkable(CF(78, 0.12, -22), V(34, 0.28, 36), P.ivory, M.Limestone)
++	Art.Fountain(CF(78, 0.3, -22), 1.15, "PublicCrystalFountain")
++	K.tree(V(98, 0, -16), 1.05, P.pink, nil, true)
++	for _, pos in ipairs({ V(-77, 0, -397), V(-47, 0, -426), V(-20, 0, -399), V(48, 0, -414), V(77, 0, -390) }) do
++		K.tree(pos, 1.3, pos.X > 0 and P.pink or P.leaf, nil, true)
++	end
++	walkable(CF(-48, 0.12, -399), V(44, 0.28, 43), P.ivory, M.Limestone)
++	K.vcyl(V(-48, 0.35, -399), 0.18, 20, P.water, M.SmoothPlastic)
++	-- Fountain sits above paving; grass edging frames its public garden without sealing walkways.
++	for _, z in ipairs({ -378, -420 }) do
++		Art.Planter(CF(-48, 0.3, z) * A(0, PI / 2, 0), 32, true)
++	end
++	local plaza = V(0, 0.25, -389)
++	for i = 0, 3 do
++		local a = i / 4 * PI * 2 + PI / 4
++		Art.Beam(
++			plaza + V(math.sin(a) * 10, 0, math.cos(a) * 10),
++			plaza + V(math.sin(a + PI / 2) * 10, 0, math.cos(a + PI / 2) * 10),
++			0.28,
++			0.12,
++			P.gold,
++			M.Metal
++		)
++	end
++	local stone = K.block(CF(48, 1.6, -397), V(25, 3.2, 25), P.ivory, M.Limestone)
++	stone.Name = "SanctuaryMonument"
++	Art.Crystal(CF(48, 3.2, -397), 3.8, 12, P.lilac)
++	for _, side in ipairs({ -1, 1 }) do
++		Art.Crystal(CF(48 + side * 4.8, 3.2, -396) * A(0, 0, -side * 0.18), 2.3, 7, P.mint)
++	end
++	for _, x in ipairs({ 34, 62 }) do
++		Art.Lantern(CF(x, 0, -382), 1.45, true)
++	end
++end
++
++function Hub.Build(folder, textLabel)
++	K.SetFolder(folder)
++	K.mirror = false
++	folder:SetAttribute("SanctuaryVersion", 2)
++	avenue()
++	task.wait()
++	hall(folder, textLabel)
++	task.wait()
++	perimeter()
++	garden()
++end
++return Hub
+--- a/src/ServerScriptService/Server/WorldBuilder.lua
++++ b/src/ServerScriptService/Server/WorldBuilder.lua
+@@ -37,6 +37,14 @@
+ end
+ 
+ ---------------------------------------------------------------- start area
++local function isHubSpawn(instance)
++	if not instance:IsA("SpawnLocation") then return false end
++	if instance:GetAttribute("TPFCGenerated") then return true end
++	-- Migrate only the exact invisible spawn generated by earlier versions.
++	return instance.Name == "SpawnLocation" and instance.Transparency == 1
++		and (instance.Position - V3(0, 0.6, -60)).Magnitude < 0.02
++		and (instance.Size - V3(12, 1, 12)).Magnitude < 0.02
++end
+ local function buildStart()
+ 	local depth = Config.StartDepth
+ 	local SW = Config.StartHalfWidth
+@@ -62,6 +70,8 @@
+ 	spawn.CanCollide = false
+ 	spawn.Duration = 0
+ 	spawn.Neutral = true
++	spawn.Name = "SanctuarySpawn"
++	spawn:SetAttribute("TPFCGenerated", true)
+ 	spawn.Parent = workspace
+ end
+ 
+@@ -109,8 +119,18 @@
+ end
+ 
+ function WorldBuilder.BuildAll()
++	-- Saved Studio previews contain generated geometry. Replace that exact namespace
++	-- on boot, rather than stacking another full map over it on every playtest.
++	for _, old in ipairs(workspace:GetChildren()) do
++		local generatedMap = old.Name == "Map" and old:IsA("Folder") and old:FindFirstChild("Start") and old:FindFirstChild("Forest")
++		local generatedSpawn = isHubSpawn(old)
++		if generatedMap or generatedSpawn then
++			old:Destroy()
++		end
++	end
+ 	local map = Instance.new("Folder")
+ 	map.Name = "Map"
++	map:SetAttribute("TPFCGenerated", true)
+ 	map.Parent = workspace
+ 	-- stylised look: no realistic grass blades; calm water
+ 	pcall(function() Terrain.Decoration = false end)
+@@ -147,6 +167,20 @@
+ 	block(CF(0, 80, -Config.StartDepth - 6), V3(SW * 2 + 20, 200, 4), Color3.new(1, 1, 1), nil, true, 1).Name = "Boundary"
+ end
+ 
++-- Edit-time lobby iteration does not rebuild any biome or touch lane terrain.
++function WorldBuilder.RebuildHub()
++	local map = workspace:FindFirstChild("Map")
++	assert(map and map:IsA("Folder"), "Build the map before rebuilding its lobby")
++	local old = map:FindFirstChild("Start")
++	if old then old:Destroy() end
++	for _, spawn in ipairs(workspace:GetChildren()) do
++		if isHubSpawn(spawn) then spawn:Destroy() end
++	end
++	folder = Instance.new("Folder"); folder.Name = "Start"; folder.Parent = map
++	buildStart()
++	return folder
++end
++
+ -- dev/iteration: rebuild a single zone in place (Studio command bar / MCP)
+ function WorldBuilder.RebuildZone(id)
+ 	local map = workspace:FindFirstChild("Map")
+--- a/src/ServerScriptService/Server/WorldHub.lua
++++ b/src/ServerScriptService/Server/WorldHub.lua
+@@ -1,80 +1,2 @@
+--- WorldHub: the Portal Sanctuary hub — launch hall (functional geometry + architecture),
+--- street, plaza and gardens around the eight base plots.
+--- Location: ServerScriptService > Server > WorldHub (ModuleScript)
+---
+--- FUNCTIONAL GEOMETRY (do not change without updating checks):
+---  * Hall floor spans X = ±HallHalfWidth, Z = HallBackZ .. BarrierZ; throw region Config.ThrowZone.
+---  * "Barrier" (Map.Start.Barrier, read by ClientMain) is the translucent collidable force field at BarrierZ.
+---  * Base centres X = ±63, Z = -84, -160, -236, -312 (BaseBuilder) — hub dressing keeps clear of them.
+-
+-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+-local Config = require(ReplicatedStorage.Shared.Config)
+-local K = require(script.Parent.WorldKit)
+-local Landmarks = require(script.Parent.WorldLandmarks)
+-
+-local Hub = {}
+-local V3, CF, ANG, PI = Vector3.new, CFrame.new, CFrame.Angles, math.pi
+-local M = Enum.Material
+-local C = K.C
+-
+-local function launchHall(textLabel)
+-	local hw, back, front = Config.HallHalfWidth, Config.HallBackZ, Config.BarrierZ
+-	local depth = front - back
+-	local midZ = (front + back) / 2
+-	local H = 26
+-	local wallCol, trim = C(236, 232, 226), C(214, 172, 86)
+-	-- floor (collidable, queryable so players stand on it)
+-	local floor = K.block(CF(0, 0.6, midZ), V3(hw * 2, 1.2, depth), C(235, 235, 245), M.Marble, true)
+-	floor.CanQuery = true
+-	local pad = K.block(CF(0, 1.25, (Config.ThrowZone.minZ + Config.ThrowZone.maxZ) / 2), V3(hw * 2 - 4, 0.15, Config.ThrowZone.maxZ - Config.ThrowZone.minZ - 2),
+-		C(255, 120, 200), M.Neon, false, 0.8)
+-	pad.Name = "ThrowZonePad"
+-	for i = 0, 2 do
+-		local a = K.block(CF(0, 1.35, -22 + i * 7) * ANG(0, math.rad(45), 0), V3(5, 0.2, 5), C(255, 230, 100), M.Neon, false, 0.2)
+-		a.Name = "Arrow"
+-	end
+-	for s = -1, 1, 2 do
+-		K.block(CF(s * (hw + 1), H / 2, midZ), V3(2, H, depth), wallCol, M.Marble, true).CanQuery = true
+-		K.block(CF(s * (hw - 0.1), H * 0.55, midZ), V3(0.3, H * 0.62, depth - 8), C(96, 66, 158), M.Fabric)
+-		K.block(CF(s * hw, 2.4, midZ), V3(0.4, 0.6, depth), trim, M.Metal)
+-		K.block(CF(s * hw, H - 2, midZ), V3(0.4, 0.6, depth), trim, M.Metal)
+-		local screen = K.block(CF(s * (hw - 0.2), 13, midZ - 4), V3(0.3, 7, 22), C(20, 15, 40), M.SmoothPlastic)
+-		textLabel(screen, "HOLD TO CHARGE  •  RELEASE TO THROW", C(255, 230, 120), s < 0 and Enum.NormalId.Right or Enum.NormalId.Left)
+-		for k = 0, 2 do
+-			local lamp = K.ball(V3(s * (hw - 1.5), 19, back + 8 + k * 12), 2.2, C(255, 200, 120), M.Neon)
+-			K.lamp(lamp, C(255, 200, 140), 22, 1.4)
+-		end
+-	end
+-	local door = 18
+-	for s = -1, 1, 2 do
+-		local wseg = (hw * 2 + 4 - door) / 2
+-		K.block(CF(s * (door / 2 + wseg / 2), H / 2, back - 1), V3(wseg, H, 2), wallCol, M.Marble, true).CanQuery = true
+-	end
+-	K.block(CF(0, H - 4, back - 1), V3(door, 8, 2), wallCol, M.Marble, true)
+-	local sign = K.block(CF(0, H + 3, back - 2.2), V3(hw * 2 + 4, 6, 1), C(255, 255, 255), M.SmoothPlastic)
+-	textLabel(sign, "🌀 PORTAL LAUNCH HALL 🌀", C(140, 60, 220), Enum.NormalId.Back)
+-	textLabel(sign, "🌀 PORTAL LAUNCH HALL 🌀", C(140, 60, 220), Enum.NormalId.Front)
+-	local vault = K.cyl(CF(0, H, back + 10) * ANG(0, PI / 2, 0), 22, hw * 2 + 6, C(110, 80, 170), M.Slate)
+-	vault.Shape = Enum.PartType.Cylinder
+-	Landmarks.SetFolder(K.Folder())
+-	Landmarks.HallDressing(hw, back, front, H)
+-	-- the force field you can't walk through
+-	local wall = K.block(CF(0, 60, front), V3(Config.StartHalfWidth * 2 + 40, 140, 2), C(150, 110, 255), M.ForceField, true, 0.35)
+-	wall.Name = "Barrier"
+-	local glow = K.block(CF(0, 1.4, front), V3(hw * 2, 0.4, 2.4), C(190, 140, 255), M.Neon)
+-	glow.Name = "BarrierGlow"
+-	for s = -1, 1, 2 do
+-		local len = Config.StartHalfWidth - hw - 2
+-		K.ellipsoid(CF(s * (hw + 2 + len / 2), 3, front - 1), V3(len, 6, 5), C(70, 150, 70), M.Grass).CanCollide = true
+-	end
+-end
+-
+-function Hub.Build(folder, textLabel)
+-	K.SetFolder(folder)
+-	launchHall(textLabel)
+-	Landmarks.SetFolder(folder)
+-	Landmarks.SetTerrain(workspace.Terrain)
+-	Landmarks.Hub(Config.StartDepth, Config.StartHalfWidth, Config.HallBackZ)
+-end
+-
+-return Hub
++-- Compatibility entry point for the reference-based sanctuary lobby.
++return require(script.Parent.SanctuaryHub)
+--- a/src/StarterPlayer/StarterPlayerScripts/Client/ClientMain.client.lua
++++ b/src/StarterPlayer/StarterPlayerScripts/Client/ClientMain.client.lua
+@@ -61,8 +61,8 @@
+ 	local map = workspace:FindFirstChild("Map")
+ 	local wall = map and map:FindFirstChild("Start") and map.Start:FindFirstChild("Barrier")
+ 	if wall then
+-		wall.Transparency = 0.02
+-		Effects.Tween(wall, 0.8, { Transparency = 0.35 })
++		wall.Transparency = 0.94
++		Effects.Tween(wall, 0.4, { Transparency = 1 })
+ 	end
+ 	if pos then
+ 		Effects.Shockwave(Vector3.new(pos.X, 1, Config.BarrierZ - 1), Color3.fromRGB(190, 140, 255), 10, 0.5)
+--- a/src/StarterPlayer/StarterPlayerScripts/Client/Effects.lua
++++ b/src/StarterPlayer/StarterPlayerScripts/Client/Effects.lua
+@@ -249,9 +249,9 @@
+ 		Lighting.EnvironmentDiffuseScale = 0.6
+ 		Lighting.EnvironmentSpecularScale = 0.6
+ 	end)
+-	bloom = Lighting:FindFirstChild("TPFC_Bloom") or Instance.new("BloomEffect")
++	bloom = Lighting:FindFirstChild("TPFC_Bloom") or Lighting:FindFirstChildOfClass("BloomEffect") or Instance.new("BloomEffect")
+ 	bloom.Name = "TPFC_Bloom"; bloom.Intensity = 0.7; bloom.Size = 28; bloom.Threshold = 1.6; bloom.Parent = Lighting
+-	cc = Lighting:FindFirstChild("TPFC_CC") or Instance.new("ColorCorrectionEffect")
++	cc = Lighting:FindFirstChild("TPFC_CC") or Lighting:FindFirstChildOfClass("ColorCorrectionEffect") or Instance.new("ColorCorrectionEffect")
+ 	cc.Name = "TPFC_CC"; cc.Saturation = 0.18; cc.Contrast = 0.08; cc.Parent = Lighting
+ 	rays = Lighting:FindFirstChild("TPFC_Rays") or Instance.new("SunRaysEffect")
+ 	rays.Name = "TPFC_Rays"; rays.Intensity = 0.06; rays.Spread = 0.6; rays.Parent = Lighting
+@@ -507,20 +507,28 @@
+ end
+ 
+ local currentWorld
++local HUB_LOOK = {
++	ambient = Color3.fromRGB(158, 153, 168), fog = Color3.fromRGB(211, 220, 232), clock = 13.4,
++	tint = Color3.fromRGB(255, 250, 242), atmo = Color3.fromRGB(193, 207, 226),
++}
+ function Effects.UpdateWorld(pos: Vector3)
+-	local id = Config.WorldAt(pos)
++	local inHub = pos.Z < Config.BarrierZ
++	local id = inHub and "Hub" or Config.WorldAt(pos)
+ 	if not id or id == currentWorld then return currentWorld end
+ 	currentWorld = id
+-	local W = Config.Worlds[id]
++	local W = inHub and HUB_LOOK or Config.Worlds[id]
+ 	applyAmbient(id)
+ 	if clouds then
+-		local cover = ({ Forest = 0.55, Volcano = 0.75, Frozen = 0.8, Crystal = 0.3, Candy = 0.6, Space = 0, Shadow = 0.7, Heaven = 0.9 })[id] or 0.5
++		local cover = ({ Hub = 0.25, Forest = 0.55, Volcano = 0.75, Frozen = 0.8, Crystal = 0.3, Candy = 0.6, Space = 0, Shadow = 0.7, Heaven = 0.9 })[id] or 0.5
+ 		local ccol = ({ Volcano = Color3.fromRGB(90, 60, 60), Shadow = Color3.fromRGB(70, 40, 90), Candy = Color3.fromRGB(255, 210, 235) })[id] or Color3.new(1, 1, 1)
+ 		tween(clouds, 2, { Cover = cover, Color = ccol })
+ 	end
+ 	tween(Lighting, 1.5, { Ambient = W.ambient, OutdoorAmbient = W.ambient, ClockTime = W.clock, FogColor = W.fog })
+-	if cc then tween(cc, 1.5, { TintColor = W.tint }) end
+-	if atmo then tween(atmo, 1.5, { Color = W.atmo, Decay = W.fog, Density = (id == "Space") and 0.15 or (id == "Shadow" and 0.45 or 0.3) }) end
++	if cc then tween(cc, 1.5, { TintColor = W.tint, Saturation = inHub and 0.04 or 0.18 }) end
++	if atmo then tween(atmo, 1.5, { Color = W.atmo, Decay = W.fog, Density = inHub and 0.18 or ((id == "Space") and 0.15 or (id == "Shadow" and 0.45 or 0.3)) }) end
++	if bloom then tween(bloom, 1.0, { Intensity = inHub and 0.18 or 0.7 }) end
++	local dof = Lighting:FindFirstChild("TPFC_DOF")
++	if dof then tween(dof, 1.0, { FarIntensity = inHub and 0 or 0.12 }) end
+ 	return id
+ end
+ 
+--- a/src/StarterPlayer/StarterPlayerScripts/Client/ThrowController.lua
++++ b/src/StarterPlayer/StarterPlayerScripts/Client/ThrowController.lua
+@@ -117,7 +117,7 @@
+ 		if heldOrb and hcf then
+ 			local s = 0.6 + TC.Power * 0.6
+ 			heldOrb:PivotTo(hcf * CFrame.new(0, -1.2, 0))
+-			heldRefs.core.Size = Vector3.new(0.8, 0.8, 0.8) * s
++			heldOrb:ScaleTo(s)
+ 			heldRefs.light.Range = 6 + TC.Power * 10
+ 			PortalBuilder.Spin(heldRefs, os.clock() * (1 + TC.Power * 3))
+ 		end
+--- a/src/StarterPlayer/StarterPlayerScripts/Client/WorldFx.lua
++++ b/src/StarterPlayer/StarterPlayerScripts/Client/WorldFx.lua
+@@ -18,14 +18,19 @@
+ local WorldFx = {}
+ local camera = workspace.CurrentCamera
+ local RANGE = 650
+-local TAGS = { "TPFC_Sway", "TPFC_Bob", "TPFC_Spin", "TPFC_Pulse", "TPFC_Glint", "TPFC_ChargeChannel" }
++local TAGS = { "TPFC_Sway", "TPFC_Bob", "TPFC_Spin", "TPFC_Pulse", "TPFC_Glint", "TPFC_ChargeChannel", "TPFC_Rotor" }
+ local items = {} -- part -> { kind, base, baseTr, phase, ... }
+ WorldFx.TC = nil -- ThrowController (for charge channels), set by ClientMain
+ 
+ local function add(kind, p)
+-	if not p:IsA("BasePart") or items[p] then return end
+-	local seed = (p.Position.X * 12.9898 + p.Position.Z * 78.233) % 1
+-	items[p] = { kind = kind, base = p.CFrame, baseTr = p.Transparency, baseCol = p.Color, phase = seed * 100 }
++	if items[p] then return end
++	local model = p:IsA("Model")
++	if not p:IsA("BasePart") and not (model and (kind == "TPFC_Bob" or kind == "TPFC_Spin")) then return end
++	local base = model and p:GetPivot() or p.CFrame
++	local seed = (base.X * 12.9898 + base.Z * 78.233) % 1
++	local rotor = kind == "TPFC_Rotor" and p:FindFirstChild("PortalRotor") or nil
++	items[p] = { kind = kind, base = rotor and rotor.C0 or base, baseTr = not model and p.Transparency or 0,
++		baseCol = not model and p.Color or Color3.new(1, 1, 1), phase = seed * 100, model = model, rotor = rotor }
+ end
+ 
+ function WorldFx.Start()
+@@ -40,6 +45,8 @@
+ 		if acc < 0.05 then return end
+ 		acc = 0
+ 		local t = os.clock()
++		camera = workspace.CurrentCamera or camera
++		if not camera then return end
+ 		local cam = camera.CFrame.Position
+ 		local motionK = Settings.ReducedMotion and 0.4 or 1
+ 		local tc = WorldFx.TC
+@@ -48,7 +55,8 @@
+ 		for p, it in pairs(items) do
+ 			if not p.Parent then items[p] = nil; continue end
+ 			local kind = it.kind
+-			if kind ~= "TPFC_ChargeChannel" and (p.Position - cam).Magnitude > RANGE then continue end
++			local position = it.model and p:GetPivot().Position or p.Position
++			if kind ~= "TPFC_ChargeChannel" and (position - cam).Magnitude > RANGE then continue end
+ 			local ph = t + it.phase
+ 			if kind == "TPFC_Sway" then
+ 				local per, amp = p:GetAttribute("Period") or 6, (p:GetAttribute("Amp") or 0.02) * motionK
+@@ -57,10 +65,14 @@
+ 			elseif kind == "TPFC_Bob" then
+ 				local per, amp, spin = p:GetAttribute("Period") or 4, (p:GetAttribute("Amp") or 0.25) * motionK, p:GetAttribute("Spin") or 0
+ 				local pos = it.base.Position + Vector3.new(0, math.sin(ph * math.pi * 2 / per) * amp, 0)
+-				p.CFrame = CFrame.new(pos) * CFrame.Angles(0, math.rad(spin * t * motionK), 0) * it.base.Rotation
++				local cf = CFrame.new(pos) * CFrame.Angles(0, math.rad(spin * t * motionK), 0) * it.base.Rotation
++				if it.model then p:PivotTo(cf) else p.CFrame = cf end
+ 			elseif kind == "TPFC_Spin" then
+ 				local rate = (p:GetAttribute("Rate") or 4) * motionK
+-				p.CFrame = CFrame.new(it.base.Position) * CFrame.Angles(0, math.rad(rate * t), 0) * it.base.Rotation
++				local cf = CFrame.new(it.base.Position) * CFrame.Angles(0, math.rad(rate * t), 0) * it.base.Rotation
++				if it.model then p:PivotTo(cf) else p.CFrame = cf end
++			elseif kind == "TPFC_Rotor" then
++				if it.rotor then it.rotor.C0 = it.base * CFrame.Angles(0, 0, t * (p:FindFirstChild("PortalRotor"):GetAttribute("Rate") or 0.5) * motionK) end
+ 			elseif kind == "TPFC_Pulse" then
+ 				local per = p:GetAttribute("Period") or 6
+ 				local base, peak = p:GetAttribute("Base") or it.baseTr, p:GetAttribute("Peak") or 0
+--- /dev/null
++++ b/tests/client/LobbyPortalTest.client.lua
+@@ -0,0 +1,119 @@
++-- Focused real-game test for lobby navigation and all nine portal lifecycles.
++-- Opt-in Studio session only. DataService recognizes this marker and keeps all data in memory.
++if not (workspace:GetAttribute("SanctuaryTest") or workspace:FindFirstChild("SanctuaryTest")) then
++	return
++end
++local Players, RS = game:GetService("Players"), game:GetService("ReplicatedStorage")
++local Http = game:GetService("HttpService")
++local player = Players.LocalPlayer
++local Client = script.Parent:WaitForChild("Client")
++local State, TC = require(Client.ClientState), require(Client.ThrowController)
++local Config = require(RS.Shared.Config)
++local Renderer = require(Client.CreatureRenderer)
++local HUD = require(Client.HUD)
++local passed, failures, records = 0, {}, {}
++local function check(ok, message)
++	if ok then
++		passed += 1
++	else
++		table.insert(failures, message)
++		warn("[SANCTUARY TEST] FAIL: " .. message)
++	end
++end
++local function admin(cmd, value)
++	local ok, msg = State.Request("Admin", Http:JSONEncode({ cmd = cmd, value = value }))
++	check(ok, "admin setup " .. cmd .. ": " .. tostring(msg))
++end
++local function finish()
++	local result = { passed = passed, failures = failures, portalRuns = records, completed = true }
++	player:SetAttribute("SanctuaryTestResult", Http:JSONEncode(result))
++	print("[SANCTUARY TEST] " .. Http:JSONEncode(result))
++end
++local ok, err = pcall(function()
++	local start = os.clock()
++	while not State.Loaded and os.clock() - start < 45 do
++		task.wait(0.25)
++	end
++	check(State.Loaded, "player profile loaded")
++	if not State.Loaded then
++		return
++	end
++	HUD.Close()
++	local character = player.Character or player.CharacterAdded:Wait()
++	local root = character:WaitForChild("HumanoidRootPart", 10)
++	local humanoid = character:FindFirstChildOfClass("Humanoid")
++	check(root and humanoid, "spawned controllable avatar")
++	if not root or not humanoid then
++		return
++	end
++	-- Real walking, through the center of the reference arch, without teleporting over it.
++	character:PivotTo(CFrame.lookAt(Vector3.new(0, 4, -60), Vector3.new(0, 4, 0)))
++	task.wait(0.5)
++	TC.BeginCharge()
++	task.wait(0.15)
++	check(not TC.Charging, "throw rejected outside the hall")
++	TC.EndCharge()
++	humanoid:MoveTo(Vector3.new(0, 2.2, -14))
++	local walkStart = os.clock()
++	while root.Position.Z < -20 and os.clock() - walkStart < 10 do
++		task.wait(0.1)
++	end
++	check(Config.InThrowZone(root.Position), "avatar walked through the arch into the hall")
++	if not Config.InThrowZone(root.Position) then
++		return
++	end
++	admin("allportals")
++	for _, id in ipairs(Config.PortalOrder) do
++		character:PivotTo(CFrame.lookAt(Vector3.new(0, 4, -14), Vector3.new(0, 4, 30)))
++		local equipped, msg = State.Request("EquipPortal", id)
++		check(equipped, id .. " equips: " .. tostring(msg))
++		admin("forcenext", "Mossbun")
++		task.wait(0.25)
++		local before, t0 = #State.Data.Creatures, os.clock()
++		TC.BeginCharge()
++		task.wait(0.65)
++		check(TC.Charging, id .. " charge started")
++		TC.EndCharge()
++		local sawGate, sawOrb = false, false
++		while os.clock() - t0 < 18 do
++			local folder = workspace:FindFirstChild("ClientFX")
++			if folder then
++				for _, item in ipairs(folder:GetChildren()) do
++					sawGate = sawGate or item.Name == "PortalGate"
++					sawOrb = sawOrb or item.Name == "PortalOrb"
++				end
++			end
++			if #State.Data.Creatures == before + 1 and not TC.MyThrow then
++				break
++			end
++			task.wait(0.1)
++		end
++		task.wait(0.9)
++		check(sawOrb, id .. " flight orb appeared")
++		check(sawGate, id .. " gate opened in the real throw flow")
++		check(#State.Data.Creatures == before + 1, id .. " awarded exactly one creature")
++		check(not TC.MyThrow, id .. " pending throw cleared")
++		check(workspace.CurrentCamera.CameraType ~= Enum.CameraType.Scriptable, id .. " camera restored")
++		local wild = 0
++		for _ in pairs(Renderer.Wild) do
++			wild += 1
++		end
++		check(wild == 0, id .. " reveal renderer cleaned up")
++		local left = 0
++		for _, item in ipairs(workspace.ClientFX:GetChildren()) do
++			if item.Name == "PortalGate" or item.Name == "PortalOrb" then
++				left += 1
++			end
++		end
++		check(left == 0, id .. " portal and orb cleaned up")
++		table.insert(
++			records,
++			{ id = id, seconds = math.round((os.clock() - t0) * 100) / 100, sawGate = sawGate, sawOrb = sawOrb }
++		)
++		print("[SANCTUARY TEST] completed " .. id)
++	end
++end)
++if not ok then
++	table.insert(failures, tostring(err))
++end
++finish()
+--- /dev/null
++++ b/tests/lune/portals.luau
+@@ -0,0 +1,69 @@
++-- Structural regressions for the authored portal geometry. Visual QA is performed in Studio separately.
++local H = require("./harness")
++local Config = H.require(H.SHARED .. "/Config")
++local Portal = H.require(H.SHARED .. "/PortalBuilder")
++local check = H.check
++check(
++	Portal.Geometry.icoFaces == 20 and Portal.Geometry.icoVertices == 12,
++	"throw orb is a complete regular icosahedron"
++)
++
++local function validate(model, label, cap)
++	local parts, wedges = 0, 0
++	for _, p in ipairs(model:GetDescendants()) do
++		if p:IsA("BasePart") then
++			parts += 1
++			if p:IsA("WedgePart") then
++				wedges += 1
++			end
++			check(p.Size.X > 0 and p.Size.Y > 0 and p.Size.Z > 0, label .. " positive dimensions")
++			check(not p.CanCollide and not p.CanQuery and not p.CanTouch, label .. " non-interactive visual geometry")
++			if p ~= model.PrimaryPart then
++				check(not p.Anchored, label .. " anchored root only")
++			end
++		end
++	end
++	check(parts <= cap, label .. " bounded part count " .. parts)
++	check(model.PrimaryPart and model.PrimaryPart.Anchored, label .. " stable root")
++	check(wedges >= 4, label .. " actual solid faceted geometry")
++	return parts
++end
++local stats = {}
++for _, id in ipairs(Config.PortalOrder) do
++	for _, scale in ipairs({ 0.5, 1, 1.8 }) do
++		local orb, refs = Portal.BuildOrb(id, scale)
++		local n = validate(orb, id .. " orb " .. scale, 100)
++		check(refs.trail and not refs.trail.Enabled, id .. " trail starts disabled")
++		Portal.Spin(refs, 0)
++		Portal.Spin(refs, 9.25)
++		if scale == 1 then
++			stats[id] = { orb = n }
++		end
++		orb:Destroy()
++	end
++	for _, radius in ipairs({ 2, 5, 12 }) do
++		local gate, refs = Portal.BuildGate(id, radius)
++		local n = validate(gate, id .. " gate " .. radius, 240)
++		local planted = refs.frame.w.C0
++		Portal.Spin(refs, 1.25)
++		Portal.Spin(refs, 6.5)
++		check(refs.frame.w.C0 == planted, id .. " architectural frame stays planted")
++		local aperture = gate:FindFirstChild("EnergyVeil")
++		check(aperture and aperture.Shape == H.roblox.Enum.PartType.Cylinder, id .. " real circular aperture")
++		check(math.abs(aperture.Bind.C0.XVector.Z) > 0.999, id .. " cylinder axis follows portal normal")
++		check(refs.emitter.Rate <= 8 and refs.light.Brightness <= 1.101, id .. " bounded light and particles")
++		if radius == 5 then
++			stats[id].gate = n
++		end
++		gate:Destroy()
++	end
++end
++local hub, refs = Portal.BuildGate("Basic", 17.5, { sanctuary = true })
++check(hub.Name == "SanctuaryPortal" and refs.emitter.Rate == 0, "permanent sanctuary aperture has no particle cloud")
++check(hub.EnergyVeil.Transparency >= 0.95, "lobby aperture preserves forward sightline")
++hub:Destroy()
++for _, id in ipairs(Config.PortalOrder) do
++	print(id .. ": " .. stats[id].orb .. " orb parts, " .. stats[id].gate .. " gate parts")
++end
++local failed = H.summary()
++require("@lune/process").exit(failed == 0 and 0 or 1)
+--- /dev/null
++++ b/tests/studio/SanctuaryAudit.lua
+@@ -0,0 +1,97 @@
++-- Run against the actual built lobby in Edit or Play. Returns evidence, never changes player data.
++return function()
++	local RS = game:GetService("ReplicatedStorage")
++	local Config = require(RS.Shared.Config)
++	local Portal = require(RS.Shared.PortalBuilder)
++	local passed, failures = 0, {}
++	local function check(value, message)
++		if value then
++			passed += 1
++		else
++			table.insert(failures, message)
++		end
++	end
++	local map, bases = workspace:FindFirstChild("Map"), workspace:FindFirstChild("Bases")
++	check(map and map:FindFirstChild("Start"), "lobby exists")
++	check(bases and #bases:GetChildren() == 8, "exactly eight gardens")
++	if not map or not bases then
++		return { passed = passed, failures = failures }
++	end
++	local start = map.Start
++	check(start:GetAttribute("SanctuaryVersion") == 2, "reference sanctuary version")
++	local barrier = start:FindFirstChild("Barrier")
++	check(
++		barrier and barrier.CanCollide and math.abs(barrier.Position.Z - Config.BarrierZ) < 0.01,
++		"barrier collision plane unchanged"
++	)
++	local floor = start:FindFirstChild("HallFloor")
++	check(
++		floor and floor.CanCollide and math.abs(floor.Size.X - Config.HallHalfWidth * 2) < 0.01,
++		"hall floor contract"
++	)
++	check(start:FindFirstChild("SanctuaryAperture") ~= nil, "architectural portal centerpiece")
++	for i = 1, 8 do
++		local base = bases:FindFirstChild("Base" .. i)
++		check(base ~= nil, "garden " .. i)
++		if base then
++			local expected = Vector3.new((i <= 4 and -1 or 1) * 63, 0.5, -84 - ((i - 1) % 4) * 76)
++			check((base.Floor.Position - expected).Magnitude < 0.01, "garden " .. i .. " center preserved")
++			check(
++				base:FindFirstChild("CollectPad") and base:FindFirstChild("GymPad") and base:FindFirstChild("Center"),
++				"garden " .. i .. " gameplay references"
++			)
++			for n = 1, 24 do
++				check(
++					base.Slots:FindFirstChild("Slot" .. n) and base.Slots:FindFirstChild("SlotRing" .. n),
++					"garden " .. i .. " slot " .. n
++				)
++			end
++			check(base:FindFirstChild("GardenCrystalFountain") ~= nil, "garden " .. i .. " tiered fountain")
++		end
++	end
++	local rp = RaycastParams.new()
++	rp.FilterType = Enum.RaycastFilterType.Include
++	rp.FilterDescendantsInstances = { start }
++	rp.RespectCanCollide = true
++	for _, x in ipairs({ -5, 0, 5 }) do
++		check(
++			workspace:Raycast(Vector3.new(x, 4, -65), Vector3.new(0, 0, 69), rp) == nil,
++			"clear avatar passage x=" .. x
++		)
++	end
++	local portalParts = {}
++	for _, id in ipairs(Config.PortalOrder) do
++		local model, refs = Portal.BuildGate(id, 5)
++		local frame = refs.frame.w.C0
++		model:ScaleTo(0.05)
++		Portal.Spin(refs, 0.1)
++		check(
++			math.abs(refs.discs[1].w.C0.Position.Z - refs.discs[1].base.Position.Z * 0.05) < 0.001,
++			id .. " aperture depth scales with opening"
++		)
++		model:ScaleTo(1)
++		Portal.Spin(refs, 2)
++		check((refs.frame.w.C0.Position - frame.Position).Magnitude < 0.001, id .. " frame stays planted")
++		local count = 0
++		for _, p in ipairs(model:GetDescendants()) do
++			if p:IsA("BasePart") then
++				count += 1
++			end
++		end
++		portalParts[id] = count
++		model:Destroy()
++	end
++	local counts = { parts = 0, lights = 0, emitters = 0 }
++	for _, holder in ipairs({ start, bases }) do
++		for _, p in ipairs(holder:GetDescendants()) do
++			if p:IsA("BasePart") then
++				counts.parts += 1
++			elseif p:IsA("Light") then
++				counts.lights += 1
++			elseif p:IsA("ParticleEmitter") then
++				counts.emitters += 1
++			end
++		end
++	end
++	return { passed = passed, failures = failures, lobby = counts, portalParts = portalParts }
++end
+--- a/tests/verify_place.py
++++ b/tests/verify_place.py
+@@ -1,61 +1,84 @@
+-"""Parse the generated .rbxlx files and verify every embedded script matches its src/ file.
+-Usage: python -I tests/verify_place.py   (from the repo root)"""
+-import os, sys, xml.etree.ElementTree as ET
++"""Verify exact script sets, classes, source parity and test markers in generated places."""
++from pathlib import Path
++import sys
++import xml.etree.ElementTree as ET
+ 
+-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+-MAP = {"ReplicatedStorage/Shared": "src/ReplicatedStorage/Shared",
+-       "ServerScriptService/Server": "src/ServerScriptService/Server",
+-       "StarterPlayer/StarterPlayerScripts/Client": "src/StarterPlayer/StarterPlayerScripts/Client"}
++ROOT = Path(__file__).resolve().parents[1]
++MAPPING = {
++    "ReplicatedStorage/Shared": ROOT / "src/ReplicatedStorage/Shared",
++    "ServerScriptService/Server": ROOT / "src/ServerScriptService/Server",
++    "StarterPlayer/StarterPlayerScripts/Client": ROOT / "src/StarterPlayer/StarterPlayerScripts/Client",
++}
+ 
+-def scripts(path):
++
++def script_name(path):
++    for suffix, kind in ((".server.lua", "Script"), (".client.lua", "LocalScript"), (".lua", "ModuleScript")):
++        if path.name.endswith(suffix):
++            return path.name[:-len(suffix)], kind
++    raise ValueError(path)
++
++
++def expected_scripts(test):
++    scripts = {}
++    mappings = dict(MAPPING)
++    if test:
++        mappings["ServerScriptService"] = ROOT / "tests/server"
++        mappings["StarterPlayer/StarterPlayerScripts"] = ROOT / "tests/client"
++    for prefix, folder in mappings.items():
++        for path in folder.rglob("*.lua"):
++            name, kind = script_name(path)
++            parent = path.relative_to(folder).parent.as_posix()
++            key = prefix + "/" + (parent + "/" if parent != "." else "") + name
++            scripts[key] = kind, path.read_text(encoding="utf-8").replace("\r\n", "\n")
++    return scripts
++
++
++def read_place(path):
+     tree = ET.parse(path)
+-    out = {}
++    scripts, markers = {}, set()
++
+     def walk(item, trail):
+         props = item.find("Properties")
+-        name = props.find("string[@name='Name']").text if props is not None and props.find("string[@name='Name']") is not None else "?"
++        name_node = props.find("string[@name='Name']") if props is not None else None
++        name = name_node.text if name_node is not None else "?"
+         here = trail + [name]
+-        if item.get("class") in ("Script", "LocalScript", "ModuleScript"):
+-            out["/".join(here)] = (item.get("class"), props.find("ProtectedString[@name='Source']").text or "")
++        kind = item.get("class")
++        if kind in ("Script", "LocalScript", "ModuleScript"):
++            code = props.find("ProtectedString[@name='Source']")
++            key = "/".join(here)
++            if key in scripts:
++                raise ValueError("Duplicate script path: " + key)
++            scripts[key] = kind, (code.text or "").replace("\r\n", "\n")
++        if kind == "BoolValue" and name in ("AutoTest", "SanctuaryTest"):
++            value = props.find("bool[@name='Value']")
++            if value is not None and value.text == "true":
++                markers.add(name)
+         for child in item.findall("Item"):
+             walk(child, here)
++
+     for top in tree.getroot().findall("Item"):
+         walk(top, [])
+-    return out
++    return scripts, markers
+ 
+-def src_for(key, cls):
+-    for prefix, folder in MAP.items():
+-        if key.startswith(prefix + "/"):
+-            rel = key[len(prefix) + 1:]
+-            ext = ".server.lua" if cls == "Script" else (".client.lua" if cls == "LocalScript" else ".lua")
+-            return os.path.join(ROOT, folder, rel + ext)
+-    return None
+ 
+-norm = lambda s: s.replace("\r\n", "\n")
+-bad = 0
+-for place, test in (("ThrowPortalsForCreatures.rbxlx", False), ("ThrowPortalsForCreatures_Test.rbxlx", True)):
+-    s = scripts(os.path.join(ROOT, place))
+-    mism, extra = [], []
+-    for key, (cls, code) in s.items():
+-        f = src_for(key, cls)
+-        if f is None or not os.path.exists(f):
+-            extra.append(key); continue
+-        if norm(open(f, encoding="utf-8").read()) != norm(code):
+-            mism.append(key)
+-    src_count = sum(len([n for n in os.listdir(os.path.join(ROOT, d)) if n.endswith(".lua")]) for d in MAP.values())
+-    harness = [k for k in extra if "AutoTest" in k]
+-    others = [k for k in extra if "AutoTest" not in k]
+-    has_marker = 'name="Name">AutoTest<' in open(os.path.join(ROOT, place), encoding="utf-8").read()
+-    print(f"{place}: {len(s)} scripts, src files {src_count}, mismatches {len(mism)}, unmapped {others}, harness {harness}, AutoTest marker {has_marker}")
+-    # completeness: every src game script must be embedded (missing modules = stale place)
+-    embedded = set(k for k in s if "AutoTest" not in k)
+-    expected = set()
+-    for prefix, folder in MAP.items():
+-        for n in os.listdir(os.path.join(ROOT, folder)):
+-            if n.endswith(".lua"):
+-                expected.add(prefix + "/" + n.replace(".server.lua", "").replace(".client.lua", "").replace(".lua", ""))
+-    missing = sorted(expected - embedded)
+-    if missing: print("  MISSING", missing)
+-    if mism or others or missing or (has_marker != test) or (bool(harness) != test):
+-        bad += 1
+-        for m in mism: print("  MISMATCH", m)
+-sys.exit(1 if bad else 0)
++cases = [
++    ("ThrowPortalsForCreatures.rbxlx", False, set()),
++    ("ThrowPortalsForCreatures_Test.rbxlx", True, {"AutoTest"}),
++]
++focused = ROOT / "ThrowPortalsForCreatures_SanctuaryTest.rbxlx"
++if focused.exists():
++    cases.append((focused.name, True, {"SanctuaryTest"}))
++failed = 0
++for filename, test, expected_markers in cases:
++    actual, markers = read_place(ROOT / filename)
++    expected = expected_scripts(test)
++    missing = sorted(expected.keys() - actual.keys())
++    extra = sorted(actual.keys() - expected.keys())
++    changed = sorted(key for key in actual.keys() & expected.keys() if actual[key] != expected[key])
++    errors = bool(missing or extra or changed or markers != expected_markers)
++    failed += int(errors)
++    print(f"{filename}: {len(actual)}/{len(expected)} scripts; missing={len(missing)}, extra={len(extra)}, different={len(changed)}, markers={sorted(markers)}; {'FAIL' if errors else 'PASS'}")
++    for label, values in (("MISSING", missing), ("EXTRA", extra), ("DIFFERENT", changed)):
++        for value in values:
++            print(f"  {label}: {value}")
++sys.exit(1 if failed else 0)

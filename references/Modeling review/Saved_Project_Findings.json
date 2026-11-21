@@ -1,0 +1,52 @@
+{
+  "ThrowPortalsForCreatures.rbxlx": {
+    "missing_source_modules": [
+      "PetMeshLoader",
+      "PetMeshManifest"
+    ],
+    "different_embedded_sources": [
+      "BaseBuilder",
+      "CreatureAnimator",
+      "CreatureBuilder",
+      "GameServer",
+      "WorldBuilder",
+      "WorldLandmarks"
+    ]
+  },
+  "ThrowPortalsForCreatures_Test.rbxlx": {
+    "missing_source_modules": [
+      "PetMeshLoader",
+      "PetMeshManifest"
+    ],
+    "different_embedded_sources": [
+      "BaseBuilder",
+      "CreatureAnimator",
+      "CreatureBuilder",
+      "GameServer",
+      "WorldBuilder",
+      "WorldLandmarks"
+    ]
+  },
+  "mesh_species_count": 18,
+  "mesh_species": [
+    "Mossbun",
+    "PrismLion",
+    "Infinity",
+    "Petalfly",
+    "SylphQueen",
+    "Elderstag",
+    "Acornip",
+    "Bloomwyrm",
+    "Thornhog",
+    "Emberpup",
+    "OakTitan",
+    "Magmite",
+    "MagmaKraken",
+    "Obsidigolem",
+    "PhoenixLumen",
+    "SolarSerpent",
+    "Frostpaw",
+    "Infernadrake"
+  ],
+  "procedural_fallback_species_count": 56
+}

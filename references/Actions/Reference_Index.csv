@@ -1,0 +1,4 @@
+﻿id,name,creature_id,rarity,group,file,status,width,height,sha256
+action_01_throw,Charge and throw sequence,,,Action,Actions/01_Charge_Throw_and_Portal_Sequence.png,saved,1536,1024,1eb13249ab1eaa43b25024b6a52714f29b929587e0ce03da1ad1e5e55ce4d84b
+action_02_rarity,Reveal and capture rarity direction,,,Action,Actions/02_Rarity_Reveal_and_Capture.png,saved,1536,1024,b6eb55ab1235aea3b5c41014e47cdeb2f0d06dfc06913241ee267515f6abe531
+action_03_base,Gym and income interaction sequence,,,Action,Actions/03_Gym_Collect_and_Base_Actions.png,saved,1536,1024,9745cacc8891536e8b77b6e05f2ad4a8bacb0d22a7d4b454df19280159e53224

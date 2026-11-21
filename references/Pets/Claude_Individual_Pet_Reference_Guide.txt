@@ -1,0 +1,100 @@
+CLAUDE — USING ALL 74 INDIVIDUAL PET IMAGES
+
+There is ONE separate species reference sheet for each of the 74 existing canonical creature IDs, grouped by world or special rarity. Use Reference_Index.csv as the authoritative ID-to-file mapping. Display names and IDs can differ; never rename saved IDs to match an image title. Examples: VoidCrystalHydra=Prismatic Hydra; CottonCandyCloud=Cotton Candy Kirin; Infinity=Infinity Fox; GoldGriffin=Golden Griffin; ThroneAngel=Throne Guardian.
+
+Read ../Art_Direction_for_Claude.txt, ../All_74_Blocky_Pets_and_Movements.txt and ../Blocky_Movement_Keyframes_All_74.csv. The images set appearance and key-pose intent; the written rig contract and timing define implementation. The CSV contains 3,229 authored rigid-motion keyframes across all 74 species. Its proposed timings require Studio tuning and are not measured existing animations.
+
+All pets are badass blocky Parts/WedgeParts constructions with rigid surfaces, narrow eye apertures, readable support legs/joints and a shared fantasy material language. Different species must retain distinct silhouettes. Common is intentionally plain; Uncommon and Rare add signature identity; Epic is strong; Legendary and Mythical are the main biome showcase designs. Secret and Divine keep exceptional exclusive identity and current rarity/economy data.
+
+The 74 sheets show large hero views, front/side studies and action pose strips. Infinity's final sheet replaces one small front study with a numbered rear tail-rig diagram for clarity. Nebula Jelly also has numbered chain callouts. They are generated concept references, NOT exact orthographic blueprints, sprite sheets, model files or video clips. Small views may overlap/simplify appendages; use the numbered rig view and written count as authoritative. No pet body should squash like rubber; movement comes from joints and planted contacts.
+
+ANATOMY CHECKS BEFORE MARKING IMPLEMENTATION COMPLETE
+Infinity: exactly nine independent tail roots and nine ordered chains; no one flat list animating all tails as a single serial chain.
+VoidCrystalHydra: exactly three independent neck/head rigs and coordinated gaze/reaction timing.
+MagmaKraken: eight articulated arms, not the current generic fish anatomy.
+NebulaJelly: eight articulated hanging tendrils and rigid hinged bell plates, no inflation.
+NightmareWyvern: two hind legs and wing forelimbs, no extra pair of front legs.
+QuartzBeetle: six legs, alternating-tripod gait; walking insect bodies do not use quadruped phases.
+NullBunny, Glitchling, VoidWisp, Singularity and TheWatcher: preserve canonical cyclops/single-eye identity where specified; no automatic two-eye helper.
+GoldGriffin: eagle head/taloned forelegs and lion hindquarters, not one bird body template.
+StarWhale: horizontal flukes and vertical fluke stroke, unlike a lateral fish tail.
+
+Any generated badge color, apparent perspective scale, tiny highlight or small-pose simplification does not override Config.Rarities colors, canonical three-color palette, saved metadata or exact anatomy counts. Show one normal-size prototype with effects disabled before adding ornaments. Use rarity presets and shared construction helpers, but species-specific assemblies. Do not copy the same head/shoulder/wing arrangement into every creature.
+
+Implement and verify by group: Forest, Volcano, Frozen, Crystal, Candy, Space, Shadow, Heaven, Secret, Divine. For every ID check model, silhouette, primitive feasibility, palette, rarity fit, idle, start/move/stop/turn, reaction, entrance, capture, preview, LOD and destruction. Retain server control of rewards and saved identity. Document actual tests separately from concept generation.
+
+PER-PET REFERENCE MAP
+Mossbun | Mossbun | Common | Forest/01_Mossbun.png
+Acornip | Acornip | Uncommon | Forest/02_Acornip.png
+Petalfly | Petalfly | Rare | Forest/03_Petalfly.png
+Thornhog | Thornhog | Epic | Forest/04_Thornhog.png
+Elderstag | Elderstag Sprite | Legendary | Forest/05_Elderstag.png
+OakTitan | Oak Titan | Legendary | Forest/06_OakTitan.png
+Bloomwyrm | Bloomwyrm | Mythical | Forest/07_Bloomwyrm.png
+SylphQueen | Sylph Queen | Mythical | Forest/08_SylphQueen.png
+Emberpup | Emberpup | Common | Volcano/09_Emberpup.png
+Magmite | Magmite | Uncommon | Volcano/10_Magmite.png
+Cinderchick | Cinderchick | Rare | Volcano/11_Cinderchick.png
+Obsidigolem | Obsidian Golem | Epic | Volcano/12_Obsidigolem.png
+PhoenixLumen | Phoenix Lumen | Legendary | Volcano/13_PhoenixLumen.png
+MagmaKraken | Magma Kraken | Legendary | Volcano/14_MagmaKraken.png
+Infernadrake | Infernadrake | Mythical | Volcano/15_Infernadrake.png
+SolarSerpent | Solar Serpent | Mythical | Volcano/16_SolarSerpent.png
+Frostpaw | Frostpaw | Common | Frozen/17_Frostpaw.png
+Snowpuff | Snowpuff | Uncommon | Frozen/18_Snowpuff.png
+IcicleOwl | Icicle Owl | Rare | Frozen/19_IcicleOwl.png
+GlacierYeti | Glacier Yeti | Epic | Frozen/20_GlacierYeti.png
+AuroraFox | Aurora Fox | Legendary | Frozen/21_AuroraFox.png
+BlizzardBear | Blizzard Bear | Legendary | Frozen/22_BlizzardBear.png
+Crystalwing | Crystalwing Dragon | Mythical | Frozen/23_Crystalwing.png
+FrostEmpress | Frost Empress | Mythical | Frozen/24_FrostEmpress.png
+Gemmy | Gemmy | Common | Crystal/25_Gemmy.png
+QuartzBeetle | Quartz Beetle | Uncommon | Crystal/26_QuartzBeetle.png
+GlimmerBat | Glimmer Bat | Rare | Crystal/27_GlimmerBat.png
+AmethystEel | Amethyst Eel | Epic | Crystal/28_AmethystEel.png
+PrismLion | Prism Lion | Legendary | Crystal/29_PrismLion.png
+DiamondDrake | Diamond Drake | Legendary | Crystal/30_DiamondDrake.png
+GeodeLeviathan | Geode Leviathan | Mythical | Crystal/31_GeodeLeviathan.png
+VoidCrystalHydra | Prismatic Hydra | Mythical | Crystal/32_VoidCrystalHydra.png
+Gumdrop | Gumdrop | Common | Candy/33_Gumdrop.png
+CocoaCub | Cocoa Cub | Uncommon | Candy/34_CocoaCub.png
+Lollipup | Lollipup | Rare | Candy/35_Lollipup.png
+Marshghost | Marshmallow Ghost | Epic | Candy/36_Marshghost.png
+Sugarcorn | Sugarcorn | Legendary | Candy/37_Sugarcorn.png
+CottonCandyCloud | Cotton Candy Kirin | Legendary | Candy/38_CottonCandyCloud.png
+QueenBee | Candy Queen Bee | Mythical | Candy/39_QueenBee.png
+ChocoTitan | Chocolate Colossus | Mythical | Candy/40_ChocoTitan.png
+AstroBlob | Astro Blob | Common | Space/41_AstroBlob.png
+MoonMouse | Moon Mouse | Uncommon | Space/42_MoonMouse.png
+CometFish | Comet Fish | Rare | Space/43_CometFish.png
+NebulaJelly | Nebula Jelly | Epic | Space/44_NebulaJelly_v2.png
+StarWhale | Star Whale | Legendary | Space/45_StarWhale.png
+NovaPhoenix | Nova Phoenix | Legendary | Space/46_NovaPhoenix.png
+CosmicDragon | Cosmic Dragon | Mythical | Space/47_CosmicDragon.png
+Singularity | Singularity Cat | Mythical | Space/48_Singularity.png
+Gloomling | Gloomling | Common | Shadow/49_Gloomling.png
+ShadeCat | Shade Cat | Uncommon | Shadow/50_ShadeCat.png
+NightMoth | Night Moth | Rare | Shadow/51_NightMoth.png
+VoidWisp | Void Wisp | Epic | Shadow/52_VoidWisp.png
+UmbraWolf | Umbra Wolf | Legendary | Shadow/53_UmbraWolf.png
+Wraithlord | Wraith Lord | Legendary | Shadow/54_Wraithlord.png
+NightmareWyvern | Nightmare Wyvern | Mythical | Shadow/55_NightmareWyvern.png
+EclipseDragon | Eclipse Dragon | Mythical | Shadow/56_EclipseDragon.png
+CloudLamb | Cloud Lamb | Common | Heaven/57_CloudLamb.png
+HaloChick | Halo Chick | Uncommon | Heaven/58_HaloChick.png
+Seraphling | Seraphling | Rare | Heaven/59_Seraphling.png
+GoldGriffin | Golden Griffin | Epic | Heaven/60_GoldGriffin.png
+Pegasus | Celestial Pegasus | Legendary | Heaven/61_Pegasus.png
+SeraphLion | Seraph Lion | Legendary | Heaven/62_SeraphLion.png
+ArchDrake | Archangel Drake | Mythical | Heaven/63_ArchDrake.png
+ThroneAngel | Throne Guardian | Mythical | Heaven/64_ThroneAngel.png
+Glitchling | Glitchling | Secret | Secret/65_Glitchling.png
+VoidEmperor | Void Emperor | Secret | Secret/66_VoidEmperor.png
+Errorcat | Error Cat | Secret | Secret/67_Errorcat.png
+NullBunny | Null Bunny | Secret | Secret/68_NullBunny_v2.png
+TheWatcher | The Watcher | Secret | Secret/69_TheWatcher.png
+Solaris | Solaris | Divine | Divine/70_Solaris.png
+Aetherion | Aetherion | Divine | Divine/71_Aetherion.png
+EternityOwl | Eternity Owl | Divine | Divine/72_EternityOwl.png
+Genesis | Genesis | Divine | Divine/73_Genesis.png
+Infinity | Infinity Fox | Divine | Divine/74_Infinity_v2.png

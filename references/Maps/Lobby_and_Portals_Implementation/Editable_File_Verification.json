@@ -1,0 +1,12 @@
+{
+  "file": "Editable_Lobby_and_Portals.rbxl",
+  "openedInSecondRobloxStudio": true,
+  "scripts": 38,
+  "bases": 8,
+  "mapStart": true,
+  "terrainSamples": 15,
+  "terrainHits": 15,
+  "serializationRoundTripInstances": 38746,
+  "serializationIdenticalSources": 38,
+  "note": "Serializer omitted an empty Terrain AssetContentMap; actual terrain verified after opening in Studio."
+}

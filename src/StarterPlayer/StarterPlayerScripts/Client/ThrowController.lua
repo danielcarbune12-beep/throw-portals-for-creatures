@@ -363,6 +363,7 @@ function TC.StopFollow(immediate)
 	if not active then
 		return
 	end
+	if camFollow and camFollow.closeup then TC.EndCloseup() end
 	local saved = active.saved
 	camFollow, camReturn = nil, nil
 	if immediate or Settings.ReducedMotion then
@@ -415,7 +416,7 @@ RunService:BindToRenderStep("TPFC_FollowCam", Enum.RenderPriority.Camera.Value, 
 		end
 		return
 	end
-	if os.clock() > camFollow.untilT or os.clock() - camFollow.started > Timeline.CameraTimeout then
+	if os.clock() > camFollow.untilT or (not camFollow.closeup and os.clock() - camFollow.started > Timeline.CameraTimeout) then
 		TC.StopFollow()
 		return
 	end
@@ -431,6 +432,24 @@ RunService:BindToRenderStep("TPFC_FollowCam", Enum.RenderPriority.Camera.Value, 
 		end
 	end
 	local desired = CFrame.lookAt(target + Vector3.new(dist * 0.4, height, -dist), target)
+	if camFollow.closeup then
+		-- CINEMATIC CLOSE-UP (good pets): slow orbit around the creature, pushing in
+		local e = Renderer.Wild[camFollow.id]
+		local p
+		if e and e.anim and e.model and e.model.Parent then
+			p = Vector3.new(e.anim.pos.X, e.anim.groundY, e.anim.pos.Z)
+			camFollow.lastP = p
+		else
+			p = camFollow.lastP or camFollow.pos
+		end
+		local t = os.clock() - camFollow.closeT
+		local h = camFollow.height
+		local look = p + Vector3.new(0, h * 0.55, 0)
+		local a = -0.7 + t * 0.32
+		local R = camFollow.radius * (1.35 - 0.35 * math.min(1, t / 1.5))
+		desired = CFrame.lookAt(look + Vector3.new(math.sin(a) * R, h * 0.25 + 1.5, -math.cos(a) * R), look)
+		if Effects.DOF then Effects.DOF.FocusDistance = R end
+	end
 	if Settings.ReducedMotion then
 		camFollow.cf = camFollow.cf or desired
 	else
@@ -452,6 +471,35 @@ end
 player.CharacterAdded:Connect(watchCharacter)
 if player.Character then
 	task.defer(watchCharacter, player.Character)
+end
+
+-- start a cinematic zoom on a good creature you just found
+function TC.StartCloseup(id, def, pos, duration)
+	local rc = Config.Rarities[def.rarity]
+	local size = rc.size * (def.scale or 1)
+	if not camFollow then claimCamera(id, pos, duration) end
+	camFollow.id = id
+	camFollow.pos = pos
+	camFollow.closeup = true
+	camFollow.closeT = os.clock()
+	camFollow.height = 4 * size
+	camFollow.radius = (7 + rc.order * 0.8) * size
+	camFollow.untilT = os.clock() + duration
+	Effects.Letterbox(true)
+	Effects.Tween(camera, 0.7, { FieldOfView = 48 }, Enum.EasingStyle.Quad)
+	if Effects.DOF then
+		Effects.DOF.InFocusRadius = 12
+		Effects.Tween(Effects.DOF, 0.6, { FarIntensity = 0.45 })
+	end
+end
+
+function TC.EndCloseup()
+	Effects.Letterbox(false)
+	if Effects.DOF then
+		Effects.Tween(Effects.DOF, 0.6, { FarIntensity = 0.18 })
+		Effects.DOF.InFocusRadius = 70
+		Effects.DOF.FocusDistance = 50
+	end
 end
 
 ---------------------------------------------------------------- flight + landing + gate
@@ -668,6 +716,10 @@ Remotes.PortalOpened.OnClientEvent:Connect(function(info)
 		-- Rarity caption and world label already show the odds; avoid a third floating label.
 		if TC.InputBlocked or TC.SystemMenuOpen then
 			TC.StopFollow(true)
+		elseif rc.order >= 3 and not Settings.ReducedMotion then
+			-- a GOOD pet: zoom in on it and keep watching through its entrance and capture
+			local catchDur = (Renderer.CatchConfig[def.rarity] or Renderer.CatchConfig.Common).dur
+			TC.StartCloseup(info.id, def, info.pos, (Config.CatchDelay[def.rarity] or 3) + catchDur + 0.5)
 		elseif camFollow and camFollow.id == info.id then
 			camFollow.pos = info.pos
 			camFollow.untilT = os.clock() + Timeline.FollowHoldAfterOpen(def.rarity)

@@ -1,0 +1,21 @@
+[
+  "build-place.ps1",
+  "IMPLEMENTATION_STATUS.md",
+  "src/ReplicatedStorage/Shared/PortalBuilder.lua",
+  "src/ReplicatedStorage/Shared/PortalDesign.lua",
+  "src/ServerScriptService/Server/BaseBuilder.lua",
+  "src/ServerScriptService/Server/DataService.lua",
+  "src/ServerScriptService/Server/SanctuaryArchitecture.lua",
+  "src/ServerScriptService/Server/SanctuaryBase.lua",
+  "src/ServerScriptService/Server/SanctuaryHub.lua",
+  "src/ServerScriptService/Server/WorldBuilder.lua",
+  "src/ServerScriptService/Server/WorldHub.lua",
+  "src/StarterPlayer/StarterPlayerScripts/Client/ClientMain.client.lua",
+  "src/StarterPlayer/StarterPlayerScripts/Client/Effects.lua",
+  "src/StarterPlayer/StarterPlayerScripts/Client/ThrowController.lua",
+  "src/StarterPlayer/StarterPlayerScripts/Client/WorldFx.lua",
+  "tests/client/LobbyPortalTest.client.lua",
+  "tests/lune/portals.luau",
+  "tests/studio/SanctuaryAudit.lua",
+  "tests/verify_place.py"
+]

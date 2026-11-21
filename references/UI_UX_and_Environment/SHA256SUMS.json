@@ -1,0 +1,21 @@
+{
+  "01_Premium_Lobby.jpg": "9b8f046d4584c77293eff5dd3c04855586495bc34f8e73c5ebb3a82ef03d14cb",
+  "02_Portal_Forge.jpg": "4b32b4877c9a0dd70491eadc836b5596ef4c7c2df65e3480a93bf836e1f4ceed",
+  "03_Creature_Collection.jpg": "4c3e27f517cb78428bb6fb84a6deb377704c3f46308031518d4dc25771c7056b",
+  "04_Garden_Workshop.jpg": "70d5c5974f1ef1621bf190b966fc6c4e708169c39f07e7dda166565416be1eee",
+  "05_iPhone_17_Shop.jpg": "2de7e3351675c711193a9b1a467d2025a019185d854fcc398245eb7ece1a0713",
+  "06_iPad_Settings.jpg": "0df29778b4b71af40ce1c09d8a59c37fc8f8497ac8cddd222e63a1837c099d25",
+  "07_Menu_Only_HUD.jpg": "5a7bec7f610437a5fcf09a3a5baa6ea376b7fe83d3d4cfacdbdb136b37a39b72",
+  "Before_TeamCreate_Update.zip": "ec6805aa766709177c5bc1edebe93fb37e7127284a08b7afdaac21e1fb319aca",
+  "Changed_Files.json": "38f457c92835f52169b8e44a0fc65d93ea1ff8cb221955608d4ff63cdbd3fdfc",
+  "Live_Lobby_Audit.json": "77174381b16835f083b9572a87bdfeea069b81187b0a069a6d8c649b7237278c",
+  "Live_Portal_Regression.json": "ea4f7a3da320d7f065024565838777e001a522fdccf39625ba211dd3aa6f7fb7",
+  "Menu_Only_Review.json": "28bad21eb2a7e80496bdb9c064aa8eb3864d56195c9c69fb617ed3897e12ea84",
+  "OPEN_ME_Sanctuary_2026_11_22.rbxl": "39696ea94cd3ca1e325c086815b733d6b76b7779e9291965da8cbedb45b76680",
+  "Project_Source.zip": "d8db94fcbe21b762a4d4526a9cc8d9c7861c4125edf95affe082ba373ee550f1",
+  "README.txt": "0daf6880981ececb0d81a5574a0b907086a10d7cf5b1e5dc1d57f7e6dc0803c6",
+  "Release_Source_Verification.json": "e54cd8049d915119a2d52b907890258b0fcb37eb04ec4aef7a5d4d368b77bb65",
+  "Team_Create_Verification.json": "913d89ff310d9e09f487e3286fc67691808dafbd670335330befcb092ec7cd92",
+  "UI_Environment_Changes.patch": "03eab1c1ad8c090a0f052f10eb3506b396aa19b52ace9ae3ecf2f1412f77d02c",
+  "UI_Environment_Lint.txt": "c7dd9648671156f4b8358621237c9c884750c5e21012a75ae7ac86e6eb79fc8c"
+}

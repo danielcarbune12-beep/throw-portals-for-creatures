@@ -355,4 +355,13 @@ RunService.Heartbeat:Connect(function(dt)
 	end
 end)
 
--- First-throw guidance is context driven by GameplayFeel, without a recurring welcome toast.
+-- Cinematic intro fly-over; first-throw guidance stays context driven by GameplayFeel (no welcome toast).
+task.spawn(function()
+	local ok, err = pcall(function() require(Client.Intro).Play(HUD.Gui) end)
+	if not ok then
+		warn("[Intro] " .. tostring(err))
+		workspace.CurrentCamera.CameraType = Enum.CameraType.Custom
+		HUD.Gui.Enabled = true
+		Effects.Letterbox(false)
+	end
+end)
