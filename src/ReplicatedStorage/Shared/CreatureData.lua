@@ -253,6 +253,56 @@ add{ id="ThroneAngel", name="Throne Guardian", rarity="Mythical", world="Heaven"
 	c={"#FFFFFF","#FFE9A6","#FFD24A"}, eyes="glow", wings="angel", extra={"halo","crown","crystal"}, mat="Marble", fx="holy", scale=1.15,
 	desc="Has guarded Heaven's throne for ten thousand years." }
 
+---------------------------------------------------------------- NEW WAVE: one more Rare + Epic per world
+add{ id="Fernling", name="Fernling", rarity="Rare", world="Forest", body="slime", move="hop", idle="wiggle",
+	c={"#6FD86A","#E9FFD9","#2E8B3A"}, eyes="big", extra={"leafsprout","flower"}, mat="Grass", fx="leaves",
+	desc="A jelly made of morning dew and baby leaves." }
+add{ id="Owlbramble", name="Owlbramble", rarity="Epic", world="Forest", body="bird", move="fly", idle="peek",
+	c={"#8A6A44","#F3E2C0","#7CFF9A"}, ears="pointy", wings="feather", tail="leaf", eyes="glow", extra={"antenna"}, fx="leaves", scale=1.1,
+	desc="Wears a nest of brambles. Knows every secret path." }
+add{ id="Lavalamb", name="Lava Lamb", rarity="Rare", world="Volcano", body="round", move="hop", idle="bounce",
+	c={"#3A2A2A","#FF8A3A","#FFD24A"}, ears="floppy", horns="ram", eyes="big", extra={"mane"}, fx="embers",
+	desc="Its fluffy wool is made of warm volcanic ash." }
+add{ id="Scorchscorp", name="Scorch Scorpion", rarity="Epic", world="Volcano", body="bug", move="walk", idle="proud",
+	c={"#C2361A","#FFB347","#2A0A05"}, tail="stinger", eyes="fierce", extra={"spikes","shell"}, mat="Slate", fx="fire", scale=1.1,
+	desc="Its stinger glows like a hot coal." }
+add{ id="Penguino", name="Penguino", rarity="Rare", world="Frozen", body="bird", move="hop", idle="dance",
+	c={"#1F2A44","#FFFFFF","#FFB23B"}, wings="feather", eyes="big", extra={"scarf"}, fx="snow",
+	desc="The best dancer in the whole Frozen Kingdom." }
+add{ id="Icewyrm", name="Ice Wyrm", rarity="Epic", world="Frozen", body="fish", move="slither", idle="sway",
+	c={"#BFF0FF","#FFFFFF","#3B8BD6"}, ears="fin", tail="long", eyes="glow", extra={"crystal","spikes"}, mat="Glass", fx="snow", scale=1.2,
+	desc="Burrows through glaciers leaving sparkly tunnels." }
+add{ id="Opalfox", name="Opal Fox", rarity="Rare", world="Crystal", body="quad", move="walk", idle="sway",
+	c={"#F2E6FF","#FFFFFF","#7DF9FF"}, ears="pointy", tail="aurora", eyes="sparkle", extra={"crystal"}, mat="Glass", fx="sparkle",
+	desc="Changes colour depending on how you look at it." }
+add{ id="Shardgolem", name="Shard Golem", rarity="Epic", world="Crystal", body="golem", move="walk", idle="dance",
+	c={"#5A2BA8","#E9D9FF","#FF7AE6"}, eyes="glow", extra={"crystal","crown"}, mat="Glass", fx="rainbow", scale=1.1,
+	desc="Built from a thousand singing crystals." }
+add{ id="Donutpup", name="Donut Pup", rarity="Rare", world="Candy", body="round", move="hop", idle="wiggle",
+	c={"#E8B07A","#FF8AC8","#7FE0FF"}, ears="floppy", tail="fluffy", eyes="big", extra={"candy"}, fx="hearts",
+	desc="Covered in sprinkles. Smells like breakfast." }
+add{ id="Jellyray", name="Jelly Ray", rarity="Epic", world="Candy", body="fish", move="float", idle="float",
+	c={"#FF7AD0","#FFE1F0","#7FE0FF"}, ears="fin", tail="fish", eyes="sparkle", mat="Glass", extra={"candy"}, fx="hearts", scale=1.2,
+	desc="Glides through the air like a wobbly gummy kite." }
+add{ id="Rocketpup", name="Rocket Pup", rarity="Rare", world="Space", body="quad", move="walk", idle="peek",
+	c={"#E0E4F0","#FF5A3A","#5BC0FF"}, ears="round", tail="flame", eyes="big", extra={"helmet","antenna"}, fx="stars",
+	desc="Wants to be the first dog on every planet." }
+add{ id="Quasarowl", name="Quasar Owl", rarity="Epic", world="Space", body="bird", move="fly", idle="spin",
+	c={"#2B1A6E","#FFE45C","#B06BFF"}, ears="pointy", wings="feather", tail="aurora", eyes="glow", extra={"rings"}, mat="Glass", fx="stars", scale=1.1,
+	desc="Its eyes shine brighter than a thousand stars." }
+add{ id="Duskbat", name="Dusk Bat", rarity="Rare", world="Shadow", body="round", move="fly", idle="float",
+	c={"#2A1A3A","#8A5BAA","#FF4A8A"}, ears="pointy", wings="bat", eyes="glow", extra={"spikes"}, fx="smoke",
+	desc="Only comes out when the sun goes to sleep." }
+add{ id="Phantomstag", name="Phantom Stag", rarity="Epic", world="Shadow", body="quad", move="float", idle="proud",
+	c={"#1A1028","#6A4A9A","#7CFFE0"}, ears="pointy", horns="antlers", tail="fluffy", eyes="glow", mat="Glass", fx="smoke", scale=1.15,
+	desc="Half ghost, half deer, fully majestic." }
+add{ id="Cherubcat", name="Cherub Cat", rarity="Rare", world="Heaven", body="quad", move="fly", idle="peek",
+	c={"#FFF6E6","#FFFFFF","#FFC94A"}, ears="cat", tail="long", wings="angel", eyes="sparkle", extra={"halo"}, fx="holy",
+	desc="Naps on clouds and purrs like a choir." }
+add{ id="Sunbird", name="Sunrise Bird", rarity="Epic", world="Heaven", body="bird", move="fly", idle="float",
+	c={"#FFC23B","#FFF6D6","#FF6B6B"}, wings="angel", tail="aurora", eyes="glow", extra={"crown","halo"}, fx="holy", scale=1.15,
+	desc="Every morning it sings the sun awake." }
+
 ---------------------------------------------------------------- EXTRA SECRET + DIVINE
 add{ id="NullBunny", name="Null Bunny", rarity="Secret", world="Any", body="round", move="hop", idle="bounce",
 	c={"#000000","#FFFFFF","#FF003C"}, ears="bunny", tail="fluffy", eyes="cyclops", extra={"halo"}, mat="Neon", fx="glitch",

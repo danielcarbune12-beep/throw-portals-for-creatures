@@ -1,6 +1,6 @@
 # Throw Portals For Creatures — Setup Guide
 
-A complete, playable Roblox simulator. **Everything is built from code**: one long map with 8 zones, the Portal Launch Hall, 8 player bases (each with its own gym), 74 creatures, 9 portals, all UI, effects and animations. No asset uploads are required to play.
+A complete, playable Roblox simulator. **Everything is built from code**: one long map with 8 zones, the Portal Launch Hall, 8 player bases (each with its own gym), 90 creatures, 9 portals, a cinematic intro, all UI, effects and animations. No asset uploads are required to play.
 
 ## Install (pick one)
 
@@ -35,7 +35,8 @@ StarterPlayer
       ├─ ThrowController     (ModuleScript)
       ├─ UIKit               (ModuleScript)
       ├─ HUD                 (ModuleScript)
-      └─ Panels              (ModuleScript)
+      ├─ Panels              (ModuleScript)
+      └─ Intro               (ModuleScript)
 ```
 3. Paste each file's contents into the matching script.
 4. **Game Settings → Security → Enable Studio Access to API Services** (this turns on saving in Studio).
@@ -78,7 +79,9 @@ powershell -ExecutionPolicy Bypass -File .\build-place.ps1
 | System | Where |
 |---|---|
 | Rarity odds, prices, upgrade curves, worlds, decor | `Config.lua` (tune everything here) |
-| 74 creatures (8 per world, plus 5 Secret and 5 Divine from any portal that can roll them) | `CreatureData.lua` |
+| 90 creatures (10 per world, plus 5 Secret and 5 Divine from any portal that can roll them) | `CreatureData.lua` |
+| Cinematic intro fly-over when you join (click to skip) | `Intro.lua` |
+| Cinematic close-up camera on good (Rare+) pets, per-zone lighting looks, vignette + letterbox | `ThrowController.lua`, `Effects.lua` |
 | Creature odds ("1 in X"), shared by server rolls and the UI | `Odds.lua` |
 | Procedural 3D creature models: ellipsoid bodies, glossy eyes, ears, horns, wings, tails, crowns, halos, auras | `CreatureBuilder.lua` |
 | Procedural animation: idles, hop/walk/run/fly/float/slither, blinking, eye tracking, squash & stretch, reactions | `CreatureAnimator.lua` |

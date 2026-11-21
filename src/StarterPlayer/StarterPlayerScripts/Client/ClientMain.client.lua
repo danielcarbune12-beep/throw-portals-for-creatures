@@ -313,7 +313,14 @@ RunService.Heartbeat:Connect(function(dt)
 	end
 end)
 
--- welcome
-task.delay(3, function()
-	HUD.Notify("Welcome to Throw Portals For Creatures! Hold to charge, release to throw!", "info")
+-- cinematic intro fly-over, then the welcome message
+task.spawn(function()
+	local ok, err = pcall(function() require(Client.Intro).Play(HUD.Gui) end)
+	if not ok then
+		warn("[Intro] " .. tostring(err))
+		workspace.CurrentCamera.CameraType = Enum.CameraType.Custom
+		HUD.Gui.Enabled = true
+		Effects.Letterbox(false)
+	end
+	HUD.Notify("Welcome to Throw Portals For Creatures! Go to the Launch Hall to throw!", "info")
 end)

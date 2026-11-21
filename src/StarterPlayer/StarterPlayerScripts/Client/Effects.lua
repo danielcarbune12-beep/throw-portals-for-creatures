@@ -239,21 +239,73 @@ function Effects.SetupLighting()
 	-- (Lighting.Technology can't be set by scripts; it's set to Future in the place file)
 	pcall(function()
 		Lighting.GlobalShadows = true
-		Lighting.Brightness = 2.4
-		Lighting.EnvironmentDiffuseScale = 0.6
-		Lighting.EnvironmentSpecularScale = 0.6
+		Lighting.Brightness = 3
+		Lighting.ShadowSoftness = 0.25
+		Lighting.EnvironmentDiffuseScale = 1
+		Lighting.EnvironmentSpecularScale = 1
+		Lighting.GeographicLatitude = 35
 	end)
 	bloom = Lighting:FindFirstChild("TPFC_Bloom") or Instance.new("BloomEffect")
-	bloom.Name = "TPFC_Bloom"; bloom.Intensity = 0.7; bloom.Size = 28; bloom.Threshold = 1.6; bloom.Parent = Lighting
+	bloom.Name = "TPFC_Bloom"; bloom.Intensity = 0.9; bloom.Size = 32; bloom.Threshold = 1.4; bloom.Parent = Lighting
 	cc = Lighting:FindFirstChild("TPFC_CC") or Instance.new("ColorCorrectionEffect")
-	cc.Name = "TPFC_CC"; cc.Saturation = 0.18; cc.Contrast = 0.08; cc.Parent = Lighting
+	cc.Name = "TPFC_CC"; cc.Saturation = 0.25; cc.Contrast = 0.12; cc.Brightness = 0.02; cc.Parent = Lighting
 	rays = Lighting:FindFirstChild("TPFC_Rays") or Instance.new("SunRaysEffect")
-	rays.Name = "TPFC_Rays"; rays.Intensity = 0.06; rays.Spread = 0.6; rays.Parent = Lighting
+	rays.Name = "TPFC_Rays"; rays.Intensity = 0.12; rays.Spread = 0.75; rays.Parent = Lighting
 	atmo = Lighting:FindFirstChildOfClass("Atmosphere") or Instance.new("Atmosphere")
-	atmo.Density = 0.3; atmo.Haze = 1; atmo.Glare = 0.3; atmo.Parent = Lighting
+	atmo.Density = 0.32; atmo.Offset = 0.15; atmo.Haze = 1.6; atmo.Glare = 0.6; atmo.Parent = Lighting
 	local dof = Lighting:FindFirstChild("TPFC_DOF") or Instance.new("DepthOfFieldEffect")
-	dof.Name = "TPFC_DOF"; dof.FarIntensity = 0.12; dof.FocusDistance = 60; dof.InFocusRadius = 80; dof.NearIntensity = 0; dof.Parent = Lighting
+	dof.Name = "TPFC_DOF"; dof.FarIntensity = 0.18; dof.FocusDistance = 50; dof.InFocusRadius = 70; dof.NearIntensity = 0; dof.Parent = Lighting
+	Effects.DOF = dof
 	Effects.SetupExtras()
+	Effects.SetupVignette()
+end
+
+---------------------------------------------------------------- cinematic vignette + letterbox bars
+function Effects.SetupVignette()
+	-- soft dark edges (four gradient frames), always on, drawn BELOW the HUD
+	local vgui = Instance.new("ScreenGui")
+	vgui.Name = "Vignette"
+	vgui.IgnoreGuiInset = true
+	vgui.ResetOnSpawn = false
+	vgui.DisplayOrder = -5
+	vgui.Parent = gui.Parent
+	local edges = {
+		{ UDim2.new(1, 0, 0.22, 0), UDim2.fromScale(0, 0), 90 },
+		{ UDim2.new(1, 0, 0.22, 0), UDim2.fromScale(0, 0.78), -90 },
+		{ UDim2.new(0.16, 0, 1, 0), UDim2.fromScale(0, 0), 0 },
+		{ UDim2.new(0.16, 0, 1, 0), UDim2.fromScale(0.84, 0), 180 },
+	}
+	for _, e in ipairs(edges) do
+		local f = Instance.new("Frame")
+		f.Size, f.Position = e[1], e[2]
+		f.BackgroundColor3 = Color3.new(0, 0, 0)
+		f.BorderSizePixel = 0
+		f.ZIndex = 1
+		local g = Instance.new("UIGradient")
+		g.Rotation = e[3]
+		g.Transparency = NumberSequence.new(0.55, 1)
+		g.Parent = f
+		f.Parent = vgui
+	end
+end
+
+local bars
+function Effects.Letterbox(on: boolean)
+	if not bars then
+		bars = {}
+		for i, pos in ipairs({ UDim2.fromScale(0, -0.12), UDim2.fromScale(0, 1) }) do
+			local b = Instance.new("Frame")
+			b.Size = UDim2.fromScale(1, 0.12)
+			b.Position = pos
+			b.BackgroundColor3 = Color3.new(0, 0, 0)
+			b.BorderSizePixel = 0
+			b.ZIndex = 45
+			b.Parent = gui
+			bars[i] = b
+		end
+	end
+	tween(bars[1], 0.45, { Position = on and UDim2.fromScale(0, 0) or UDim2.fromScale(0, -0.12) }, Enum.EasingStyle.Quad)
+	tween(bars[2], 0.45, { Position = on and UDim2.fromScale(0, 0.88) or UDim2.fromScale(0, 1) }, Enum.EasingStyle.Quad)
 end
 
 -- ambient particles that follow the camera, themed per zone
@@ -321,6 +373,17 @@ function Effects.SetupExtras()
 	setupSky()
 end
 
+local LOOK = {
+	Forest  = { clock = 16.4, exposure = 0.15, sat = 0.28, contrast = 0.12, bloom = 0.8, rays = 0.16, density = 0.3,  haze = 1.6 }, -- golden afternoon
+	Volcano = { clock = 18.4, exposure = 0.1,  sat = 0.35, contrast = 0.2,  bloom = 1.2, rays = 0.2,  density = 0.42, haze = 2.4 },
+	Frozen  = { clock = 9.5,  exposure = 0.25, sat = 0.1,  contrast = 0.1,  bloom = 0.9, rays = 0.18, density = 0.35, haze = 2.0 },
+	Crystal = { clock = 0,    exposure = 0.3,  sat = 0.45, contrast = 0.18, bloom = 1.6, rays = 0.05, density = 0.38, haze = 1.4 },
+	Candy   = { clock = 13,   exposure = 0.25, sat = 0.5,  contrast = 0.08, bloom = 1.0, rays = 0.12, density = 0.28, haze = 1.2 },
+	Space   = { clock = 0,    exposure = 0.2,  sat = 0.4,  contrast = 0.2,  bloom = 1.8, rays = 0.0,  density = 0.12, haze = 0.4 },
+	Shadow  = { clock = 21.5, exposure = 0.0,  sat = 0.3,  contrast = 0.28, bloom = 1.4, rays = 0.0,  density = 0.5,  haze = 2.6 },
+	Heaven  = { clock = 12,   exposure = 0.35, sat = 0.15, contrast = 0.06, bloom = 1.3, rays = 0.3,  density = 0.25, haze = 2.2 },
+}
+
 local currentWorld
 function Effects.UpdateWorld(pos: Vector3)
 	local id = Config.WorldAt(pos)
@@ -333,9 +396,13 @@ function Effects.UpdateWorld(pos: Vector3)
 		local ccol = ({ Volcano = Color3.fromRGB(90, 60, 60), Shadow = Color3.fromRGB(70, 40, 90), Candy = Color3.fromRGB(255, 210, 235) })[id] or Color3.new(1, 1, 1)
 		tween(clouds, 2, { Cover = cover, Color = ccol })
 	end
-	tween(Lighting, 1.5, { Ambient = W.ambient, OutdoorAmbient = W.ambient, ClockTime = W.clock, FogColor = W.fog })
-	if cc then tween(cc, 1.5, { TintColor = W.tint }) end
-	if atmo then tween(atmo, 1.5, { Color = W.atmo, Decay = W.fog, Density = (id == "Space") and 0.15 or (id == "Shadow" and 0.45 or 0.3) }) end
+	-- each zone has its own "look": time of day, exposure, colour grading, bloom and sun rays
+	local look = LOOK[id] or LOOK.Forest
+	tween(Lighting, 1.5, { Ambient = W.ambient, OutdoorAmbient = W.ambient, ClockTime = look.clock or W.clock, FogColor = W.fog, ExposureCompensation = look.exposure })
+	if cc then tween(cc, 1.5, { TintColor = W.tint, Saturation = look.sat, Contrast = look.contrast }) end
+	if bloom then tween(bloom, 1.5, { Intensity = look.bloom }) end
+	if rays then tween(rays, 1.5, { Intensity = look.rays }) end
+	if atmo then tween(atmo, 1.5, { Color = W.atmo, Decay = W.fog, Density = look.density, Haze = look.haze }) end
 	return id
 end
 

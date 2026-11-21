@@ -162,18 +162,67 @@ local camFollow = nil -- { pos = Vector3, untilT = number, cf = CFrame }
 RunService:BindToRenderStep("TPFC_FollowCam", Enum.RenderPriority.Camera.Value, function(dt)
 	if not camFollow then return end
 	if os.clock() > camFollow.untilT then
+		if camFollow.closeup then TC.EndCloseup() end
 		camFollow = nil
 		camera.CameraType = Enum.CameraType.Custom
 		return
 	end
 	local target = camFollow.pos
 	local desired = CFrame.lookAt(target + Vector3.new(14, 12, -34), target + Vector3.new(0, 2, 0))
+	if camFollow.closeup then
+		-- CINEMATIC CLOSE-UP: slow orbit around the creature, pushing in
+		local e = Renderer.Wild[camFollow.id]
+		local p
+		if e and e.anim and e.model and e.model.Parent then
+			p = Vector3.new(e.anim.pos.X, e.anim.groundY, e.anim.pos.Z)
+			camFollow.lastP = p
+		else
+			p = camFollow.lastP or camFollow.pos
+		end
+		local t = os.clock() - camFollow.closeT
+		local h = camFollow.height
+		local look = p + Vector3.new(0, h * 0.55, 0)
+		local a = -0.7 + t * 0.32
+		local R = camFollow.radius * (1.35 - 0.35 * math.min(1, t / 1.5))
+		desired = CFrame.lookAt(look + Vector3.new(math.sin(a) * R, h * 0.25 + 1.5, -math.cos(a) * R), look)
+		if Effects.DOF then Effects.DOF.FocusDistance = R end
+	end
 	camFollow.cf = camFollow.cf and camFollow.cf:Lerp(desired, 1 - math.exp(-5 * dt)) or camera.CFrame:Lerp(desired, 0.2)
 	camera.CameraType = Enum.CameraType.Scriptable
 	camera.CFrame = camFollow.cf
 end)
 function TC.StopFollow()
 	if camFollow then camFollow.untilT = 0 end
+end
+
+-- start a cinematic zoom on a good creature you just found
+function TC.StartCloseup(id, def, pos, duration)
+	local rc = Config.Rarities[def.rarity]
+	local size = rc.size * (def.scale or 1)
+	camFollow = camFollow or { pos = pos, untilT = 0 }
+	camFollow.id = id
+	camFollow.pos = pos
+	camFollow.closeup = true
+	camFollow.closeT = os.clock()
+	camFollow.height = 4 * size
+	camFollow.radius = (7 + rc.order * 0.8) * size
+	camFollow.untilT = os.clock() + duration
+	Effects.Letterbox(true)
+	Effects.Tween(camera, 0.7, { FieldOfView = 48 }, Enum.EasingStyle.Quad)
+	if Effects.DOF then
+		Effects.DOF.InFocusRadius = 12
+		Effects.Tween(Effects.DOF, 0.6, { FarIntensity = 0.45 })
+	end
+end
+
+function TC.EndCloseup()
+	Effects.Letterbox(false)
+	Effects.Tween(camera, 0.6, { FieldOfView = 70 }, Enum.EasingStyle.Quad)
+	if Effects.DOF then
+		Effects.Tween(Effects.DOF, 0.6, { FarIntensity = 0.18 })
+		Effects.DOF.InFocusRadius = 70
+		Effects.DOF.FocusDistance = 50
+	end
 end
 
 ---------------------------------------------------------------- flight + landing + gate
@@ -317,9 +366,13 @@ Remotes.PortalOpened.OnClientEvent:Connect(function(info)
 	end
 	if mine then
 		Effects.FloatingText(center + Vector3.new(0, 5, 0), chanceText, rc.color, 1.3)
-		if camFollow and camFollow.id == info.id then
+		if rc.order >= 3 then
+			-- a GOOD pet: zoom in on it and keep watching through its entrance and capture
+			local catchDur = (Renderer.CatchConfig[def.rarity] or Renderer.CatchConfig.Common).dur
+			TC.StartCloseup(info.id, def, info.pos, (Config.CatchDelay[def.rarity] or 3) + catchDur + 0.5)
+		elseif camFollow and camFollow.id == info.id then
 			camFollow.pos = info.pos
-			camFollow.untilT = os.clock() + (rc.order >= 6 and 4.8 or (rc.order >= 5 and 4 or (rc.order >= 3 and 3 or 2.5)))
+			camFollow.untilT = os.clock() + 2.5
 		end
 	end
 	task.delay(rc.order >= 5 and 3 or 2.3, function() closeGate(info.id) end)
