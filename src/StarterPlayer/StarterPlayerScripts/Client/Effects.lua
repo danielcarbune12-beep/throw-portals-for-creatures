@@ -8,6 +8,7 @@ local TweenService = game:GetService("TweenService")
 local Lighting = game:GetService("Lighting")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Config = require(ReplicatedStorage.Shared.Config)
+local Settings = require(script.Parent.ClientSettings)
 
 local Effects = {}
 local player = Players.LocalPlayer
@@ -45,6 +46,8 @@ RunService:BindToRenderStep("TPFC_Shake", Enum.RenderPriority.Camera.Value + 1, 
 	end
 end)
 function Effects.Shake(intensity: number, duration: number)
+	if not Settings.CameraShake then return end
+	if Settings.ReducedMotion then intensity *= 0.4 end
 	local active = os.clock() < shakeEnd
 	shakeAmt = active and math.max(shakeAmt, intensity) or intensity
 	shakeEnd = math.max(shakeEnd, os.clock() + duration)
@@ -52,10 +55,13 @@ end
 
 ---------------------------------------------------------------- screen flash
 function Effects.Flash(color: Color3, duration: number?, strength: number?)
+	if Settings.ReducedFlashes then return end
+	-- never a full-opacity frame: cap strength so the scene stays visible
+	strength = math.min(strength or 0.6, 0.35)
 	local f = Instance.new("Frame")
 	f.Size = UDim2.fromScale(1, 1)
 	f.BackgroundColor3 = color
-	f.BackgroundTransparency = 1 - (strength or 0.6)
+	f.BackgroundTransparency = 1 - strength
 	f.BorderSizePixel = 0
 	f.ZIndex = 50
 	f.Parent = gui
@@ -81,12 +87,12 @@ Effects.Part = fxPart
 
 function Effects.Shockwave(pos: Vector3, color: Color3, radius: number?, time: number?)
 	local r = radius or 14
-	local ring = fxPart(Vector3.new(0.3, 1, 1), CFrame.new(pos + Vector3.new(0, 0.2, 0)) * CFrame.Angles(0, 0, math.pi / 2), color, Enum.Material.Neon, 0.1)
+	local ring = fxPart(Vector3.new(0.3, 1, 1), CFrame.new(pos + Vector3.new(0, 0.2, 0)) * CFrame.Angles(0, 0, math.pi / 2), color, Enum.Material.Neon, 0.4)
 	ring.Shape = Enum.PartType.Cylinder
 	tween(ring, time or 0.6, { Size = Vector3.new(0.1, r * 2, r * 2), Transparency = 1 }, Enum.EasingStyle.Quart)
 	task.delay((time or 0.6) + 0.05, function() ring:Destroy() end)
 	-- inner dome pulse
-	local dome = fxPart(Vector3.new(1, 1, 1), CFrame.new(pos), color, Enum.Material.ForceField, 0, Enum.MeshType.Sphere)
+	local dome = fxPart(Vector3.new(1, 1, 1), CFrame.new(pos), color, Enum.Material.ForceField, 0.92, Enum.MeshType.Sphere)
 	tween(dome, (time or 0.6) * 0.8, { Size = Vector3.new(r, r * 0.6, r), Transparency = 1 }, Enum.EasingStyle.Quart)
 	task.delay(time or 0.6, function() dome:Destroy() end)
 end
@@ -113,10 +119,10 @@ end
 
 function Effects.LightBeam(pos: Vector3, color: Color3, height: number?, duration: number?)
 	local h = height or 120
-	local beam = fxPart(Vector3.new(h, 0.5, 0.5), CFrame.new(pos + Vector3.new(0, h / 2, 0)) * CFrame.Angles(0, 0, math.pi / 2), color, Enum.Material.Neon, 0.1)
+	local beam = fxPart(Vector3.new(h, 0.5, 0.5), CFrame.new(pos + Vector3.new(0, h / 2, 0)) * CFrame.Angles(0, 0, math.pi / 2), color, Enum.Material.Neon, 0.78)
 	beam.Shape = Enum.PartType.Cylinder
-	local l = Instance.new("PointLight"); l.Color = color; l.Range = 40; l.Brightness = 5; l.Parent = beam
-	tween(beam, 0.35, { Size = Vector3.new(h, 9, 9) }, Enum.EasingStyle.Back)
+	local l = Instance.new("PointLight"); l.Color = color; l.Range = 18; l.Brightness = 1.2; l.Parent = beam
+	tween(beam, 0.25, { Size = Vector3.new(h, 1.1, 1.1) }, Enum.EasingStyle.Quart)
 	task.delay(0.35, function()
 		tween(beam, duration or 1.6, { Size = Vector3.new(h, 0.2, 0.2), Transparency = 1 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 		tween(l, duration or 1.6, { Brightness = 0 })
@@ -192,44 +198,26 @@ function Effects.Coins(worldPos: Vector3?, count: number?)
 end
 
 ---------------------------------------------------------------- rarity banner
+local revealCaption
 function Effects.RarityBanner(def, chanceText)
-	local rc = Config.Rarities[def.rarity]
-	local holder = Instance.new("Frame")
-	holder.AnchorPoint = Vector2.new(0.5, 0.5)
-	holder.Position = UDim2.fromScale(0.5, 0.3)
-	holder.Size = UDim2.fromScale(0.6, 0.16)
-	holder.BackgroundTransparency = 1
-	holder.ZIndex = 45
-	holder.Parent = gui
-	local sc = Instance.new("UIScale"); sc.Scale = 0; sc.Parent = holder
-	local title = Instance.new("TextLabel")
-	title.Size = UDim2.fromScale(1, 0.62)
-	title.BackgroundTransparency = 1
-	title.Font = Enum.Font.FredokaOne
-	title.TextScaled = true
-	title.Text = def.rarity:upper() .. "!"
-	title.TextColor3 = Color3.new(1, 1, 1)
-	title.ZIndex = 46
-	local grad = Instance.new("UIGradient")
-	grad.Color = ColorSequence.new(rc.color:Lerp(Color3.new(1, 1, 1), 0.5), rc.color)
-	grad.Rotation = 90
-	grad.Parent = title
-	local st = Instance.new("UIStroke"); st.Thickness = 4; st.Color = Color3.fromRGB(25, 15, 35); st.Parent = title
-	title.Parent = holder
-	local name = title:Clone()
-	name.Size = UDim2.fromScale(1, 0.38)
-	name.Position = UDim2.fromScale(0, 0.62)
-	name.Text = def.name .. (chanceText and ("  •  " .. chanceText) or "")
-	name:FindFirstChildOfClass("UIGradient"):Destroy()
-	name.Parent = holder
-	tween(sc, 0.5, { Scale = 1 }, Enum.EasingStyle.Back)
-	local spin = RunService.RenderStepped:Connect(function()
-		grad.Offset = Vector2.new(0, math.sin(os.clock() * 4) * 0.2)
-		holder.Rotation = math.sin(os.clock() * 3) * 2
-	end)
-	task.delay(2.6, function()
-		tween(sc, 0.3, { Scale = 0 }, Enum.EasingStyle.Back, Enum.EasingDirection.In)
-		task.delay(0.35, function() spin:Disconnect(); holder:Destroy() end)
+	if revealCaption then revealCaption:Destroy() end
+	local T=require(script.Parent.UITheme)
+	local holder=Instance.new("Frame") holder.Name="RevealCaption" holder.AnchorPoint=Vector2.new(.5,1)
+	holder.Position=UDim2.new(.5,0,1,-24) holder.Size=UDim2.new(.88,0,0,66) holder.BackgroundColor3=T.Panel holder.BackgroundTransparency=.05 holder.BorderSizePixel=0 holder.ZIndex=45 holder.Parent=gui
+	revealCaption=holder
+	local limit=Instance.new("UISizeConstraint") limit.MaxSize=Vector2.new(400,66) limit.Parent=holder
+	local corner=Instance.new("UICorner") corner.CornerRadius=UDim.new(0,8) corner.Parent=holder
+	local border=Instance.new("UIStroke") border.Color=T.Border border.Thickness=1 border.Parent=holder
+	local function label(text,y,height,size,color,bold)
+		local l=Instance.new("TextLabel") l.BackgroundTransparency=1 l.Size=UDim2.new(1,-32,0,height) l.Position=UDim2.fromOffset(16,y) l.Font=bold and T.Bold or T.Font l.TextSize=size l.TextColor3=color l.TextXAlignment=Enum.TextXAlignment.Left l.TextWrapped=true l.Text=text l.ZIndex=46 l.Parent=holder return l
+	end
+	local title=label(def.name,8,27,20,T.Text,true)
+	local detail=label(def.rarity..(chanceText and (" · "..chanceText) or ""),36,21,14,T.Rarity(def.rarity,Config),false)
+	task.delay(1.9,function()
+		if not holder.Parent then return end
+		if Settings.ReducedMotion then holder:Destroy() return end
+		tween(holder,.18,{BackgroundTransparency=1}) tween(border,.18,{Transparency=1}) tween(title,.18,{TextTransparency=1}) tween(detail,.18,{TextTransparency=1})
+		task.delay(.2,function() holder:Destroy() end)
 	end)
 end
 
@@ -310,6 +298,7 @@ end
 
 -- ambient particles that follow the camera, themed per zone
 local AMBIENT = {
+	Hub = { col = { Color3.fromRGB(241,202,115), Color3.fromRGB(168,139,244) }, rate=6, speed=.3, size=.12, accel=Vector3.new(0,.05,0) },
 	Forest  = { col = { Color3.fromRGB(220, 255, 140), Color3.fromRGB(255, 240, 160) }, rate = 18, speed = 0.6, size = 0.35, accel = Vector3.new(0, 0.3, 0) },   -- fireflies
 	Volcano = { col = { Color3.fromRGB(255, 140, 40), Color3.fromRGB(255, 60, 20) },    rate = 40, speed = 1.5, size = 0.3,  accel = Vector3.new(0, 4, 0) },      -- embers
 	Frozen  = { col = { Color3.fromRGB(255, 255, 255), Color3.fromRGB(200, 235, 255) }, rate = 70, speed = 1,   size = 0.35, accel = Vector3.new(1, -4, 0) },     -- snow
@@ -319,7 +308,7 @@ local AMBIENT = {
 	Shadow  = { col = { Color3.fromRGB(150, 60, 255), Color3.fromRGB(60, 0, 90) },      rate = 30, speed = 0.4, size = 0.6,  accel = Vector3.new(0, 0.6, 0) },
 	Heaven  = { col = { Color3.fromRGB(255, 245, 190), Color3.fromRGB(255, 255, 255) }, rate = 40, speed = 0.6, size = 0.45, accel = Vector3.new(0, 1, 0) },     -- light motes
 }
-local ambientPart, ambientPE
+local ambientPart, ambientPE, currentWorld
 local function setupAmbient()
 	ambientPart = Instance.new("Part")
 	ambientPart.Name = "Ambient"
@@ -351,6 +340,13 @@ local function applyAmbient(id)
 	ambientPE.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.5, a.size), NumberSequenceKeypoint.new(1, 0) })
 end
 
+Settings.Changed.Event:Connect(function(key,value)
+	if key=="AmbientMotes" then
+		if value and not ambientPE then setupAmbient() applyAmbient(currentWorld or "Hub") end
+		if ambientPE then ambientPE.Enabled=value end
+	end
+end)
+
 local clouds, sky
 local function setupSky()
 	pcall(function()
@@ -369,40 +365,223 @@ local function setupSky()
 end
 
 function Effects.SetupExtras()
-	-- (the floating ambient particles were removed on request)
+	-- The camera-following ambient particle field was removed on request and stays OFF by default.
+	-- It only comes back if a player explicitly enables Settings.AmbientMotes.
 	setupSky()
+	if Settings.AmbientMotes then setupAmbient() end
 end
 
+---------------------------------------------------------------- procedural motifs (no fake textures)
+-- Small local shapes for species accents: leaves, petals, embers, snowflakes, hearts, stars,
+-- bubbles, clouds, honeycomb, arcs, rings. Each is a tiny anchored model that drifts and fades.
+local PI = math.pi
+local function shapePart(size, cf, color, meshType, mat, tr)
+	local p = fxPart(size, cf, color, mat or Enum.Material.SmoothPlastic, tr or 0, meshType or Enum.MeshType.Sphere)
+	return p
+end
+
+local function wedgePair(parts, cf, thick, h, base, color, mat)
+	table.insert(parts, shapePart(Vector3.new(thick, h, base / 2), cf * CFrame.new(0, 0, -base / 4), color, Enum.MeshType.Wedge, mat))
+	table.insert(parts, shapePart(Vector3.new(thick, h, base / 2), cf * CFrame.new(0, 0, base / 4) * CFrame.Angles(0, PI, 0), color, Enum.MeshType.Wedge, mat))
+end
+
+-- builds a shape at cf; returns list of { part, offset }
+local function buildShape(kind, cf, color, k)
+	local parts = {}
+	if kind == "leaf" or kind == "petal" or kind == "flame" then
+		local R = cf * CFrame.Angles(0, PI / 2, 0)
+		local len, w = 0.9 * k, 0.45 * k
+		local mat = kind == "flame" and Enum.Material.Neon or nil
+		wedgePair(parts, R * CFrame.new(0, len / 4, 0), 0.06 * k, len / 2, w, color, mat)
+		wedgePair(parts, R * CFrame.new(0, -len / 4, 0) * CFrame.Angles(0, 0, PI), 0.06 * k, len / 2, w, color, mat)
+	elseif kind == "snowflake" then
+		for i = 0, 2 do table.insert(parts, shapePart(Vector3.new(0.08, 0.8, 0.08) * k, cf * CFrame.Angles(0, 0, i * PI / 3), color, Enum.MeshType.Brick, Enum.Material.Neon)) end
+	elseif kind == "star" then
+		for i = 0, 1 do
+			local R = cf * CFrame.Angles(0, 0, i * PI / 2) * CFrame.Angles(0, PI / 2, 0)
+			wedgePair(parts, R * CFrame.new(0, 0.18 * k, 0), 0.05 * k, 0.36 * k, 0.16 * k, color, Enum.Material.Neon)
+			wedgePair(parts, R * CFrame.new(0, -0.18 * k, 0) * CFrame.Angles(0, 0, PI), 0.05 * k, 0.36 * k, 0.16 * k, color, Enum.Material.Neon)
+		end
+	elseif kind == "heart" then
+		table.insert(parts, shapePart(Vector3.new(0.4, 0.4, 0.18) * k, cf * CFrame.new(-0.16 * k, 0.1 * k, 0), color))
+		table.insert(parts, shapePart(Vector3.new(0.4, 0.4, 0.18) * k, cf * CFrame.new(0.16 * k, 0.1 * k, 0), color))
+		wedgePair(parts, cf * CFrame.new(0, -0.15 * k, 0) * CFrame.Angles(0, PI / 2, PI), 0.18 * k, 0.42 * k, 0.6 * k, color)
+	elseif kind == "bubble" then
+		table.insert(parts, shapePart(Vector3.new(1, 1, 1) * k, cf, color, Enum.MeshType.Sphere, Enum.Material.Glass, 0.5))
+	elseif kind == "cloud" then
+		for i = -1, 1 do table.insert(parts, shapePart(Vector3.new(1.1, 0.8, 0.9) * k * (1 - math.abs(i) * 0.2), cf * CFrame.new(i * 0.6 * k, 0, 0), color)) end
+	elseif kind == "hex" then
+		table.insert(parts, shapePart(Vector3.new(0.12, 0.7, 0.7) * k, cf * CFrame.Angles(0, PI / 2, 0), color, Enum.MeshType.Cylinder, Enum.Material.Glass, 0.3))
+	elseif kind == "cube" then
+		table.insert(parts, shapePart(Vector3.new(0.35, 0.35, 0.35) * k, cf, color, Enum.MeshType.Brick, Enum.Material.Neon))
+	else -- mote
+		table.insert(parts, shapePart(Vector3.new(0.3, 0.3, 0.3) * k, cf, color, Enum.MeshType.Sphere, Enum.Material.Neon))
+	end
+	return parts
+end
+
+-- animate a shape from cf along `velocity` with a spin, fading out over `life`
+local function driftShape(kind, cf, color, k, velocity, life, spin)
+	local parts = buildShape(kind, cf, color, k)
+	local offsets = {}
+	for i, p in ipairs(parts) do offsets[i] = cf:ToObjectSpace(p.CFrame) end
+	local t0 = os.clock()
+	local conn
+	conn = RunService.RenderStepped:Connect(function()
+		local t = os.clock() - t0
+		if t >= life then
+			conn:Disconnect()
+			for _, p in ipairs(parts) do p:Destroy() end
+			return
+		end
+		local u = t / life
+		local base = CFrame.new(cf.Position + velocity * t + Vector3.new(0, -0.5 * t * t * (velocity.Y < 0 and 1 or 0), 0)) * cf.Rotation * CFrame.Angles(0, t * (spin or 2), math.sin(t * 3) * 0.4)
+		for i, p in ipairs(parts) do
+			p.CFrame = base * offsets[i]
+			p.LocalTransparencyModifier = math.max(0, (u - 0.6) / 0.4)
+		end
+	end)
+end
+
+local MOTIF_COLORS = {
+	leaf = Color3.fromRGB(120, 210, 90), petal = Color3.fromRGB(255, 150, 210), ember = Color3.fromRGB(255, 150, 50),
+	snow = Color3.fromRGB(230, 248, 255), star = Color3.fromRGB(255, 240, 160), cloud = Color3.fromRGB(255, 250, 255),
+	honey = Color3.fromRGB(255, 190, 40), gold = Color3.fromRGB(255, 215, 90), cyan = Color3.fromRGB(125, 249, 255),
+}
+local RAINBOW = { Color3.fromRGB(255, 90, 90), Color3.fromRGB(255, 170, 60), Color3.fromRGB(255, 235, 80), Color3.fromRGB(110, 230, 110),
+	Color3.fromRGB(90, 200, 255), Color3.fromRGB(120, 120, 255), Color3.fromRGB(210, 110, 255) }
+
+local function arc(origin, forward, radius, n, colorAt, kind, k, life)
+	local right = forward:Cross(Vector3.yAxis).Unit
+	for i = 1, n do
+		local a = (i - 1) / math.max(1, n - 1) * PI
+		local pos = origin + right * math.cos(a) * radius + Vector3.new(0, math.sin(a) * radius, 0)
+		task.delay(i * 0.03, driftShape, kind, CFrame.lookAt(pos, pos + forward), colorAt(i), k, Vector3.new(0, 0.3, 0), life, 0.5)
+	end
+end
+
+local function ring(center, radius, n, kind, color, k, life, rise)
+	for i = 1, n do
+		local a = i / n * PI * 2
+		local pos = center + Vector3.new(math.cos(a) * radius, 0, math.sin(a) * radius)
+		driftShape(kind, CFrame.new(pos), color, k, Vector3.new(0, rise or 0.5, 0), life, 1)
+	end
+end
+
+-- kind: species accent event name (SpeciesProfiles fx); pos: creature centre; forward: facing
+function Effects.Motif(kind: string, pos: Vector3, forward: Vector3, accent: Color3?, size: number?)
+	local k = size or 1
+	local low = Settings.LowVFX()
+	local C = MOTIF_COLORS
+	accent = accent or C.star
+	if kind == "leaf" or kind == "leaves2" then
+		for i = 1, (kind == "leaves2" and 2 or 1) do
+			driftShape("leaf", CFrame.new(pos + Vector3.new((i - 1.5) * 1.2, 0.5, 0)) * CFrame.Angles(0.6, i, 0.3), C.leaf, k, Vector3.new((i - 1.5) * 0.6, -0.8, 0), 1.8, 1.5)
+		end
+	elseif kind == "petals" then
+		for i = 1, low and 3 or 5 do
+			driftShape("petal", CFrame.new(pos) * CFrame.Angles(0, i * 1.25, 0.5), C.petal, k * 0.8, Vector3.new(math.cos(i * 1.25), 2.5, math.sin(i * 1.25)), 1.2, 3)
+		end
+	elseif kind == "ember" then
+		for i = 1, 3 do driftShape("flame", CFrame.new(pos + Vector3.new((i - 2) * 0.5, 0, 0)), C.ember, k * 0.6, Vector3.new(0, 3 + i, 0), 0.9, 4) end
+	elseif kind == "puff" or kind == "groundSmoke" then
+		Effects.Burst(pos - Vector3.new(0, 1, 0), ColorSequence.new(Color3.fromRGB(220, 210, 200)), low and 6 or 12, 6, 1.4, "rbxasset://textures/particles/smoke_main.dds")
+	elseif kind == "frost" then
+		Effects.Burst(pos - Vector3.new(0, 1, 0), ColorSequence.new(Color3.fromRGB(235, 248, 255)), low and 8 or 16, 6, 1.2, "rbxasset://textures/particles/smoke_main.dds")
+	elseif kind == "snowflakes" then
+		for i = 1, 3 do driftShape("snowflake", CFrame.new(pos + Vector3.new((i - 2) * 1.2, 1, 0)), C.snow, k * 0.8, Vector3.new(0, -0.5, 0), 1.6, 1) end
+	elseif kind == "snowflakeRing" then
+		ring(pos + Vector3.new(0, 4, 0), 3.5 * k, low and 4 or 6, "snowflake", C.snow, k, 1.4, -0.5)
+	elseif kind == "bubble" then
+		driftShape("bubble", CFrame.new(pos + Vector3.new(0, 1, 0)), accent, k * 0.8, Vector3.new(0, 1.2, 0), 0.7, 0)
+	elseif kind == "flowerBud" then
+		for i = 1, 5 do driftShape("petal", CFrame.new(pos + forward * 2.5) * CFrame.Angles(0, i * 1.25, 0.9), C.petal, k * 0.5, Vector3.new(math.cos(i * 1.25) * 0.6, 0.6, math.sin(i * 1.25) * 0.6), 1.4, 0.5) end
+	elseif kind == "ashSwirl" or kind == "starburst" or kind == "nebulaPuff" or kind == "cometTrail" then
+		local col = kind == "ashSwirl" and ColorSequence.new(Color3.fromRGB(120, 110, 110), Color3.fromRGB(255, 140, 60)) or ColorSequence.new(accent)
+		Effects.Burst(pos, col, low and 10 or 24, 8, 0.8)
+	elseif kind == "glint" or kind == "branchLight" or kind == "mote" then
+		driftShape("star", CFrame.new(pos + Vector3.new(0, 2, 0)), kind == "branchLight" and Color3.fromRGB(140, 255, 180) or Color3.new(1, 1, 1), k * 1.2, Vector3.new(0, 0.8, 0), 0.6, 2)
+	elseif kind == "auroraArc" or kind == "prismArcs" or kind == "rainbowArc" or kind == "rainbowRibbon" then
+		if not low then arc(pos - forward * 2, forward, 4 * k, 7, function(i) return RAINBOW[i] end, "cube", k * 0.7, 1.4) end
+	elseif kind == "wrapper" then
+		for i = -1, 1, 2 do driftShape("petal", CFrame.new(pos + Vector3.new(i * 1.2, 1.5, 0)) * CFrame.Angles(0, 0, i * 0.6), accent, k, Vector3.new(i * 1.5, 1, 0), 0.8, 2) end
+	elseif kind == "cloudPuff" or kind == "cloudRibbon" then
+		for i = 1, kind == "cloudRibbon" and 4 or 2 do
+			driftShape("cloud", CFrame.new(pos + Vector3.new((i - 2) * 1.6, -0.5, 0)), C.cloud, k, Vector3.new((i - 2) * 0.5, 0.4, 0), 1.5, 0)
+		end
+	elseif kind == "honeycomb" then
+		ring(pos + Vector3.new(0, 2, 0) - forward * 1.5, 1.6 * k, low and 4 or 6, "hex", C.honey, k, 1.2, 0.2)
+	elseif kind == "ringRipple" or kind == "primordialRing" or kind == "creationRing" or kind == "dawnDisk" then
+		Effects.Shockwave(pos, kind == "ringRipple" and accent or C.gold, 9 * k, 0.9)
+	elseif kind == "constellation" or kind == "galaxySpiral" then
+		for i = 1, low and 4 or 7 do
+			local a = i * 0.9
+			driftShape("star", CFrame.new(pos + Vector3.new(math.cos(a) * (2 + i * 0.4), 3 + math.sin(i) * 1.5, math.sin(a) * (2 + i * 0.4))), C.star, k * 0.7, Vector3.zero, 1.6, 1)
+		end
+	elseif kind == "rift" or kind == "eclipseDisk" then
+		local disk = fxPart(Vector3.new(0.2, 0.5, 0.5), CFrame.lookAt(pos + Vector3.new(0, 3, 0), pos + Vector3.new(0, 3, 0) + forward) * CFrame.Angles(0, PI / 2, 0),
+			kind == "rift" and Color3.fromRGB(20, 0, 40) or Color3.fromRGB(10, 6, 16), Enum.Material.SmoothPlastic, 0.1)
+		disk.Shape = Enum.PartType.Cylinder
+		tween(disk, 0.4, { Size = Vector3.new(0.2, 7 * k, 7 * k) }, Enum.EasingStyle.Back)
+		if kind == "eclipseDisk" then Effects.Shockwave(pos + Vector3.new(0, 3, 0), C.gold, 5 * k, 0.8) end
+		task.delay(1.2, function() tween(disk, 0.5, { Size = Vector3.new(0.2, 0.2, 0.2), Transparency = 1 }) end)
+		task.delay(1.8, function() disk:Destroy() end)
+	elseif kind == "shadowMotes" then
+		for i = 1, 2 do driftShape("mote", CFrame.new(pos + Vector3.new(i - 1.5, 0.5, 0)), Color3.fromRGB(70, 30, 120), k, Vector3.new(i - 1.5, 0.8, 0), 1.4, 0) end
+	elseif kind == "goldenArch" then
+		arc(pos - forward * 2, forward, 5 * k, low and 5 or 9, function() return C.gold end, "cube", k * 0.6, 1.6)
+	elseif kind == "tailStars" then
+		arc(pos + Vector3.new(0, 1, 0) - forward * 2, forward, 3 * k, 9, function() return Color3.new(1, 1, 1) end, "star", k * 0.7, 1.6)
+	elseif kind == "helix" then
+		for i = 1, low and 6 or 12 do
+			local a = i * 0.7
+			task.delay(i * 0.05, driftShape, "mote", CFrame.new(pos + Vector3.new(math.cos(a) * 2, i * 0.4, math.sin(a) * 2)), C.gold, k * 0.6, Vector3.new(0, 2, 0), 1.0, 0)
+		end
+	elseif kind == "clockRing" then
+		ring(pos + Vector3.new(0, 3, 0), 3.5 * k, 12, "cube", C.cyan, k * 0.5, 1.4, 0)
+	elseif kind == "seed" then
+		driftShape("mote", CFrame.new(pos + forward * 2), Color3.fromRGB(255, 250, 220), k * 1.4, Vector3.new(0, 0.3, 0), 1.6, 0)
+	elseif kind == "heart" then
+		driftShape("heart", CFrame.new(pos + Vector3.new(0, 1, 0)), Color3.fromRGB(255, 120, 170), k, Vector3.new(0, 2, 0), 1.0, 0)
+	else
+		Effects.Burst(pos, ColorSequence.new(accent), low and 6 or 14, 8, 0.6)
+	end
+end
+
+local HUB_LOOK = require(ReplicatedStorage.Shared.SanctuaryLook)
+
 local LOOK = {
-	Forest  = { clock = 16.4, exposure = 0.15, sat = 0.28, contrast = 0.12, bloom = 0.8, rays = 0.16, density = 0.3,  haze = 1.6 }, -- golden afternoon
-	Volcano = { clock = 18.4, exposure = 0.1,  sat = 0.35, contrast = 0.2,  bloom = 1.2, rays = 0.2,  density = 0.42, haze = 2.4 },
-	Frozen  = { clock = 9.5,  exposure = 0.25, sat = 0.1,  contrast = 0.1,  bloom = 0.9, rays = 0.18, density = 0.35, haze = 2.0 },
-	Crystal = { clock = 0,    exposure = 0.3,  sat = 0.45, contrast = 0.18, bloom = 1.6, rays = 0.05, density = 0.38, haze = 1.4 },
-	Candy   = { clock = 13,   exposure = 0.25, sat = 0.5,  contrast = 0.08, bloom = 1.0, rays = 0.12, density = 0.28, haze = 1.2 },
-	Space   = { clock = 0,    exposure = 0.2,  sat = 0.4,  contrast = 0.2,  bloom = 1.8, rays = 0.0,  density = 0.12, haze = 0.4 },
-	Shadow  = { clock = 21.5, exposure = 0.0,  sat = 0.3,  contrast = 0.28, bloom = 1.4, rays = 0.0,  density = 0.5,  haze = 2.6 },
-	Heaven  = { clock = 12,   exposure = 0.35, sat = 0.15, contrast = 0.06, bloom = 1.3, rays = 0.3,  density = 0.25, haze = 2.2 },
+	Forest  = { exposure = 0.15, sat = 0.28, contrast = 0.12, bloom = 0.8, rays = 0.16, density = 0.3,  haze = 1.6 }, -- golden afternoon
+	Volcano = { exposure = 0.1,  sat = 0.35, contrast = 0.2,  bloom = 1.2, rays = 0.2,  density = 0.36, haze = 2.4 },
+	Frozen  = { exposure = 0.25, sat = 0.1,  contrast = 0.1,  bloom = 0.9, rays = 0.18, density = 0.35, haze = 2.0 },
+	Crystal = { exposure = 0.3,  sat = 0.45, contrast = 0.18, bloom = 1.6, rays = 0.05, density = 0.38, haze = 1.4 },
+	Candy   = { exposure = 0.25, sat = 0.4,  contrast = 0.08, bloom = 1.0, rays = 0.12, density = 0.28, haze = 1.2 },
+	Space   = { exposure = 0.2,  sat = 0.4,  contrast = 0.2,  bloom = 1.8, rays = 0.0,  density = 0.12, haze = 0.4 },
+	Shadow  = { exposure = 0.0,  sat = 0.3,  contrast = 0.28, bloom = 1.4, rays = 0.0,  density = 0.36, haze = 2.6 },
+	Heaven  = { exposure = 0.35, sat = 0.15, contrast = 0.06, bloom = 1.3, rays = 0.3,  density = 0.25, haze = 2.2 },
 }
 
-local currentWorld
 function Effects.UpdateWorld(pos: Vector3)
-	local id = Config.WorldAt(pos)
+	local inHub = pos.Z < Config.BarrierZ
+	local id = inHub and "Hub" or Config.WorldAt(pos)
 	if not id or id == currentWorld then return currentWorld end
 	currentWorld = id
-	local W = Config.Worlds[id]
+	local W = inHub and HUB_LOOK or Config.Worlds[id]
 	applyAmbient(id)
 	if clouds then
-		local cover = ({ Forest = 0.55, Volcano = 0.75, Frozen = 0.8, Crystal = 0.3, Candy = 0.6, Space = 0, Shadow = 0.7, Heaven = 0.9 })[id] or 0.5
+		local cover = ({ Hub = 0.25, Forest = 0.55, Volcano = 0.75, Frozen = 0.8, Crystal = 0.3, Candy = 0.6, Space = 0, Shadow = 0.7, Heaven = 0.9 })[id] or 0.5
 		local ccol = ({ Volcano = Color3.fromRGB(90, 60, 60), Shadow = Color3.fromRGB(70, 40, 90), Candy = Color3.fromRGB(255, 210, 235) })[id] or Color3.new(1, 1, 1)
 		tween(clouds, 2, { Cover = cover, Color = ccol })
 	end
-	-- each zone has its own "look": time of day, exposure, colour grading, bloom and sun rays
-	local look = LOOK[id] or LOOK.Forest
-	tween(Lighting, 1.5, { Ambient = W.ambient, OutdoorAmbient = W.ambient, ClockTime = look.clock or W.clock, FogColor = W.fog, ExposureCompensation = look.exposure })
-	if cc then tween(cc, 1.5, { TintColor = W.tint, Saturation = look.sat, Contrast = look.contrast }) end
-	if bloom then tween(bloom, 1.5, { Intensity = look.bloom }) end
-	if rays then tween(rays, 1.5, { Intensity = look.rays }) end
-	if atmo then tween(atmo, 1.5, { Color = W.atmo, Decay = W.fog, Density = look.density, Haze = look.haze }) end
+	-- per-zone grade (brother's LOOK) on the map-tuned sun/fog from Config; the hub keeps SanctuaryLook
+	local look = (not inHub) and (LOOK[id] or LOOK.Forest) or nil
+	tween(Lighting, 1.5, { Ambient = W.ambient, OutdoorAmbient = W.ambient, ClockTime = W.clock, FogColor = W.fog, Brightness = inHub and 2.15 or 2.4, ExposureCompensation = inHub and -.05 or look.exposure })
+	if cc then tween(cc, 1.5, { TintColor = W.tint, Saturation = inHub and 0.04 or look.sat, Contrast = inHub and 0.08 or look.contrast }) end
+	if atmo then tween(atmo, 1.5, { Color = W.atmo, Decay = W.fog, Haze = inHub and HUB_LOOK.haze or look.haze, Glare = inHub and HUB_LOOK.glare or .3, Offset = inHub and HUB_LOOK.offset or 0, Density = inHub and HUB_LOOK.density or look.density }) end
+	if bloom then tween(bloom, 1.0, { Intensity = inHub and HUB_LOOK.bloom or look.bloom }) end
+	if rays then tween(rays, 1.5, { Intensity = inHub and 0.12 or look.rays }) end
+	local dof = Lighting:FindFirstChild("TPFC_DOF")
+	if dof then tween(dof, 1.0, { FarIntensity = inHub and 0 or 0.12 }) end
 	return id
 end
 

@@ -1,0 +1,23 @@
+{
+  "map_images": 10,
+  "individual_pet_images": 74,
+  "action_storyboards": 3,
+  "indexed_visuals": 87,
+  "pet_groups": {
+    "Forest": 8,
+    "Volcano": 8,
+    "Frozen": 8,
+    "Crystal": 8,
+    "Candy": 8,
+    "Space": 8,
+    "Shadow": 8,
+    "Heaven": 8,
+    "Secret": 5,
+    "Divine": 5
+  },
+  "generated_with": "built-in image generation tool",
+  "copy_integrity": "All 87 selected PNG pairs match SHA-256",
+  "desktop_folder": "C:\\Users\\benic\\Desktop\\roblox pets",
+  "game_code_modified": false,
+  "runtime_playtest_performed": false
+}

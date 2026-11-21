@@ -1,0 +1,3 @@
+Production: 38/38 scripts, no missing/extra/different sources; no test markers. PASS
+Full test: 41/41 scripts, AutoTest marker only. PASS
+Focused test: 41/41 scripts, SanctuaryTest marker only. PASS

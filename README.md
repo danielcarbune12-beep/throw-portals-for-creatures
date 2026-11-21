@@ -115,3 +115,59 @@ Creature visuals are procedural, so you don't need to make or import anything. I
 
 ## Publishing
 **File → Publish to Roblox**. Then, in **Game Settings**: set **Avatar → Avatar Type** to R15 or R6 (both work), make sure **Security → API Services** is on, and set the maximum players to **8** (one base per player).
+
+## Visual architecture (2026-11 upgrade)
+- `SpeciesProfiles` — per-species presentation for all 74 IDs (body plan, anatomy key, gait, breathing, signature /
+  reaction / entrance / capture keyframes). Identity, palette and economy stay in `CreatureData`.
+- `SpeciesAnatomy` — species builders (Hydra necks, Kraken tentacles, nine-tail fan, eel/serpent spines, whale,
+  jellyfish, wyvern, griffin, …) on shared helpers from `CreatureBuilder.H`.
+- `CreatureBuilder` — `Build(id, sizeMult) -> model, rig` (unchanged contract). `Builder.Style` switches the
+  hard-surface **blocky** family (current art direction) vs the older rounded look.
+- `CreatureAnimator` — layered lifecycle / reaction / signature / gait / secondary motion; dt-safe for LOD.
+- `PresentationTimeline` — the single reveal/capture/card timing table (server catch deadlines unchanged).
+- Client `ClientSettings` — camera shake, reduced flashes/motion, VFX quality, optional ambient motes (off).
+- Lobby/portal geometry is procedural and needs no uploaded meshes. The existing pet mesh manifest contains
+  generated assets, with procedural fallbacks; some pet textures still report pending-content warnings in Studio.
+
+## Tests
+- `lune run tests/lune/roster` — offline roster/lifecycle/odds/portal checks (needs the rokit toolchain: `rokit install`).
+- `lune run tests/lune/export [ids]` then `python tests/render_preview.py out.png 8` — offline geometry contact sheet.
+- `python -I tests/verify_place.py` — exact script sets/classes, source parity and test markers for all generated .rbxlx builds.
+- Studio: build with `-Test`, play, read `[AUTOTEST]` assertion lines. See `IMPLEMENTATION_STATUS.md`.
+- `lune run tests/lune/export_map` then `python tests/render_map.py` (zone views) / `python tests/render_map.py lm` (landmarks) — offline map previews in `map_views/` (flat-shaded layout renders, not Studio screenshots).
+- Map landmarks live in `src/ServerScriptService/Server/WorldLandmarks.lua`; client motion in `Client/WorldFx.lua`.
+
+## Reference sanctuary lobby and portals
+
+The lobby now uses the supplied sanctuary reference: an open violet/gold launch hall, paired lancet windows,
+a crystal crown, tiled avenue, eight original garden plots, tiered fountains, violet cottages, clipped hedges,
+square collect pads, pink trees, waterfalls and faceted side cliffs. The public fountain sits left of the hall.
+Plot centers, 24 slot references, gym/collect paths, throw-zone bounds and server rewards remain compatible.
+
+`SanctuaryHub`, `SanctuaryBase` and `SanctuaryArchitecture` own the new geometry. `PortalDesign` builds
+all nine faceted orbs and architectural gates, preserving the PortalBuilder API. Frames stay planted while
+the four-arm aperture rotates; no uploaded image or mesh asset is required for the portals.
+
+Build with `powershell -ExecutionPolicy Bypass -File build-place.ps1`. Open the generated place and press Play;
+the world is generated at startup. For the focused test, use `-Sanctuary` and open
+`ThrowPortalsForCreatures_SanctuaryTest.rbxlx`. It walks into the hall and exercises all nine portal lifecycles.
+Explicit Studio test builds use in-memory profiles and never acquire a live save lock.
+
+Run `lune run tests/lune/portals` for the portal geometry regressions. Studio evidence, recorded motion,
+view-dependent rendering samples and the focused test results are in `review/codex_sanctuary/`.
+
+## Minimal sanctuary UI and environment (2026-11-22)
+
+The shared Team Create place `129975585465401` was updated and saved as version 6.
+The HUD now has two counters and one Menu button; the throw control appears only in the hall. Shops,
+inventory, index, zones, garden customization and session presentation settings use
+shared UITheme/UIIcons/UIKit components. SanctuaryDetails adds close-up stonework,
+planting and water details; SanctuaryLook controls fog and lighting in Edit and Play.
+Localized environment emitters are culled by distance and disabled in Low VFX mode.
+
+The latest in-engine regression passed 95 portal-flow assertions and 251 scene
+assertions. Device simulator layouts were checked on iPhone 17 Pro and iPad Pro M5.
+Evidence and limitations are in `review/codex_ui_environment/README.txt`.
+A newer concurrent Frozen-biome source edit is preserved in the working folder and
+is separate from this delivered UI/lobby scene. Stop and restart Play in Team Create
+to rebuild UI after source changes.

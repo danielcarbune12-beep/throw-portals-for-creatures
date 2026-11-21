@@ -9,6 +9,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local CreatureData = require(Shared.CreatureData)
 local Config = require(Shared.Config)
 local Format = require(Shared.Format)
+local Timeline = require(Shared.PresentationTimeline)
 
 local Client = script.Parent
 local State = require(Client.ClientState)
@@ -17,6 +18,7 @@ local Sounds = require(Client.Sounds)
 local Renderer = require(Client.CreatureRenderer)
 local TC = require(Client.ThrowController)
 local HUD = require(Client.HUD)
+local Feel = require(Client.GameplayFeel)
 local Panels = require(Client.Panels)
 
 local player = Players.LocalPlayer
@@ -24,10 +26,17 @@ local Remotes = State.Remotes
 
 Effects.SetupLighting()
 Renderer.Start()
+local WorldFx = require(Client.WorldFx)
+WorldFx.TC = TC
+task.spawn(function()
+	workspace:WaitForChild("Map", 60)
+	WorldFx.Start()
+end)
 Panels.Init()
 HUD.TC = TC
 TC.OnThrowResult = HUD.ThrowFeedback
 HUD.Refresh()
+Feel.Start(TC, HUD)
 
 -- ask the server for a full data sync (retries until our save has loaded)
 task.spawn(function()
@@ -40,11 +49,15 @@ end)
 ---------------------------------------------------------------- collecting wild creatures
 local collecting = {}
 Renderer.OnCollectRequest = function(throwId)
-	if collecting[throwId] then return end
+	if collecting[throwId] then
+		return
+	end
 	collecting[throwId] = true
 	local ok, msg = State.Request("Collect", throwId)
 	collecting[throwId] = nil
-	if not ok then HUD.Notify(msg or "Can't collect", "error") end
+	if not ok then
+		HUD.Notify(msg or "Can't collect", "error")
+	end
 end
 
 HUD.OnCollect = Renderer.OnCollectRequest
@@ -54,8 +67,8 @@ local function barrierPulse(pos)
 	local map = workspace:FindFirstChild("Map")
 	local wall = map and map:FindFirstChild("Start") and map.Start:FindFirstChild("Barrier")
 	if wall then
-		wall.Transparency = 0.02
-		Effects.Tween(wall, 0.8, { Transparency = 0.35 })
+		wall.Transparency = 0.94
+		Effects.Tween(wall, 0.4, { Transparency = 1 })
 	end
 	if pos then
 		Effects.Shockwave(Vector3.new(pos.X, 1, Config.BarrierZ - 1), Color3.fromRGB(190, 140, 255), 10, 0.5)
@@ -67,8 +80,11 @@ TC.OnNotInZone = function()
 end
 local lastBarrierFx = 0
 
-TC.OnBusy = function()
-	HUD.ShowThrowHere("⏳ ONE PORTAL AT A TIME", "Wait until your creature is caught!")
+TC.OnBusy = function(message)
+	HUD.Notify(message or "Your portal is active. Wait for the catch.", "info")
+end
+TC.OnLaunchFailed = function(message)
+	HUD.Notify(message, "error")
 end
 
 ---------------------------------------------------------------- training: buy equipment + lifting animation
@@ -93,18 +109,23 @@ end
 
 -- Lifting uses Roblox's built-in "cheer" animation (both arms raise the weight overhead).
 -- It plays on your own character, so other players see it too.
-local LIFT_ANIM = { [Enum.HumanoidRigType.R15] = "rbxassetid://507770677", [Enum.HumanoidRigType.R6] = "rbxassetid://129423030" }
+local LIFT_ANIM =
+	{ [Enum.HumanoidRigType.R15] = "rbxassetid://507770677", [Enum.HumanoidRigType.R6] = "rbxassetid://129423030" }
 local liftTrack, liftHum, lastLift = nil, nil, 0
 local function playLift()
 	local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-	if not hum then return end
+	if not hum then
+		return
+	end
 	if hum ~= liftHum then
 		liftHum = hum
 		liftTrack = nil
 		local animator = hum:FindFirstChildOfClass("Animator") or hum
 		local anim = Instance.new("Animation")
 		anim.AnimationId = LIFT_ANIM[hum.RigType] or LIFT_ANIM[Enum.HumanoidRigType.R15]
-		local ok, track = pcall(function() return animator:LoadAnimation(anim) end)
+		local ok, track = pcall(function()
+			return animator:LoadAnimation(anim)
+		end)
 		if ok and track then
 			track.Priority = Enum.AnimationPriority.Action
 			track.Looped = true
@@ -112,16 +133,22 @@ local function playLift()
 		end
 	end
 	lastLift = os.clock()
-	if liftTrack and not liftTrack.IsPlaying then liftTrack:Play(0.15, 1, 1.7) end
+	if liftTrack and not liftTrack.IsPlaying then
+		liftTrack:Play(0.15, 1, 1.7)
+	end
 end
 RunService.Heartbeat:Connect(function()
-	if liftTrack and liftTrack.IsPlaying and os.clock() - lastLift > 0.7 then liftTrack:Stop(0.25) end
+	if liftTrack and liftTrack.IsPlaying and os.clock() - lastLift > 0.7 then
+		liftTrack:Stop(0.25)
+	end
 end)
 
 local lastRep = 0
 local function doRep()
 	local idx = HUD.TrainStation
-	if not idx or os.clock() - lastRep < Config.TrainCooldown then return end
+	if not idx or os.clock() - lastRep < Config.TrainCooldown then
+		return
+	end
 	lastRep = os.clock()
 	local st = Config.TrainingStations[idx]
 	playLift()
@@ -132,7 +159,12 @@ local function doRep()
 			Sounds.Play("Collect", 1.4 + math.random() * 0.2)
 			local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
 			if root then
-				Effects.FloatingText(root.Position + Vector3.new(math.random(-2, 2), 4, 0), "+" .. Format.Short(st.gain) .. " 💪", Color3.fromRGB(255, 150, 120), 0.8)
+				Effects.FloatingText(
+					root.Position + Vector3.new(math.random(-2, 2), 4, 0),
+					"+" .. Format.Short(st.gain) .. " 💪",
+					Color3.fromRGB(255, 150, 120),
+					0.8
+				)
 			end
 		elseif msg then
 			HUD.Notify(msg, "error")
@@ -140,10 +172,14 @@ local function doRep()
 	end)
 end
 RunService.Heartbeat:Connect(function()
-	if HUD.TrainStation and (HUD.TrainHeld or HUD.AutoTrain) then doRep() end
+	if HUD.TrainStation and (HUD.TrainHeld or HUD.AutoTrain) then
+		doRep()
+	end
 end)
 game:GetService("UserInputService").InputBegan:Connect(function(input, processed)
-	if not processed and input.KeyCode == Enum.KeyCode.E and HUD.TrainStation then doRep() end
+	if not processed and input.KeyCode == Enum.KeyCode.E and HUD.TrainStation then
+		doRep()
+	end
 end)
 
 ---------------------------------------------------------------- server messages
@@ -152,98 +188,94 @@ Remotes.Notify.OnClientEvent:Connect(function(text, kind)
 		HUD.ShowThrowHere("🎯 GO TO THE THROW LINE!", nil)
 		return
 	end
-	HUD.Notify(text, kind)
-	if kind == "discover" then Sounds.Play("Rare", 1.3) end
+	-- The owner's reveal caption already announces this find. Keep broadcasts for other players.
+	local ownReveal = Config.Rarities[kind]
+		and text:sub(1, #player.DisplayName + 9) == player.DisplayName .. " found a "
+	if not ownReveal then
+		HUD.Notify(text, kind)
+	end
+	if kind == "discover" then
+		Sounds.Play("Upgrade", 1.1)
+	end
 end)
 
-Remotes.MoneyFx.OnClientEvent:Connect(function(amount, padPos)
-	Sounds.Play("Money")
-	task.delay(0.15, Sounds.Play, "Money", 1.25)
-	Effects.Coins(padPos, math.clamp(math.floor(math.log10(amount + 1) * 4), 6, 22))
-	Effects.FloatingText(padPos + Vector3.new(0, 4, 0), "+" .. Format.Money(amount), Color3.fromRGB(130, 255, 130), 1.3)
-	Effects.Burst(padPos + Vector3.new(0, 1, 0), Color3.fromRGB(255, 215, 70), 30, 14, 0.8)
-end)
+Remotes.MoneyFx.OnClientEvent:Connect(Feel.Money)
 
 -- "CAUGHT!" card: pops up with the spinning creature, then flies into the Pets button
-local K = require(Client.UIKit)
-local function caughtCard(id)
-	local def = CreatureData.ById[id]
-	if not def then return end
-	local rc = Config.Rarities[def.rarity]
-	local cfg = Renderer.CatchConfig[def.rarity] or Renderer.CatchConfig.Common
-	local bad = rc.order <= 1
-	local W, H = 300, 340
-	local cardCol = bad and Color3.fromRGB(170, 170, 180) or rc.color:Lerp(Color3.new(1, 1, 1), 0.25)
-	local card = K.new("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.58), Size = UDim2.fromOffset(W, H),
-		BackgroundColor3 = Color3.new(1, 1, 1), ZIndex = 30, Parent = HUD.Root },
-		{ K.corner(26), K.stroke(rc.order >= 5 and 7 or 5, rc.order >= 5 and Color3.fromRGB(255, 220, 90) or nil), K.grad(Color3.new(1, 1, 1), cardCol, 90) })
-	local sc = K.new("UIScale", { Scale = 0, Parent = card })
-	local targetScale = 0.7 + cfg.size * 0.28 -- tiny for bad pets, big for great ones
-	-- spinning glow behind the creature (two layers for Legendary+)
-	local glow = K.new("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0, 150), Size = UDim2.fromOffset(190, 190),
-		BackgroundColor3 = bad and Color3.fromRGB(140, 140, 150) or rc.color, BackgroundTransparency = 0.35, ZIndex = 30, Parent = card }, { K.corner(30) })
-	local glow2 = rc.order >= 5 and K.new("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0, 150), Size = UDim2.fromOffset(230, 230),
-		BackgroundColor3 = Color3.fromRGB(255, 230, 120), BackgroundTransparency = 0.6, ZIndex = 30, Parent = card }, { K.corner(40) }) or nil
-	K.label(cfg.text, UDim2.new(1, -20, 0, 46), bad and Color3.fromRGB(220, 220, 220) or Color3.fromRGB(255, 230, 90), { Position = UDim2.fromOffset(10, 8), ZIndex = 32, Parent = card })
-	-- confetti for Epic and better
-	if rc.order >= 4 then
-		for c = 1, 24 + rc.order * 4 do
-			local bit = K.new("Frame", { Size = UDim2.fromOffset(math.random(6, 12), math.random(10, 18)), Position = UDim2.new(math.random(), 0, 0, -20),
-				BackgroundColor3 = Color3.fromHSV(math.random(), 0.7, 1), BorderSizePixel = 0, Rotation = math.random(0, 360), ZIndex = 29, Parent = HUD.Root })
-			K.tween(bit, 1.6 + math.random() * 1.2, { Position = UDim2.new(bit.Position.X.Scale + (math.random() - 0.5) * 0.2, 0, 1, 20), Rotation = math.random(-720, 720) },
-				Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-			task.delay(3, function() bit:Destroy() end)
-		end
+local caughtCard = require(Client.CaughtPresentation)
+
+-- Card queue: a card is shown only for a CONFIRMED deposit, after its capture presentation
+-- finished (Renderer.CaptureFinished) or a bounded fallback timeout — one card per deposit.
+local cardQueue, cardBusy = {}, false
+local pendingCards = {} -- deposits waiting for their capture visual: { id, deadline }
+local recentCaptures = {} -- captures that finished before the deposit arrived: { id, t }
+local function pumpCards()
+	if cardBusy or #cardQueue == 0 then
+		return
 	end
-	local model = Renderer.BuildPreview(id)
-	local vp = K.viewport(model, UDim2.fromOffset(220, 200), true)
-	vp.Position = UDim2.new(0.5, -110, 0, 50)
-	vp.ZIndex = 31
-	vp.Parent = card
-	K.label(def.name, UDim2.new(1, -20, 0, 34), Color3.new(1, 1, 1), { Position = UDim2.fromOffset(10, 252), ZIndex = 32, Parent = card })
-	K.label(def.rarity .. "  •  +" .. Format.Money(CreatureData.Income(id)) .. "/s", UDim2.new(1, -20, 0, 26), rc.color:Lerp(Color3.new(1, 1, 1), 0.2),
-		{ Position = UDim2.fromOffset(10, 286), ZIndex = 32, Parent = card })
-	K.label("Added to your pets!", UDim2.new(1, -20, 0, 20), Color3.fromRGB(200, 255, 200), { Position = UDim2.fromOffset(10, 314), ZIndex = 32, Parent = card })
-	K.tween(sc, 0.45, { Scale = targetScale }, Enum.EasingStyle.Back)
-	if bad then Sounds.Play("Click", 0.8) else Sounds.Play("Rare", 1.4 - rc.order * 0.06) end
-	local spin = RunService.RenderStepped:Connect(function()
-		glow.Rotation = (os.clock() * 60) % 360
-		if glow2 then glow2.Rotation = -(os.clock() * 40) % 360 end
-		card.Rotation = math.sin(os.clock() * 3) * (1 + rc.order * 0.3)
-	end)
-	task.delay(1.9, function()
-		local pets = HUD.SideButtons["Pets"]
-		if pets and card.Parent then
-			local s = math.max(card.AbsoluteSize.X / (W * math.max(sc.Scale, 0.01)), 0.01)
-			local target = (pets.AbsolutePosition + pets.AbsoluteSize / 2 - HUD.Root.AbsolutePosition) / s
-			K.tween(card, 0.5, { Position = UDim2.fromOffset(target.X, target.Y), Rotation = -20 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-			K.tween(sc, 0.5, { Scale = 0.08 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-			task.delay(0.5, function()
-				spin:Disconnect()
-				card:Destroy()
-				K.pop(pets, 1.35)
-				Sounds.Play("Collect", 1.3)
-			end)
-		else
-			spin:Disconnect()
-			card:Destroy()
-		end
+	cardBusy = true
+	local id = table.remove(cardQueue, 1)
+	task.spawn(function()
+		pcall(caughtCard, id)
+		task.wait(Timeline.CardTotal())
+		cardBusy = false
+		pumpCards()
 	end)
 end
-
+local function enqueueCard(id)
+	table.insert(cardQueue, id)
+	pumpCards()
+end
+Renderer.CaptureFinished.Event:Connect(function(_throwId, ownerId, creatureId)
+	if ownerId ~= player.UserId then
+		return
+	end
+	for i, pc in ipairs(pendingCards) do
+		if pc.id == creatureId then
+			table.remove(pendingCards, i)
+			enqueueCard(creatureId)
+			return
+		end
+	end
+	table.insert(recentCaptures, { id = creatureId, t = os.clock() })
+end)
 Remotes.Deposit.OnClientEvent:Connect(function(ids)
-	for i, id in ipairs(ids) do
-		-- wait for the capture animation to finish, then show the card
-		local def = CreatureData.ById[id]
-		local cfg = def and Renderer.CatchConfig[def.rarity] or Renderer.CatchConfig.Common
-		task.delay(cfg.dur + 0.15 + (i - 1) * 2.6, caughtCard, id)
+	for _, id in ipairs(ids) do
+		if CreatureData.ById[id] then
+			local matched = false
+			for i, rc in ipairs(recentCaptures) do
+				if rc.id == id and os.clock() - rc.t < 6 then
+					table.remove(recentCaptures, i)
+					matched = true
+					break
+				end
+			end
+			if matched then
+				enqueueCard(id)
+			else
+				table.insert(pendingCards, {
+					id = id,
+					deadline = os.clock() + Timeline.CardFallback + Timeline.CaptureFor(CreatureData.ById[id].rarity),
+				})
+			end
+		end
+	end
+end)
+RunService.Heartbeat:Connect(function()
+	local now = os.clock()
+	for i = #pendingCards, 1, -1 do
+		if now > pendingCards[i].deadline then
+			enqueueCard(table.remove(pendingCards, i).id)
+		end
 	end
 end)
 
 ---------------------------------------------------------------- per-world lighting + guide beam to base
 local guideBeam, guideA0, guideA1
 local function ensureGuide()
-	if guideBeam then return end
+	if guideBeam then
+		return
+	end
 	guideA1 = Instance.new("Attachment")
 	guideA1.Parent = workspace.Terrain
 	guideBeam = Instance.new("Beam")
@@ -264,15 +296,23 @@ end
 local acc = 0
 RunService.Heartbeat:Connect(function(dt)
 	acc += dt
-	if acc < 0.2 then return end
+	if acc < 0.2 then
+		return
+	end
 	acc = 0
 	local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-	if not root then return end
+	if not root then
+		return
+	end
 	-- lighting/ambience follow the CAMERA, so the follow-cam shows each zone's mood
 	Effects.UpdateWorld(workspace.CurrentCamera.CFrame.Position)
 	HUD.SetInZone(Config.InThrowZone(root.Position))
 	-- touching the limit: wall flashes and the "throw from here" animation plays
-	if root.Position.Z > Config.BarrierZ - 2.6 and root.Position.Z < Config.BarrierZ + 3 and os.clock() - lastBarrierFx > 1.5 then
+	if
+		root.Position.Z > Config.BarrierZ - 2.6
+		and root.Position.Z < Config.BarrierZ + 3
+		and os.clock() - lastBarrierFx > 1.5
+	then
 		lastBarrierFx = os.clock()
 		barrierPulse(root.Position)
 		HUD.ShowThrowHere()
@@ -296,8 +336,10 @@ RunService.Heartbeat:Connect(function(dt)
 	HUD.SetCollectable(nil)
 	-- show a sparkly guide beam to your base while carrying creatures
 	local carrying = #(State.Data.Carry or {}) > 0
-	local idx = player:GetAttribute("BaseIndex")
-	local base = idx and workspace:FindFirstChild("Bases") and workspace.Bases:FindFirstChild("Base" .. idx)
+	local carryBaseIndex = player:GetAttribute("BaseIndex")
+	local base = carryBaseIndex
+		and workspace:FindFirstChild("Bases")
+		and workspace.Bases:FindFirstChild("Base" .. carryBaseIndex)
 	if carrying and base then
 		ensureGuide()
 		if not guideA0 or guideA0.Parent ~= root then
@@ -313,7 +355,7 @@ RunService.Heartbeat:Connect(function(dt)
 	end
 end)
 
--- cinematic intro fly-over, then the welcome message
+-- Cinematic intro fly-over; first-throw guidance stays context driven by GameplayFeel (no welcome toast).
 task.spawn(function()
 	local ok, err = pcall(function() require(Client.Intro).Play(HUD.Gui) end)
 	if not ok then
@@ -322,5 +364,4 @@ task.spawn(function()
 		HUD.Gui.Enabled = true
 		Effects.Letterbox(false)
 	end
-	HUD.Notify("Welcome to Throw Portals For Creatures! Go to the Launch Hall to throw!", "info")
 end)

@@ -1,4 +1,4 @@
--- CreatureData: all 54 creatures.
+-- CreatureData: all 74 creatures (64 biome + 5 Secret + 5 Divine).
 -- Location: ReplicatedStorage > Shared > CreatureData (ModuleScript)
 --
 -- Field reference (all used by CreatureBuilder / CreatureAnimator):

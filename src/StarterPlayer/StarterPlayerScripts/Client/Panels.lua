@@ -1,427 +1,920 @@
--- Panels: Portal Shop, Upgrades, Creatures (inventory), Index, Worlds and Base customization.
--- Location: StarterPlayer > StarterPlayerScripts > Client > Panels (ModuleScript)
-
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Shared = ReplicatedStorage:WaitForChild("Shared")
-local Config = require(Shared.Config)
-local CreatureData = require(Shared.CreatureData)
-local PortalBuilder = require(Shared.PortalBuilder)
-local Format = require(Shared.Format)
-local Odds = require(Shared.Odds)
+-- Sanctuary shops, collection, index, customization and settings.
+-- All spending and ownership changes use the existing authoritative server actions.
+local RS = game:GetService("ReplicatedStorage")
+local Http = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local Config = require(RS.Shared.Config)
+local Data = require(RS.Shared.CreatureData)
+local Portal = require(RS.Shared.PortalBuilder)
+local Format = require(RS.Shared.Format)
+local Odds = require(RS.Shared.Odds)
 local K = require(script.Parent.UIKit)
+local T = K.Theme
 local HUD = require(script.Parent.HUD)
 local State = require(script.Parent.ClientState)
-local Sounds = require(script.Parent.Sounds)
-local Effects = require(script.Parent.Effects)
+local Settings = require(script.Parent.ClientSettings)
 local Renderer = require(script.Parent.CreatureRenderer)
-
+local Sounds = require(script.Parent.Sounds)
 local Panels = {}
-local GREEN, GREEN2 = Color3.fromRGB(110, 220, 90), Color3.fromRGB(40, 150, 60)
-local GREY, GREY2 = Color3.fromRGB(170, 170, 185), Color3.fromRGB(110, 110, 125)
-local BLUE, BLUE2 = Color3.fromRGB(90, 170, 255), Color3.fromRGB(50, 90, 220)
-local GOLD, GOLD2 = Color3.fromRGB(255, 210, 70), Color3.fromRGB(235, 140, 30)
-
-local function request(action, arg, successText)
+local function request(action, arg, message)
+	if not State.Loaded then
+		HUD.Notify("Your data is loading. Please wait.", "info")
+		return false
+	end
 	local ok, msg = State.Request(action, arg)
+	HUD.Notify(
+		msg or (ok and (message or "Updated successfully.") or "Could not complete this action. Try again."),
+		ok and "success" or "error"
+	)
 	if ok then
 		Sounds.Play("Upgrade")
-		if successText or msg then HUD.Notify(msg or successText, "success") end
-	else
-		HUD.Notify(msg or "Can't do that", "error")
 	end
 	return ok
 end
-
-local function grid(content, cell, pad)
-	content:ClearAllChildren()
-	K.pad(6).Parent = content
-	K.new("UIGridLayout", { CellSize = cell, CellPadding = pad or UDim2.fromOffset(12, 12), SortOrder = Enum.SortOrder.LayoutOrder,
-		HorizontalAlignment = Enum.HorizontalAlignment.Center, Parent = content })
+local function scroll(parent, name, size, pos)
+	return K.new("ScrollingFrame", {
+		Name = name,
+		Size = size or UDim2.fromScale(1, 1),
+		Position = pos or UDim2.new(),
+		BackgroundTransparency = 1,
+		CanvasSize = UDim2.new(),
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		ScrollBarThickness = 4,
+		ScrollBarImageColor3 = T.Violet,
+		ScrollingDirection = Enum.ScrollingDirection.Y,
+		Parent = parent,
+	}, { K.pad(3) })
 end
-local function vlist(content)
-	content:ClearAllChildren()
-	K.pad(6).Parent = content
-	K.list(Enum.FillDirection.Vertical, 10).Parent = content
+local function list(parent, gap)
+	K.list(Enum.FillDirection.Vertical, gap or 10).Parent = parent
 end
-
-local function card(parent, order, accent)
-	return K.new("Frame", { BackgroundColor3 = Color3.new(1, 1, 1), LayoutOrder = order, Parent = parent },
-		{ K.corner(16), K.stroke(3), K.grad(Color3.new(1, 1, 1), accent:Lerp(Color3.new(1, 1, 1), 0.6), 90) })
+local function heading(parent, text, order)
+	local l = K.label(text, UDim2.new(1, -12, 0, 36), T.Text, {
+		TextSize = 20,
+		Font = T.Bold,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		LayoutOrder = order or 0,
+		Parent = parent,
+	})
+	return l
 end
-
--- creature preview cache (cloning is far cheaper than rebuilding)
+local function empty(parent, title, hint)
+	local f = K.surface(parent, "Empty", UDim2.new(1, -12, 0, 124))
+	K.text(f, title, 16, 16, -32, 28, 19, T.Text, true)
+	K.text(f, hint, 16, 49, -32, 56, 15, T.Muted)
+	return f
+end
 local previewCache = {}
-local function creatureViewport(id, size, silhouette)
-	if not previewCache[id] then previewCache[id] = (Renderer.BuildPreview(id)) end
+local function petView(id, size, silhouette)
+	if not previewCache[id] then
+		previewCache[id] = (Renderer.BuildPreview(id))
+	end
 	return K.viewport(previewCache[id]:Clone(), size, false, silhouette)
 end
-
----------------------------------------------------------------- PORTAL SHOP
-local shop = HUD.MakePanel("Portals", "🌀 Portal Shop", Color3.fromRGB(170, 110, 255), Color3.fromRGB(100, 50, 220))
-local function oddsText(P)
-	local parts, total = {}, 0
-	for _, w in pairs(P.weights) do total += w end
-	for _, r in ipairs(Config.RarityOrder) do
-		local w = P.weights[r]
-		if w then
-			local pct = w / total * 100
-			local hexc = Config.Rarities[r].color:ToHex()
-			table.insert(parts, string.format("<font color='#%s'>%s %s%%</font>", hexc, r, pct >= 1 and string.format("%d", math.floor(pct + 0.5)) or string.format("%.1f", pct)))
+local function bindGrid(container, minWidth, cellHeight)
+	local g = K.new(
+		"UIGridLayout",
+		{ CellPadding = UDim2.fromOffset(10, 10), SortOrder = Enum.SortOrder.LayoutOrder, Parent = container }
+	)
+	local function resize()
+		local w = container.AbsoluteSize.X / HUD.Root:FindFirstChildOfClass("UIScale").Scale - 12
+		local cols = math.max(1, math.floor((w + 10) / (minWidth + 10)))
+		g.CellSize = UDim2.new(1 / cols, -(10 * (cols - 1) + 12) / cols, 0, cellHeight)
+	end
+	container:GetPropertyChangedSignal("AbsoluteSize"):Connect(resize)
+	task.defer(resize)
+	return g
+end
+-- On small screens the catalogue and detail are separate views, not squeezed columns.
+local function split(p)
+	p.content.AutomaticCanvasSize = Enum.AutomaticSize.None
+	p.content.ScrollingEnabled = false
+	local catalogue = scroll(p.content, "Catalogue")
+	local detail = scroll(p.content, "Details", UDim2.new(0.43, -8, 1, 0), UDim2.new(0.57, 8, 0, 0))
+	local back = K.button(
+		"Back to all items",
+		T.Raised,
+		nil,
+		UDim2.new(1, -8, 0, 44),
+		{ Name = "BackToCatalogue", Position = UDim2.fromOffset(4, 0), Parent = p.content, Visible = false }
+	)
+	K.bind(back, function()
+		p.showDetail = false
+		p.layout()
+	end)
+	p.layout = function()
+		if p.compact then
+			catalogue.Size = UDim2.fromScale(1, 1)
+			catalogue.Visible = not p.showDetail
+			detail.Position = UDim2.fromOffset(0, 54)
+			detail.Size = UDim2.new(1, 0, 1, -54)
+			detail.Visible = p.showDetail or false
+			back.Visible = p.showDetail or false
+		else
+			catalogue.Size = UDim2.new(0.56, -8, 1, 0)
+			catalogue.Visible = true
+			detail.Position = UDim2.new(0.57, 8, 0, 0)
+			detail.Size = UDim2.new(0.43, -12, 1, 0)
+			detail.Visible = true
+			back.Visible = false
 		end
 	end
-	return table.concat(parts, "  ")
+	p.layout()
+	return catalogue, detail
 end
-shop.refresh = function()
-	local d = State.Data
-	grid(shop.content, UDim2.fromOffset(240, 300))
-	for i, id in ipairs(Config.PortalOrder) do
-		local P = Config.Portals[id]
-		local c = card(shop.content, i, P.color)
-		local gate = PortalBuilder.BuildGate(id, 3)
-		local vp = K.viewport(gate, UDim2.new(1, -20, 0, 130), true)
-		vp.Position = UDim2.fromOffset(10, 6)
-		vp.Parent = c
-		K.label(P.name, UDim2.new(1, -16, 0, 30), Color3.new(1, 1, 1), { Position = UDim2.fromOffset(8, 138), Parent = c })
-		local odds = K.label(oddsText(P), UDim2.new(1, -16, 0, 56), Color3.new(1, 1, 1), { Position = UDim2.fromOffset(8, 170), Parent = c, TextWrapped = true })
-		odds.TextScaled = true
-		local owned, equipped = d.OwnedPortals[id], d.EquippedPortal == id
-		local text = equipped and "EQUIPPED" or (owned and "EQUIP" or Format.Money(P.price))
-		local c1, c2 = GREEN, GREEN2
-		if equipped then c1, c2 = GREY, GREY2 elseif owned then c1, c2 = BLUE, BLUE2 elseif d.Money < P.price then c1, c2 = Color3.fromRGB(255, 110, 110), Color3.fromRGB(200, 50, 70) end
-		local b = K.button(text, c1, c2, UDim2.new(1, -24, 0, 48), { Position = UDim2.new(0, 12, 1, -58), Parent = c })
-		b.Activated:Connect(function()
-			if equipped then return end
-			if owned then request("EquipPortal", id) else
-				if request("BuyPortal", id, "Bought " .. P.name .. "!") then
-					Effects.Flash(P.color, 0.4, 0.35)
-					Effects.Coins(nil, 8)
-				end
-			end
-		end)
-	end
+local function showDetail(p)
+	p.showDetail = true
+	p.layout()
 end
 
----------------------------------------------------------------- UPGRADES
-local upg = HUD.MakePanel("Upgrades", "⬆ Upgrades", Color3.fromRGB(255, 190, 60), Color3.fromRGB(235, 110, 30))
-local UPG_ORDER = { "ThrowPower", "BaseSlots", "Storage", "Training" }
-local UPG_ICON = { ThrowPower = "⚡", BaseSlots = "🏠", Storage = "🎒", Training = "💪" }
-local function upgradeEffect(kind, lvl)
-	if kind == "ThrowPower" then return math.floor(Config.ThrowDistance(lvl, State.Data.Strength or 0)) .. "m throw" end
-	if kind == "BaseSlots" then return (Config.StartSlots + lvl) .. " slots" end
-	if kind == "Storage" then return (Config.StartStorage + lvl * Config.StoragePerLevel) .. " storage" end
-	if kind == "Training" then return "+" .. math.floor(lvl * Config.TrainingBonus * 100) .. "% income" end
-	return ""
+---------------------------------------------------------------- Portal shop
+local shop = HUD.MakePanel(
+	"Portals",
+	"Portal forge",
+	"Permanent purchases with earned coins. Select a portal to inspect it.",
+	"Portal"
+)
+local catalogue, portalDetail = split(shop)
+bindGrid(catalogue, 155, 204)
+local portalRows = {}
+local selectedPortal = "Basic"
+local builtPortal
+local portalAction, portalStatus
+for i, id in ipairs(Config.PortalOrder) do
+	local def = Config.Portals[id]
+	local b = K.button("", T.Raised, nil, nil, { Name = "Portal_" .. id, LayoutOrder = i, Parent = catalogue })
+	local vp = K.viewport(Portal.BuildGate(id, 3), UDim2.new(1, -10, 0, 114), false)
+	vp.Position = UDim2.fromOffset(5, 2)
+	vp.Parent = b
+	K.text(b, def.name, 12, 119, -24, 25, 16, T.Text, true)
+	local status = K.text(b, "", 12, 146, -24, 20, 14, T.Muted)
+	local price =
+		K.text(b, def.price == 0 and "Starter portal" or Format.Money(def.price), 12, 173, -24, 20, 15, T.Gold, true)
+	portalRows[id] = { button = b, status = status, price = price }
+	K.bind(b, function()
+		selectedPortal = id
+		builtPortal = nil
+		shop.refresh()
+		showDetail(shop)
+	end)
 end
-upg.refresh = function()
-	local d = State.Data
-	vlist(upg.content)
-	for i, kind in ipairs(UPG_ORDER) do
-		local U = Config.Upgrades[kind]
-		local lvl = d.Upgrades[kind]
-		local idx = kind == "ThrowPower" and lvl - 1 or lvl
-		local maxed = idx >= U.max
-		local cost = Config.UpgradeCost(kind, idx)
-		local row = card(upg.content, i, GOLD)
-		row.Size = UDim2.new(1, -12, 0, 100)
-		local icon = K.new("Frame", { Size = UDim2.fromOffset(76, 76), Position = UDim2.fromOffset(12, 12), BackgroundColor3 = Color3.new(1, 1, 1), Parent = row },
-			{ K.corner(16), K.stroke(3), K.grad(GOLD, GOLD2, 90) })
-		K.label(UPG_ICON[kind], UDim2.fromScale(0.7, 0.7), nil, { Position = UDim2.fromScale(0.15, 0.15), Parent = icon })
-		K.label(U.name .. "  <font color='#FFE38A'>Lv." .. idx .. "/" .. U.max .. "</font>", UDim2.new(0.55, 0, 0, 34), nil,
-			{ Position = UDim2.fromOffset(104, 10), TextXAlignment = Enum.TextXAlignment.Left, Parent = row })
-		K.label(U.desc, UDim2.new(0.55, 0, 0, 22), Color3.fromRGB(90, 70, 120),
-			{ Position = UDim2.fromOffset(104, 44), TextXAlignment = Enum.TextXAlignment.Left, Parent = row }):FindFirstChildOfClass("UIStroke"):Destroy()
-		K.label(upgradeEffect(kind, lvl) .. (maxed and "" or ("  ➜  <font color='#7CFF8A'>" .. upgradeEffect(kind, lvl + 1) .. "</font>")), UDim2.new(0.55, 0, 0, 24), nil,
-			{ Position = UDim2.fromOffset(104, 68), TextXAlignment = Enum.TextXAlignment.Left, Parent = row })
-		local affordable = d.Money >= cost
-		local b = K.button(maxed and "MAX" or Format.Money(cost), maxed and GREY or (affordable and GREEN or Color3.fromRGB(255, 110, 110)),
-			maxed and GREY2 or (affordable and GREEN2 or Color3.fromRGB(200, 50, 70)), UDim2.fromOffset(170, 60),
-			{ AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -16, 0.5, 0), Parent = row })
-		b.Activated:Connect(function()
-			if maxed then return end
-			if request("Upgrade", kind) then
-				K.pop(row, 1.05)
-				Effects.Burst((workspace.CurrentCamera.CFrame * CFrame.new(0, 0, -10)).Position, GOLD, 25, 10, 0.6)
-			end
-		end)
-	end
-end
-
----------------------------------------------------------------- CREATURES (inventory)
-local inv = HUD.MakePanel("Creatures", "🐾 My Creatures", Color3.fromRGB(110, 200, 255), Color3.fromRGB(50, 120, 230))
-local selectedUid = nil
-local invInfo = K.label("", UDim2.new(0.5, 0, 1, 0), Color3.fromRGB(70, 50, 110), { TextXAlignment = Enum.TextXAlignment.Left, Parent = inv.subbar })
-invInfo:FindFirstChildOfClass("UIStroke"):Destroy()
-local bestBtn = K.button("⭐ Equip Best", GOLD, GOLD2, UDim2.fromOffset(170, 44), { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 0), Parent = inv.subbar })
-bestBtn.Activated:Connect(function() request("EquipBest", nil, "Placed your best creatures!") end)
-
-local actionBar = K.new("Frame", { AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, 70), Size = UDim2.fromOffset(560, 64),
-	BackgroundColor3 = K.Panel, Visible = false, Parent = inv.frame }, { K.corner(18), K.stroke(4) })
-local actionName = K.label("", UDim2.new(0.4, 0, 1, -16), Color3.new(1, 1, 1), { Position = UDim2.fromOffset(12, 8), TextXAlignment = Enum.TextXAlignment.Left, Parent = actionBar })
-local placeBtn = K.button("Place", GREEN, GREEN2, UDim2.fromOffset(150, 48), { Position = UDim2.new(0.42, 0, 0, 8), Parent = actionBar })
-local sellBtn = K.button("Sell", Color3.fromRGB(255, 110, 110), Color3.fromRGB(200, 50, 70), UDim2.fromOffset(150, 48), { Position = UDim2.new(0.42, 160, 0, 8), Parent = actionBar })
-local sellArmed = false
-placeBtn.Activated:Connect(function()
-	if not selectedUid then return end
-	if State.IsPlaced(selectedUid) then request("Unplace", selectedUid) else request("Place", selectedUid) end
-end)
-sellBtn.Activated:Connect(function()
-	if not selectedUid then return end
-	if not sellArmed then
-		sellArmed = true
-		K.setButton(sellBtn, "Confirm?")
-		task.delay(2.5, function() sellArmed = false; K.setButton(sellBtn, "Sell") end)
+local function refreshPortalDetail()
+	if builtPortal == selectedPortal then
 		return
 	end
-	sellArmed = false
-	K.setButton(sellBtn, "Sell")
-	if request("Sell", selectedUid) then
-		selectedUid = nil
-		actionBar.Visible = false
-		Effects.Coins(nil, 10)
-	end
-end)
-
-local function selectCreature(entry)
-	selectedUid = entry.u
-	local def = CreatureData.ById[entry.c]
-	actionBar.Visible = true
-	actionName.Text = def.name
-	actionName.TextColor3 = Config.Rarities[def.rarity].color
-	K.setButton(placeBtn, State.IsPlaced(entry.u) and "Remove" or "Place", State.IsPlaced(entry.u) and BLUE or GREEN, State.IsPlaced(entry.u) and BLUE2 or GREEN2)
-	K.pop(actionBar, 1.06)
-end
-
-inv.refresh = function()
-	local d = State.Data
-	invInfo.Text = string.format("In base: %d/%d   •   Storage: %d/%d   •   +%s/s", #d.Placed, d.SlotsOpen, #d.Creatures - #d.Placed, d.StorageCap, Format.Money(d.Income))
-	grid(inv.content, UDim2.fromOffset(140, 170))
-	local list = table.clone(d.Creatures)
-	table.sort(list, function(a, b)
-		local pa, pb = State.IsPlaced(a.u), State.IsPlaced(b.u)
-		if pa ~= pb then return pa end
-		return CreatureData.Income(a.c) > CreatureData.Income(b.c)
+	builtPortal = selectedPortal
+	portalDetail:ClearAllChildren()
+	K.pad(4).Parent = portalDetail
+	list(portalDetail, 8)
+	local def = Config.Portals[selectedPortal]
+	local preview = K.surface(portalDetail, "Hero", UDim2.new(1, -12, 0, 178), nil, T.Ink)
+	preview.LayoutOrder = 1
+	local vp = K.viewport(Portal.BuildGate(selectedPortal, 4), UDim2.fromScale(1, 1), false)
+	vp.Parent = preview
+	heading(portalDetail, def.name, 2)
+	portalStatus =
+		K.label("", UDim2.new(1, -12, 0, 30), T.Muted, { TextSize = 15, LayoutOrder = 3, Parent = portalDetail })
+	portalAction = K.button(
+		"",
+		T.Gold,
+		nil,
+		UDim2.new(1, -12, 0, 48),
+		{ Name = "PortalAction", LayoutOrder = 4, Parent = portalDetail }
+	)
+	K.bind(portalAction, function()
+		local id = selectedPortal
+		if State.Data.OwnedPortals[id] then
+			request("EquipPortal", id, "Portal equipped.")
+		else
+			request("BuyPortal", id, Config.Portals[id].name .. " purchased.")
+		end
 	end)
-	if #list == 0 then
-		K.label("No creatures yet! Throw a portal to find one.", UDim2.fromOffset(500, 40), Color3.fromRGB(90, 70, 120), { Parent = inv.content })
+	heading(portalDetail, "Base rarity weights", 5)
+	local sum = 0
+	for _, weight in pairs(def.weights) do
+		sum += weight
 	end
-	for i, entry in ipairs(list) do
-		local def = CreatureData.ById[entry.c]
-		if def then
-			local rc = Config.Rarities[def.rarity]
-			local c = K.new("TextButton", { Text = "", AutoButtonColor = false, BackgroundColor3 = Color3.new(1, 1, 1), LayoutOrder = i, Parent = inv.content },
-				{ K.corner(16), K.stroke(selectedUid == entry.u and 5 or 3, selectedUid == entry.u and Color3.fromRGB(255, 220, 60) or K.Dark),
-					K.grad(Color3.new(1, 1, 1), rc.color:Lerp(Color3.new(1, 1, 1), 0.35), 90) })
-			local vp = creatureViewport(entry.c, UDim2.new(1, -10, 0, 100))
-			vp.Position = UDim2.fromOffset(5, 4)
-			vp.Parent = c
-			K.label(def.name, UDim2.new(1, -8, 0, 24), Color3.new(1, 1, 1), { Position = UDim2.fromOffset(4, 104), Parent = c })
-			K.label(Format.Money(CreatureData.Income(entry.c)) .. "/s", UDim2.new(1, -8, 0, 20), Color3.fromRGB(150, 255, 150), { Position = UDim2.fromOffset(4, 128), Parent = c })
-			K.label(def.rarity, UDim2.new(1, -8, 0, 16), rc.color, { Position = UDim2.fromOffset(4, 149), Parent = c })
-			if State.IsPlaced(entry.u) then
-				local badge = K.new("Frame", { Size = UDim2.fromOffset(34, 34), Position = UDim2.fromOffset(-6, -6), BackgroundColor3 = GREEN, Parent = c, ZIndex = 3 }, { K.round(), K.stroke(2) })
-				K.label("✓", UDim2.fromScale(0.8, 0.8), nil, { Position = UDim2.fromScale(0.1, 0.1), Parent = badge, ZIndex = 4 })
-			end
-			c.Activated:Connect(function()
-				Sounds.Play("Click")
-				selectCreature(entry)
-				inv.refresh()
-			end)
+	for i, r in ipairs(Config.RarityOrder) do
+		local weight = def.weights[r]
+		if weight then
+			local row = K.new("Frame", {
+				Size = UDim2.new(1, -12, 0, 24),
+				BackgroundTransparency = 1,
+				LayoutOrder = 5 + i,
+				Parent = portalDetail,
+			})
+			K.text(row, r, 0, 0, -80, 24, 14, T.Rarity(r, Config))
+			local pct = string.format("%.2f%%", 100 * weight / sum):gsub("%.00%%", "%%")
+			K.label(pct, UDim2.fromOffset(76, 24), T.Text, {
+				TextSize = 14,
+				TextXAlignment = Enum.TextXAlignment.Right,
+				Position = UDim2.new(1, -76, 0, 0),
+				Parent = row,
+			})
 		end
 	end
-	if selectedUid then
-		local still = false
-		for _, e in ipairs(d.Creatures) do if e.u == selectedUid then still = true; selectCreature(e) end end
-		if not still then selectedUid = nil; actionBar.Visible = false end
+	K.label(
+		"These are normalized base weights. Landing zone and distance luck affect the final creature odds; see the Index for attainable odds.",
+		UDim2.new(1, -12, 0, 76),
+		T.Muted,
+		{ TextSize = 14, LayoutOrder = 30, Parent = portalDetail }
+	)
+end
+shop.refresh = function()
+	refreshPortalDetail()
+	local d = State.Data
+	for id, row in pairs(portalRows) do
+		local equipped = d.EquippedPortal == id
+		local owned = d.OwnedPortals[id]
+		row.status.Text = equipped and "Equipped" or owned and "Owned" or "View portal"
+		row.status.TextColor3 = equipped and T.Success or T.Muted
+		row.button:FindFirstChildOfClass("UIStroke").Color = selectedPortal == id and T.Gold or T.Border
+	end
+	local def = Config.Portals[selectedPortal]
+	local owned = d.OwnedPortals[selectedPortal]
+	local equipped = d.EquippedPortal == selectedPortal
+	portalStatus.Text = equipped and "Your active portal"
+		or owned and "Owned permanently"
+		or "Price: " .. Format.Money(def.price) .. " coins"
+	K.setButton(
+		portalAction,
+		equipped and "Equipped"
+			or owned and "Equip portal"
+			or d.Money < def.price and "Need " .. Format.Money(def.price - d.Money) .. " more"
+			or "Buy portal · " .. Format.Money(def.price),
+		T.Gold
+	)
+	K.setEnabled(portalAction, State.Loaded and not equipped and (owned or d.Money >= def.price))
+end
+
+---------------------------------------------------------------- Upgrades
+local upg =
+	HUD.MakePanel("Upgrades", "Sanctuary upgrades", "See the improvement and the exact cost before buying.", "Upgrade")
+list(upg.content, 12)
+local upgradeRefs = {}
+local upgradeIcons = { ThrowPower = "Arrow", BaseSlots = "Home", Storage = "Bag", Training = "Strength" }
+local function effect(kind, lvl)
+	if kind == "ThrowPower" then
+		return math.floor(Config.ThrowDistance(lvl, State.Data.Strength or 0)) .. " m range"
+	end
+	if kind == "BaseSlots" then
+		return Config.StartSlots + lvl .. " garden slots"
+	end
+	if kind == "Storage" then
+		return Config.StartStorage + lvl * Config.StoragePerLevel .. " storage"
+	end
+	return "+" .. math.floor(lvl * Config.TrainingBonus * 100) .. "% income"
+end
+for i, kind in ipairs({ "ThrowPower", "BaseSlots", "Storage", "Training" }) do
+	local def = Config.Upgrades[kind]
+	local row = K.surface(upg.content, "Upgrade_" .. kind, UDim2.new(1, -12, 0, 142))
+	row.LayoutOrder = i
+	K.Icon(upgradeIcons[kind], row, UDim2.fromOffset(26, 26), T.Gold, UDim2.fromOffset(16, 18))
+	local title = K.text(row, def.name, 54, 10, -72, 28, 19, T.Text, true)
+	K.text(row, def.desc, 16, 45, -32, 35, 14, T.Muted)
+	local value = K.text(row, "", 16, 91, -196, 39, 15, T.Cyan)
+	local b = K.button(
+		"",
+		T.Gold,
+		nil,
+		UDim2.fromOffset(164, 44),
+		{ Name = "Buy_" .. kind, Position = UDim2.new(1, -180, 1, -56), Parent = row }
+	)
+	K.bind(b, function()
+		request("Upgrade", kind, def.name .. " improved.")
+	end)
+	upgradeRefs[kind] = { title = title, value = value, button = b }
+end
+upg.refresh = function()
+	for kind, ref in pairs(upgradeRefs) do
+		local def = Config.Upgrades[kind]
+		local lvl = State.Data.Upgrades[kind]
+		local idx = kind == "ThrowPower" and lvl - 1 or lvl
+		local maxed = idx >= def.max
+		local cost = Config.UpgradeCost(kind, idx)
+		ref.title.Text = def.name .. " · " .. idx .. "/" .. def.max
+		ref.value.Text = effect(kind, lvl) .. (maxed and "" or " → " .. effect(kind, lvl + 1))
+		K.setButton(
+			ref.button,
+			maxed and "Maximum level"
+				or State.Data.Money < cost and "Need " .. Format.Money(cost - State.Data.Money)
+				or "Buy · " .. Format.Money(cost),
+			T.Gold
+		)
+		K.setEnabled(ref.button, State.Loaded and not maxed and State.Data.Money >= cost)
 	end
 end
 
----------------------------------------------------------------- INDEX
-local idx = HUD.MakePanel("Index", "📖 Creature Index", Color3.fromRGB(255, 130, 190), Color3.fromRGB(210, 60, 140))
+---------------------------------------------------------------- Inventory
+local inv = HUD.MakePanel(
+	"Creatures",
+	"Your creatures",
+	"Select a creature to place it, remove it or review its sell value.",
+	"Pet"
+)
+local invCatalogue, invDetail = split(inv)
+local invSearch = K.search(invCatalogue, "Search creatures", UDim2.new(1, -12, 0, 46), UDim2.fromOffset(4, 4))
+invCatalogue.AutomaticCanvasSize = Enum.AutomaticSize.None
+invCatalogue.ScrollingEnabled = false
+local best = K.button(
+	"Place best",
+	T.Gold,
+	nil,
+	UDim2.new(1, -12, 0, 44),
+	{ Name = "EquipBest", Position = UDim2.fromOffset(4, 58), Parent = invCatalogue }
+)
+K.bind(best, function()
+	request("EquipBest", nil, "Best earners placed in your garden.")
+end)
+local invGrid = scroll(invCatalogue, "Creatures", UDim2.new(1, 0, 1, -116), UDim2.fromOffset(0, 112))
+local selectedUid, inventoryKey, detailKey, armedUid, armToken = nil, nil, nil, nil, 0
+local inventoryButtons = {}
+local function clearArm()
+	armedUid = nil
+	armToken += 1
+end
+local function renderCreatureDetail()
+	local d = State.Data
+	local entry
+	for _, e in ipairs(d.Creatures) do
+		if e.u == selectedUid then
+			entry = e
+			break
+		end
+	end
+	local key = entry and entry.u .. ":" .. tostring(State.IsPlaced(entry.u)) .. ":" .. tostring(armedUid) or "empty"
+	if detailKey == key then
+		return
+	end
+	detailKey = key
+	invDetail:ClearAllChildren()
+	K.pad(4).Parent = invDetail
+	list(invDetail, 10)
+	if not entry then
+		empty(invDetail, "Choose a creature", "Throw a portal in the Launch Hall to start your collection.")
+		return
+	end
+	local def = Data.ById[entry.c]
+	local color = T.Rarity(def.rarity, Config)
+	local hero = K.surface(invDetail, "CreaturePreview", UDim2.new(1, -12, 0, 180), nil, T.Ink)
+	hero.LayoutOrder = 1
+	petView(entry.c, UDim2.fromScale(1, 1)).Parent = hero
+	heading(invDetail, def.name, 2)
+	K.label(
+		def.rarity .. " · " .. Format.Money(Data.Income(entry.c)) .. " / sec",
+		UDim2.new(1, -12, 0, 28),
+		color,
+		{ TextSize = 16, LayoutOrder = 3, Parent = invDetail }
+	)
+	K.label(def.desc or "", UDim2.new(1, -12, 0, 56), T.Muted, { TextSize = 14, LayoutOrder = 4, Parent = invDetail })
+	local isPlaced = State.IsPlaced(entry.u)
+	local place = K.button(
+		isPlaced and "Remove from garden" or "Place in garden",
+		T.Gold,
+		nil,
+		UDim2.new(1, -12, 0, 46),
+		{ Name = "PlaceCreature", LayoutOrder = 5, Parent = invDetail }
+	)
+	K.bind(place, function()
+		clearArm()
+		request(State.IsPlaced(entry.u) and "Unplace" or "Place", entry.u, "Garden updated.")
+	end)
+	local cap = isPlaced and (#d.Creatures - #d.Placed >= d.StorageCap) or (not isPlaced and #d.Placed >= d.SlotsOpen)
+	if cap then
+		K.setButton(place, isPlaced and "Storage is full" or "Garden is full")
+	end
+	K.setEnabled(place, not cap)
+	local sellValue = math.floor(Data.Income(entry.c) * Config.SellMultiplier)
+	local sell = K.button(
+		armedUid == entry.u and "Confirm sale · " .. Format.Money(sellValue)
+			or "Sell creature · " .. Format.Money(sellValue),
+		armedUid == entry.u and T.Danger or T.Raised,
+		nil,
+		UDim2.new(1, -12, 0, 46),
+		{ Name = "SellCreature", LayoutOrder = 6, Parent = invDetail }
+	)
+	K.bind(sell, function()
+		if selectedUid ~= entry.u then
+			clearArm()
+			return
+		end
+		if armedUid ~= entry.u then
+			armedUid = entry.u
+			armToken += 1
+			local token = armToken
+			detailKey = nil
+			renderCreatureDetail()
+			task.delay(4, function()
+				if armToken == token then
+					clearArm()
+					detailKey = nil
+					if HUD.IsOpen("Creatures") then
+						renderCreatureDetail()
+					end
+				end
+			end)
+		else
+			clearArm()
+			if request("Sell", entry.u, "Creature sold.") then
+				selectedUid = nil
+				detailKey = nil
+				inv.refresh()
+			end
+		end
+	end)
+	K.label(
+		armedUid == entry.u and "This permanently removes " .. def.name .. ". Select Confirm sale within 4 seconds."
+			or "Selling permanently removes this creature. A second confirmation is required.",
+		UDim2.new(1, -12, 0, 60),
+		armedUid == entry.u and T.Danger or T.Muted,
+		{ TextSize = 14, LayoutOrder = 7, Parent = invDetail }
+	)
+end
+inv.refresh = function()
+	local d = State.Data
+	inv.subtitle.Text = string.format(
+		"Garden %d/%d · Stored %d/%d · Income %s / sec",
+		#d.Placed,
+		d.SlotsOpen,
+		#d.Creatures - #d.Placed,
+		d.StorageCap,
+		Format.Money(d.Income)
+	)
+	local ids = {}
+	for _, e in ipairs(d.Creatures) do
+		table.insert(ids, e.u .. ":" .. tostring(State.IsPlaced(e.u)))
+	end
+	local key = table.concat(ids, ",") .. invSearch.Text:lower()
+	if inventoryKey ~= key then
+		inventoryKey = key
+		invGrid:ClearAllChildren()
+		inventoryButtons = {}
+		bindGrid(invGrid, 140, 192)
+		local items = table.clone(d.Creatures)
+		table.sort(items, function(a, b)
+			return Data.Income(a.c) > Data.Income(b.c)
+		end)
+		local count = 0
+		for i, entry in ipairs(items) do
+			local def = Data.ById[entry.c]
+			if def and def.name:lower():find(invSearch.Text:lower(), 1, true) then
+				count += 1
+				local b = K.button(
+					"",
+					T.Raised,
+					nil,
+					nil,
+					{ Name = "Creature_" .. entry.u, LayoutOrder = i, Parent = invGrid }
+				)
+				petView(entry.c, UDim2.new(1, -8, 0, 108)).Parent = b
+				K.text(b, def.name, 10, 110, -20, 38, 15, T.Text, true)
+				K.text(b, def.rarity, 10, 151, -20, 18, 13, T.Rarity(def.rarity, Config))
+				K.text(
+					b,
+					State.IsPlaced(entry.u) and "In garden" or "In storage",
+					10,
+					171,
+					-20,
+					18,
+					13,
+					State.IsPlaced(entry.u) and T.Success or T.Muted
+				)
+				inventoryButtons[entry.u] = b
+				K.bind(b, function()
+					clearArm()
+					selectedUid = entry.u
+					detailKey = nil
+					inv.refresh()
+					showDetail(inv)
+				end)
+			end
+		end
+		if count == 0 then
+			invGrid:ClearAllChildren()
+			empty(
+				invGrid,
+				#items == 0 and "Your collection starts here" or "No matching creatures",
+				#items == 0
+						and "Enter the Launch Hall and throw your first portal. Caught creatures appear here automatically."
+					or "Try a different name or clear your search."
+			)
+		end
+	end
+	for uid, b in pairs(inventoryButtons) do
+		b:FindFirstChildOfClass("UIStroke").Color = uid == selectedUid and T.Gold or T.Border
+	end
+	if selectedUid then
+		local found = false
+		for _, e in d.Creatures do
+			if e.u == selectedUid then
+				found = true
+			end
+		end
+		if not found then
+			selectedUid = nil
+			clearArm()
+			detailKey = nil
+		end
+	end
+	renderCreatureDetail()
+end
+inv.onClose = function()
+	clearArm()
+	detailKey = nil
+end
+invSearch:GetPropertyChangedSignal("Text"):Connect(function()
+	inv.refresh()
+end)
+
+---------------------------------------------------------------- Discovery index
+local idx = HUD.MakePanel(
+	"Index",
+	"Creature index",
+	"Discover every species. Odds reflect your equipped portal and best perfect throw.",
+	"Book"
+)
+idx.content.ScrollingEnabled = false
+idx.content.AutomaticCanvasSize = Enum.AutomaticSize.None
+local tabs = K.new("ScrollingFrame", {
+	Name = "Filters",
+	Size = UDim2.new(1, -4, 0, 48),
+	BackgroundTransparency = 1,
+	AutomaticCanvasSize = Enum.AutomaticSize.X,
+	CanvasSize = UDim2.new(),
+	ScrollingDirection = Enum.ScrollingDirection.X,
+	ScrollBarThickness = 3,
+	ScrollBarImageColor3 = T.Violet,
+	Parent = idx.content,
+}, { K.list(Enum.FillDirection.Horizontal, 6, Enum.HorizontalAlignment.Left) })
+local idxGrid = scroll(idx.content, "Species", UDim2.new(1, 0, 1, -62), UDim2.fromOffset(0, 60))
 local idxFilter = "Forest"
-local tabs = K.new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Parent = idx.subbar }, { K.list(Enum.FillDirection.Horizontal, 6) })
-local idxCount = nil
+local idxKey
+local idxTabs = {}
 local filters = table.clone(Config.WorldOrder)
 table.insert(filters, "Any")
-for i, w in ipairs(filters) do
-	local name = w == "Any" and "Special" or Config.Worlds[w].name:gsub(" World", ""):gsub("Green ", ""):gsub(" Kingdom", ""):gsub(" Dimension", ""):gsub(" Galaxy", ""):gsub(" Caves", "")
-	local b = K.button(name, Color3.fromRGB(255, 160, 210), Color3.fromRGB(220, 90, 160), UDim2.fromOffset(82, 40), { LayoutOrder = i, Parent = tabs })
-	b.Activated:Connect(function() idxFilter = w; idx.refresh() end)
+for i, id in ipairs(filters) do
+	local name = id == "Any" and "Special" or id
+	local b = K.button(
+		name,
+		T.Raised,
+		nil,
+		UDim2.fromOffset(100, 44),
+		{ Name = "Filter_" .. id, LayoutOrder = i, Parent = tabs }
+	)
+	idxTabs[id] = b
+	K.bind(b, function()
+		idxFilter = id
+		idxKey = nil
+		idxGrid.CanvasPosition = Vector2.zero
+		idx.refresh()
+	end)
 end
 idx.refresh = function()
 	local d = State.Data
-	grid(idx.content, UDim2.fromOffset(140, 180))
-	local total, found = #CreatureData.List, 0
-	for _ in pairs(d.Discovered) do found += 1 end
-	K.label(string.format("Discovered %d / %d\n\nOdds use your equipped portal", found, total), UDim2.new(1, -20, 0, 34), Color3.fromRGB(90, 60, 130),
-		{ LayoutOrder = 0, Parent = idx.content, Size = UDim2.fromOffset(140, 180), TextWrapped = true })
-	for i, def in ipairs(CreatureData.ByWorld[idxFilter] or {}) do
+	local found = 0
+	for _ in pairs(d.Discovered) do
+		found += 1
+	end
+	idx.title.Text = "Creature index · " .. found .. "/" .. #Data.List
+	local key = idxFilter .. ":" .. found .. ":" .. d.EquippedPortal .. ":" .. math.floor(d.MaxDistance or 0)
+	for id, b in pairs(idxTabs) do
+		K.setButton(b, nil, id == idxFilter and T.Violet or T.Raised)
+	end
+	if idxKey == key then
+		return
+	end
+	idxKey = key
+	idxGrid:ClearAllChildren()
+	bindGrid(idxGrid, 146, 222)
+	for i, def in ipairs(Data.ByWorld[idxFilter] or {}) do
 		local known = d.Discovered[def.id]
-		local rc = Config.Rarities[def.rarity]
-		local c = card(idx.content, i, known and rc.color or GREY)
-		local vp = creatureViewport(def.id, UDim2.new(1, -10, 0, 104), not known)
-		vp.Position = UDim2.fromOffset(5, 4)
-		vp.Parent = c
-		K.label(known and def.name or "???", UDim2.new(1, -8, 0, 24), Color3.new(1, 1, 1), { Position = UDim2.fromOffset(4, 108), Parent = c })
-		K.label(def.rarity, UDim2.new(1, -8, 0, 20), rc.color, { Position = UDim2.fromOffset(4, 132), Parent = c })
-		-- "1 in X" with your equipped portal and your best throw
-		local p = Odds.ChanceFor(def.id, d.EquippedPortal, (d.MaxDistance or 45) * 1.15)
-		K.label(p > 0 and Odds.OneIn(p) or "Better portal needed", UDim2.new(1, -8, 0, 20), Color3.fromRGB(255, 240, 160), { Position = UDim2.fromOffset(4, 154), Parent = c })
-		if known then
-			c.InputBegan:Connect(function(input)
-				if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-					HUD.Notify(def.name .. ": " .. def.desc, def.rarity)
-				end
-			end)
-		end
+		local b = K.button("", T.Raised, nil, nil, { Name = "Species_" .. def.id, LayoutOrder = i, Parent = idxGrid })
+		petView(def.id, UDim2.new(1, -8, 0, 112), not known).Parent = b
+		K.text(b, known and def.name or "Undiscovered", 10, 116, -20, 36, 15, T.Text, true)
+		K.text(b, def.rarity, 10, 154, -20, 20, 14, T.Rarity(def.rarity, Config))
+		local status, p = Odds.Attainable(def.id, d.EquippedPortal, (d.MaxDistance or 45) * 1.15)
+		local odds = status == "ok" and Odds.OneIn(p)
+			or status == "out_of_range" and "Out of throw range"
+			or "Different portal needed"
+		K.text(b, odds, 10, 178, -20, 36, 13, T.Muted)
+		K.bind(b, function()
+			HUD.Notify(
+				known and def.name .. ": " .. def.desc or "Land in the correct zone to discover this species.",
+				"info"
+			)
+		end)
 	end
 end
 
----------------------------------------------------------------- WORLDS
-local worlds = HUD.MakePanel("Worlds", "📏 Zones", Color3.fromRGB(100, 220, 200), Color3.fromRGB(30, 150, 160))
+---------------------------------------------------------------- Zones
+local worlds = HUD.MakePanel(
+	"Worlds",
+	"Explore the zones",
+	"Throw distance determines the landing zone. Training and upgrades extend your reach.",
+	"Compass"
+)
+list(worlds.content, 10)
+local worldRefs = {}
+for i, id in ipairs(Config.WorldOrder) do
+	local W = Config.Worlds[id]
+	local bounds = Config.ZoneBounds[id]
+	local row = K.surface(worlds.content, "Zone_" .. id, UDim2.new(1, -12, 0, 122))
+	row.LayoutOrder = i
+	K.Icon("Compass", row, UDim2.fromOffset(28, 28), W.atmo:Lerp(T.Text, 0.2), UDim2.fromOffset(16, 16))
+	K.text(row, W.name, 56, 12, -72, 30, 19, T.Text, true)
+	K.text(
+		row,
+		bounds[1] .. "–" .. bounds[2] .. " m · " .. Format.Short(W.incomeMult) .. "× income",
+		16,
+		49,
+		-32,
+		24,
+		15,
+		T.Cyan
+	)
+	worldRefs[id] = K.text(row, "", 16, 82, -32, 26, 15, T.Muted)
+end
 worlds.refresh = function()
-	local d = State.Data
-	vlist(worlds.content)
-	local maxD = (d.MaxDistance or 45) * 1.15
-	local tip = card(worlds.content, 0, GOLD)
-	tip.Size = UDim2.new(1, -12, 0, 60)
-	K.label(string.format("Your best throw reaches <font color='#FFE38A'>%dm</font>. Train and upgrade Throw Power to reach new zones!", math.floor(maxD)),
-		UDim2.new(1, -24, 1, -12), nil, { Position = UDim2.fromOffset(12, 6), Parent = tip })
-	for i, id in ipairs(Config.WorldOrder) do
-		local W = Config.Worlds[id]
-		local b = Config.ZoneBounds[id]
-		local reach = maxD >= b[1]
-		local row = card(worlds.content, i, W.groundColor)
-		row.Size = UDim2.new(1, -12, 0, 92)
-		local sw = K.new("Frame", { Size = UDim2.fromOffset(70, 70), Position = UDim2.fromOffset(12, 11), BackgroundColor3 = Color3.new(1, 1, 1), Parent = row },
-			{ K.corner(16), K.stroke(3), K.grad(W.groundColor:Lerp(Color3.new(1, 1, 1), 0.3), W.atmo, 90) })
-		K.label(reach and tostring(i) or "🔒", UDim2.fromScale(0.6, 0.6), nil, { Position = UDim2.fromScale(0.2, 0.2), Parent = sw })
-		K.label(W.name .. "  <font color='#FFE38A'>" .. b[1] .. "m – " .. b[2] .. "m</font>", UDim2.new(0.62, 0, 0, 36), nil,
-			{ Position = UDim2.fromOffset(96, 10), TextXAlignment = Enum.TextXAlignment.Left, Parent = row })
+	local max = (State.Data.MaxDistance or 45) * 1.15
+	worlds.subtitle.Text = "Your best perfect throw: "
+		.. math.floor(max)
+		.. " m. Train or buy Throw Power to reach the next zone."
+	for id, label in pairs(worldRefs) do
 		local found, total = 0, 0
-		for _, c in ipairs(CreatureData.ByWorld[id] or {}) do
+		for _, def in ipairs(Data.ByWorld[id] or {}) do
 			total += 1
-			if d.Discovered[c.id] then found += 1 end
+			if State.Data.Discovered[def.id] then
+				found += 1
+			end
 		end
-		K.label(string.format("%s  •  Creatures found: %d/%d  •  x%s income", reach and "In range!" or ("Need a " .. b[1] .. "m throw"), found, total, Format.Short(W.incomeMult)),
-			UDim2.new(0.8, 0, 0, 26), reach and Color3.fromRGB(180, 255, 180) or Color3.fromRGB(255, 200, 200),
-			{ Position = UDim2.fromOffset(96, 50), TextXAlignment = Enum.TextXAlignment.Left, Parent = row })
+		label.Text = (
+			max >= Config.ZoneBounds[id][1] and "In range"
+			or "Need " .. math.ceil(Config.ZoneBounds[id][1] - max) .. " m more range"
+		)
+			.. " · Discovered "
+			.. found
+			.. "/"
+			.. total
 	end
 end
 
----------------------------------------------------------------- ADMIN
-local admin = HUD.MakePanel("Admin", "🛠 Admin Panel", Color3.fromRGB(255, 90, 90), Color3.fromRGB(160, 30, 60))
-local function adminCmd(cmd, value)
-	local json = game:GetService("HttpService"):JSONEncode({ cmd = cmd, value = value })
-	request("Admin", json)
+---------------------------------------------------------------- Garden shop
+local base = HUD.MakePanel(
+	"Base",
+	"Garden workshop",
+	"Decorations appear in your garden. Floor purchases are applied immediately.",
+	"Decor"
+)
+list(base.content, 10)
+local baseRefs = {}
+local floorRefs = {}
+heading(base.content, "Decorations", 0)
+local decorCopy = {
+	FlowerBed = "Color for the edge of your garden.",
+	Lanterns = "Warm lights around your plot.",
+	MushroomRing = "A small magical garden feature.",
+	Fountain = "Add a decorative portal fountain.",
+	CrystalTree = "A faceted crystal centerpiece.",
+	Statue = "A golden garden monument.",
+	Rainbow = "Frame your garden with a rainbow arch.",
+	FloatingIsland = "A floating display above your plot.",
+}
+local function shopRow(parent, id, title, desc, icon, order)
+	local row = K.surface(parent, id, UDim2.new(1, -12, 0, 130))
+	row.LayoutOrder = order
+	K.Icon(icon, row, UDim2.fromOffset(26, 26), T.Violet, UDim2.fromOffset(16, 14))
+	K.text(row, title, 54, 10, -70, 28, 18, T.Text, true)
+	K.text(row, desc, 16, 43, -32, 28, 14, T.Muted)
+	local b = K.button(
+		"",
+		T.Gold,
+		nil,
+		UDim2.fromOffset(190, 44),
+		{ Name = "Buy_" .. id, Position = UDim2.new(1, -206, 1, -55), Parent = row }
+	)
+	return b, row
 end
-admin.refresh = function()
-	vlist(admin.content)
-	local amountRow = card(admin.content, 1, Color3.fromRGB(255, 120, 120))
-	amountRow.Size = UDim2.new(1, -12, 0, 70)
-	K.label("Amount:", UDim2.fromOffset(120, 40), nil, { Position = UDim2.fromOffset(14, 15), Parent = amountRow })
-	local box = K.new("TextBox", { Text = "1000000", PlaceholderText = "number / creature id", Font = K.Font, TextScaled = true, ClearTextOnFocus = false,
-		Size = UDim2.new(1, -160, 0, 46), Position = UDim2.fromOffset(140, 12), BackgroundColor3 = Color3.new(1, 1, 1), TextColor3 = K.Dark, Parent = amountRow },
-		{ K.corner(12), K.stroke(3) })
-	local function val() return tonumber(box.Text) or box.Text end
-
-	local btns = K.new("Frame", { Size = UDim2.new(1, -12, 0, 240), BackgroundTransparency = 1, LayoutOrder = 2, Parent = admin.content },
-		{ K.new("UIGridLayout", { CellSize = UDim2.fromOffset(180, 52), CellPadding = UDim2.fromOffset(10, 10), HorizontalAlignment = Enum.HorizontalAlignment.Center }) })
-	local function add(text, c1, c2, fn)
-		local b = K.button(text, c1, c2, nil, { Parent = btns })
-		b.Activated:Connect(fn)
-	end
-	add("+ Money", GREEN, GREEN2, function() adminCmd("money", val()) end)
-	add("- Money", Color3.fromRGB(255, 110, 110), Color3.fromRGB(200, 50, 70), function() adminCmd("money", -(tonumber(box.Text) or 0)) end)
-	add("+ Strength", Color3.fromRGB(255, 120, 90), Color3.fromRGB(210, 50, 60), function() adminCmd("strength", val()) end)
-	add("Set Throw Lv", GOLD, GOLD2, function() adminCmd("throwlevel", val()) end)
-	add("Max Upgrades", GOLD, GOLD2, function() adminCmd("maxupgrades") end)
-	add("All Portals", Color3.fromRGB(180, 120, 255), Color3.fromRGB(110, 60, 220), function() adminCmd("allportals") end)
-	add("Complete Index", Color3.fromRGB(255, 140, 200), Color3.fromRGB(210, 60, 140), function() adminCmd("discoverall") end)
-	add("WalkSpeed", BLUE, BLUE2, function() adminCmd("speed", val()) end)
-	add("Give Creature (id)", BLUE, BLUE2, function() adminCmd("give", box.Text) end)
-	add("Force Next Throw (id)", Color3.fromRGB(255, 160, 60), Color3.fromRGB(210, 90, 30), function() adminCmd("forcenext", box.Text) end)
-	local resetArmed = false
-	add("RESET MY DATA", Color3.fromRGB(90, 90, 100), Color3.fromRGB(40, 40, 50), function()
-		if not resetArmed then
-			resetArmed = true
-			HUD.Notify("Click RESET again within 3s to wipe your data", "error")
-			task.delay(3, function() resetArmed = false end)
-			return
-		end
-		resetArmed = false
-		adminCmd("reset")
+for i, id in ipairs(Config.DecorOrder) do
+	local def = Config.Decor[id]
+	local b = shopRow(base.content, id, def.name, decorCopy[id] or "Garden decoration.", "Decor", i)
+	baseRefs[id] = b
+	K.bind(b, function()
+		request("BuyDecor", id, def.name .. " added to your garden.")
 	end)
-
-	K.label("Teleport to zone", UDim2.new(1, -12, 0, 30), Color3.fromRGB(160, 40, 70), { LayoutOrder = 3, Parent = admin.content })
-	local tp = K.new("Frame", { Size = UDim2.new(1, -12, 0, 130), BackgroundTransparency = 1, LayoutOrder = 4, Parent = admin.content },
-		{ K.new("UIGridLayout", { CellSize = UDim2.fromOffset(170, 50), CellPadding = UDim2.fromOffset(10, 10), HorizontalAlignment = Enum.HorizontalAlignment.Center }) })
-	local zoneIds = { "Start" }
-	for _, id in ipairs(Config.WorldOrder) do table.insert(zoneIds, id) end
-	for _, id in ipairs(zoneIds) do
-		local W = Config.Worlds[id]
-		local c = W and W.atmo or GREEN
-		local b = K.button(W and W.name or "Start", c, c:Lerp(Color3.new(0, 0, 0), 0.35), nil, { Parent = tp })
-		b.Activated:Connect(function() adminCmd("zone", id); HUD.Close() end)
-	end
-
-	K.label("Give creature (click one)", UDim2.new(1, -12, 0, 30), Color3.fromRGB(160, 40, 70), { LayoutOrder = 5, Parent = admin.content })
-	local list = K.new("Frame", { Size = UDim2.new(1, -12, 0, math.ceil(#CreatureData.List / 4) * 46), BackgroundTransparency = 1, LayoutOrder = 6, Parent = admin.content },
-		{ K.new("UIGridLayout", { CellSize = UDim2.fromOffset(180, 38), CellPadding = UDim2.fromOffset(8, 8), HorizontalAlignment = Enum.HorizontalAlignment.Center }) })
-	for _, def in ipairs(CreatureData.List) do
-		local rc = Config.Rarities[def.rarity].color
-		local b = K.button(def.name, rc, rc:Lerp(Color3.new(0, 0, 0), 0.35), nil, { Parent = list })
-		b.Activated:Connect(function() adminCmd("give", def.id) end)
-	end
 end
-
----------------------------------------------------------------- BASE CUSTOMIZATION
-local basePanel = HUD.MakePanel("Base", "🏡 Decorate Base", Color3.fromRGB(150, 220, 110), Color3.fromRGB(70, 160, 70))
-basePanel.refresh = function()
+heading(base.content, "Floor finishes", 30)
+for i, def in ipairs(Config.FloorThemes) do
+	local b, row = shopRow(base.content, def.id, def.name, "Choose the surface beneath your creatures.", "Home", 30 + i)
+	K.new("Frame", {
+		Position = UDim2.fromOffset(16, 82),
+		Size = UDim2.fromOffset(70, 32),
+		BackgroundColor3 = def.color,
+		Parent = row,
+	}, { K.corner(4), K.stroke(1) })
+	floorRefs[def.id] = b
+	K.bind(b, function()
+		request("Floor", def.id, "Floor applied.")
+	end)
+end
+base.refresh = function()
 	local d = State.Data
-	vlist(basePanel.content)
-	K.label("Decorations", UDim2.new(1, -12, 0, 34), Color3.fromRGB(70, 130, 60), { LayoutOrder = 0, Parent = basePanel.content })
-	for i, id in ipairs(Config.DecorOrder) do
-		local D = Config.Decor[id]
-		local row = card(basePanel.content, i, GREEN)
-		row.Size = UDim2.new(1, -12, 0, 64)
-		K.label(D.name, UDim2.new(0.6, 0, 0, 40), nil, { Position = UDim2.fromOffset(16, 12), TextXAlignment = Enum.TextXAlignment.Left, Parent = row })
+	for id, b in pairs(baseRefs) do
+		local price = Config.Decor[id].price
 		local owned = d.Decor[id]
-		local b = K.button(owned and "OWNED" or Format.Money(D.price), owned and GREY or GREEN, owned and GREY2 or GREEN2, UDim2.fromOffset(160, 48),
-			{ AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -12, 0.5, 0), Parent = row })
-		b.Activated:Connect(function() if not owned then request("BuyDecor", id, D.name .. " added to your base!") end end)
+		K.setButton(
+			b,
+			owned and "Owned"
+				or d.Money < price and "Need " .. Format.Money(price - d.Money)
+				or "Buy · " .. Format.Money(price),
+			T.Gold
+		)
+		K.setEnabled(b, State.Loaded and not owned and d.Money >= price)
 	end
-	K.label("Floor Themes", UDim2.new(1, -12, 0, 34), Color3.fromRGB(70, 130, 60), { LayoutOrder = 50, Parent = basePanel.content })
-	for i, t in ipairs(Config.FloorThemes) do
-		local row = card(basePanel.content, 50 + i, t.color)
-		row.Size = UDim2.new(1, -12, 0, 64)
-		K.label(t.name, UDim2.new(0.6, 0, 0, 40), nil, { Position = UDim2.fromOffset(16, 12), TextXAlignment = Enum.TextXAlignment.Left, Parent = row })
-		local active, owned = d.FloorTheme == t.id, d.OwnedFloors[t.id]
-		local b = K.button(active and "ACTIVE" or (owned and "USE" or Format.Money(t.price)), active and GREY or (owned and BLUE or GREEN),
-			active and GREY2 or (owned and BLUE2 or GREEN2), UDim2.fromOffset(160, 48), { AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -12, 0.5, 0), Parent = row })
-		b.Activated:Connect(function() if not active then request("Floor", t.id) end end)
+	for id, b in pairs(floorRefs) do
+		local def
+		for _, f in Config.FloorThemes do
+			if f.id == id then
+				def = f
+				break
+			end
+		end
+		local active = d.FloorTheme == id
+		local owned = d.OwnedFloors[id]
+		K.setButton(
+			b,
+			active and "Applied"
+				or owned and "Apply floor"
+				or d.Money < def.price and "Need " .. Format.Money(def.price - d.Money)
+				or "Buy & apply · " .. Format.Money(def.price),
+			T.Gold
+		)
+		K.setEnabled(b, State.Loaded and not active and (owned or d.Money >= def.price))
 	end
 end
 
----------------------------------------------------------------- side buttons
-function Panels.Init()
-	HUD.AddSideButton("Shop", "🌀", Color3.fromRGB(180, 120, 255), Color3.fromRGB(110, 60, 220), function() HUD.Open("Portals") end)
-	HUD.AddSideButton("Upgrade", "⬆", Color3.fromRGB(255, 200, 70), Color3.fromRGB(235, 120, 30), function() HUD.Open("Upgrades") end)
-	HUD.AddSideButton("Pets", "🐾", Color3.fromRGB(110, 200, 255), Color3.fromRGB(50, 120, 230), function() HUD.Open("Creatures") end)
-	HUD.AddSideButton("Index", "📖", Color3.fromRGB(255, 140, 200), Color3.fromRGB(210, 60, 140), function() HUD.Open("Index") end)
-	HUD.AddSideButton("Zones", "📏", Color3.fromRGB(100, 220, 200), Color3.fromRGB(30, 150, 160), function() HUD.Open("Worlds") end)
-	HUD.AddSideButton("Base", "🏡", Color3.fromRGB(150, 220, 110), Color3.fromRGB(70, 160, 70), function() HUD.Open("Base") end)
-	HUD.AddSideButton("Home", "🏠", Color3.fromRGB(255, 150, 110), Color3.fromRGB(220, 80, 60), function()
-		if request("Teleport", "Home") then Effects.Flash(Color3.new(1, 1, 1), 0.4, 0.4) end
+---------------------------------------------------------------- Accessible presentation settings
+local settings = HUD.MakePanel(
+	"Settings",
+	"Presentation settings",
+	"Changes last for this session and do not affect rewards or creature odds.",
+	"Settings"
+)
+list(settings.content, 10)
+local settingRefs = {}
+for i, def in ipairs({
+	{ "ReducedMotion", "Reduced motion", "Shorter camera movements and instant interface transitions." },
+	{ "ReducedFlashes", "Reduced flashes", "Suppress full-screen flashes during reveals." },
+	{ "CameraShake", "Camera shake", "Allow impact shake during large reveals." },
+	{ "VFXQuality", "Visual effects", "Low reduces extra particles and trails." },
+	{ "AmbientMotes", "Ambient motes", "Optional floating motes in the world." },
+}) do
+	local b = shopRow(settings.content, def[1], def[2], def[3], "Settings", i)
+	settingRefs[def[1]] = b
+	K.bind(b, function()
+		local value = Settings[def[1]]
+		if typeof(value) == "boolean" then
+			Settings.Set(def[1], not value)
+		else
+			Settings.Set(def[1], value == "High" and "Low" or "High")
+		end
+		settings.refresh()
 	end)
-	-- admin button only for admins (server decides via the IsAdmin attribute)
-	local player = game:GetService("Players").LocalPlayer
-	local function checkAdmin()
-		if player:GetAttribute("IsAdmin") and not HUD.SideButtons["Admin"] then
-			HUD.AddSideButton("Admin", "🛠", Color3.fromRGB(255, 90, 90), Color3.fromRGB(160, 30, 60), function() HUD.Open("Admin") end)
+end
+settings.refresh = function()
+	for key, b in pairs(settingRefs) do
+		local value = Settings[key]
+		K.setButton(
+			b,
+			typeof(value) == "boolean" and (value and "On" or "Off") or value,
+			((value == true) or value == "High") and T.Violet or T.Raised
+		)
+	end
+end
+
+---------------------------------------------------------------- Admin: existing authorized server commands retained
+local admin = HUD.MakePanel(
+	"Admin",
+	"Studio administration",
+	"Server permissions still apply. Use the explicit confirmation to reset your data.",
+	"Settings"
+)
+list(admin.content, 10)
+local adminBox, adminSearch = K.search(admin.content, "Amount or creature ID", UDim2.new(1, -12, 0, 48), UDim2.new())
+adminBox.Text = "1000000"
+adminSearch.LayoutOrder = 1
+local adminGrid = K.new("Frame", {
+	Size = UDim2.new(1, -12, 0, 0),
+	AutomaticSize = Enum.AutomaticSize.Y,
+	BackgroundTransparency = 1,
+	LayoutOrder = 2,
+	Parent = admin.content,
+})
+bindGrid(adminGrid, 190, 46)
+local function cmd(name, value)
+	return request("Admin", Http:JSONEncode({ cmd = name, value = value }))
+end
+local adminCommands = {
+	{ "Add money", "money" },
+	{ "Add strength", "strength" },
+	{ "Set throw level", "throwlevel" },
+	{ "Max upgrades", "maxupgrades" },
+	{ "Unlock portals", "allportals" },
+	{ "Complete index", "discoverall" },
+	{ "Set walk speed", "speed" },
+	{ "Give creature", "give" },
+	{ "Force next creature", "forcenext" },
+}
+for i, def in ipairs(adminCommands) do
+	local b = K.button(def[1], T.Raised, nil, nil, { Name = "Admin_" .. def[2], LayoutOrder = i, Parent = adminGrid })
+	K.bind(b, function()
+		cmd(def[2], tonumber(adminBox.Text) or adminBox.Text)
+	end)
+end
+local reset = K.button(
+	"Reset my data",
+	T.Raised,
+	nil,
+	UDim2.new(1, -12, 0, 46),
+	{ Name = "ResetMyData", LayoutOrder = 3, Parent = admin.content }
+)
+local resetArmed = false
+local resetToken = 0
+K.bind(reset, function()
+	if not resetArmed then
+		resetArmed = true
+		resetToken += 1
+		local token = resetToken
+		K.setButton(reset, "Confirm reset: deletes all progress", T.Danger)
+		task.delay(4, function()
+			if resetToken == token then
+				resetArmed = false
+				K.setButton(reset, "Reset my data", T.Raised)
+			end
+		end)
+	else
+		resetArmed = false
+		resetToken += 1
+		cmd("reset")
+		K.setButton(reset, "Reset my data", T.Raised)
+	end
+end)
+admin.onClose = function()
+	resetArmed = false
+	resetToken += 1
+	K.setButton(reset, "Reset my data", T.Raised)
+end
+heading(admin.content, "Teleport to zone", 4)
+local zones = K.new("Frame", {
+	Size = UDim2.new(1, -12, 0, 0),
+	AutomaticSize = Enum.AutomaticSize.Y,
+	BackgroundTransparency = 1,
+	LayoutOrder = 5,
+	Parent = admin.content,
+})
+bindGrid(zones, 180, 44)
+local zonesOrder = { "Start" }
+for _, id in Config.WorldOrder do
+	table.insert(zonesOrder, id)
+end
+for i, id in zonesOrder do
+	local b = K.button(id, T.Raised, nil, nil, { Name = "AdminZone_" .. id, LayoutOrder = i, Parent = zones })
+	K.bind(b, function()
+		if cmd("zone", id) then
+			HUD.Close()
+		end
+	end)
+end
+admin.refresh = function() end
+
+function Panels.Init()
+	local nav = {
+		{ "Shop", "Portal", "Portals" },
+		{ "Upgrades", "Upgrade", "Upgrades" },
+		{ "Pets", "Pet", "Creatures" },
+		{ "Index", "Book", "Index" },
+		{ "Zones", "Compass", "Worlds" },
+		{ "Garden", "Decor", "Base" },
+		{ "Settings", "Settings", "Settings" },
+	}
+	for _, def in nav do
+		HUD.AddSideButton(def[1], def[2], nil, nil, function()
+			HUD.Open(def[3])
+		end)
+	end
+	HUD.AddSideButton("Home", "Home", nil, nil, function()
+		request("Teleport", "Home", "Returned home.")
+	end)
+	local p = Players.LocalPlayer
+	local function adminNav()
+		if p:GetAttribute("IsAdmin") and not HUD.SideButtons.Admin then
+			HUD.AddSideButton("Admin", "Settings", nil, nil, function()
+				HUD.Open("Admin")
+			end)
+			HUD.Rescale()
 		end
 	end
-	player:GetAttributeChangedSignal("IsAdmin"):Connect(checkAdmin)
-	checkAdmin()
+	p:GetAttributeChangedSignal("IsAdmin"):Connect(adminNav)
+	adminNav()
+	HUD.Rescale()
 end
-
 return Panels

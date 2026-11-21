@@ -1,0 +1,71 @@
+MODELING REVIEW AND CLAUDE REPAIR INSTRUCTIONS
+Reviewed 21 November 2026
+
+PROJECT INSPECTED
+C:\Users\benic\Desktop\roblox game\throw-portals-for-creatures
+Reference folder: C:\Users\benic\Desktop\roblox pets
+
+Scope of evidence: current local source, both saved place XML files, the saved offline roster preview, and the Prism Lion reference sheet. The Roblox Studio connector returned zero connected studios. This is a saved-project diagnosis, not a claim about the currently open or published game. No game code was changed in this review. Existing implementation work is uncommitted; preserve it.
+
+WHY THE RESULTS DEPART FROM THE REFERENCES
+
+1. A style switch substituted boxes for rounded structural pieces.
+CreatureBuilder.lua line 96 defines ell = piece(STYLE.blocky and Brick or Sphere). Many old body-plan proportions and placements continue to use this helper. This produces cuboid versions of the previous construction; it does not by itself create the layered, tapered forms in the reference sheets. There are species-specific additions, wedges and crystals, but the saved roster preview still shows very similar crate-shaped heads, small slit eyes, thin limbs and plain rectangular torsos across many species.
+
+Concrete comparison: Pets/Crystal/29_PrismLion.png shows a broad angular muzzle, heavy brow, large paws, distinct shoulder/hip volumes, layered crystal mane and articulated tail. In roster_preview.png, Prism Lion reads as a pale cuboid quadruped with much smaller mane details. That preview predates the latest manifest, so it only establishes the procedural presentation, not the final appearance of the newer generated mesh.
+
+2. The two saved place files are stale relative to source.
+Both ThrowPortalsForCreatures.rbxlx and ThrowPortalsForCreatures_Test.rbxlx lack PetMeshManifest and PetMeshLoader. Six existing embedded sources differ from disk: CreatureAnimator, CreatureBuilder, BaseBuilder, GameServer, WorldBuilder and WorldLandmarks. Source contains 28 game scripts; each saved place contains only 26 game scripts (the test place also contains two test scripts). Opening these place files directly will not run the latest source. A live Rojo session might contain newer code, but that could not be inspected without a connected Studio session.
+
+The existing verify_place.py checks scripts already in the place against disk but does not fail merely because new disk modules are absent. Its completeness check needs strengthening as part of repair. Actual comparison results are in Saved_Project_Findings.json.
+
+3. Only 18 species have generated-mesh definitions; 56 still use procedural models.
+CreatureBuilder chooses the mesh path only when a complete template for that species is available. GameServer loads templates in a background task. Builds before a template is available use procedural geometry. A creature already built this way is not automatically replaced by this builder when its mesh later loads. This permits visible style differences by species and loading time. Asset permission and loading success have not been verified in engine.
+
+4. The generated mesh segmentation does not support the intended movements.
+PetMeshManifest stores Infinity's entire 'nine tails' fan as one MeshPart. That cannot supply nine independent tail chains. Its 'legs' and 'ears' are combined too. Prism Lion and several others store 'front legs' and 'hind legs' as two combined meshes instead of four independent legs. CreatureBuilder.buildFromMeshes assigns biped whenever it has at least two leg entries, so these quadrupeds are classified as bipeds. Combined 'wings' use gentle sway rather than separate left/right wing articulation. These are direct code limitations, regardless of whether the static mesh looks good.
+
+5. Generated part labels and bounds need review before acceptance.
+For example, the MagmaKraken manifest has a roughly 5 x 4.47 x 4.21 body and a 'tentacles' part of only 0.256 x 0.232 x 0.209 studs. This is a strong segmentation warning, not proof that all tentacles are absent: they could be baked into the body. Either way, this manifest cannot represent eight independent tentacle chains. Role names are being used as substitutes for a reviewed anatomical rig definition.
+
+6. Structural tests are not visual approval.
+The implementation status explicitly says no Studio playtest was run and the 3,229 reference motion entries were not imported. Lune checks validate IDs, finite transforms, anatomy counts and lifecycle execution. They cannot establish fidelity, material appearance, silhouette quality or weight of movement. The saved roster render is a simplified offline renderer; it is not a Studio screenshot and does not validate the newer mesh path.
+
+The reference pack itself contains concept art, not exact mesh geometry or metric construction drawings. The earlier large prompt should have made a staged visual acceptance gate more central. More text and more parts are not sufficient to ensure faithful modeling.
+
+COPY THE FOLLOWING REPAIR TASK TO CLAUDE
+
+Inspect the current project and preserve all uncommitted work. Read the findings above before making changes. Do not regenerate all 74 creatures in one pass. Repair and visually prove one complete species first.
+
+STEP 1 — ESTABLISH THE ACTUAL RUNNING VERSION
+Identify the precise connected Studio place and its Edit/Play state. Compare the active scripts with src and both saved place files. Do not claim an update is visible merely because files were edited. Preserve a recoverable snapshot of current work. Rebuild or sync the intended local test place and verify all expected source scripts are present, including PetMeshManifest and PetMeshLoader. Compare both the source set and source contents; fail on missing, extra or differing game scripts. Keep test harness scripts confined to the test build. Do not publish.
+
+STEP 2 — USE PRISM LION AS THE FIRST VISUAL BENCHMARK
+Open C:\Users\benic\Desktop\roblox pets\Pets\Crystal\29_PrismLion.png and inspect the actual image. Produce a front/side/three-quarter construction plan before building. Record the intended torso length, chest mass, shoulder height, head-to-body ratio, muzzle projection, paw size, mane width, leg spacing and tail clearance. Identify its largest silhouette features: crystal mane, broad feline face, heavy paws, shoulder armor, segmented tail with crystal tip.
+
+Build the silhouette and primary masses first, using deliberate angled blocks, wedges, layered plates and tapered sections. Avoid treating the old sphere-to-Brick switch as the final art solution. Give the face a real jaw/muzzle/brow structure rather than a tiny rectangle pasted on an oversized cube. Show front, side and three-quarter in-engine views before adding small decorative details. Match the reference proportions at equal framing; do not use camera distance to conceal differences.
+
+Use an explicit anatomical hierarchy: Root > Body > Head; Body > each of FL/FR/BL/BR leg pivots; Body > TailRoot > separate tail segments. Mane pieces should follow an intentional head/neck assembly. Give four paws independent channels. Use a quadruped gait. Keep sharp hard-surface forms rigid. Add detail after the silhouette reads correctly in a black silhouette view and at actual gameplay size.
+
+If using generated meshes, inspect every segment. Reject generations with baked-together legs, misplaced accessories, asymmetrical unintended anatomy, soft inflated surfaces or incompatible style. Do not insert generated output merely because a job completed. Preserve per-part orientation and explicit pivots; do not infer all articulation from bounding boxes and substring matching.
+
+STEP 3 — PROVE APPEARANCE AND MOVEMENT IN STUDIO
+Capture actual Studio front/side/three-quarter screenshots in a neutral review scene and one screenshot under game lighting. Label evidence honestly. Compare directly with the reference image. Verify the same asset in an inventory ViewportFrame, in-world reveal and base placement. Check ground contact, clipping, tail clearance and face readability at gameplay distance.
+
+Demonstrate idle weight shift, four-leg locomotion, anticipation/pounce/recovery and capture transition. Keep body plate volumes rigid; convey weight through joint rotation, root displacement, foot plants and follow-through. Check legs move independently and paws meet the ground. The reference pounce is presentation, not authorization to introduce combat. Report actual visual differences still unresolved. Obtain visual approval for this benchmark before expanding to the whole roster.
+
+STEP 4 — ESTABLISH THE RARITY LADDER
+After the benchmark is accepted, implement a Common and a Mythical from the same world and compare them alongside it at matched scale and lighting. Common should remain intentionally designed and readable, with fewer large details. Legendary/Mythical should gain stronger silhouettes, layered forms, better material separation and signature anatomy; extra glow alone does not establish rarity. Preserve the existing Secret/Divine identities, canonical IDs, palette rules, economy and saved data.
+
+STEP 5 — EXPAND IN REVIEWED BATCHES
+Complete one biome at a time. Open every species' own sheet. Keep a per-species checklist of signature silhouette, proportions, face, limb count, rig channels, idle, locomotion, signature action, reveal and capture. Require side-by-side in-engine evidence and fix visible defects before starting the next biome.
+
+Use explicit rig definitions for special anatomy. Infinity requires nine independent tail roots and articulated chains, not one fan. Nebula Jelly requires eight independently controllable tendrils. Magma Kraken requires eight tentacle chains. Hydra requires three distinct neck/head chains. Separate left/right wings and individual legs wherever the motion demands it. Reuse technical helpers without reusing a generic silhouette for unrelated species.
+
+STEP 6 — MAKE LOADING AND PACKAGING CONSISTENT
+Define deterministic behavior for missing or pending mesh templates. Prevent a poor temporary model from silently becoming a permanent displayed model. Verify permissions/loading for every actual mesh asset in a clean test session. Keep the fallback deliberately designed and compatible with its species, and explicitly verify it. Never invent asset IDs. Rebuild both local place files, check complete source parity, rerun relevant existing checks, and record the exact build tested.
+
+STEP 7 — REPORT WHAT WAS VERIFIED
+Separate code assertions, offline geometry renders, real Studio screenshots and observed motion. Passing tests do not approve art. Deliver a short remaining-defects list, asset readiness status, screenshots and motion evidence. Never claim all 74 models meet the reference standard because they exist or pass anatomy checks.
+
+Keep this work limited to presentation and its required rig/loading/build fixes. Preserve gameplay authority, automatic catch rules, economy, existing creature IDs and save compatibility. Do not publish or alter real player data to test visuals.

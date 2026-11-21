@@ -1,0 +1,67 @@
+CLAUDE — ACTION, CAMERA AND FEEDBACK IMPLEMENTATION
+
+Read the shared blocky art direction, complete pet image index and map brief. These action images are visual storyboards, not rendered animation clips, working code or exact production timing. Preserve the existing server-owned gameplay loop and make its presentation feel deliberate, powerful and clear.
+
+01_Charge_Throw_and_Portal_Sequence.png: six major story beats, one coherent orb/gate identity. The actual flight time and endpoint come from the server. The creature in the last panel is a species example, not a guaranteed outcome.
+02_Rarity_Reveal_and_Capture.png: examples of restrained lower-tier effects and beautifully composed premium reveals, plus three capture-to-inventory beats. It does not change roll weights, add evolution variants or make every pet a stag. Use each pet's own anatomy/rarity from Pets/Reference_Index.csv.
+03_Gym_Collect_and_Base_Actions.png: lift pose sequence, five equipment silhouettes, collecting income and a dignified pet reaction. Any pictured UI icon is a design cue, not a new balance value or action endpoint.
+
+IMPLEMENTATION PRINCIPLES
+An action should have anticipation, one clear peak, a readable hold where appropriate, follow-through and a controlled return. Weight comes from stance, joints, acceleration and contact, never a rubber torso. Ordinary blocky pet geometry stays rigid; uniform whole-model shrinking is reserved for lifecycle disappearance. Do not add weapons, attacks, damage, fighting or combat merely because a pose is called a power move.
+
+Use one state/timeline owner per active throw: idle -> charge -> submit -> flight -> land -> gate -> entrance -> showcase -> capture -> card -> cleanup. The server controls validation, distance, outcome, pending state and reward. The client owns presentation, never awards inventory or Strength from a tween completion. Events may arrive late, duplicate or out of order: key everything by throwId, reconcile to server state, and have bounded fallbacks.
+
+CHARGE
+Retain the current 1.5-second ping-pong cycle, perfect threshold power >=0.92 and perfect-distance multiplier 1.15. Show the correct power/distance/zone/luck using shared formulas and valid lane clamps. Set feet/support first, wind the throwing shoulder back, rotate torso slightly, keep the held orb aligned to the hand and build floor/orb energy with caps. Character pose begins blending in over about 0.12–0.18s. Avoid continuously rebuilding the orb. The avatar must not turn away from the authoritative +Z throw lane because the camera faces elsewhere.
+
+RELEASE / FLIGHT
+Release pose: about 0.12–0.2s forward arm motion, then 0.2–0.35s recovery. Held orb disappears only into a coherent confirmed projectile presentation; a rejection resets pose/input/sound without playing a false success. Keep R6/R15 joint differences and text/UI focus handling correct.
+Server flight duration remains clamp(0.7+sqrt(distance)*0.07,0.9,4.5). Endpoints remain authoritative. Use a tangent-aligned quadratic arc, restrained spin and one tapered trail. Camera follows only the owner's throw, with smoothing and collision-aware framing. Short throws need less camera movement. Do not apply someone else's camera shake/zoom globally.
+
+LAND / OPEN
+Begin ground contact at the server flight endpoint. First bounce about 0.18–0.22s, second about 0.12–0.14s and much smaller; then a short energy settle. Gate unfolds in about 0.4–0.5s, coordinated with the current server PortalOpened schedule (flight+0.9s). Avoid three independent timers that cause the creature to spawn before the gate is open. Orb/gate theme comes from the equipped portal, while species pool comes from landing biome; do not confuse those systems.
+
+Use an actual readable ring frame, contained inner energy and a small local shockwave. No full-screen strobe or blanket particle cloud. Ground dust/lava/snow accents must fit the reached biome and stay clear of the creature face. Root, gate center and exit direction must be consistent with the real ground plane.
+
+RARITY REVEAL
+Common: clear species stance and very small local accent. Uncommon: one identifying gesture. Rare: a controlled signature-feature flourish. Epic: heavier brace/wing/spine presentation. Legendary: regal composed anatomy display, a short confident hold and one refined local accent. Mythical: magnificent original anatomy unfold/neck/wing/tail motion, strong silhouette and premium material lighting. Secret: bounded geometric misalignment/afterimages, no root chaos. Divine: dignified unfolding/descent, architectonic halo/wing motion and soft local illumination.
+
+Keep the existing entrance/catch budgets initially:
+Common/Uncommon entrance about 1.3–1.6s, catch deadline 2.4s after PortalOpened.
+Rare 1.3s entrance / 2.6s catch deadline.
+Epic 1.2s entrance / 2.6s catch deadline.
+Legendary 2.4s entrance / 3.4s catch deadline.
+Mythical 2.6s entrance / 3.6s catch deadline.
+Secret 2.0s entrance / 3.0s catch deadline.
+Divine 2.8s entrance / 3.8s catch deadline.
+Do not prolong server rewards to wait on client cinematics. Shorten the species flourish within the window if necessary. Roaming, proximity jumps and gaze reactions are suspended while lifecycle motion owns the rig.
+
+Camera should frame actual visible bounds: stag antlers, three Hydra heads, whale length, eight Kraken arms, nine Infinity tails. A fixed look target at landing+2 studs is inadequate for every shape. Keep face and key anatomy readable for a meaningful hold. Restore CameraType/subject/FOV/ownership on completion, death, respawn, timeout, rejection, missing model and interruption. Reduced-motion setting uses a stable wider shot with the same server outcome and timing.
+
+CAPTURE / CAUGHT CARD
+Preserve current capture durations by rarity: 0.9,1.0,1.2,1.3,1.6,1.8,1.6,2.0 seconds. During first 20%, stop roaming and show the species acknowledgement. Around 35% start the upward path and uniform contraction. Around 70%, scale about 0.55; around 92%, about 0.12; by 100%, fade/light point and cleanup. Avoid repeated arbitrary spins that hide the model. Use the pet's dedicated capture accent/rig channels rather than one generic happy jump.
+
+Caught card only follows confirmed deposit. Show actual species/name/rarity/income and correct contextual odds if available. No made-up odds or fake marketing numbers. About 0.25–0.4s enter, 1–1.5s readable hold, 0.35–0.5s travel to the live Pets button position. Queue multiple rewards and use safe-area-aware coordinates. Keep the same model geometry as inventory/base. Positive understated Common copy is appropriate; do not call Common a failure.
+
+GYM
+Keep the personal gym, server range/ownership checks and 0.35s cooldown. Five distinct geometry identities: Wooden Dumbbell (free,+1); Iron Barbell ($750,+5); Golden Kettlebell ($15,000,+25); Crystal Weights ($300,000,+120); Cosmic Gravity Machine ($6,000,000,+600). Equipment shown in the hand must match the tier instead of always being a recolored barbell.
+
+Rep choreography can blend/overlap during rapid valid requests: plant and grip at 0%, elbow curl at 20–55%, short top hold around 55–65%, controlled lowering at 65–100%. Use a shared phase/pose controller instead of stacking new tweens on every rep. Do not increase Strength from client animation; play gain feedback only with server-confirmed state. AUTO repeats requests only while valid. Reset arm/shoulder/prop/sounds on exit, death, respawn, interruption or inactivity. Avatar joints return exactly to their saved bind transforms.
+
+COLLECT
+Only the server validates pad contact, ownership and money transfer. Visually: pad responds at 0.00–0.12s, a few coins begin at 0.12, arcs complete around 0.45, final text/icon settle by 0.65. Scale coin count with a small cap; do not instantiate hundreds for a large balance. Use the actual awarded amount. A pad stays readable when pets roam nearby. Spatial sound stays local and capped.
+
+EQUIPMENT UPGRADE
+Show the old equipment briefly, a 0.15s local outline pulse, replace geometry from confirmed equipment level, and reveal the new silhouette over 0.25–0.35s. Preserve the gym pad and reference paths. Do not destroy the player's unrelated base/active pet models. Show next benefit/maxed/funds states from current data.
+
+PET ACKNOWLEDGEMENT
+Use each individual pet's confident species reaction rather than hugs/hearts/cuddly bouncing: a guardian lowers its head; a wolf raises its muzzle; a monarch fans wings; a construct opens a palm; an eel curves the neck; a wyvern spreads wing-knuckles. Attention reaction lasts roughly 0.8–1.6s depending on tier and has a cooldown. It never changes ownership/income/odds and cannot interrupt capture.
+
+UI / AUDIO / QUALITY
+Mouse/touch/gamepad share the same state transitions; a UI click/textbox focus must not trigger throwing. Every busy/error/locked/capacity state has direct text guidance and a consistent reset. Keep touch targets and safe areas usable. Avoid animating all 74 inventory viewports while hidden.
+Use permitted configured sounds, not invented uploaded IDs. Charge loop pitch is bounded; release/landing/open each have one clear cue; premium rarity has a distinct short motif; collect/gym feedback is restrained. Cap concurrent voices and provide music/SFX volume, reduced flashes, reduced motion, camera-shake and VFX-quality settings.
+
+Use one cleanup owner per presentation, named rig channels, immutable bind poses, bounded dt integration and distance-aware updates. Interruptible actions must release temporary parts, beams, lights, sounds, render connections and camera claims. After repeated throws/menus, resource counts should return near a stable baseline. Record actual tests and performance measurements; do not confuse images or XML build success with a Studio playtest.
+
+TEST THE FULL LOOP
+Valid throw; outside-hall rejection; busy state; full storage; perfect and low-power releases; every portal style; every rarity; all biome boundaries; owner and spectator views; character death/respawn mid-action; late/duplicate events; missing model; gym exit/AUTO; collect ownership; inventory reward queue; mobile/gamepad focus; repeated cleanup. Confirm each successful server award appears once and every owner camera returns.

@@ -1,0 +1,79 @@
+BLOCKY PETS — COHESIVE FAMILY, DISTINCT SPECIES, CLEAR RARITY BEAUTY
+
+This is the user's latest art direction. It supersedes the earlier soft/plush/squishy concept sheets and all conflicting art/motion wording in the first Claude prompt. Keep the repository's technical constraints, stable IDs, saves, balance, server authority, map progression and automatic catches.
+
+REFERENCE PRIORITY
+1. 02_Rarity_Progression_Common_to_Mythical.png sets the visual hierarchy and overall finish.
+2. 01_Blocky_Construction_and_Movement.png illustrates geometric construction and forceful movement. Its early Mossbun armor is TOO elaborate for final Common; simplify Common according to reference 02.
+3. Written per-species anatomy and counts are authoritative. Generated pictures are concept references, not orthographic plans or ready-made meshes. A tiny pose may simplify a limb; never infer that the production rig can omit it.
+4. The old Studio_Reference_Pack contains superseded soft artwork. Do not use that art or its squash-and-stretch keyframes for the current pet direction.
+
+SHARED DNA: SIMILAR AS A COLLECTION
+All pets use the same hard-surface Roblox language: cuboid bodies, WedgePart profiles, narrow rectangular eyes, angular muzzle/face plates, broad rectangular feet, clear joint gaps, layered planar appendages and a small set of consistent material finishes. Same eye recess depth, bevel vocabulary, claw shape, armor edge thickness, joint treatment, color hierarchy and studio lighting across the roster. No plush fur, smooth rubbery bodies, giant kawaii eyes, soft cheek pouches, jelly blobs or inflatable feathers. Species that were slimes/ghosts retain identity as faceted elemental constructs or armored spectral forms. Their canonical IDs and descriptions can remain; no new combat game loop is implied.
+
+DISTINCT IDENTITY: DIFFERENT AS SPECIES
+Each pet needs a unique primary silhouette, posture and identifying feature. Do not attach the same shoulder pads, crown and wings to 74 recolored bodies. Long ears identify a hare; antlers identify a stag; six legs and four petal blades identify a flower insect; eight articulated arms identify Kraken; three independent necks identify Hydra; nine tail roots identify Infinity Fox. Keep natural-animal, construct, insect, bird, spectral and dragon body plans distinct. Cohesion does not mean every animal becomes a mechanical robot.
+
+RARITY BEAUTY LADDER
+
+Common: clean and complete but deliberately plain. Around 12–24 primary visible forms, simple species silhouette, matte original main color plus secondary color, one small accent, no ornate layered armor, crown, aura or orbit frame unless that identity is explicitly essential in canonical data. Eyes are small and readable. A Common must be desirable enough to collect while leaving substantial visual room above it.
+
+Uncommon: one clear upgrade in identity. Around 20–34 primary forms; one purposeful accessory or restrained armor edge; stronger head/tail shape; slightly richer material contrast. Still no royal ornamentation. Do not simply brighten the Common's glow.
+
+Rare: a refined signature feature. Around 28–45 primary forms, more elegant anatomy, two or three coherent layers around the signature feature, controlled accent insets and a distinct but restrained movement flourish. It should stand apart from Common/Uncommon at thumbnail size.
+
+Epic: striking silhouette and substantial body design. Around 38–60 primary forms, pronounced shoulder/back/wing structure, two or three balanced focal features, strong material separation and restrained emissive recesses. Epic should look powerful and finished, but still be less beautiful, elegant and prestigious than Legendary or Mythical.
+
+Legendary: the first visual showcase tier. Around 50–85 primary forms, exceptional proportions, regal posture, a beautifully composed signature structure (antlers, mane, wing fan, root branches, orbital fins), well-spaced layered armor and premium material contrast. Strong focal hierarchy: face first, signature second, supporting armor third. Controlled symmetry with a small meaningful asymmetric feature can help. Small luminous insets emphasize geometry. It must read as a premium collectible even with all particles disabled.
+
+Mythical: the pinnacle of the ordinary biome roster. Around 65–105 primary forms, magnificent original anatomy, an iconic silhouette, highly composed large planes, exquisite wing/neck/tail structure, exceptional but restrained ornament and a memorable species-specific reveal. It should feel more beautiful and prestigious than Epic because of design quality, not because of a larger particle cloud, random spikes or sheer size. Use fewer excellent shapes instead of hundreds of tiny details. Mythical is the existing canonical rarity spelling; do not introduce a new Mythic enum.
+
+Secret and Divine: preserve the existing special rarity tiers, odds and ordering. They remain exceptional exclusive designs with at least the premium design discipline of the showcase tiers. Secret emphasizes uncanny silhouette, negative space and bounded geometric offsets; Divine emphasizes architectural wings, precise halos and immaculate proportions. Their existence must not reduce Legendary/Mythical biome pets to visually ordinary filler. Do not rank beauty solely by more lights or more parts. Do not lower their economic tiers or change roll weights.
+
+The numbers above count major visible geometric forms and are starting design budgets, not measured instance totals or strict requirements to waste parts. Actual Instance/light/particle budgets must still be profiled. A signature anatomy exception is allowed if clearly justified, such as eight Kraken arms or nine Infinity tails. Decorative part count is not the definition of beauty.
+
+CONTROL COLOR AND ORNAMENT BY RARITY
+Keep original three-color palettes and world identity. Common uses large quiet color regions. Uncommon/Rare gain controlled trim. Epic adds contrast around one dominant feature. Legendary/Mythical use more intentional material changes and premium geometric ornament. Do not recolor every premium species gold; Volcano can use basalt/molten seams, Frozen layered ice, Crystal faceted minerals, Candy molded confection plates, Space orbital structure, Shadow negative space, and Heaven marble/gold architecture. Add small metallic highlights only where they improve the existing palette. Do not add generic crowns to every low-tier pet just because crowns exist in a shared helper. Preserve essential canonical accessories, but scale their visual grandeur to tier.
+
+MOVEMENT DNA
+No jelly squash/stretch or body inflation. Keep body volumes and mesh scales constant during ordinary motion. Create weight with joint rotations, stance, root translation, contact timing and delayed secondary rigid parts. Use assertive stance, controlled head scans, planted steps, strong takeoff anticipation, braced landings, deliberate wing downstrokes and clean recoveries. No constant happy bouncing, cuddling, dancing or baby-animal gestures. 'Power move' is cosmetic reveal/personality motion; this request does not add attacks, damage, weapons or combat.
+
+Common: short plain 0.6–0.9s notice/brace reaction, little or no secondary VFX.
+Uncommon: 0.8–1.0s reaction with one distinct head/ear/tail gesture.
+Rare: 0.9–1.1s reaction displaying its signature feature.
+Epic: 1.0–1.2s weighty brace, wing flare or spine/armor presentation.
+Legendary: 1.2–1.5s poised ceremonial feature display with a short confident hold.
+Mythical: 1.4–1.8s magnificent species-specific action with layered timing and a composed finish.
+These are optional non-lifecycle reactions. Entrances and capture must fit the existing server-authoritative rarity windows. Do not extend reward deadlines to accommodate a longer flourish. Lower tiers can use the simpler end of their available window.
+
+STANDARD RIG MOVEMENT BREAKDOWN
+Neutral: broad support stance, root aligned to ground, face/head forward, eyes small and steady. Head scan every 5–9s: eyes lead 0.05s, neck rotates over 0.2s, holds 0.35s, recovers 0.25s. No body yaw jitter. Blink can be a 0.12–0.16s recessed lid/shutter movement; avoid cute repeated double blinks.
+
+Walk: use actual traveled distance for gait phase. Slow quadruped walk cycle about 0.85–1.15s, contacts LF 0%, RR 25%, RF 50%, LR 75%; stance ratio around 65%. Shoulder pitch about 4–6 degrees, head stabilization and tail counterbalance. At faster trot, use diagonal pairs and cycle about 0.55–0.7s. Preserve grounded contacts; do not slide all four feet beneath a static torso. Heavy species reduce body bob to at most 0.02–0.04 body heights.
+
+Start: 0.00 notice target, 0.06 head aims, 0.12 shift support through leg/hip joints, 0.24 first step/wing stroke begins. Stop: decelerate over 0.3s, last support foot plants at about 0.22, torso settles by 0.32 and tail/armor settles by 0.45. No body squash.
+
+90-degree turn: head leads at 0.00, torso begins at 0.08, half-turn around 0.25, torso aligns by 0.45, appendages finish by 0.6. Feet take short turning steps; flyers bank at most 12 degrees, heavy walkers around 3. Large tail fans rotate their bases without collapsing or interpenetrating.
+
+Bound/hop: 0.00 planted; 0.12 compress leg joints (constant torso dimensions); 0.20 powerful push; 0.34 flight apex; 0.46 forefeet extend; 0.54 contact; 0.68 rear feet planted and neck/ears settle. Motion travels during flight; rigid ears hinge and lag rather than bend like rubber. Height around 0.15–0.3 body heights; no giant generic happy hop.
+
+Heavy walk: 1.2–1.5s cycle. Shift torso over supporting foot before lifting the next. Impact is a short root/hip settling translation under 0.03 body heights, not a scale change. Forearms/plates lag around 0.05–0.1s. Keep center of mass believable.
+
+Flight: 0.8–1.1s main wing cycle, top pose 0%, powerful downstroke 15–40%, bottom reversal 50–60%, partially folded recovery 65–100%. Planar feather/blade tips trail the shoulder by 0.04–0.08s. Tuck legs, maintain a stable gaze, use articulated tail countersteer. Bug wings can cycle faster with low amplitude to avoid flickering.
+
+Swim/slither: 1.0–1.4s traveling joint wave with amplitude increasing from head around 5 degrees to tail around 15–20. Never scale/elongate body segments to fake a wave. Whale flukes move vertically; eel tail moves laterally. Tentacles and multi-neck/tail creatures have independent ordered chains.
+
+Float: 2.8–4s slow hover cycle with at most 0.04–0.07 body-height displacement. Rigid shell stays rigid. Armor panels or tentacles may articulate with delay. Nebula Jelly bell panels rotate rather than inflate. Fire/candy/slime creatures can retain small hovering/hopping patterns with faceted bodies.
+
+Reveal: identifying feature appears first, main silhouette unfolds, root reaches the mark, then a confident hold. Legendary/Mythical use their best defining anatomy rather than the same spin as everything else. Keep original current entrance totals initially: Common/Uncommon about 1.3–1.6s, Rare 1.3, Epic 1.2, Legendary 2.4, Mythical 2.6, Secret 2.0, Divine 2.8. Respect Config.CatchDelay. No roaming movement may fight a cinematic root pose.
+
+Capture: brace/acknowledge at 0–20%, lift begins at 20–35%, coherent whole-model contraction at 35–90%, light-point/fade and cleanup by 100%. Uniform lifecycle scale is allowed only to represent disappearance; it is not body squish. Keep original capture durations 0.9/1.0/1.2/1.3/1.6/1.8/1.6/2.0s by current rarity order. Never grant inventory from the client.
+
+IMPLEMENTATION FOR CLAUDE
+Use Part, WedgePart and CornerWedgePart for major forms; use a few cylinders only where structurally appropriate. A rotated box does not become a curved cylinder. Replace the ellipsoid-only construction helpers with block/wedge helpers and tier-aware detail presets while keeping CreatureBuilder.Build's return contract. A small authored assembly per species is preferable to a giant shared round mesh with a different hat. Use an invisible anchored Root and noncolliding massless welded visual parts. Preserve IDs, palettes, income, rarity, world, save shape and remotes. Existing movement metadata is a compatibility field, not a demand to deform a slime body.
+
+Build a single style table for material finishes, eye aperture, edge thickness, joint block sizes, claws and rarity detail presets. Use separate species builders to choose anatomy. Every pet needs one strong distinguishing feature before adding shared rarity ornament. The checklist must include silhouette, Parts/Wedges feasibility, rarity fit, color match, model/preview, locomotion, signature, entrance/capture and cleanup.
+
+Verify the rarity ladder with all VFX disabled, equal camera distance, neutral lighting and equal visual frame area. Ask: can a viewer identify the rarest two from anatomy/finish alone; does Epic look strong but less prestigious; do Common and Uncommon remain clearly simpler; are species different without losing family style? Also inspect at inventory thumbnail size. No anatomy may depend on a particle cloud hiding missing construction.
+
+The attached image shows six EXISTING different Forest species as an art-direction comparison. It does not authorize six rarity versions of Mossbun, new evolution variants, or altered roster entries. All 74 existing pets retain their actual rarity assignments.

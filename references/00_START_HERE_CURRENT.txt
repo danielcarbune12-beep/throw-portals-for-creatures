@@ -1,0 +1,10 @@
+LATEST IMPLEMENTED VERSION: UI_UX_and_Environment\README.txt
+
+The shared Team Create place 129975585465401 is saved as version 6.
+Stop an existing Play test and restart it to see rebuilt UI.
+
+Local editable copy:
+UI_UX_and_Environment\OPEN_ME_Sanctuary_2026_11_22.rbxl
+
+Earlier lobby/portal reference package:
+Maps\Lobby_and_Portals_Implementation

@@ -1,0 +1,23 @@
+{
+  "destinations": [
+    "Admin",
+    "Garden",
+    "Home",
+    "Index",
+    "Pets",
+    "Settings",
+    "Shop",
+    "Upgrades",
+    "Zones"
+  ],
+  "failures": [],
+  "outside": [
+    "Menu"
+  ],
+  "passed": 15,
+  "inside": [
+    "Menu",
+    "Throw"
+  ],
+  "savedTeamCreateVersion": 6
+}

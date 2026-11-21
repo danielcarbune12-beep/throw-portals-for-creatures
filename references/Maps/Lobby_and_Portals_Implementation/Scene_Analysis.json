@@ -1,0 +1,108 @@
+{
+  "gardens": {
+    "Children": [
+      {
+        "Name": "Opaque",
+        "Sizes": {
+          "Drawcalls": 29,
+          "Triangles": 34308
+        }
+      },
+      {
+        "Name": "Transparent",
+        "Sizes": {
+          "Drawcalls": 1,
+          "Triangles": 1
+        }
+      },
+      {
+        "Name": "Terrain",
+        "Sizes": {
+          "Drawcalls": 52,
+          "Triangles": 33872
+        }
+      },
+      {
+        "Name": "UI",
+        "Sizes": {
+          "Drawcalls": 4,
+          "Triangles": 120
+        }
+      },
+      {
+        "Name": "Cloud",
+        "Sizes": {
+          "Drawcalls": 5,
+          "Triangles": 5
+        }
+      }
+    ],
+    "Name": "TriangleComposition",
+    "Sizes": {
+      "Drawcalls": 91,
+      "Triangles": 68306
+    }
+  },
+  "postEffects": {
+    "bloom": 1,
+    "colorCorrection": 1
+  },
+  "hall": {
+    "Children": [
+      {
+        "Name": "Opaque",
+        "Sizes": {
+          "Drawcalls": 149,
+          "Triangles": 719916
+        }
+      },
+      {
+        "Name": "Transparent",
+        "Sizes": {
+          "Drawcalls": 2,
+          "Triangles": 3
+        }
+      },
+      {
+        "Name": "Terrain",
+        "Sizes": {
+          "Drawcalls": 122,
+          "Triangles": 89294
+        }
+      },
+      {
+        "Name": "UI",
+        "Sizes": {
+          "Drawcalls": 70,
+          "Triangles": 1786
+        }
+      },
+      {
+        "Name": "Cloud",
+        "Sizes": {
+          "Drawcalls": 5,
+          "Triangles": 5
+        }
+      },
+      {
+        "Name": "Particles",
+        "Sizes": {
+          "Drawcalls": 1,
+          "Triangles": 2
+        }
+      },
+      {
+        "Name": "Shadows",
+        "Sizes": {
+          "Drawcalls": 114,
+          "Triangles": 1725681
+        }
+      }
+    ],
+    "Name": "TriangleComposition",
+    "Sizes": {
+      "Drawcalls": 463,
+      "Triangles": 2536687
+    }
+  }
+}

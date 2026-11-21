@@ -13,10 +13,6 @@ local Config = require(ReplicatedStorage.Shared.Config)
 local BaseBuilder = {}
 BaseBuilder.Bases = {}
 
-local HALF = 34
-local SLOT_RADIUS = 14
-local MAX_SLOTS = 24
-local COLLECT_POS = Vector3.new(-19, 0, -21)
 local DECOR_SPOTS = {
 	Vector3.new(-30, 0, -4), Vector3.new(30, 0, -4), Vector3.new(-30, 0, 9), Vector3.new(30, 0, 9),
 	Vector3.new(-7, 0, 29), Vector3.new(7, 0, 29), Vector3.new(0, 0, 22), Vector3.new(0, 22, 4),
@@ -48,216 +44,9 @@ local function cyl(parent, cf, h, d, color, mat, collide, transp)
 end
 local function light(p, color, range, b) local l = Instance.new("PointLight"); l.Color = color; l.Range = range; l.Brightness = b or 1.4; l.Parent = p; return l end
 
-local function billboard(adornee, text, size, offset, color, maxDist)
-	local bb = Instance.new("BillboardGui")
-	bb.Size = size or UDim2.fromScale(8, 2)
-	bb.StudsOffset = offset or Vector3.new(0, 4, 0)
-	bb.MaxDistance = maxDist or 140
-	bb.LightInfluence = 0
-	local t = Instance.new("TextLabel")
-	t.Name = "Label"
-	t.Size = UDim2.fromScale(1, 1)
-	t.BackgroundTransparency = 1
-	t.Font = Enum.Font.FredokaOne
-	t.TextScaled = true
-	t.RichText = true
-	t.Text = text
-	t.TextColor3 = color or Color3.new(1, 1, 1)
-	local st = Instance.new("UIStroke"); st.Thickness = 3; st.Color = Color3.fromRGB(30, 20, 40); st.Parent = t
-	t.Parent = bb
-	bb.Parent = adornee
-	return t
-end
-
 ---------------------------------------------------------------- one base
 local function buildBase(index)
-	local side = (index <= 4) and -1 or 1
-	local row = (index - 1) % 4
-	local pos = Vector3.new(side * 63, 0, -84 - row * 76)
-	local cf = CFrame.lookAt(pos, Vector3.new(0, 0, pos.Z)) -- -Z faces the street (entrance)
-	local L = function(x, y, z) return cf * CFrame.new(x, y, z) end
-
-	local model = Instance.new("Model")
-	model.Name = "Base" .. index
-
-	-- foundation + grass floor
-	local stone = Color3.fromRGB(210, 205, 198)
-	part(model, Vector3.new(HALF * 2 + 3, 1.2, HALF * 2 + 3), L(0, 0.3, 0), stone, Enum.Material.Cobblestone)
-	local floor = part(model, Vector3.new(HALF * 2, 1, HALF * 2), L(0, 0.5, 0), Color3.fromRGB(120, 200, 95), Enum.Material.Grass)
-	floor.Name = "Floor"
-	model.PrimaryPart = floor
-
-	-- flowering hedges (gap at the entrance)
-	local hedgeCol = Color3.fromRGB(70, 155, 75)
-	local function hedge(hcf, len)
-		ball(model, 1, hcf * CFrame.new(0, 3, 0), hedgeCol, Enum.Material.Grass).Size = Vector3.new(len, 5, 4)
-		for k = 1, math.floor(len / 4) do
-			ball(model, 1, hcf * CFrame.new(-len / 2 + k * 4 - 2, 5.4, (k % 2 == 0) and 1.2 or -1.2), Color3.fromHSV((k * 0.17) % 1, 0.5, 1), nil, false)
-		end
-	end
-	hedge(L(0, 0.5, HALF), HALF * 2)
-	hedge(L(-HALF, 0.5, 0) * CFrame.Angles(0, math.rad(90), 0), HALF * 2)
-	hedge(L(HALF, 0.5, 0) * CFrame.Angles(0, math.rad(90), 0), HALF * 2)
-	for _, s in ipairs({ -1, 1 }) do hedge(L(s * (HALF / 2 + 5), 0.5, -HALF), HALF - 10) end
-
-	-- ENTRANCE GATEWAY: crystal pillars + rainbow arch + name sign
-	for _, s in ipairs({ -1, 1 }) do
-		part(model, Vector3.new(3.4, 14, 3.4), L(s * 8, 7.5, -HALF), stone, Enum.Material.Marble)
-		local crystal = part(model, Vector3.new(2, 4, 2), L(s * 8, 16.5, -HALF) * CFrame.Angles(0, math.rad(45), 0), Color3.fromRGB(170, 120, 255), Enum.Material.Neon, false)
-		light(crystal, Color3.fromRGB(180, 140, 255), 24, 2)
-	end
-	for i = 0, 16 do
-		local a = i / 16 * math.pi
-		ball(model, 1.8, L(math.cos(a) * 8, 18 + math.sin(a) * 5, -HALF), Color3.fromHSV(i / 16, 0.55, 1), Enum.Material.Neon, false)
-	end
-	local signBoard = part(model, Vector3.new(14, 3.4, 0.6), L(0, 12.5, -HALF), Color3.fromRGB(255, 248, 230), Enum.Material.SmoothPlastic)
-	signBoard.Name = "Sign"
-	local sg = Instance.new("SurfaceGui")
-	sg.Face = Enum.NormalId.Front
-	sg.CanvasSize = Vector2.new(480, 110)
-	sg.LightInfluence = 0
-	local sl = Instance.new("TextLabel")
-	sl.Name = "Owner"
-	sl.Size = UDim2.fromScale(1, 1)
-	sl.BackgroundTransparency = 1
-	sl.Font = Enum.Font.FredokaOne
-	sl.TextScaled = true
-	sl.TextColor3 = Color3.fromRGB(110, 60, 170)
-	sl.Text = "Empty Base"
-	sl.Parent = sg
-	sg.Parent = signBoard
-	local sg2 = sg:Clone(); sg2.Face = Enum.NormalId.Back; sg2.Parent = signBoard
-	local incomeLabel = billboard(signBoard, "+$0/s", UDim2.fromScale(12, 2.4), Vector3.new(0, 9, 0), Color3.fromRGB(130, 255, 150))
-
-	-- stone path from the entrance to the fountain
-	part(model, Vector3.new(6, 0.2, HALF - 6), L(0, 1.05, -HALF / 2 - 3), Color3.fromRGB(205, 195, 180), Enum.Material.Cobblestone, false)
-	for z = -HALF + 4, -10, 6 do
-		for _, s in ipairs({ -1, 1 }) do
-			ball(model, 0.9, L(s * 3.6, 1.4, z), Color3.fromRGB(255, 220, 140), Enum.Material.Neon, false)
-		end
-	end
-
-	-- CENTRAL FOUNTAIN with a floating income crystal
-	cyl(model, L(0, 1, 0), 1.4, 12, stone, Enum.Material.Marble, true)
-	cyl(model, L(0, 2.3, 0), 0.2, 10.6, Color3.fromRGB(90, 200, 255), Enum.Material.Glass, false, 0.25)
-	cyl(model, L(0, 1, 0), 5, 1.8, stone, Enum.Material.Marble, true)
-	local crystal = part(model, Vector3.new(2.6, 4.6, 2.6), L(0, 10, 0) * CFrame.Angles(0, math.rad(45), math.rad(10)), Color3.fromRGB(120, 255, 170), Enum.Material.Neon, false)
-	crystal.Name = "IncomeCrystal"
-	light(crystal, Color3.fromRGB(120, 255, 170), 26, 2)
-	local spray = Instance.new("ParticleEmitter")
-	spray.Texture = SPARKLE
-	spray.Color = ColorSequence.new(Color3.fromRGB(150, 220, 255))
-	spray.Rate = 25; spray.Speed = NumberRange.new(6, 9); spray.SpreadAngle = Vector2.new(20, 20)
-	spray.Acceleration = Vector3.new(0, -18, 0); spray.Lifetime = NumberRange.new(0.8, 1.2); spray.LightEmission = 1
-	spray.Size = NumberSequence.new(0.5, 0.1)
-	local sprayAnchor = part(model, Vector3.new(0.2, 0.2, 0.2), L(0, 6.2, 0), Color3.new(1, 1, 1), nil, false, nil, 1)
-	spray.Parent = sprayAnchor
-	local crystalLabel = billboard(crystal, "", UDim2.fromScale(14, 3.2), Vector3.new(0, 4.5, 0), Color3.fromRGB(200, 255, 210), 90)
-
-	-- glowing pet slots in a ring around the fountain
-	local slots = {}
-	local slotFolder = Instance.new("Folder"); slotFolder.Name = "Slots"; slotFolder.Parent = model
-	for i = 1, MAX_SLOTS do
-		local a = (i - 1) / MAX_SLOTS * math.pi * 2 + math.pi / 2
-		local x, z = math.cos(a) * SLOT_RADIUS, math.sin(a) * SLOT_RADIUS
-		local pad = cyl(slotFolder, L(x, 0.98, z), 0.12, 3.2, Color3.fromRGB(245, 242, 250), Enum.Material.Marble, false)
-		pad.Name = "Slot" .. i
-		pad:SetAttribute("Index", i)
-		local ring = cyl(slotFolder, L(x, 0.96, z), 0.12, 3.7, Color3.fromRGB(150, 120, 255), Enum.Material.Neon, false)
-		ring.Name = "SlotRing" .. i
-		slots[i] = L(x, 1.1, z)
-	end
-
-	-- money collect pad (front-left)
-	local collect = cyl(model, L(COLLECT_POS.X, 1, COLLECT_POS.Z), 0.4, 9, Color3.fromRGB(80, 230, 120), Enum.Material.Neon, false)
-	collect.Name = "CollectPad"
-	local collectLabel = billboard(collect, "$0", UDim2.fromScale(10, 2.4), Vector3.new(0, 5, 0), Color3.fromRGB(120, 255, 140))
-	billboard(collect, "STEP TO COLLECT", UDim2.fromScale(8, 1), Vector3.new(0, 3, 0), Color3.new(1, 1, 1))
-	for k = 1, 7 do
-		local a = k * 0.9
-		local coin = cyl(model, L(COLLECT_POS.X + math.cos(a) * 2, 1.2 + k * 0.08, COLLECT_POS.Z + math.sin(a) * 2), 0.3, 1.4, Color3.fromRGB(255, 205, 50), Enum.Material.Metal, false)
-		coin.CFrame *= CFrame.Angles(0.3, 0, 0)
-	end
-
-	-- PERSONAL GYM floor (front-right); the equipment itself is built in Refresh by level
-	local g = Config.GymOffset
-	local gymPad = part(model, Vector3.new(15, 0.3, 15), L(g.X, 1.1, g.Z), Color3.fromRGB(45, 40, 55), Enum.Material.Rubber, false)
-	gymPad.Name = "GymPad"
-	for _, e in ipairs({ { 0, 7.5, 15, 0.4 }, { 0, -7.5, 15, 0.4 }, { 7.5, 0, 0.4, 15 }, { -7.5, 0, 0.4, 15 } }) do
-		part(model, Vector3.new(e[3], 0.35, e[4]), L(g.X + e[1], 1.3, g.Z + e[2]), Color3.fromRGB(255, 120, 60), Enum.Material.Neon, false)
-	end
-	local gymSign = part(model, Vector3.new(0.2, 0.2, 0.2), L(g.X, 9, g.Z), Color3.new(1, 1, 1), nil, false, nil, 1)
-	local gymLabel = billboard(gymSign, "💪 GYM", UDim2.fromScale(12, 3), Vector3.new(0, 0, 0), Color3.fromRGB(255, 200, 140), 80)
-
-	-- PET COTTAGE (back-left)
-	local hc = L(-20, 1, 24)
-	part(model, Vector3.new(13, 8, 9), hc * CFrame.new(0, 4, 0), Color3.fromRGB(255, 236, 205), Enum.Material.WoodPlanks)
-	for _, s in ipairs({ -1, 1 }) do
-		part(model, Vector3.new(14.5, 0.8, 6.5), hc * CFrame.new(0, 10, s * 2.4) * CFrame.Angles(math.rad(s * 38), 0, 0), Color3.fromRGB(220, 90, 110), Enum.Material.Slate)
-	end
-	part(model, Vector3.new(3, 5, 0.4), hc * CFrame.new(0, 2.5, -4.6), Color3.fromRGB(120, 80, 50), Enum.Material.Wood)
-	for _, s in ipairs({ -1, 1 }) do
-		local win = part(model, Vector3.new(2.4, 2.4, 0.3), hc * CFrame.new(s * 4, 4.6, -4.6), Color3.fromRGB(255, 220, 120), Enum.Material.Neon, false)
-		light(win, Color3.fromRGB(255, 210, 140), 10, 1)
-	end
-	part(model, Vector3.new(1.6, 4, 1.6), hc * CFrame.new(4, 12, 1.5), Color3.fromRGB(160, 110, 90), Enum.Material.Brick)
-	billboard(part(model, Vector3.new(0.2, 0.2, 0.2), hc * CFrame.new(0, 15, 0), Color3.new(1, 1, 1), nil, false, nil, 1), "🏠 Pet Cottage", UDim2.fromScale(9, 1.8), Vector3.zero, Color3.fromRGB(255, 220, 240), 70)
-
-	-- POND (back-right)
-	local pc = L(21, 1, 23)
-	cyl(model, pc, 0.8, 14, stone, Enum.Material.Cobblestone, false)
-	cyl(model, pc * CFrame.new(0, 0.1, 0), 0.75, 12.4, Color3.fromRGB(60, 180, 230), Enum.Material.Glass, false, 0.2)
-	for k = 1, 4 do
-		local a = k * 1.4
-		cyl(model, pc * CFrame.new(math.cos(a) * 3.5, 0.85, math.sin(a) * 3.5), 0.1, 1.8, Color3.fromRGB(90, 190, 90), Enum.Material.Grass, false)
-		ball(model, 0.6, pc * CFrame.new(math.cos(a) * 3.5, 1.1, math.sin(a) * 3.5), Color3.fromRGB(255, 160, 210), Enum.Material.Neon, false)
-	end
-	for k = 1, 5 do
-		ball(model, 2.4, pc * CFrame.new(5 + (k % 2), 1.2 + k * 0.3, -2 + k), Color3.fromRGB(140, 140, 150), Enum.Material.Slate, false)
-	end
-
-	-- corner lamps + string lights along the hedges
-	local corners = {}
-	for _, c in ipairs({ { -1, -1 }, { 1, -1 }, { 1, 1 }, { -1, 1 } }) do
-		local p = L(c[1] * (HALF - 2.5), 1, c[2] * (HALF - 2.5))
-		part(model, Vector3.new(0.7, 11, 0.7), p * CFrame.new(0, 5.5, 0), Color3.fromRGB(50, 45, 60), Enum.Material.Metal)
-		local orb = ball(model, 2, p * CFrame.new(0, 11.4, 0), Color3.fromRGB(255, 215, 150), Enum.Material.Neon, false)
-		light(orb, Color3.fromRGB(255, 210, 150), 22, 1.5)
-		table.insert(corners, (p * CFrame.new(0, 11, 0)).Position)
-	end
-	for i = 1, 4 do
-		local a, b = corners[i], corners[i % 4 + 1]
-		if i ~= 1 then -- leave the entrance side (corner1 -> corner2) open for the gateway
-			for k = 1, 13 do
-				local t = k / 14
-				local p = a:Lerp(b, t) - Vector3.new(0, math.sin(t * math.pi) * 2.5, 0)
-				ball(model, 0.7, CFrame.new(p), Color3.fromHSV((k * 0.13 + i * 0.2) % 1, 0.45, 1), Enum.Material.Neon, false)
-			end
-		end
-	end
-
-	local center = Instance.new("Part")
-	center.Name = "Center"
-	center.Size = Vector3.new(1, 1, 1)
-	center.CFrame = L(0, 1, 0)
-	center.Transparency = 1
-	center.Anchored = true
-	center.CanCollide = false
-	center.CanQuery = false
-	center.Parent = model
-
-	local decor = Instance.new("Folder"); decor.Name = "Decor"; decor.Parent = model
-	local gym = Instance.new("Folder"); gym.Name = "Gym"; gym.Parent = model
-
-	model:SetAttribute("Index", index)
-	model.Parent = workspace:FindFirstChild("Bases")
-	return {
-		index = index, model = model, cf = cf, floor = floor, slots = slots, slotFolder = slotFolder,
-		collect = collect, collectLabel = collectLabel, incomeLabel = incomeLabel, crystalLabel = crystalLabel,
-		signLabels = { sl, sg2.Owner }, decor = decor, gym = gym, gymLabel = gymLabel, owner = nil,
-		training = gym, -- (old name, kept so nothing else breaks)
-		spawnCF = cf * CFrame.new(0, 4, -HALF + 6) * CFrame.Angles(0, math.pi, 0),
-	}
+	return require(script.Parent.SanctuaryBase).Build(index)
 end
 
 ---------------------------------------------------------------- gym equipment (by level)
@@ -266,31 +55,81 @@ local function buildGymEquipment(base, level)
 	f:ClearAllChildren()
 	local st = Config.TrainingStations[level]
 	local g = base.cf * CFrame.new(Config.GymOffset) * CFrame.new(0, 1.25, 3)
-	-- weight bench
-	part(f, Vector3.new(2.4, 0.6, 6), g * CFrame.new(0, 1.6, -2), Color3.fromRGB(200, 50, 60), Enum.Material.Fabric)
-	for _, s in ipairs({ -1, 1 }) do part(f, Vector3.new(0.4, 1.6, 0.4), g * CFrame.new(0, 0.8, -2 + s * 2.4), Color3.fromRGB(60, 60, 70), Enum.Material.Metal) end
-	-- rack + the equipment
-	for _, s in ipairs({ -1, 1 }) do part(f, Vector3.new(0.5, 5, 0.5), g * CFrame.new(s * 3.4, 2.5, 1.5), Color3.fromRGB(70, 70, 80), Enum.Material.Metal) end
-	local mat = level >= 4 and Enum.Material.Neon or Enum.Material.Metal
-	if level == 3 then
-		for k = -1, 1 do
-			ball(f, 2.2, g * CFrame.new(k * 2.2, 1.2, 1.5), st.color, Enum.Material.Metal)
-			cyl(f, g * CFrame.new(k * 2.2, 2.2, 1.5) * CFrame.Angles(math.pi / 2, 0, 0), 0.4, 1.2, st.color, Enum.Material.Metal, false)
+	local STEEL, DARKSTEEL = Color3.fromRGB(150, 155, 168), Color3.fromRGB(60, 62, 72)
+	local HZ = Enum.PartType.Cylinder -- part cylinders run along X (horizontal)
+	-- every tier has its own geometry (not a recolour); positions stay inside the gym pad
+	if level == 1 then
+		-- Wooden Dumbbell: soft mat, low wooden rack, two rounded wooden dumbbells, instruction plate
+		part(f, Vector3.new(7, 0.2, 5), g * CFrame.new(0, 0.1, 0), Color3.fromRGB(110, 170, 120), Enum.Material.Fabric, false)
+		part(f, Vector3.new(6, 0.5, 1.6), g * CFrame.new(0, 1.4, 2.2), Color3.fromRGB(170, 120, 70), Enum.Material.WoodPlanks)
+		for _, s in ipairs({ -1, 1 }) do part(f, Vector3.new(0.5, 1.4, 1.4), g * CFrame.new(s * 2.7, 0.7, 2.2), Color3.fromRGB(140, 95, 55), Enum.Material.Wood) end
+		for _, x in ipairs({ -1.4, 1.4 }) do
+			part(f, Vector3.new(1.6, 0.35, 0.35), g * CFrame.new(x, 1.95, 2.2), Color3.fromRGB(150, 105, 60), Enum.Material.Wood, false, HZ)
+			for _, s in ipairs({ -1, 1 }) do ball(f, 0.95, g * CFrame.new(x + s * 0.85, 1.95, 2.2), st.color, Enum.Material.Wood, false) end
 		end
-	elseif level == 5 then
-		for k = 1, 3 do
-			part(f, Vector3.new(0.4, 7 + k * 1.5, 7 + k * 1.5), g * CFrame.new(0, 6, 1.5) * CFrame.Angles(k * 0.9, k * 0.5, 0), st.color, Enum.Material.Neon, false, Enum.PartType.Cylinder, 0.2)
-		end
-		local core = ball(f, 2.6, g * CFrame.new(0, 6, 1.5), Color3.new(1, 1, 1), Enum.Material.Neon, false)
-		light(core, st.color, 24, 3)
-		local pe = Instance.new("ParticleEmitter")
-		pe.Texture = SPARKLE; pe.Color = ColorSequence.new(st.color); pe.Rate = 10; pe.LightEmission = 1
-		pe.Speed = NumberRange.new(1, 3); pe.Size = NumberSequence.new(0.5, 0); pe.Parent = core
-	else
-		part(f, Vector3.new(8, 0.5, 0.5), g * CFrame.new(0, 4.4, 1.5), Color3.fromRGB(80, 80, 90), Enum.Material.Metal, false, Enum.PartType.Cylinder)
+		part(f, Vector3.new(3, 1.4, 0.2), g * CFrame.new(0, 2.6, 3.3), Color3.fromRGB(245, 235, 210), Enum.Material.Wood, false)
+	elseif level == 2 then
+		-- Iron Barbell: rubber mat, bench, steel uprights with J-hooks, plates + collars
+		part(f, Vector3.new(9, 0.2, 7), g * CFrame.new(0, 0.1, 0), Color3.fromRGB(40, 40, 46), Enum.Material.Rubber, false)
+		part(f, Vector3.new(2.4, 0.6, 6), g * CFrame.new(0, 1.6, -2), Color3.fromRGB(200, 50, 60), Enum.Material.Fabric)
+		for _, s in ipairs({ -1, 1 }) do part(f, Vector3.new(0.4, 1.6, 0.4), g * CFrame.new(0, 0.8, -2 + s * 2.4), DARKSTEEL, Enum.Material.Metal) end
 		for _, s in ipairs({ -1, 1 }) do
-			part(f, Vector3.new(0.8, 2.6 + level * 0.3, 2.6 + level * 0.3), g * CFrame.new(s * 3, 4.4, 1.5), st.color, mat, false, Enum.PartType.Cylinder)
+			part(f, Vector3.new(0.5, 5, 0.5), g * CFrame.new(s * 3.4, 2.5, 1.5), DARKSTEEL, Enum.Material.Metal)
+			part(f, Vector3.new(0.5, 0.3, 0.9), g * CFrame.new(s * 3.4, 4.15, 1.2), STEEL, Enum.Material.Metal, false) -- J-hook
+			for k = 0, 2 do
+				part(f, Vector3.new(0.28, 2.6 - k * 0.5, 2.6 - k * 0.5), g * CFrame.new(s * (2.4 + k * 0.3), 4.4, 1.5), Color3.fromRGB(50, 52, 60), Enum.Material.Metal, false, HZ)
+			end
+			part(f, Vector3.new(0.3, 0.8, 0.8), g * CFrame.new(s * 3.3, 4.4, 1.5), STEEL, Enum.Material.Metal, false, HZ) -- collar
 		end
+		part(f, Vector3.new(8.4, 0.32, 0.32), g * CFrame.new(0, 4.4, 1.5), STEEL, Enum.Material.Metal, false, HZ)
+	elseif level == 3 then
+		-- Golden Kettlebell: pedestal rack with three real kettlebells (body + arched handle)
+		part(f, Vector3.new(8, 0.2, 6), g * CFrame.new(0, 0.1, 0), Color3.fromRGB(60, 40, 30), Enum.Material.Rubber, false)
+		part(f, Vector3.new(7.5, 1.2, 2.4), g * CFrame.new(0, 0.6, 1.5), Color3.fromRGB(240, 232, 215), Enum.Material.Marble)
+		part(f, Vector3.new(7.7, 0.2, 2.6), g * CFrame.new(0, 1.25, 1.5), st.color, Enum.Material.Metal, false)
+		for k = -1, 1 do
+			local bcf = g * CFrame.new(k * 2.3, 2.45, 1.5)
+			ball(f, 2.1, bcf, st.color, Enum.Material.Metal, false)
+			for seg = 0, 4 do -- handle arch
+				local a = seg / 4 * math.pi
+				part(f, Vector3.new(0.75, 0.3, 0.3), bcf * CFrame.new(math.cos(a) * 0.7, 1.05 + math.sin(a) * 0.65, 0) * CFrame.Angles(0, 0, a + math.pi / 2), st.color, Enum.Material.Metal, false, HZ)
+			end
+		end
+	elseif level == 4 then
+		-- Crystal Weights: reinforced grip, faceted crystal plates, mounting brackets, luminous channels
+		part(f, Vector3.new(9, 0.2, 7), g * CFrame.new(0, 0.1, 0), Color3.fromRGB(35, 30, 50), Enum.Material.Rubber, false)
+		for _, s in ipairs({ -1, 1 }) do
+			part(f, Vector3.new(0.7, 4.6, 1.2), g * CFrame.new(s * 3.6, 2.3, 1.5), Color3.fromRGB(70, 60, 95), Enum.Material.Metal)
+			part(f, Vector3.new(0.72, 3.8, 0.15), g * CFrame.new(s * 3.6, 2.3, 0.88), st.color, Enum.Material.Neon, false) -- recessed channel
+			for k = 0, 1 do
+				local plate = part(f, Vector3.new(0.5, 2.4 - k * 0.6, 2.4 - k * 0.6), g * CFrame.new(s * (2.5 + k * 0.5), 4.4, 1.5) * CFrame.Angles(math.rad(45), 0, 0), st.color, Enum.Material.Glass, false)
+				plate.Transparency = 0.12
+			end
+		end
+		part(f, Vector3.new(7.6, 0.4, 0.4), g * CFrame.new(0, 4.4, 1.5), Color3.fromRGB(200, 200, 215), Enum.Material.Metal, false, HZ)
+		part(f, Vector3.new(2.4, 0.5, 0.5), g * CFrame.new(0, 4.4, 1.5), Color3.fromRGB(60, 50, 80), Enum.Material.Fabric, false, HZ) -- grip
+	else
+		-- Cosmic Gravity Machine: A-frame, three offset orbital rings, contained core, safe grips
+		part(f, Vector3.new(10, 0.2, 8), g * CFrame.new(0, 0.1, 0), Color3.fromRGB(20, 25, 45), Enum.Material.Rubber, false)
+		for _, s in ipairs({ -1, 1 }) do
+			for _, z in ipairs({ -0.6, 0.6 }) do
+				part(f, Vector3.new(0.5, 8.5, 0.5), g * CFrame.new(s * 4.2, 4, 1.5 + z) * CFrame.Angles(z * 0.25, 0, 0), Color3.fromRGB(45, 50, 75), Enum.Material.Metal)
+			end
+			part(f, Vector3.new(1.6, 0.4, 0.4), g * CFrame.new(s * 1.8, 3.2, -0.3), Color3.fromRGB(200, 205, 220), Enum.Material.Metal, false, HZ) -- grip
+		end
+		part(f, Vector3.new(8.8, 0.5, 0.5), g * CFrame.new(0, 8.2, 1.5), Color3.fromRGB(45, 50, 75), Enum.Material.Metal, false, HZ)
+		for k = 1, 3 do
+			local ring = part(f, Vector3.new(0.35, 5 + k * 1.2, 5 + k * 1.2), g * CFrame.new(0, 5, 1.5) * CFrame.Angles(k * 0.9, k * 0.5, 0), st.color, Enum.Material.Neon, false, Enum.PartType.Cylinder, 0.25)
+			ring.Name = "GravityRing" .. k
+		end
+		local glass = ball(f, 3.4, g * CFrame.new(0, 5, 1.5), Color3.fromRGB(180, 230, 255), Enum.Material.Glass, false)
+		glass.Transparency = 0.6
+		local core = ball(f, 1.8, g * CFrame.new(0, 5, 1.5), Color3.new(1, 1, 1), Enum.Material.Neon, false)
+		core.Name = "GravityCore"
+		light(core, st.color, 18, 2)
+		local pe = Instance.new("ParticleEmitter")
+		pe.Texture = SPARKLE; pe.Color = ColorSequence.new(st.color); pe.Rate = 6; pe.LightEmission = 1
+		pe.Speed = NumberRange.new(0.5, 1.5); pe.Size = NumberSequence.new(0.4, 0); pe.Parent = core
 	end
 	local nextSt = Config.TrainingStations[level + 1]
 	base.gymLabel.Text = string.format("💪 GYM: %s\n<font color='#9CFFA8'>+%d Strength/lift</font>%s", st.name, st.gain,
@@ -302,16 +141,40 @@ local DecorBuild = {}
 local function D(base, spot) return base.cf * CFrame.new(spot) end
 
 function DecorBuild.FlowerBed(f, cf)
-	part(f, Vector3.new(8, 1, 4), cf * CFrame.new(0, 1.5, 0), Color3.fromRGB(120, 80, 50), Enum.Material.Wood)
-	for i = 1, 10 do
-		ball(f, 1, cf * CFrame.new(-3.2 + (i - 1) % 5 * 1.6, 2.4, i > 5 and 0.9 or -0.9), Color3.fromHSV((i * 0.13) % 1, 0.55, 1), nil, false).Size = Vector3.new(1.1, 0.7, 1.1)
+	-- stone border + soil + three distinct flower shapes (tulip, daisy, bell) with leaves
+	part(f, Vector3.new(8.4, 0.8, 4.4), cf * CFrame.new(0, 1.3, 0), Color3.fromRGB(175, 170, 165), Enum.Material.Cobblestone)
+	part(f, Vector3.new(7.6, 0.3, 3.6), cf * CFrame.new(0, 1.75, 0), Color3.fromRGB(95, 65, 45), Enum.Material.Ground, false)
+	for i = 1, 9 do
+		local x, z = -3 + (i - 1) % 5 * 1.5, i > 5 and 0.9 or -0.9
+		local base = cf * CFrame.new(x, 1.9, z)
+		part(f, Vector3.new(0.15, 1.1, 0.15), base * CFrame.new(0, 0.55, 0), Color3.fromRGB(70, 150, 60), nil, false)
+		ball(f, 1, base * CFrame.new(0.25, 0.35, 0) * CFrame.Angles(0, 0, -0.6), Color3.fromRGB(90, 180, 70), Enum.Material.Grass, false).Size = Vector3.new(0.6, 0.2, 0.35)
+		local kind = i % 3
+		local col = Color3.fromHSV((i * 0.13) % 1, 0.55, 1)
+		if kind == 0 then -- tulip cup
+			ball(f, 1, base * CFrame.new(0, 1.25, 0), col, nil, false).Size = Vector3.new(0.55, 0.75, 0.55)
+		elseif kind == 1 then -- daisy: petal disc + centre
+			part(f, Vector3.new(0.12, 0.95, 0.95), base * CFrame.new(0, 1.2, 0) * CFrame.Angles(0, 0, math.pi / 2), Color3.fromRGB(255, 252, 245), nil, false, Enum.PartType.Cylinder)
+			ball(f, 0.35, base * CFrame.new(0, 1.28, 0), Color3.fromRGB(255, 210, 60), nil, false)
+		else -- bell: drooping bloom
+			ball(f, 1, base * CFrame.new(0.2, 1.05, 0), col, nil, false).Size = Vector3.new(0.45, 0.55, 0.45)
+		end
 	end
 end
 function DecorBuild.Lanterns(f, cf)
+	-- real post + bracket + caged lantern bodies (warm glass inserts); one light per pair
 	for s = -1, 1, 2 do
-		part(f, Vector3.new(0.5, 7, 0.5), cf * CFrame.new(s * 2.5, 4, 0), Color3.fromRGB(60, 50, 70), Enum.Material.Metal)
-		local l = ball(f, 2, cf * CFrame.new(s * 2.5, 8, 0), Color3.fromRGB(255, 180, 90), Enum.Material.Neon, false)
-		light(l, Color3.fromRGB(255, 190, 110), 16)
+		local base = cf * CFrame.new(s * 2.5, 0, 0)
+		part(f, Vector3.new(1.2, 0.6, 1.2), base * CFrame.new(0, 1.3, 0), Color3.fromRGB(70, 60, 80), Enum.Material.Metal)
+		part(f, Vector3.new(0.4, 7, 0.4), base * CFrame.new(0, 4.6, 0), Color3.fromRGB(60, 50, 70), Enum.Material.Metal)
+		part(f, Vector3.new(1.6, 0.25, 0.25), base * CFrame.new(-s * 0.6, 8, 0), Color3.fromRGB(60, 50, 70), Enum.Material.Metal, false)
+		local lcf = base * CFrame.new(-s * 1.3, 6.9, 0)
+		local glass = part(f, Vector3.new(0.9, 1.3, 0.9), lcf, Color3.fromRGB(255, 190, 110), Enum.Material.Neon, false)
+		for _, c in ipairs({ { 1, 1 }, { 1, -1 }, { -1, 1 }, { -1, -1 } }) do
+			part(f, Vector3.new(0.12, 1.5, 0.12), lcf * CFrame.new(c[1] * 0.5, 0, c[2] * 0.5), Color3.fromRGB(45, 38, 50), Enum.Material.Metal, false)
+		end
+		part(f, Vector3.new(1.2, 0.3, 1.2), lcf * CFrame.new(0, 0.8, 0), Color3.fromRGB(45, 38, 50), Enum.Material.Metal, false)
+		if s == 1 then light(glass, Color3.fromRGB(255, 190, 110), 16) end
 	end
 end
 function DecorBuild.MushroomRing(f, cf)
@@ -339,14 +202,41 @@ function DecorBuild.CrystalTree(f, cf)
 	light(last, Color3.fromRGB(150, 200, 255), 20)
 end
 function DecorBuild.Statue(f, cf)
-	part(f, Vector3.new(4, 2, 4), cf * CFrame.new(0, 2, 0), Color3.fromRGB(230, 230, 235), Enum.Material.Marble)
-	ball(f, 3, cf * CFrame.new(0, 4.8, 0), Color3.fromRGB(255, 200, 60), Enum.Material.Metal)
-	for s = -1, 1, 2 do ball(f, 1, cf * CFrame.new(s * 0.8, 6.8, 0), Color3.fromRGB(255, 200, 60), Enum.Material.Metal).Size = Vector3.new(0.8, 2, 0.4) end
+	-- an original sitting fox-like creature sculpted from masses, on a plinth with an inscription plate
+	local gold = Color3.fromRGB(255, 200, 60)
+	part(f, Vector3.new(4.4, 1.6, 4.4), cf * CFrame.new(0, 1.8, 0), Color3.fromRGB(230, 230, 235), Enum.Material.Marble)
+	part(f, Vector3.new(3.8, 0.4, 3.8), cf * CFrame.new(0, 2.8, 0), Color3.fromRGB(210, 210, 218), Enum.Material.Marble)
+	part(f, Vector3.new(2.2, 0.7, 0.15), cf * CFrame.new(0, 1.9, -2.25), gold, Enum.Material.Metal, false)
+	local s = cf * CFrame.new(0, 3, 0)
+	ball(f, 1, s * CFrame.new(0, 1.3, 0.3), gold, Enum.Material.Metal).Size = Vector3.new(2.2, 2.4, 2.6) -- seated body
+	ball(f, 1, s * CFrame.new(0, 2.9, -0.6), gold, Enum.Material.Metal).Size = Vector3.new(1.7, 1.5, 1.6) -- head
+	ball(f, 1, s * CFrame.new(0, 2.6, -1.4), gold, Enum.Material.Metal, false).Size = Vector3.new(0.8, 0.6, 0.9) -- muzzle
+	for side = -1, 1, 2 do
+		local ear = part(f, Vector3.new(0.5, 1.1, 0.3), s * CFrame.new(side * 0.55, 3.9, -0.5) * CFrame.Angles(0, 0, -side * 0.35), gold, Enum.Material.Metal, false)
+		ear.Shape = Enum.PartType.Block
+		ball(f, 1, s * CFrame.new(side * 0.6, 0.4, -0.9), gold, Enum.Material.Metal, false).Size = Vector3.new(0.7, 0.6, 1.1) -- front paws
+	end
+	ball(f, 1, s * CFrame.new(1.2, 0.7, 1.2) * CFrame.Angles(0, 0.6, 0), gold, Enum.Material.Metal, false).Size = Vector3.new(0.9, 0.9, 2.6) -- curled tail
 end
 function DecorBuild.Rainbow(f, cf)
-	for i = 0, 14 do
-		local a = i / 14 * math.pi
-		ball(f, 1.6, cf * CFrame.new(math.cos(a) * 5, 1 + math.sin(a) * 6, 0), Color3.fromHSV(i / 14, 0.65, 1), Enum.Material.Neon, false)
+	-- continuous seven-band arch with cloud feet and neat end caps
+	local cols = { Color3.fromRGB(255, 80, 80), Color3.fromRGB(255, 160, 50), Color3.fromRGB(255, 230, 70), Color3.fromRGB(90, 220, 110),
+		Color3.fromRGB(80, 170, 255), Color3.fromRGB(110, 100, 255), Color3.fromRGB(200, 100, 255) }
+	local segs = 14
+	for b, col in ipairs(cols) do
+		local r = 6.2 - b * 0.42
+		for i = 1, segs do
+			local a0, a1 = (i - 1) / segs * math.pi, i / segs * math.pi
+			local p0 = Vector3.new(math.cos(a0) * r, math.sin(a0) * r, 0)
+			local p1 = Vector3.new(math.cos(a1) * r, math.sin(a1) * r, 0)
+			local mid = (p0 + p1) / 2
+			part(f, Vector3.new(0.45, (p1 - p0).Magnitude + 0.08, 0.6), cf * CFrame.new(0, 1.2, 0) * CFrame.new(mid) * CFrame.Angles(0, 0, (a0 + a1) / 2), col, Enum.Material.Neon, false)
+		end
+	end
+	for s = -1, 1, 2 do
+		for k = 0, 2 do
+			ball(f, 1, cf * CFrame.new(s * (4.6 + k * 0.5 - 0.5), 1.4 + (k % 2) * 0.3, (k - 1) * 0.7), Color3.fromRGB(255, 255, 255), nil, false).Size = Vector3.new(2, 1.4, 1.8)
+		end
 	end
 end
 function DecorBuild.FloatingIsland(f, cf)
@@ -358,9 +248,16 @@ end
 
 ---------------------------------------------------------------- public API
 function BaseBuilder.BuildAll()
+	for _, old in ipairs(workspace:GetChildren()) do
+		if old.Name == "Bases" and old:IsA("Folder") and (old:GetAttribute("TPFCGenerated") or old:FindFirstChild("Base1")) then old:Destroy() end
+	end
+	BaseBuilder.Bases = {}
 	local f = Instance.new("Folder"); f.Name = "Bases"; f.Parent = workspace
+	f:SetAttribute("TPFCGenerated", true)
 	for i = 1, Config.MaxBases do
 		BaseBuilder.Bases[i] = buildBase(i)
+		buildGymEquipment(BaseBuilder.Bases[i], 1)
+		task.wait()
 	end
 end
 
@@ -378,10 +275,11 @@ end
 
 function BaseBuilder.Release(base)
 	base.owner = nil
-	for _, l in ipairs(base.signLabels) do l.Text = "Empty Base" end
+	for _, l in ipairs(base.signLabels) do l.Text = "UNCLAIMED GARDEN" end
 	base.model:SetAttribute("OwnerId", nil)
 	base.decor:ClearAllChildren()
 	base.gym:ClearAllChildren()
+	buildGymEquipment(base, 1)
 	base.gymLabel.Text = "💪 GYM"
 	base.crystalLabel.Text = ""
 	base.collectLabel.Text = "$0"
@@ -398,7 +296,7 @@ function BaseBuilder.Refresh(base, data)
 	end
 	for _, theme in ipairs(Config.FloorThemes) do
 		if theme.id == data.FloorTheme then
-			base.floor.Color = theme.color
+			base.floor.Color = theme.id == "Meadow" and Color3.fromRGB(108, 161, 76) or theme.color
 			base.floor.Material = theme.material
 		end
 	end

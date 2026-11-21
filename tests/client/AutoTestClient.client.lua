@@ -36,10 +36,44 @@ local function throw(label, holdTime)
 	log(label, string.format("released at power %.2f", p))
 end
 
+local RS = game:GetService("ReplicatedStorage")
+local CreatureData = require(RS.Shared.CreatureData)
+local Builder = require(RS.Shared.CreatureBuilder)
+local Animator = require(RS.Shared.CreatureAnimator)
+local Renderer = require(Client.CreatureRenderer)
+local passed, failed = 0, 0
+local function check(cond, msg)
+	if cond then passed += 1 else failed += 1; warn("[AUTOTEST] FAIL: " .. msg) end
+end
+
 local t0 = os.clock()
 while not State.Loaded and os.clock() - t0 < 40 do task.wait(0.5) end
 log("data loaded:", State.Loaded, "money:", State.Data.Money)
 task.wait(2)
+
+step("all 74 creatures build, solve welds and animate in the real engine", function()
+	local holder = Instance.new("Folder"); holder.Name = "RosterTest"; holder.Parent = workspace
+	local baseline = #holder:GetDescendants()
+	for i, def in ipairs(CreatureData.List) do
+		local model, rig = Builder.Build(def.id)
+		model:PivotTo(CFrame.new((i % 10) * 14, 300, math.floor(i / 10) * 14))
+		model.Parent = holder
+		local anim = Animator.new(rig, model:GetPivot())
+		for _ = 1, 3 do anim:Step(1 / 30) end
+		anim:PlayAccent("enter", 0.5); anim:Step(0.25); anim:EndAccent()
+		anim:React("pet"); anim:Step(0.3)
+		task.wait()
+		local _, size = Builder.VisualBounds(model)
+		check(size.Magnitude > 1 and size.Magnitude < 70, def.id .. " visual bounds " .. tostring(size))
+		local collide = 0
+		for _, d in ipairs(model:GetDescendants()) do if d:IsA("BasePart") and d.CanCollide then collide += 1 end end
+		check(collide == 0, def.id .. " has no collidable pieces")
+		anim:Destroy()
+		model:Destroy()
+	end
+	check(#holder:GetDescendants() == baseline, "roster test cleaned up")
+	holder:Destroy()
+end)
 
 step("admin setup", function()
 	admin("money", 50000000)
@@ -69,13 +103,20 @@ step("throw 1 (random pet)", function()
 	log("after throw1, creatures:", #State.Data.Creatures, "placed:", #State.Data.Placed)
 end)
 
-for _, info in ipairs({ { "PhoenixLumen", "Legendary rise" }, { "Infernadrake", "Mythical giant" }, { "Glitchling", "Secret glitch" }, { "Genesis", "Divine descend" } }) do
-	step("throw forced " .. info[1] .. " (" .. info[2] .. ")", function()
+-- one forced pet per rarity + the bespoke-anatomy showcase pets, through the real throw flow
+local FORCED = { "Mossbun", "Acornip", "Petalfly", "Thornhog", "PrismLion", "MagmaKraken", "VoidCrystalHydra", "Glitchling", "Infinity" }
+for _, id in ipairs(FORCED) do
+	step("throw forced " .. id .. " (" .. CreatureData.ById[id].rarity .. ")", function()
 		goTo(Vector3.new(0, 4, -14))
-		admin("forcenext", info[1])
-		throw("throw-" .. info[1])
-		task.wait(11)
-		log("after", info[1], "creatures:", #State.Data.Creatures, "placed:", #State.Data.Placed)
+		local before = #State.Data.Creatures
+		admin("forcenext", id)
+		throw("throw-" .. id)
+		task.wait(13)
+		check(#State.Data.Creatures == before + 1, id .. " granted exactly once (" .. before .. " -> " .. #State.Data.Creatures .. ")")
+		check(workspace.CurrentCamera.CameraType ~= Enum.CameraType.Scriptable, id .. " camera restored after reveal")
+		local wildLeft = 0
+		for _ in pairs(Renderer.Wild) do wildLeft += 1 end
+		check(wildLeft == 0, id .. " wild entry cleaned up")
 	end)
 end
 
@@ -118,4 +159,5 @@ step("open menus", function()
 	HUD.Close()
 end)
 
-log("client done, total creatures:", #State.Data.Creatures, "money:", State.Data.Money)
+log("client done, total creatures:", #State.Data.Creatures, "money:", State.Data.Money, "active renders:", Renderer.ActiveCount())
+log(string.format("ASSERTIONS: %d passed, %d failed", passed, failed))

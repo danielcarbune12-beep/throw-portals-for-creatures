@@ -1,0 +1,11 @@
+﻿id,name,creature_id,rarity,group,file,status,width,height,sha256
+map_00_hub,Portal Sanctuary Hub,,,Map,Maps/00_Portal_Sanctuary_Hub.png,saved,1672,941,8824ca783611278ba8a5344d2942d5ca37e06acd43b0b11fa781b1115e9380ed
+map_01_forest,Forest,,,Map,Maps/01_Forest_Biome.png,saved,1536,1024,5fdbb3452a5fae2d63484fc2b4761a505cba58f4722e55bc84c9320d3500bf3c
+map_02_volcano,Volcano,,,Map,Maps/02_Volcano_Biome.png,saved,1536,1024,f8a8e0b5234d8f8af0bfd0ebf6e0b062ad7728e9f735f5535deda8cab898863a
+map_03_frozen,Frozen,,,Map,Maps/03_Frozen_Biome.png,saved,1536,1024,3ed522aba547d18a4d1f8a44a1c251d33aea9495582c54c532c8ef1c02ff8e25
+map_04_crystal,Crystal,,,Map,Maps/04_Crystal_Biome_Final.png,saved,1672,941,4d7b82d9a8c6e807d1bb270bc93805afcc3af0ba42bb6110dad917930906fd1f
+map_05_candy,Candy,,,Map,Maps/05_Candy_Biome_Final.png,saved,1672,941,8df6167e7a97fd960310a19fd0e2932237b9cce039b11135f6f1a6dcdc5e164e
+map_06_space,Space,,,Map,Maps/06_Space_Biome.png,saved,1672,941,6ec8def1e0cb9d5b30e84a55964cb77923ae5a44ca081d4c3f1f11dc3b7439cd
+map_07_shadow,Shadow,,,Map,Maps/07_Shadow_Biome.png,saved,1672,941,ada7f4c1a1d1210910c30a2314b3ddcbfd1d05de8055cb2dac65d38227ef12cf
+map_08_heaven,Heaven,,,Map,Maps/08_Heaven_Biome.png,saved,1536,1024,8fdc56039d6288538b8d8d7283b1d98da80aa16658543b4c0eadc0243a821504
+map_09_complete_lane,Complete Lane Overview,,,Map,Maps/09_Complete_Eight_Biome_Lane.png,saved,1752,897,e18e495ba92ed8a2bba055bd44f383862ebccd79f36514dcc37ee45be588a424

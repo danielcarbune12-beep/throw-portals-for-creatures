@@ -1,0 +1,3794 @@
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1,14 @@
++# test build of the place (contains the automated test scripts)
++*_Test.rbxlx
++# Roblox Studio lock/backup files
++*.rbxlx.lock
++*.rbxl.lock
++*.lock
++# OS / editor junk
++.DS_Store
++Thumbs.db
++.vscode/
++
++# offline test scratch
++tests/lune/tmp/
++backups/
+--- /dev/null
++++ b/DESIGN.md
+@@ -0,0 +1,25 @@
++# Sanctuary Interface
++
++## Overview
++
++Native Roblox GUI for a bright outdoor sanctuary. Opaque ink-violet panels keep white text readable against the moving world. Violet connects to the hall, gold marks the primary action, and pale cyan identifies information. Flat surfaces and angular native geometric symbols follow the blocky art direction.
++
++## Color
++
++Ink #141020, panel #211A34, raised #302644, border #594D70, text #F6F2FF, muted #C4BAD5, gold #F1CA73, violet #A88BF4, cyan #93D9EB, success #9FDFB4, danger #FFACB5. Rarity colors remain linked to Config, with brighter Secret text for contrast on dark surfaces. Primary actions use dark ink on gold.
++
++## Typography
++
++Gotham/GothamBold for interface text and data. Body 16, secondary 14, row title 19, panel title 26. Native labels avoid text strokes and automatic shrinking. Long names wrap in reserved title areas.
++
++## Layout
++
++Compact top status strip and one labeled Menu button. Shop, upgrades, pets and all secondary destinations are inside Menu. The throw control appears only in the launch hall, and the launch guide appears only while charging or a portal is active. A dimmed modal layer contains a consistent header, explanatory subtitle and scrollable body. Wide shops use catalogue/detail columns; narrow screens stack the preview above the catalogue. Inventory actions stay inside the panel.
++
++## Symbols
++
++Native Frames and UIStroke build a consistent geometric icon family, no external images or emoji dependency: portal, upgrade, pet, book, compass, home, decor, coin, strength, bag, settings, check, close, lock, search and arrow.
++
++## States and Motion
++
++Enabled, hover, selected, disabled and busy buttons share one vocabulary. UI opens over 180 ms with a small positional change; no elastic bounce. Reduced Motion removes positional/scale animation. Purchases are guarded against duplicate activation; selling confirms the specific selected creature and resets when selection changes. Search and scroll are retained during data updates.
+--- a/IMPLEMENTATION_STATUS.md
++++ b/IMPLEMENTATION_STATUS.md
+@@ -144,3 +144,19 @@
+ | Generic floating islands per zone | removed (hub keeps 4) |
+ | Environment motion | ✓ client `WorldFx`: one 20 Hz scheduler, ≤650 studs from camera, sway/bob/spin/pulse/glint/charge tags, reduced-motion aware |
+ | Map evidence | offline only: `lune run tests/lune/export_map` (real WorldBuilder/BaseBuilder, 4,230 parts, 0 parts obstructing the |X|<30 corridor) + `python tests/render_map.py` / `lm` → `map_views/*.png`. Not seen in Studio. |
++
++## Minimal sanctuary UI and environment (2026-11-22)
++
++The shared Team Create place `129975585465401` was updated and saved as version 6.
++The HUD now has two counters and one Menu button; the throw control appears only in the hall. Shops,
++inventory, index, zones, garden customization and session presentation settings use
++shared UITheme/UIIcons/UIKit components. SanctuaryDetails adds close-up stonework,
++planting and water details; SanctuaryLook controls fog and lighting in Edit and Play.
++Localized environment emitters are culled by distance and disabled in Low VFX mode.
++
++The latest in-engine regression passed 95 portal-flow assertions and 251 scene
++assertions. Device simulator layouts were checked on iPhone 17 Pro and iPad Pro M5.
++Evidence and limitations are in `review/codex_ui_environment/README.txt`.
++A newer concurrent Frozen-biome source edit is preserved in the working folder and
++is separate from this delivered UI/lobby scene. Stop and restart Play in Team Create
++to rebuild UI after source changes.
+--- /dev/null
++++ b/PRODUCT.md
+@@ -0,0 +1,33 @@
++# Throw Portals for Creatures
++
++## Register
++
++product
++
++## Users
++
++Roblox players collecting creatures, improving their throws and decorating a personal garden. The game supports mouse and keyboard, touch and gamepad. Players need to see the world while finding frequent actions quickly.
++
++## Product Purpose
++
++Charge and throw a portal, discover a creature, place it to earn money, then buy better portals and upgrades. The UI should explain the next useful action, the cost and the result without concealing the game world.
++
++## Brand Personality
++
++Bold, precise, magical. The user's approved direction is blocky and strong, with a violet-and-gold sanctuary lobby. Creatures should eventually follow the requested badass rarity progression.
++
++## Anti-references
++
++The previous oversized rainbow simulator HUD, emoji-only navigation, squishy ornament, unreadable shrinking odds and uncontrolled bouncing interfaces. The user specifically rejected soft creature art and implementations that disregard the supplied reference structure.
++
++## Design Principles
++
++- The world remains the focus during play.
++- Purchases explain what changes before the player spends currency.
++- Consistent symbols always have a written label.
++- Owned, equipped, unavailable, working and failed states are explicit.
++- Game economy and ownership remain server authoritative.
++
++## Accessibility & Inclusion
++
++Retain the existing reduced-motion, reduced-flashes and VFX-quality session settings and expose them in the UI. Use readable fixed type, visible keyboard/gamepad focus, text with color states, and touch-sized controls. Test responsive layouts in Studio; physical-device coverage must be reported separately.
+--- a/README.md
++++ b/README.md
+@@ -152,3 +152,19 @@
+ 
+ Run `lune run tests/lune/portals` for the portal geometry regressions. Studio evidence, recorded motion,
+ view-dependent rendering samples and the focused test results are in `review/codex_sanctuary/`.
++
++## Minimal sanctuary UI and environment (2026-11-22)
++
++The shared Team Create place `129975585465401` was updated and saved as version 6.
++The HUD now has two counters and one Menu button; the throw control appears only in the hall. Shops,
++inventory, index, zones, garden customization and session presentation settings use
++shared UITheme/UIIcons/UIKit components. SanctuaryDetails adds close-up stonework,
++planting and water details; SanctuaryLook controls fog and lighting in Edit and Play.
++Localized environment emitters are culled by distance and disabled in Low VFX mode.
++
++The latest in-engine regression passed 95 portal-flow assertions and 251 scene
++assertions. Device simulator layouts were checked on iPhone 17 Pro and iPad Pro M5.
++Evidence and limitations are in `review/codex_ui_environment/README.txt`.
++A newer concurrent Frozen-biome source edit is preserved in the working folder and
++is separate from this delivered UI/lobby scene. Stop and restart Play in Team Create
++to rebuild UI after source changes.
+--- /dev/null
++++ b/rokit.toml
+@@ -0,0 +1,10 @@
++# This file lists tools managed by Rokit, a toolchain manager for Roblox projects.
++# For more information, see https://github.com/rojo-rbx/rokit
++
++# New tools can be added by running `rokit add <tool>` in a terminal.
++
++[tools]
++rojo = "rojo-rbx/rojo@7.7.1"
++StyLua = "JohnnyMorganz/StyLua@2.6.0"
++selene = "Kampfkarren/selene@0.32.0"
++lune = "lune-org/lune@0.11.1"
+--- /dev/null
++++ b/selene.toml
+@@ -0,0 +1 @@
++std = "roblox"
+--- /dev/null
++++ b/src/ReplicatedStorage/Shared/SanctuaryLook.lua
+@@ -0,0 +1,53 @@
++-- Shared art direction so Edit preview and runtime use the same sanctuary atmosphere.
++local Look = {
++	ambient = Color3.fromRGB(129, 120, 148),
++	fog = Color3.fromRGB(179, 183, 207),
++	clock = 16.1,
++	tint = Color3.fromRGB(255, 246, 235),
++	atmo = Color3.fromRGB(204, 213, 236),
++	density = 0.31,
++	haze = 1.65,
++	glare = 0.12,
++	offset = 0.10,
++	bloom = 0.22,
++}
++function Look.Apply(lighting)
++	lighting.GlobalShadows = true
++	lighting.Brightness = 2.15
++	lighting.ClockTime = Look.clock
++	lighting.Ambient = Look.ambient
++	lighting.OutdoorAmbient = Look.ambient
++	lighting.EnvironmentDiffuseScale = 0.65
++	lighting.EnvironmentSpecularScale = 0.65
++	lighting.ExposureCompensation = -0.05
++	lighting.FogColor = Look.fog
++	lighting.FogStart = 110
++	lighting.FogEnd = 850
++	local atmo = lighting:FindFirstChildOfClass("Atmosphere") or Instance.new("Atmosphere")
++	atmo.Name = "SanctuaryAtmosphere"
++	atmo.Color = Look.atmo
++	atmo.Decay = Look.fog
++	atmo.Density = Look.density
++	atmo.Haze = Look.haze
++	atmo.Glare = Look.glare
++	atmo.Offset = Look.offset
++	atmo.Parent = lighting
++	local bloom = lighting:FindFirstChildOfClass("BloomEffect") or Instance.new("BloomEffect")
++	bloom.Name = "TPFC_Bloom"
++	bloom.Intensity = Look.bloom
++	bloom.Threshold = 1.6
++	bloom.Size = 24
++	bloom.Parent = lighting
++	local cc = lighting:FindFirstChildOfClass("ColorCorrectionEffect") or Instance.new("ColorCorrectionEffect")
++	cc.Name = "TPFC_CC"
++	cc.TintColor = Look.tint
++	cc.Contrast = 0.07
++	cc.Saturation = 0.025
++	cc.Parent = lighting
++	local rays = lighting:FindFirstChildOfClass("SunRaysEffect") or Instance.new("SunRaysEffect")
++	rays.Name = "TPFC_Rays"
++	rays.Intensity = 0.045
++	rays.Spread = 0.72
++	rays.Parent = lighting
++end
++return Look
+--- /dev/null
++++ b/src/ServerScriptService/Server/SanctuaryDetails.lua
+@@ -0,0 +1,223 @@
++-- Deliberate close-up detail for the lobby. Decorative only; all gameplay paths stay clear.
++local P = require(script.Parent.SanctuaryArchitecture).Palette
++local Details = {}
++local V, CF, A = Vector3.new, CFrame.new, CFrame.Angles
++local M = Enum.Material
++function Details.Build(start)
++	local old = start:FindFirstChild("SanctuaryDetails")
++	if old then
++		old:Destroy()
++	end
++	local root = Instance.new("Folder")
++	root.Name = "SanctuaryDetails"
++	root.Parent = start
++	local count = 0
++	local function part(name, size, cf, color, material, transparency)
++		local p = Instance.new("Part")
++		p.Name = name
++		p.Anchored = true
++		p.CanCollide = false
++		p.CanQuery = false
++		p.CanTouch = false
++		p.CastShadow = false
++		p.Size = size
++		p.CFrame = cf
++		p.Color = color
++		p.Material = material or M.SmoothPlastic
++		p.Transparency = transparency or 0
++		p.TopSurface = Enum.SurfaceType.Smooth
++		p.BottomSurface = Enum.SurfaceType.Smooth
++		p.Parent = root
++		count += 1
++		return p
++	end
++	local function segment(name, a, b, width, height, color, material)
++		local mid = (a + b) / 2
++		local delta = b - a
++		return part(name, V(width, height, delta.Magnitude), CFrame.lookAt(mid, b), color, material)
++	end
++	local function ring(name, x, z, r, y, segments, width, color)
++		for i = 0, segments - 1 do
++			local a = i * math.pi * 2 / segments
++			local b = (i + 1) * math.pi * 2 / segments
++			segment(
++				name,
++				V(x + math.cos(a) * r, y, z + math.sin(a) * r),
++				V(x + math.cos(b) * r, y, z + math.sin(b) * r),
++				width,
++				0.035,
++				color
++			)
++		end
++	end
++	local function flower(x, y, z, tone)
++		part("Stem", V(0.12, 0.7, 0.12), CF(x, y + 0.35, z), P.leaf)
++		for i = 0, 3 do
++			local a = i * math.pi / 2
++			part(
++				"Petal",
++				V(0.48, 0.16, 0.35),
++				CF(x + math.cos(a) * 0.27, y + 0.78, z + math.sin(a) * 0.27) * A(0, a, 0),
++				tone
++			)
++		end
++		part("FlowerHeart", V(0.2, 0.2, 0.2), CF(x, y + 0.88, z), P.goldLight)
++	end
++	-- Restrained stone cutting and brass inlay: large shapes remain readable at distance.
++	for i, z in ipairs({ -53, -101, -145, -189, -229, -273, -313, -357, -405 }) do
++		for _, side in { -1, 1 } do
++			for j = 0, 2 do
++				part("CutStoneJoint", V(4.1, 0.025, 0.10), CF(side * (10 + j * 4.2), 0.232, z), P.stone)
++			end
++			part(
++				"BrassPathStud",
++				V(0.44, 0.035, 0.44),
++				CF(side * 19.6, 0.26, z) * A(0, math.pi / 4, 0),
++				P.gold,
++				M.Metal
++			)
++		end
++		if i % 3 == 0 then
++			task.wait()
++		end
++	end
++	for _, z in { -84, -160, -236, -312 } do
++		for _, side in { -1, 1 } do
++			-- Narrow drains beside the kerb, never across garden approaches.
++			part("DrainBed", V(0.62, 0.03, 6), CF(side * 21.5, 0.255, z + 17), P.roof, M.Metal)
++			for n = 0, 7 do
++				part("DrainGrate", V(0.7, 0.04, 0.11), CF(side * 21.5, 0.28, z + 14.3 + n * 0.73), P.stone, M.Metal)
++			end
++			-- Small planting beds at avenue corners, outside the clear walking corridor.
++			local bx, bz = side * 28.2, z - 19
++			part("FlowerBedBase", V(4.4, 0.45, 6.8), CF(bx, 0.35, bz), P.stone, M.Limestone)
++			part("FlowerBedSoil", V(3.7, 0.18, 6.1), CF(bx, 0.64, bz), Color3.fromRGB(76, 58, 65), M.Ground)
++			for n = 0, 3 do
++				flower(bx + ((n % 2) - 0.5) * 1.35, 0.75, bz - 2 + n * 1.3, n % 2 == 0 and P.pink or P.lilac)
++			end
++		end
++		task.wait()
++	end
++	-- A compass mosaic at the entrance uses thin, flush geometry rather than another sign.
++	ring("CompassOuter", 0, -54, 8, 0.27, 16, 0.13, P.gold)
++	ring("CompassInner", 0, -54, 6.8, 0.273, 16, 0.09, P.stone)
++	for i = 0, 7 do
++		local a = i * math.pi / 4
++		part(
++			"CompassPoint",
++			V(0.75, 0.05, i % 2 == 0 and 4.2 or 2.8),
++			CF(math.sin(a) * 3.6, 0.30, -54 + math.cos(a) * 3.6) * A(0, a, 0),
++			i % 2 == 0 and P.roof or P.gold
++		)
++	end
++	-- Hall masonry: sill steps, foundation courses, panel joints and roof corbels.
++	for _, side in { -1, 1 } do
++		local x = side * 38
++		for _, y in { 3.2, 6.7, 22.7 } do
++			part("FacadeStoneCourse", V(19.6, 0.25, 0.24), CF(x, y, -36.78), P.stone, M.Limestone)
++		end
++		for i = 0, 4 do
++			part("FoundationJoint", V(0.08, 2.7, 0.26), CF(x - 8 + i * 4, 4.8, -36.82), P.ivory, M.Limestone)
++		end
++		for _, wx in { x - 3.4, x + 3.4 } do
++			part("WindowSill", V(5.9, 0.42, 1.2), CF(wx, 9.1, -37.0), P.light, M.Limestone)
++			part("WindowSillGold", V(5.5, 0.10, 1.24), CF(wx, 9.37, -37.02), P.gold, M.Metal)
++		end
++		for i = 0, 5 do
++			part("EaveCorbel", V(0.68, 1.3, 0.84), CF(x - 8.5 + i * 3.4, 23.8, -37), P.light, M.Limestone)
++		end
++		for _, z in { -33, -26, -19, -12, -5 } do
++			part("OuterWallCourse", V(0.26, 0.24, 6.8), CF(side * 48.1, 6.7, z), P.stone, M.Limestone)
++			part("RoofTileSeam", V(22.3, 0.04, 0.13), CF(x, 25.73, z), P.gold, M.Metal)
++		end
++		task.wait()
++	end
++	-- Public fountain plaza: cut paving, seating and flower borders form one composed destination.
++	for _, side in { -1, 1 } do
++		for i = 0, 4 do
++			part("PlazaJoint", V(0.07, 0.035, 34), CF(78 - 15 + i * 7.5, 0.275, -22), P.stone)
++		end
++		local bx = 78 + side * 14
++		part("BenchSeat", V(2.4, 0.5, 9), CF(bx, 2, -22), P.ivory, M.Limestone)
++		for _, z in { -25, -19 } do
++			part("BenchFoot", V(1.7, 1.5, 0.75), CF(bx, 1, z), P.stone, M.Limestone)
++		end
++		part("BenchTrim", V(2.5, 0.12, 9.1), CF(bx, 2.30, -22), P.gold, M.Metal)
++		for n = 0, 3 do
++			flower(78 + side * 11, 0.3, -35 + n * 1.7, n % 2 == 0 and P.pink or P.light)
++		end
++	end
++	ring("FountainBrassRing", 78, -22, 12, 0.31, 24, 0.16, P.gold)
++	ring("FountainOuterStone", 78, -22, 14, 0.30, 24, 0.12, P.stone)
++	-- Faceted light-catching water strips on the side cascades, with stone catch-basin rims.
++	for _, side in { -1, 1 } do
++		for _, z in { -124, -278 } do
++			for i = 0, 3 do
++				part(
++					"WaterRibbon",
++					V(0.035, 19 - i * 0.8, 0.16),
++					CF(side * 101.65, 12, z - 2.5 + i * 1.6),
++					P.light,
++					M.Glass,
++					0.68
++				)
++			end
++			for i = 0, 5 do
++				local a = i * math.pi / 3
++				part(
++					"CascadeBasinRim",
++					V(4, 0.24, 0.45),
++					CF(side * 100 + math.sin(a) * 5.7, 0.45, z + math.cos(a) * 5.7) * A(0, a, 0),
++					P.light,
++					M.Limestone
++				)
++			end
++		end
++	end
++	-- Localized water mist and portal glimmers, not a particle field following the camera.
++	local tags = game:GetService("CollectionService")
++	local function emitter(name, pos, rate, magic)
++		local anchor = part(name, V(1, 1, 1), CF(pos), P.water, M.SmoothPlastic, 1)
++		local pe = Instance.new("ParticleEmitter")
++		pe.Name = name .. "Emitter"
++		pe.Texture = magic and "rbxasset://textures/particles/sparkles_main.dds"
++			or "rbxasset://textures/particles/smoke_main.dds"
++		pe.Rate = rate
++		pe.Lifetime = NumberRange.new(magic and 2 or 2.5, magic and 3 or 4)
++		pe.Speed = NumberRange.new(0.35, magic and 1.1 or 0.8)
++		pe.SpreadAngle = Vector2.new(90, 90)
++		pe.Acceleration = V(magic and 0 or 0.1, magic and 0.15 or 0.04, 0)
++		pe.Drag = 0.7
++		pe.Color = ColorSequence.new(magic and P.goldLight or Color3.fromRGB(217, 233, 241))
++		pe.LightEmission = magic and 0.6 or 0.12
++		pe.LightInfluence = magic and 0.2 or 0.7
++		pe.Size = NumberSequence.new({
++			NumberSequenceKeypoint.new(0, magic and 0.08 or 1.4),
++			NumberSequenceKeypoint.new(0.55, magic and 0.18 or 3.8),
++			NumberSequenceKeypoint.new(1, magic and 0.05 or 5.2),
++		})
++		pe.Transparency = NumberSequence.new({
++			NumberSequenceKeypoint.new(0, 1),
++			NumberSequenceKeypoint.new(0.25, magic and 0.45 or 0.9),
++			NumberSequenceKeypoint.new(0.75, magic and 0.65 or 0.94),
++			NumberSequenceKeypoint.new(1, 1),
++		})
++		pe.Rotation = NumberRange.new(0, 360)
++		pe.RotSpeed = NumberRange.new(-8, 8)
++		pe.Parent = anchor
++		pe:SetAttribute("BaseRate", rate)
++		tags:AddTag(pe, "TPFC_EnvironmentEmitter")
++	end
++	for _, side in { -1, 1 } do
++		for _, z in { -124, -278 } do
++			emitter("CascadeMist", V(side * 100, 1.3, z), 4, false)
++		end
++		emitter("FountainMist", V(78 + side * 4, 1.6, -22), 2, false)
++		emitter("ArchGlimmer", V(side * 23, 10, -34), 1.5, true)
++	end
++
++	root:SetAttribute("Parts", count)
++	root:SetAttribute("Version", 1)
++	return root
++end
++return Details
+--- a/src/ServerScriptService/Server/SanctuaryHub.lua
++++ b/src/ServerScriptService/Server/SanctuaryHub.lua
+@@ -300,11 +300,13 @@
+ 	K.SetFolder(folder)
+ 	K.mirror = false
+ 	folder:SetAttribute("SanctuaryVersion", 2)
++	require(RS.Shared.SanctuaryLook).Apply(game:GetService("Lighting"))
+ 	avenue()
+ 	task.wait()
+ 	hall(folder, textLabel)
+ 	task.wait()
+ 	perimeter()
+ 	garden()
++	require(script.Parent.SanctuaryDetails).Build(folder)
+ end
+ return Hub
+--- /dev/null
++++ b/src/StarterPlayer/StarterPlayerScripts/Client/CaughtPresentation.lua
+@@ -0,0 +1,65 @@
++-- A compact, legible receipt for an already confirmed catch.
++local RS = game:GetService("ReplicatedStorage")
++local Data = require(RS.Shared.CreatureData)
++local Config = require(RS.Shared.Config)
++local Format = require(RS.Shared.Format)
++local Timeline = require(RS.Shared.PresentationTimeline)
++local K = require(script.Parent.UIKit)
++local T = K.Theme
++local HUD = require(script.Parent.HUD)
++local Renderer = require(script.Parent.CreatureRenderer)
++local Settings = require(script.Parent.ClientSettings)
++return function(id)
++	local def = Data.ById[id]
++	if not def then
++		return
++	end
++	if HUD.AnyPanelOpen() then
++		HUD.Notify("Caught " .. def.name .. ". Added to your creatures.", "success")
++		return
++	end
++	local color = T.Rarity(def.rarity, Config)
++	local card = K.surface(HUD.Root, "CatchReceipt", UDim2.fromOffset(292, 304), UDim2.fromScale(0.5, 0.57), T.Panel)
++	card.AnchorPoint = Vector2.new(0.5, 0.5)
++	card.ZIndex = 30
++	K.label(
++		"Creature caught",
++		UDim2.new(1, -32, 0, 28),
++		T.Gold,
++		{ Position = UDim2.fromOffset(16, 12), TextSize = 19, Font = T.Bold, Parent = card }
++	)
++	local vp = K.viewport(Renderer.BuildPreview(id), UDim2.new(1, -24, 0, 142), false)
++	vp.Position = UDim2.fromOffset(12, 44)
++	vp.Parent = card
++	K.label(
++		def.name,
++		UDim2.new(1, -24, 0, 42),
++		T.Text,
++		{ Position = UDim2.fromOffset(12, 190), TextSize = 21, Font = T.Bold, Parent = card }
++	)
++	K.label(
++		def.rarity .. " · " .. Format.Money(Data.Income(id)) .. " / sec",
++		UDim2.new(1, -24, 0, 24),
++		color,
++		{ Position = UDim2.fromOffset(12, 235), TextSize = 16, Parent = card }
++	)
++	K.label(
++		"Added to your creatures",
++		UDim2.new(1, -24, 0, 22),
++		T.Muted,
++		{ Position = UDim2.fromOffset(12, 270), TextSize = 14, Parent = card }
++	)
++	if not Settings.ReducedMotion then
++		local scale = K.new("UIScale", { Scale = 0.97, Parent = card })
++		K.tween(scale, 0.18, { Scale = 1 })
++	end
++	task.delay(Timeline.Card.enter + Timeline.Card.hold, function()
++		if card.Parent then
++			card:Destroy()
++		end
++		local pets = HUD.SideButtons.Pets
++		if pets and pets.Visible then
++			K.pop(pets)
++		end
++	end)
++end
+--- a/src/StarterPlayer/StarterPlayerScripts/Client/ClientMain.client.lua
++++ b/src/StarterPlayer/StarterPlayerScripts/Client/ClientMain.client.lua
+@@ -172,74 +172,7 @@
+ end)
+ 
+ -- "CAUGHT!" card: pops up with the spinning creature, then flies into the Pets button
+-local K = require(Client.UIKit)
+-local function caughtCard(id)
+-	local def = CreatureData.ById[id]
+-	if not def then return end
+-	local rc = Config.Rarities[def.rarity]
+-	local cfg = Renderer.CatchConfig[def.rarity] or Renderer.CatchConfig.Common
+-	local quiet = rc.order <= 1 -- Common: a small, warm card (not a "bad" one)
+-	local W, H = 300, 340
+-	local cardCol = quiet and Color3.fromRGB(205, 228, 255) or rc.color:Lerp(Color3.new(1, 1, 1), 0.25)
+-	local card = K.new("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.58), Size = UDim2.fromOffset(W, H),
+-		BackgroundColor3 = Color3.new(1, 1, 1), ZIndex = 30, Parent = HUD.Root },
+-		{ K.corner(26), K.stroke(rc.order >= 5 and 7 or 5, rc.order >= 5 and Color3.fromRGB(255, 220, 90) or nil), K.grad(Color3.new(1, 1, 1), cardCol, 90) })
+-	local sc = K.new("UIScale", { Scale = 0, Parent = card })
+-	local targetScale = 0.7 + cfg.size * 0.28 -- modest for Common, bigger for rarer pets
+-	-- spinning glow behind the creature (two layers for Legendary+)
+-	local glow = K.new("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0, 150), Size = UDim2.fromOffset(190, 190),
+-		BackgroundColor3 = quiet and Color3.fromRGB(150, 200, 255) or rc.color, BackgroundTransparency = 0.35, ZIndex = 30, Parent = card }, { K.corner(30) })
+-	local glow2 = rc.order >= 5 and K.new("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0, 150), Size = UDim2.fromOffset(230, 230),
+-		BackgroundColor3 = Color3.fromRGB(255, 230, 120), BackgroundTransparency = 0.6, ZIndex = 30, Parent = card }, { K.corner(40) }) or nil
+-	K.label(cfg.text, UDim2.new(1, -20, 0, 46), quiet and Color3.fromRGB(235, 245, 255) or Color3.fromRGB(255, 230, 90), { Position = UDim2.fromOffset(10, 8), ZIndex = 32, Parent = card })
+-	-- confetti for Epic and better
+-	if rc.order >= 4 then
+-		for c = 1, 24 + rc.order * 4 do
+-			local bit = K.new("Frame", { Size = UDim2.fromOffset(math.random(6, 12), math.random(10, 18)), Position = UDim2.new(math.random(), 0, 0, -20),
+-				BackgroundColor3 = Color3.fromHSV(math.random(), 0.7, 1), BorderSizePixel = 0, Rotation = math.random(0, 360), ZIndex = 29, Parent = HUD.Root })
+-			K.tween(bit, 1.6 + math.random() * 1.2, { Position = UDim2.new(bit.Position.X.Scale + (math.random() - 0.5) * 0.2, 0, 1, 20), Rotation = math.random(-720, 720) },
+-				Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+-			task.delay(3, function() bit:Destroy() end)
+-		end
+-	end
+-	local model = Renderer.BuildPreview(id)
+-	local vp = K.viewport(model, UDim2.fromOffset(220, 200), true)
+-	vp.Position = UDim2.new(0.5, -110, 0, 50)
+-	vp.ZIndex = 31
+-	vp.Parent = card
+-	K.label(def.name, UDim2.new(1, -20, 0, 34), Color3.new(1, 1, 1), { Position = UDim2.fromOffset(10, 252), ZIndex = 32, Parent = card })
+-	K.label(def.rarity .. "  •  +" .. Format.Money(CreatureData.Income(id)) .. "/s", UDim2.new(1, -20, 0, 26), rc.color:Lerp(Color3.new(1, 1, 1), 0.2),
+-		{ Position = UDim2.fromOffset(10, 286), ZIndex = 32, Parent = card })
+-	K.label("Added to your pets!", UDim2.new(1, -20, 0, 20), Color3.fromRGB(200, 255, 200), { Position = UDim2.fromOffset(10, 314), ZIndex = 32, Parent = card })
+-	K.tween(sc, Timeline.Card.enter, { Scale = targetScale }, Enum.EasingStyle.Back)
+-	if quiet then Sounds.Play("Collect", 1.25) else Sounds.Play("Rare", 1.4 - rc.order * 0.06) end
+-	local spin = RunService.RenderStepped:Connect(function()
+-		glow.Rotation = (os.clock() * 60) % 360
+-		if glow2 then glow2.Rotation = -(os.clock() * 40) % 360 end
+-		card.Rotation = math.sin(os.clock() * 3) * (1 + rc.order * 0.3)
+-	end)
+-	task.delay(Timeline.Card.enter + Timeline.Card.hold, function()
+-		local pets = HUD.SideButtons["Pets"]
+-		if pets and pets.Visible and card.Parent and HUD.Root.AbsoluteSize.X > 0 then
+-			-- destination from the LIVE layout: Pets button centre relative to the card's parent
+-			local rootPos, rootSize = HUD.Root.AbsolutePosition, HUD.Root.AbsoluteSize
+-			local p = pets.AbsolutePosition + pets.AbsoluteSize / 2 - rootPos
+-			p = Vector2.new(math.clamp(p.X, 20, rootSize.X - 20), math.clamp(p.Y, 20, rootSize.Y - 20))
+-			local travel = Timeline.Card.travel
+-			K.tween(card, travel, { Position = UDim2.fromOffset(p.X, p.Y), Rotation = -20 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+-			K.tween(sc, travel, { Scale = 0.08 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+-			task.delay(travel, function()
+-				spin:Disconnect()
+-				card:Destroy()
+-				K.pop(pets, 1.35)
+-				Sounds.Play("Collect", 1.3)
+-			end)
+-		else
+-			spin:Disconnect()
+-			card:Destroy()
+-		end
+-	end)
+-end
++local caughtCard = require(Client.CaughtPresentation)
+ 
+ -- Card queue: a card is shown only for a CONFIRMED deposit, after its capture presentation
+ -- finished (Renderer.CaptureFinished) or a bounded fallback timeout — one card per deposit.
+--- a/src/StarterPlayer/StarterPlayerScripts/Client/Effects.lua
++++ b/src/StarterPlayer/StarterPlayerScripts/Client/Effects.lua
+@@ -264,6 +264,7 @@
+ 
+ -- ambient particles that follow the camera, themed per zone
+ local AMBIENT = {
++	Hub = { col = { Color3.fromRGB(241,202,115), Color3.fromRGB(168,139,244) }, rate=6, speed=.3, size=.12, accel=Vector3.new(0,.05,0) },
+ 	Forest  = { col = { Color3.fromRGB(220, 255, 140), Color3.fromRGB(255, 240, 160) }, rate = 18, speed = 0.6, size = 0.35, accel = Vector3.new(0, 0.3, 0) },   -- fireflies
+ 	Volcano = { col = { Color3.fromRGB(255, 140, 40), Color3.fromRGB(255, 60, 20) },    rate = 40, speed = 1.5, size = 0.3,  accel = Vector3.new(0, 4, 0) },      -- embers
+ 	Frozen  = { col = { Color3.fromRGB(255, 255, 255), Color3.fromRGB(200, 235, 255) }, rate = 70, speed = 1,   size = 0.35, accel = Vector3.new(1, -4, 0) },     -- snow
+@@ -273,7 +274,7 @@
+ 	Shadow  = { col = { Color3.fromRGB(150, 60, 255), Color3.fromRGB(60, 0, 90) },      rate = 30, speed = 0.4, size = 0.6,  accel = Vector3.new(0, 0.6, 0) },
+ 	Heaven  = { col = { Color3.fromRGB(255, 245, 190), Color3.fromRGB(255, 255, 255) }, rate = 40, speed = 0.6, size = 0.45, accel = Vector3.new(0, 1, 0) },     -- light motes
+ }
+-local ambientPart, ambientPE
++local ambientPart, ambientPE, currentWorld
+ local function setupAmbient()
+ 	ambientPart = Instance.new("Part")
+ 	ambientPart.Name = "Ambient"
+@@ -304,6 +305,13 @@
+ 	ambientPE.Acceleration = a.accel
+ 	ambientPE.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.5, a.size), NumberSequenceKeypoint.new(1, 0) })
+ end
++
++Settings.Changed.Event:Connect(function(key,value)
++	if key=="AmbientMotes" then
++		if value and not ambientPE then setupAmbient() applyAmbient(currentWorld or "Hub") end
++		if ambientPE then ambientPE.Enabled=value end
++	end
++end)
+ 
+ local clouds, sky
+ local function setupSky()
+@@ -506,11 +514,7 @@
+ 	end
+ end
+ 
+-local currentWorld
+-local HUB_LOOK = {
+-	ambient = Color3.fromRGB(158, 153, 168), fog = Color3.fromRGB(211, 220, 232), clock = 13.4,
+-	tint = Color3.fromRGB(255, 250, 242), atmo = Color3.fromRGB(193, 207, 226),
+-}
++local HUB_LOOK = require(ReplicatedStorage.Shared.SanctuaryLook)
+ function Effects.UpdateWorld(pos: Vector3)
+ 	local inHub = pos.Z < Config.BarrierZ
+ 	local id = inHub and "Hub" or Config.WorldAt(pos)
+@@ -523,10 +527,10 @@
+ 		local ccol = ({ Volcano = Color3.fromRGB(90, 60, 60), Shadow = Color3.fromRGB(70, 40, 90), Candy = Color3.fromRGB(255, 210, 235) })[id] or Color3.new(1, 1, 1)
+ 		tween(clouds, 2, { Cover = cover, Color = ccol })
+ 	end
+-	tween(Lighting, 1.5, { Ambient = W.ambient, OutdoorAmbient = W.ambient, ClockTime = W.clock, FogColor = W.fog })
++	tween(Lighting, 1.5, { Ambient = W.ambient, OutdoorAmbient = W.ambient, ClockTime = W.clock, FogColor = W.fog, Brightness = inHub and 2.15 or 2.4, ExposureCompensation = inHub and -.05 or 0 })
+ 	if cc then tween(cc, 1.5, { TintColor = W.tint, Saturation = inHub and 0.04 or 0.18 }) end
+-	if atmo then tween(atmo, 1.5, { Color = W.atmo, Decay = W.fog, Density = inHub and 0.18 or ((id == "Space") and 0.15 or (id == "Shadow" and 0.45 or 0.3)) }) end
+-	if bloom then tween(bloom, 1.0, { Intensity = inHub and 0.18 or 0.7 }) end
++	if atmo then tween(atmo, 1.5, { Color = W.atmo, Decay = W.fog, Haze = inHub and HUB_LOOK.haze or 1, Glare = inHub and HUB_LOOK.glare or .3, Offset = inHub and HUB_LOOK.offset or 0, Density = inHub and HUB_LOOK.density or ((id == "Space") and 0.15 or (id == "Shadow" and 0.45 or 0.3)) }) end
++	if bloom then tween(bloom, 1.0, { Intensity = inHub and HUB_LOOK.bloom or 0.7 }) end
+ 	local dof = Lighting:FindFirstChild("TPFC_DOF")
+ 	if dof then tween(dof, 1.0, { FarIntensity = inHub and 0 or 0.12 }) end
+ 	return id
+--- a/src/StarterPlayer/StarterPlayerScripts/Client/HUD.lua
++++ b/src/StarterPlayer/StarterPlayerScripts/Client/HUD.lua
+@@ -1,416 +1,595 @@
+--- HUD: money / throw-power counters, side menu buttons, throw meter, mobile throw button,
+--- carry hint, toasts and the animated panel framework used by Panels.
+--- Location: StarterPlayer > StarterPlayerScripts > Client > HUD (ModuleScript)
+-
++-- Compact sanctuary HUD and one shared, responsive panel layer.
+ local Players = game:GetService("Players")
+ local RunService = game:GetService("RunService")
+-local UserInputService = game:GetService("UserInputService")
+-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+-
+-local Config = require(ReplicatedStorage.Shared.Config)
+-local Format = require(ReplicatedStorage.Shared.Format)
++local Input = game:GetService("UserInputService")
++local GuiService = game:GetService("GuiService")
++local RS = game:GetService("ReplicatedStorage")
++local Config = require(RS.Shared.Config)
++local Format = require(RS.Shared.Format)
+ local K = require(script.Parent.UIKit)
++local T = K.Theme
+ local State = require(script.Parent.ClientState)
++local Settings = require(script.Parent.ClientSettings)
+ local Effects = require(script.Parent.Effects)
+ local Sounds = require(script.Parent.Sounds)
++local HUD = { Panels = {}, SideButtons = {}, InZone = false, TrainHeld = false, AutoTrain = false }
++local player = Players.LocalPlayer
++local gui = K.new("ScreenGui", {
++	Name = "HUD",
++	ResetOnSpawn = false,
++	DisplayOrder = 10,
++	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
++	Parent = player:WaitForChild("PlayerGui"),
++})
++local root = K.new("Frame", { Name = "Root", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Parent = gui })
++local scaler = K.new("UIScale", { Parent = root })
++HUD.Gui, HUD.Root = gui, root
++local world =
++	K.new("Frame", { Name = "Gameplay", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Parent = root })
++local top = K.new("Frame", { Name = "Resources", BackgroundTransparency = 1, Parent = world })
++local stats = {}
++local function stat(key, icon, caption, accent)
++	local f = K.surface(top, key, UDim2.fromOffset(170, 54), nil, T.Panel)
++	K.Icon(icon, f, UDim2.fromOffset(25, 25), accent, UDim2.fromOffset(12, 14))
++	local value = K.text(f, "0", 48, 5, -54, 25, 21, T.Text, true)
++	local sub = K.text(f, caption, 48, 31, -54, 17, 13, T.Muted)
++	table.insert(stats, f)
++	return value, sub, f
++end
++local money, income, moneyIcon = stat("Money", "Coin", "Income", T.Gold)
++local power, distance = stat("Reach", "Arrow", "Throw range", T.Cyan)
++local strength = stat("Strength", "Strength", "Strength", T.Violet)
++local placed, storage = stat("Capacity", "Pet", "Garden slots", T.Success)
++Effects.MoneyTarget = moneyIcon
++Effects.OnCoinArrive = function()
++	K.pop(moneyIcon)
++end
++local side = K.new(
++	"Frame",
++	{ Name = "Navigation", BackgroundTransparency = 1, Parent = world },
++	{ K.list(Enum.FillDirection.Vertical, 5) }
++)
++local navOrder = {}
++local menuBtn = K.button("Menu", T.Panel, nil, UDim2.fromOffset(100, 48), {
++	Name = "Menu",
++	Parent = world,
++	AnchorPoint = Vector2.new(0, 1),
++	Position = UDim2.new(0, 12, 1, -12),
++	Visible = false,
++})
++menuBtn.Label.Position = UDim2.fromOffset(35, 0)
++menuBtn.Label.Size = UDim2.new(1, -42, 1, 0)
++K.Icon("Menu", menuBtn, UDim2.fromOffset(20, 20), T.Text, UDim2.fromOffset(10, 14))
++local homeBtn = K.button("Home", T.Panel, nil, UDim2.fromOffset(84, 48), {
++	Name = "QuickHome",
++	Parent = world,
++	AnchorPoint = Vector2.new(0, 1),
++	Position = UDim2.new(0, 120, 1, -12),
++	Visible = false,
++})
++function HUD.AddSideButton(name, icon, _a, _b, callback)
++	if HUD.SideButtons[name] then
++		return HUD.SideButtons[name]
++	end
++	local b = K.button(
++		name,
++		T.Panel,
++		nil,
++		UDim2.fromOffset(112, 44),
++		{ Name = "Nav_" .. name, LayoutOrder = #navOrder + 1, Parent = side }
++	)
++	b.Label.Position = UDim2.fromOffset(41, 0)
++	b.Label.Size = UDim2.new(1, -47, 1, 0)
++	b.Label.TextSize = 14
++	b.Label.TextXAlignment = Enum.TextXAlignment.Left
++	K.Icon(icon, b, UDim2.fromOffset(22, 22), T.Violet, UDim2.fromOffset(11, 11))
++	K.bind(b, callback)
++	b.Visible = false
++	HUD.SideButtons[name] = b
++	table.insert(navOrder, { name = name, icon = icon, callback = callback })
++	return b
++end
++local launch = K.surface(world, "LaunchGuide", UDim2.fromOffset(354, 102), UDim2.new(1, -370, 1, -126), T.Panel)
++local launchTitle = K.text(launch, "Enter the Launch Hall", 16, 12, -32, 24, 17, T.Text, true)
++local launchHint = K.text(launch, "Charge a portal to discover a creature.", 16, 40, -32, 22, 14, T.Muted)
++local bar = K.new("Frame", {
++	Name = "ChargeTrack",
++	Size = UDim2.new(1, -32, 0, 8),
++	Position = UDim2.fromOffset(16, 79),
++	BackgroundColor3 = T.Ink,
++	Parent = launch,
++}, { K.corner(4) })
++K.new("Frame", {
++	Name = "PerfectZone",
++	Position = UDim2.fromScale(0.92, 0),
++	Size = UDim2.fromScale(0.08, 1),
++	BackgroundColor3 = T.Gold,
++	Parent = bar,
++}, { K.corner(3) })
++local fill = K.new(
++	"Frame",
++	{ Name = "ChargeFill", Size = UDim2.fromScale(0, 1), BackgroundColor3 = T.Violet, Parent = bar },
++	{ K.corner(3) }
++)
++local throwBtn = K.button(
++	"Charge portal",
++	T.Gold,
++	nil,
++	UDim2.fromOffset(164, 52),
++	{ Name = "Throw", AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -16, 1, -16), Parent = world }
++)
++HUD.ThrowButton = throwBtn
++throwBtn.InputBegan:Connect(function(i)
++	if
++		(i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseButton1)
++		and not HUD.AnyPanelOpen()
++		and HUD.TC
++	then
++		HUD.TC.BeginCharge()
++	end
++end)
++Input.InputEnded:Connect(function(i)
++	if
++		(i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseButton1)
++		and HUD.TC
++		and HUD.TC.Charging
++	then
++		HUD.TC.EndCharge()
++	end
++end)
++local train = K.surface(world, "Gym", UDim2.fromOffset(470, 114), UDim2.new(0.5, -235, 1, -144), T.Panel)
++train.Visible = false
++local trainTitle = K.text(train, "Personal gym", 14, 9, -28, 22, 17, T.Text, true)
++local lift = K.button(
++	"Lift",
++	T.Gold,
++	nil,
++	UDim2.fromOffset(160, 44),
++	{ Name = "Lift", Position = UDim2.fromOffset(12, 37), Parent = train }
++)
++local auto = K.button(
++	"Auto: off",
++	T.Raised,
++	nil,
++	UDim2.fromOffset(120, 44),
++	{ Name = "AutoTrain", Position = UDim2.fromOffset(182, 37), Parent = train }
++)
++local gymUpgrade = K.button(
++	"Upgrade",
++	T.Raised,
++	nil,
++	UDim2.fromOffset(144, 44),
++	{ Name = "GymUpgrade", Position = UDim2.fromOffset(312, 37), Parent = train }
++)
++lift.InputBegan:Connect(function(i)
++	if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
++		HUD.TrainHeld = HUD.TrainStation ~= nil
++	end
++end)
++Input.InputEnded:Connect(function(i)
++	if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
++		HUD.TrainHeld = false
++	end
++end)
++K.bind(auto, function()
++	HUD.AutoTrain = not HUD.AutoTrain
++	K.setButton(auto, HUD.AutoTrain and "Auto: on" or "Auto: off", HUD.AutoTrain and T.Success or T.Raised)
++end)
++K.bind(gymUpgrade, function()
++	if HUD.OnUpgradeGym then
++		HUD.OnUpgradeGym()
++	end
++end)
++function HUD.SetGym(level)
++	HUD.TrainStation = level
++	train.Visible = level ~= nil
++	if not level then
++		HUD.TrainHeld = false
++		return
++	end
++	local st = Config.TrainingStations[level]
++	trainTitle.Text = st.name
++	K.setButton(lift, "Lift +" .. Format.Short(st.gain), T.Gold)
++	local nextSt = Config.TrainingStations[level + 1]
++	gymUpgrade.Visible = nextSt ~= nil
++	if nextSt then
++		K.setButton(gymUpgrade, "Upgrade " .. Format.Money(nextSt.price), T.Violet)
++		K.setEnabled(gymUpgrade, State.Data.Money >= nextSt.price)
++	end
++end
++function HUD.TrainPulse()
++	K.pop(lift)
++end
++local collect = K.button(
++	"Collect creature",
++	T.Success,
++	nil,
++	UDim2.fromOffset(300, 48),
++	{ Name = "Collect", Position = UDim2.new(0.5, -150, 0, 78), Parent = world, Visible = false }
++)
++local collectTarget
++K.bind(collect, function()
++	if collectTarget and HUD.OnCollect then
++		HUD.OnCollect(collectTarget)
++	end
++end)
++function HUD.SetCollectable(id, name, color)
++	collectTarget = id
++	collect.Visible = id ~= nil
++	if id then
++		K.setButton(collect, "Collect " .. name, color or T.Success)
++	end
++end
++local carry = K.label("", UDim2.fromOffset(450, 26), T.Success, {
++	Name = "CarryHint",
++	AnchorPoint = Vector2.new(0.5, 0),
++	Position = UDim2.new(0.5, 0, 0, 74),
++	Parent = world,
++	Visible = false,
++	TextSize = 14,
++})
++function HUD.SetCarry(n)
++	carry.Visible = n > 0
++	carry.Text = "Bring " .. n .. " creatures home to your garden."
++end
+ 
+-local HUD = {}
+-local player = Players.LocalPlayer
+-local camera = workspace.CurrentCamera
+-local isTouch = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
++local notices = K.new("Frame", {
++	Name = "Notices",
++	AnchorPoint = Vector2.new(0.5, 0),
++	Position = UDim2.new(0.5, 0, 0, 78),
++	Size = UDim2.fromOffset(420, 280),
++	BackgroundTransparency = 1,
++	ZIndex = 40,
++	Parent = root,
++}, { K.list(Enum.FillDirection.Vertical, 6) })
++local lastNotice, lastNoticeTime
++function HUD.Notify(text, kind)
++	if text == lastNotice and os.clock() - (lastNoticeTime or 0) < 1 then
++		return
++	end
++	lastNotice, lastNoticeTime = text, os.clock()
++	local col = kind == "error" and T.Danger or kind == "success" and T.Success or T.Cyan
++	if kind == "error" then
++		Sounds.Play("Error")
++	end
++	local f = K.surface(notices, "Toast", UDim2.new(1, 0, 0, 58), nil, T.Panel)
++	K.Icon(kind == "error" and "Close" or "Check", f, UDim2.fromOffset(20, 20), col, UDim2.fromOffset(14, 19))
++	K.text(f, text, 47, 7, -60, 44, 15, T.Text)
++	task.delay(4, function()
++		if f.Parent then
++			f:Destroy()
++		end
++	end)
++	local list = {}
++	for _, v in notices:GetChildren() do
++		if v:IsA("Frame") then
++			table.insert(list, v)
++		end
++	end
++	if #list > 3 then
++		list[1]:Destroy()
++	end
++end
++function HUD.ShowThrowHere(_title, sub)
++	HUD.Notify(
++		sub
++			or (
++				HUD.InZone and "Hold F or the charge button, then release to throw."
++				or "Enter the Launch Hall at the end of the avenue."
++			),
++		"info"
++	)
++end
++function HUD.SetInZone(value)
++	HUD.InZone = value
++end
++function HUD.ThrowFeedback(_power, isPerfect)
++	if isPerfect then
++		HUD.Notify("Perfect throw! +15% distance", "success")
++	end
++end
+ 
+-local gui = K.new("ScreenGui", { Name = "HUD", ResetOnSpawn = false, ZIndexBehavior = Enum.ZIndexBehavior.Sibling, Parent = player:WaitForChild("PlayerGui") })
+-local root = K.new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Parent = gui })
+-local uiScale = K.new("UIScale", { Parent = root })
+-HUD.Gui, HUD.Root = gui, root
++local dim = K.new("TextButton", {
++	Name = "Backdrop",
++	Text = "",
++	AutoButtonColor = false,
++	BackgroundColor3 = T.Ink,
++	BackgroundTransparency = 0.22,
++	Size = UDim2.fromScale(1, 1),
++	Visible = false,
++	ZIndex = 20,
++	Parent = root,
++})
++local layer = K.new(
++	"Frame",
++	{ Name = "Panels", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = 21, Parent = root }
++)
++local openPanel, previousFocus
++local blur = K.new("BlurEffect", { Name = "SanctuaryMenuBlur", Size = 0, Parent = game:GetService("Lighting") })
++local width, height = 1280, 720
++function HUD.MakePanel(name, title, subtitle, icon)
++	local frame = K.surface(layer, name, UDim2.fromOffset(1000, 620), UDim2.fromScale(0.5, 0.5), T.Panel)
++	frame.AnchorPoint = Vector2.new(0.5, 0.5)
++	frame.Visible = false
++	K.Icon(icon or "Portal", frame, UDim2.fromOffset(28, 28), T.Gold, UDim2.fromOffset(20, 20))
++	local titleLabel = K.text(frame, title, 62, 15, -130, 35, 26, T.Text, true)
++	local subtitleLabel = K.text(frame, type(subtitle) == "string" and subtitle or "", 20, 60, -92, 35, 14, T.Muted)
++	local close = K.button(
++		"",
++		T.Raised,
++		nil,
++		UDim2.fromOffset(44, 44),
++		{ Name = "Close", Position = UDim2.new(1, -58, 0, 14), Parent = frame }
++	)
++	K.Icon("Close", close, UDim2.fromOffset(18, 18), T.Text, UDim2.fromOffset(13, 13))
++	local content = K.new("ScrollingFrame", {
++		Name = "Content",
++		Position = UDim2.fromOffset(16, 108),
++		Size = UDim2.new(1, -32, 1, -124),
++		BackgroundTransparency = 1,
++		ScrollBarThickness = 5,
++		ScrollBarImageColor3 = T.Violet,
++		AutomaticCanvasSize = Enum.AutomaticSize.Y,
++		CanvasSize = UDim2.new(),
++		ScrollingDirection = Enum.ScrollingDirection.Y,
++		Parent = frame,
++	})
++	local p =
++		{ name = name, frame = frame, content = content, close = close, title = titleLabel, subtitle = subtitleLabel }
++	HUD.Panels[name] = p
++	K.bind(close, function()
++		HUD.Close()
++	end)
++	return p
++end
++function HUD.AnyPanelOpen()
++	return openPanel ~= nil
++end
++function HUD.IsOpen(name)
++	return openPanel ~= nil and openPanel.name == name
++end
++function HUD.Open(name)
++	local p = HUD.Panels[name]
++	if not p then
++		return
++	end
++	if openPanel == p then
++		HUD.Close()
++		return
++	end
++	if HUD.TC and HUD.TC.Charging then
++		return
++	end
++	if openPanel then
++		openPanel.frame.Visible = false
++		if openPanel.onClose then
++			openPanel.onClose()
++		end
++	else
++		previousFocus = GuiService.SelectedObject
++	end
++	openPanel = p
++	if HUD.TC then
++		HUD.TC.InputBlocked = true
++	end
++	HUD.TrainHeld = false
++	world.Visible = false
++	dim.Visible = true
++	p.frame.Visible = true
++	if p.refresh then
++		p.refresh()
++	end
++	-- Static ViewportFrames created while hidden need a camera invalidation on reveal.
++	task.defer(function()
++		RunService.RenderStepped:Wait()
++		if not p.frame.Visible then
++			return
++		end
++		for _, v in p.frame:GetDescendants() do
++			if v:IsA("ViewportFrame") and v.CurrentCamera then
++				v.CurrentCamera.CFrame = v.CurrentCamera.CFrame * CFrame.new(0.001, 0, 0)
++			end
++		end
++	end)
+ 
+--- scale whole UI to the screen (phones get a slightly larger relative size)
+-local function rescale()
+-	local v = camera.ViewportSize
+-	local s = math.min(v.X / 1280, v.Y / 720)
+-	if isTouch then s *= 1.15 end
+-	uiScale.Scale = math.clamp(s, 0.55, 1.25)
+-	root.Size = UDim2.fromScale(1 / uiScale.Scale, 1 / uiScale.Scale)
+-end
+-camera:GetPropertyChangedSignal("ViewportSize"):Connect(rescale)
+-rescale()
+-
+----------------------------------------------------------------- top counters
+-local top = K.new("Frame", { AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 10), Size = UDim2.fromOffset(900, 64),
+-	BackgroundTransparency = 1, Parent = root }, { K.list(Enum.FillDirection.Horizontal, 14) })
+-
+-local function pill(iconText, c1, c2, width)
+-	local f = K.new("Frame", { Size = UDim2.fromOffset(width, 58), BackgroundColor3 = Color3.new(1, 1, 1), Parent = top },
+-		{ K.corner(29), K.stroke(3), K.grad(c1, c2, 90) })
+-	local icon = K.new("Frame", { Size = UDim2.fromOffset(62, 62), Position = UDim2.fromOffset(-10, -2), BackgroundColor3 = Color3.new(1, 1, 1), Parent = f },
+-		{ K.round(), K.stroke(3), K.grad(c1:Lerp(Color3.new(1, 1, 1), 0.4), c1, 90) })
+-	K.label(iconText, UDim2.fromScale(0.7, 0.7), Color3.new(1, 1, 1), { Position = UDim2.fromScale(0.15, 0.15), Parent = icon })
+-	local main = K.label("0", UDim2.new(1, -66, 0.62, 0), Color3.new(1, 1, 1), { Position = UDim2.fromOffset(58, 3), TextXAlignment = Enum.TextXAlignment.Left, Parent = f })
+-	local sub = K.label("", UDim2.new(1, -66, 0.32, 0), Color3.fromRGB(255, 255, 220), { Position = UDim2.new(0, 58, 0.62, -2), TextXAlignment = Enum.TextXAlignment.Left, Parent = f })
+-	return f, main, sub, icon
+-end
+-
+-local moneyPill, moneyLabel, incomeLabel, moneyIcon = pill("$", Color3.fromRGB(120, 230, 90), Color3.fromRGB(40, 160, 60), 260)
+-local powerPill, powerLabel, distLabel = pill("⚡", Color3.fromRGB(255, 200, 60), Color3.fromRGB(240, 120, 30), 220)
+-local strengthPill, strengthLabel, strengthSub = pill("💪", Color3.fromRGB(255, 110, 110), Color3.fromRGB(200, 40, 70), 200)
+-local carryPill, carryLabel, carrySub = pill("🐾", Color3.fromRGB(150, 120, 255), Color3.fromRGB(90, 60, 200), 170)
+-Effects.MoneyTarget = moneyIcon
+-Effects.OnCoinArrive = function() K.pop(moneyIcon, 1.25) end
+-
+-local shownMoney = 0
+-RunService.RenderStepped:Connect(function(dt)
+-	local target = State.Data.Money or 0
+-	if math.abs(target - shownMoney) < 1 then shownMoney = target
+-	else shownMoney += (target - shownMoney) * math.min(1, dt * 8) end
+-	moneyLabel.Text = Format.Money(shownMoney)
+-end)
+-
++	p.frame.Position = UDim2.new(0.5, 0, 0.5, Settings.ReducedMotion and 0 or 8)
++	K.tween(p.frame, 0.18, { Position = UDim2.fromScale(0.5, 0.5) })
++	K.tween(blur, 0.18, { Size = Settings.ReducedMotion and 0 or 4 })
++	if Input.GamepadEnabled then
++		GuiService.SelectedObject = p.close
++	end
++end
++function HUD.Close()
++	if not openPanel then
++		return
++	end
++	local old = openPanel
++	openPanel = nil
++	if HUD.TC then
++		HUD.TC.InputBlocked = false
++	end
++	old.frame.Visible = false
++	dim.Visible = false
++	world.Visible = true
++	if old.onClose then
++		old.onClose()
++	end
++	K.tween(blur, 0.15, { Size = 0 })
++	if previousFocus and previousFocus.Parent and Input.GamepadEnabled then
++		GuiService.SelectedObject = previousFocus
++	else
++		GuiService.SelectedObject = nil
++	end
++end
++dim.Activated:Connect(HUD.Close)
++Input.InputBegan:Connect(function(i, processed)
++	if Input:GetFocusedTextBox() then
++		return
++	end
++	if i.KeyCode == Enum.KeyCode.ButtonB and openPanel then
++		HUD.Close()
++		return
++	end
++	if processed then
++		return
++	end
++	local keys = {
++		[Enum.KeyCode.P] = "Portals",
++		[Enum.KeyCode.U] = "Upgrades",
++		[Enum.KeyCode.I] = "Creatures",
++		[Enum.KeyCode.M] = "Worlds",
++		[Enum.KeyCode.ButtonY] = "Menu",
++	}
++	if keys[i.KeyCode] then
++		HUD.Open(keys[i.KeyCode])
++	end
++end)
++local menuPanel = HUD.MakePanel("Menu", "Sanctuary menu", "Choose where to go.", "Compass")
++menuPanel.refresh = function()
++	menuPanel.content:ClearAllChildren()
++	K.new("UIGridLayout", {
++		CellSize = UDim2.new(0.5, -8, 0, 54),
++		CellPadding = UDim2.fromOffset(8, 8),
++		SortOrder = Enum.SortOrder.LayoutOrder,
++		Parent = menuPanel.content,
++	})
++	for i, n in ipairs(navOrder) do
++		local b = K.button(
++			n.name,
++			T.Raised,
++			nil,
++			nil,
++			{ Name = "Menu_" .. n.name, LayoutOrder = i, Parent = menuPanel.content }
++		)
++		K.bind(b, function()
++			HUD.Close()
++			n.callback()
++		end)
++	end
++end
++K.bind(menuBtn, function()
++	HUD.Open("Menu")
++end)
++K.bind(homeBtn, function()
++	local n = HUD.SideButtons.Home
++	if n then
++		for _, v in navOrder do
++			if v.name == "Home" then
++				v.callback()
++				break
++			end
++		end
++	end
++end)
+ function HUD.Refresh()
+ 	local d = State.Data
+-	incomeLabel.Text = "+" .. Format.Money(d.Income or 0) .. "/s"
+-	powerLabel.Text = math.floor(d.MaxDistance or 0) .. "m"
+-	distLabel.Text = "Throw Lv." .. (d.Upgrades and d.Upgrades.ThrowPower or 1)
+-	local newStr = Format.Short(d.Strength or 0)
+-	if strengthLabel.Text ~= newStr then
+-		strengthLabel.Text = newStr
+-		K.pop(strengthPill, 1.08)
+-	end
+-	strengthSub.Text = "Strength"
+-	if HUD._lastMax ~= d.MaxDistance and HUD.DrawTicks then
+-		HUD._lastMax = d.MaxDistance
+-		HUD.DrawTicks()
+-	end
+-	local carry = d.Carry and #d.Carry or 0
+-	local stored = #d.Creatures - #d.Placed
+-	carryLabel.Text = (#d.Placed) .. "/" .. (d.SlotsOpen or 0)
+-	carrySub.Text = "Bag " .. stored .. "/" .. (d.StorageCap or 0)
+-	HUD.SetCarry(carry)
+-end
+-
+----------------------------------------------------------------- side buttons
+-local side = K.new("Frame", { AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 12, 0.5, 0), Size = UDim2.fromOffset(96, 560),
+-	BackgroundTransparency = 1, Parent = root }, { K.list(Enum.FillDirection.Vertical, 10) })
+-HUD.SideButtons = {}
+-function HUD.AddSideButton(name, icon, c1, c2, callback)
+-	local b = K.button("", c1, c2, UDim2.fromOffset(84, 70), { Parent = side, LayoutOrder = #HUD.SideButtons + 1 })
+-	b.Label.Text = icon
+-	b.Label.Size = UDim2.new(1, -12, 0.62, 0)
+-	K.label(name, UDim2.new(1, -4, 0.32, 0), Color3.new(1, 1, 1), { Position = UDim2.new(0, 2, 0.64, -2), Parent = b, ZIndex = 2 })
+-	b.Activated:Connect(callback)
+-	HUD.SideButtons[name] = b
+-	return b
+-end
+-
+----------------------------------------------------------------- POWER BOX (right side of the screen)
+-local powerBox = K.new("Frame", { AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -16, 0.45, 0), Size = UDim2.fromOffset(150, 430),
+-	BackgroundColor3 = Color3.new(1, 1, 1), Parent = root }, { K.corner(22), K.stroke(4), K.grad(Color3.fromRGB(120, 80, 220), Color3.fromRGB(60, 30, 130), 90) })
+-local meterScale = K.new("UIScale", { Scale = 1, Parent = powerBox })
+-K.label("⚡ POWER", UDim2.new(1, -16, 0, 34), Color3.fromRGB(255, 235, 120), { Position = UDim2.fromOffset(8, 6), Parent = powerBox })
+--- the vertical bar
+-local meter = K.new("Frame", { AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 10, 0, 46), Size = UDim2.new(0, 46, 0, 280),
+-	BackgroundColor3 = Color3.fromRGB(30, 20, 50), Parent = powerBox }, { K.corner(14), K.stroke(3) })
+--- zone ticks: where each zone starts at your current max distance
+-local ticks = K.new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, ZIndex = 3, Parent = meter })
+-local function drawTicks()
+-	ticks:ClearAllChildren()
+-	local maxD = (State.Data.MaxDistance or 45) * 1.15
+-	for _, id in ipairs(Config.WorldOrder) do
+-		local from = Config.ZoneBounds[id][1]
+-		if from > 0 and from < maxD then
+-			local y = 1 - from / maxD
+-			K.new("Frame", { AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.fromScale(0, y), Size = UDim2.new(1, 0, 0, 3), BackgroundColor3 = Config.Worlds[id].atmo, BorderSizePixel = 0, ZIndex = 4, Parent = ticks })
+-			K.label(Config.Worlds[id].name:match("%S+$"), UDim2.fromOffset(58, 16), Config.Worlds[id].atmo:Lerp(Color3.new(1, 1, 1), 0.4),
+-				{ AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(0, -4, y, 0), ZIndex = 4, Parent = ticks })
+-		end
+-	end
+-end
+-HUD.DrawTicks = drawTicks
+-local perfect = K.new("Frame", { Position = UDim2.fromScale(0, 0), Size = UDim2.fromScale(1, 0.08), BackgroundColor3 = Color3.fromRGB(255, 220, 80),
+-	BorderSizePixel = 0, ZIndex = 2, Parent = meter }, { K.corner(14) })
+-local fill = K.new("Frame", { AnchorPoint = Vector2.new(0, 1), Position = UDim2.fromScale(0, 1), Size = UDim2.fromScale(1, 0), BackgroundColor3 = Color3.new(1, 1, 1),
+-	BorderSizePixel = 0, ZIndex = 2, Parent = meter },
+-	{ K.corner(14), K.new("UIGradient", { Rotation = -90, Color = ColorSequence.new({
+-		ColorSequenceKeypoint.new(0, Color3.fromRGB(90, 200, 255)), ColorSequenceKeypoint.new(0.6, Color3.fromRGB(170, 100, 255)),
+-		ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 90, 160)) }) }) })
+-local marker = K.new("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 1), Size = UDim2.new(1, 18, 0, 9),
+-	BackgroundColor3 = Color3.new(1, 1, 1), ZIndex = 5, Parent = meter }, { K.corner(4), K.stroke(3) })
+-local meterText = K.label(isTouch and "Hold THROW" or "Hold Click / F", UDim2.new(1, -14, 0, 86), Color3.new(1, 1, 1),
+-	{ Position = UDim2.new(0, 7, 0, 334), Parent = powerBox, TextWrapped = true })
+-local perfectText = K.label("PERFECT!", UDim2.fromOffset(240, 56), Color3.fromRGB(255, 225, 90),
+-	{ AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(0, -10, 0, 70), Parent = powerBox, TextTransparency = 1 })
+-perfectText:FindFirstChildOfClass("UIStroke").Transparency = 1
+-
+-HUD.TC = nil
+-local wasCharging = false
++	gui:SetAttribute("DataLoaded", State.Loaded)
++	gui:SetAttribute("EquippedPortal", d.EquippedPortal)
++	gui:SetAttribute("Money", d.Money or 0)
++	money.Text = Format.Money(d.Money or 0)
++	income.Text = "+" .. Format.Money(d.Income or 0) .. " / sec"
++	power.Text = math.floor(d.MaxDistance or 0) .. " m"
++	distance.Text = "Throw level " .. (d.Upgrades.ThrowPower or 1)
++	strength.Text = Format.Short(d.Strength or 0)
++	placed.Text = #d.Placed .. " / " .. d.SlotsOpen
++	storage.Text = "Stored " .. (#d.Creatures - #d.Placed) .. " / " .. d.StorageCap
++	HUD.SetCarry(d.Carry and #d.Carry or 0)
++end
++local function rescale()
++	local v = root.Parent.AbsoluteSize
++	local scale = (Input.TouchEnabled or v.X < 700) and 1 or math.clamp(math.min(v.X / 1440, v.Y / 820), 0.8, 1.1)
++	scaler.Scale = scale
++	root.Size = UDim2.fromScale(1 / scale, 1 / scale)
++	width, height = v.X / scale, v.Y / scale
++	local narrow = width < 620
++	local compact = Input.TouchEnabled or width < 700 or height < 580
++	HUD.Compact = compact
++	local sw = narrow and (width - 32) / 2 or math.min(184, (width - 48) / 4)
++	top.Size = UDim2.fromOffset(sw * 2 + 8, 50)
++	top.Position = UDim2.new(0.5, -top.Size.X.Offset / 2, 0, 8)
++	for i, f in ipairs(stats) do
++		f.Visible = i <= 2
++		f.Size = UDim2.fromOffset(sw, 50)
++		f.Position = UDim2.fromOffset(
++			narrow and ((i - 1) % 2) * (sw + 8) or (i - 1) * (sw + 8),
++			narrow and math.floor((i - 1) / 2) * 56 or 0
++		)
++	end
++	side.Size = UDim2.fromOffset(112, #navOrder * 49)
++	side.Position = UDim2.fromOffset(12, 80)
++	side.Visible = false
++	menuBtn.Visible = true
++	homeBtn.Visible = false
++	menuBtn.AnchorPoint = Vector2.zero
++	homeBtn.AnchorPoint = Vector2.zero
++	menuBtn.Position = UDim2.fromOffset(12, 76)
++	homeBtn.Position = UDim2.fromOffset(12, narrow and 184 or 130)
++	throwBtn.Position = UDim2.new(1, -16, 1, Input.TouchEnabled and -138 or -16)
++	launch.Size = UDim2.fromOffset(Input.TouchEnabled and math.min(300, width - 24) or 354, 102)
++	launch.Position = Input.TouchEnabled and UDim2.new(0.5, -launch.Size.X.Offset / 2, 1, -110)
++		or UDim2.new(1, -370, 1, -182)
++	train.Size = UDim2.fromOffset(compact and width - 24 or 470, 114)
++	train.Position = UDim2.new(0.5, -train.Size.X.Offset / 2, 1, -270)
++	if compact then
++		lift.Size = UDim2.new(0.5, -18, 0, 44)
++		auto.Position = UDim2.new(0.5, 0, 0, 37)
++		auto.Size = UDim2.new(0.5, -12, 0, 44)
++		gymUpgrade.Position = UDim2.fromOffset(12, 85)
++		gymUpgrade.Size = UDim2.new(1, -24, 0, 44)
++		train.Size = UDim2.new(1, -24, 0, 142)
++	end
++	notices.Size = UDim2.fromOffset(math.min(420, width - 24), 240)
++	notices.Position = UDim2.new(0.5, 0, 0, compact and 126 or 78)
++	for _, p in pairs(HUD.Panels) do
++		p.frame.Size = UDim2.fromOffset(math.min(1060, width - 24), math.min(680, height - 24))
++		p.compact = p.frame.Size.X.Offset < 760
++		p.title.TextSize = p.compact and 22 or 26
++		p.frame:SetAttribute("Compact", p.compact)
++		if p.layout then
++			p.layout()
++		end
++	end
++end
++HUD.Rescale = rescale
++gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(rescale)
++Settings.Changed.Event:Connect(function(key)
++	if key == "ReducedMotion" and Settings.ReducedMotion then
++		blur.Size = 0
++	end
++end)
++State.Changed:Connect(function(full)
++	HUD.Refresh()
++	if openPanel and openPanel.refresh then
++		openPanel.refresh(full)
++	end
++end)
+ RunService.RenderStepped:Connect(function()
+ 	local tc = HUD.TC
+-	if not tc then return end
+-	local p = tc.Power
+-	fill.Size = UDim2.fromScale(1, p)
+-	marker.Position = UDim2.fromScale(0.5, 1 - p)
+-	if tc.Charging then
+-		local dist = (State.Data.MaxDistance or 45) * p * (p >= 0.92 and 1.15 or 1)
+-		local luck = Config.LuckFromDistance(dist)
+-		meterText.Text = string.format("%d%%\n%dm\n%s\nLuck x%.2f", math.floor(p * 100), math.floor(dist),
+-			Config.Worlds[Config.WorldAt(Vector3.new(0, 0, dist))].name, luck)
+-		perfect.BackgroundColor3 = p >= 0.92 and Color3.fromRGB(255, 255, 160) or Color3.fromRGB(255, 220, 80)
+-		if not wasCharging then K.tween(meterScale, 0.25, { Scale = 1.06 }, Enum.EasingStyle.Back) end
+-	elseif wasCharging then
+-		K.tween(meterScale, 0.3, { Scale = 1 })
+-		meterText.Text = HUD.InZone and (isTouch and "Hold THROW" or "Hold Click / F") or "Go to the Launch Hall"
+-	end
+-	wasCharging = tc.Charging
+-end)
+-
+-function HUD.ThrowFeedback(power, isPerfect)
+-	if isPerfect then
+-		perfectText.TextTransparency = 0
+-		local st = perfectText:FindFirstChildOfClass("UIStroke"); st.Transparency = 0
+-		K.pop(perfectText, 1.6)
+-		task.delay(0.8, function()
+-			K.tween(perfectText, 0.3, { TextTransparency = 1 })
+-			K.tween(st, 0.3, { Transparency = 1 })
+-		end)
+-	end
+-end
+-
+--- power bar floating over your head while charging
+-local headBB = K.new("BillboardGui", { Size = UDim2.fromOffset(170, 26), StudsOffset = Vector3.new(0, 3.6, 0), AlwaysOnTop = true, Enabled = false, ResetOnSpawn = false, Parent = gui })
+-local headBar = K.new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(40, 30, 60), Parent = headBB }, { K.corner(13), K.stroke(3) })
+-K.new("Frame", { Position = UDim2.fromScale(0.92, 0), Size = UDim2.fromScale(0.08, 1), BackgroundColor3 = Color3.fromRGB(255, 220, 80), BorderSizePixel = 0, Parent = headBar }, { K.corner(13) })
+-local headFill = K.new("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0, Parent = headBar },
+-	{ K.corner(13), K.grad(Color3.fromRGB(90, 220, 255), Color3.fromRGB(255, 90, 170), 0) })
+-RunService.RenderStepped:Connect(function()
+-	local tc = HUD.TC
+-	local head = player.Character and player.Character:FindFirstChild("Head")
+-	headBB.Adornee = head
+-	headBB.Enabled = tc ~= nil and tc.Charging and head ~= nil
+-	if headBB.Enabled then headFill.Size = UDim2.fromScale(tc.Power, 1) end
+-end)
+-
+----------------------------------------------------------------- training button
+-local trainBtn = K.button("💪 LIFT", Color3.fromRGB(255, 120, 90), Color3.fromRGB(210, 50, 60), UDim2.fromOffset(260, 74),
+-	{ AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -150), Parent = root, Visible = false })
+-local autoBtn = K.button("AUTO: OFF", Color3.fromRGB(150, 150, 170), Color3.fromRGB(100, 100, 120), UDim2.fromOffset(140, 50),
+-	{ AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0.5, 140, 1, -162), Parent = root, Visible = false })
+-HUD.TrainHeld, HUD.AutoTrain, HUD.TrainStation = false, false, nil
+-trainBtn.InputBegan:Connect(function(i)
+-	if (i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch) and HUD.TrainStation then HUD.TrainHeld = true end
+-end)
+-trainBtn.InputEnded:Connect(function(i)
+-	if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then HUD.TrainHeld = false end
+-end)
+-autoBtn.Activated:Connect(function()
+-	HUD.AutoTrain = not HUD.AutoTrain
+-	K.setButton(autoBtn, HUD.AutoTrain and "AUTO: ON" or "AUTO: OFF", HUD.AutoTrain and Color3.fromRGB(110, 220, 90) or Color3.fromRGB(150, 150, 170),
+-		HUD.AutoTrain and Color3.fromRGB(40, 150, 60) or Color3.fromRGB(100, 100, 120))
+-end)
+--- PERSONAL GYM: LIFT (hold) + AUTO + UPGRADE (buy the next equipment with money)
+-local upgradeBtn = K.button("⬆ UPGRADE", Color3.fromRGB(110, 220, 90), Color3.fromRGB(40, 150, 60), UDim2.fromOffset(300, 50),
+-	{ AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -232), Parent = root, Visible = false })
+-HUD.OnUpgradeGym = nil
+-upgradeBtn.Activated:Connect(function() if HUD.OnUpgradeGym then HUD.OnUpgradeGym() end end)
+--- level = your gym level when standing in your gym, or nil
+-function HUD.SetGym(level)
+-	HUD.TrainStation = level
+-	trainBtn.Visible = level ~= nil
+-	autoBtn.Visible = level ~= nil
+-	upgradeBtn.Visible = false
+-	if not level then HUD.TrainHeld = false return end
+-	local st = Config.TrainingStations[level]
+-	K.setButton(trainBtn, "💪 LIFT  +" .. Format.Short(st.gain), Color3.fromRGB(255, 120, 90), Color3.fromRGB(210, 50, 60))
+-	local nextSt = Config.TrainingStations[level + 1]
+-	if nextSt then
+-		local can = (State.Data.Money or 0) >= nextSt.price
+-		upgradeBtn.Visible = true
+-		K.setButton(upgradeBtn, "⬆ " .. nextSt.name .. "  " .. Format.Money(nextSt.price), can and Color3.fromRGB(110, 220, 90) or Color3.fromRGB(150, 150, 170),
+-			can and Color3.fromRGB(40, 150, 60) or Color3.fromRGB(100, 100, 120))
+-	end
+-end
+-function HUD.TrainPulse() K.pop(trainBtn, 1.12) end
+-
+----------------------------------------------------------------- collect popup (collect from anywhere)
+-local collectBtn = K.button("✨ COLLECT", Color3.fromRGB(120, 230, 255), Color3.fromRGB(60, 120, 255), UDim2.fromOffset(330, 64),
+-	{ AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 124), Parent = root, Visible = false })
+-HUD.OnCollect = nil
+-local collectTarget = nil
+-collectBtn.Activated:Connect(function()
+-	if collectTarget and HUD.OnCollect then HUD.OnCollect(collectTarget) end
+-end)
+-function HUD.SetCollectable(throwId, name, color)
+-	local was = collectBtn.Visible
+-	collectTarget = throwId
+-	collectBtn.Visible = throwId ~= nil
+-	if throwId then
+-		K.setButton(collectBtn, "✨ COLLECT " .. name .. " ✨", color, color:Lerp(Color3.new(0, 0, 0), 0.35))
+-		if not was then K.pop(collectBtn, 1.25) end
+-	end
+-end
+-RunService.RenderStepped:Connect(function()
+-	if collectBtn.Visible then collectBtn.Rotation = math.sin(os.clock() * 5) * 2 end
+-end)
+-
+----------------------------------------------------------------- "throw from here" animation (limit reached / not on the throw line)
+-local throwHere = K.new("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.42), Size = UDim2.fromOffset(760, 210),
+-	BackgroundTransparency = 1, Visible = false, Parent = root })
+-local thScale = K.new("UIScale", { Scale = 0, Parent = throwHere })
+-local thTitle = K.label("🛑 YOU CAN'T GO FURTHER!", UDim2.new(1, 0, 0.42, 0), Color3.fromRGB(255, 90, 110), { Parent = throwHere })
+-local thSub = K.label("THROW YOUR PORTAL FROM HERE!", UDim2.new(1, 0, 0.32, 0), Color3.fromRGB(255, 230, 120), { Position = UDim2.fromScale(0, 0.42), Parent = throwHere })
+-local thArrow = K.label("⬇ ⬇ ⬇", UDim2.new(1, 0, 0.26, 0), Color3.new(1, 1, 1), { Position = UDim2.fromScale(0, 0.74), Parent = throwHere })
+-local thUntil = 0
+-function HUD.ShowThrowHere(title, sub)
+-	thTitle.Text = title or "🛑 YOU CAN'T GO FURTHER!"
+-	thSub.Text = sub or (isTouch and "Throw your portal from the Launch Hall — hold THROW!" or "Throw your portal from the Launch Hall — hold CLICK!")
+-	local wasVisible = throwHere.Visible and os.clock() < thUntil
+-	thUntil = os.clock() + 2.6
+-	throwHere.Visible = true
+-	if not wasVisible then
+-		thScale.Scale = 0
+-		K.tween(thScale, 0.45, { Scale = 1 }, Enum.EasingStyle.Back)
+-		Sounds.Play("Error")
+-	end
+-	if HUD.ThrowButton then K.pop(HUD.ThrowButton, 1.2) end
+-end
+-RunService.RenderStepped:Connect(function()
+-	if not throwHere.Visible then return end
+-	local t = os.clock()
+-	throwHere.Rotation = math.sin(t * 6) * 2.5
+-	thArrow.Position = UDim2.fromScale(0, 0.74 + math.abs(math.sin(t * 5)) * 0.08)
+-	thTitle.TextColor3 = Color3.fromRGB(255, 90, 110):Lerp(Color3.fromRGB(255, 200, 90), (math.sin(t * 8) + 1) / 2)
+-	if t > thUntil and thScale.Scale > 0.99 then
+-		K.tween(thScale, 0.3, { Scale = 0 }, Enum.EasingStyle.Back, Enum.EasingDirection.In)
+-		task.delay(0.3, function() if os.clock() > thUntil then throwHere.Visible = false end end)
+-	end
+-end)
+-
+--- meter/throw button react to whether you're standing on the throw line
+-HUD.InZone = true
+-function HUD.SetInZone(inZone)
+-	if HUD.InZone == inZone then return end
+-	HUD.InZone = inZone
+-	if not (HUD.TC and HUD.TC.Charging) then
+-		meterText.Text = inZone and (isTouch and "Hold THROW" or "Hold Click / F") or "Go to the Launch Hall"
+-		if inZone then
+-			HUD.ShowThrowHere("🌀 PORTAL LAUNCH HALL", isTouch and "Hold THROW, release to launch your portal!" or "Hold CLICK, release to launch your portal!")
+-		end
+-	end
+-end
+-
+--- big throw button (always shown on touch; smaller on PC)
+-local throwBtn = K.button("THROW", Color3.fromRGB(255, 120, 200), Color3.fromRGB(170, 60, 255),
+-	isTouch and UDim2.fromOffset(150, 150) or UDim2.fromOffset(120, 120),
+-	{ AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -24, 1, -24), Parent = root })
+-throwBtn:FindFirstChildOfClass("UICorner").CornerRadius = UDim.new(1, 0)
+-throwBtn.Label.Size = UDim2.new(0.8, 0, 0.3, 0)
+-throwBtn.Label.Position = UDim2.fromScale(0.1, 0.35)
+-throwBtn.InputBegan:Connect(function(input)
+-	if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+-		if HUD.TC then HUD.TC.BeginCharge() end
+-	end
+-end)
+-throwBtn.InputEnded:Connect(function(input)
+-	if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+-		if HUD.TC then HUD.TC.EndCharge() end
+-	end
+-end)
+-HUD.ThrowButton = throwBtn
+-RunService.RenderStepped:Connect(function()
+-	local r = throwBtn:FindFirstChild("UIStroke")
+-	if r then r.Color = (HUD.TC and HUD.TC.Charging) and Color3.fromRGB(255, 240, 120) or K.Dark end
+-	throwBtn.Label.TextTransparency = HUD.InZone and 0 or 0.55
+-end)
+-
+----------------------------------------------------------------- carry hint
+-local carryHint = K.label("", UDim2.fromOffset(520, 34), Color3.fromRGB(200, 255, 200),
+-	{ AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 84), Parent = root, Visible = false })
+-function HUD.SetCarry(n)
+-	carryHint.Visible = n > 0
+-	carryHint.Text = "Carrying " .. n .. "/" .. Config.CarryLimit .. " creatures — bring them to your base! ➜"
+-end
+-RunService.RenderStepped:Connect(function()
+-	if carryHint.Visible then carryHint.Rotation = math.sin(os.clock() * 3) * 1.5 end
+-end)
+-
+----------------------------------------------------------------- toasts
+-local toastHolder = K.new("Frame", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -184, 0, 90), Size = UDim2.fromOffset(380, 400),
+-	BackgroundTransparency = 1, Parent = root }, { K.list(Enum.FillDirection.Vertical, 8, Enum.HorizontalAlignment.Right) })
+-local KIND_COLORS = { info = Color3.fromRGB(110, 140, 255), error = Color3.fromRGB(255, 80, 90), money = Color3.fromRGB(80, 210, 90),
+-	discover = Color3.fromRGB(255, 170, 60), success = Color3.fromRGB(80, 210, 120) }
+-function HUD.Notify(text, kind)
+-	local col = KIND_COLORS[kind] or (Config.Rarities[kind] and Config.Rarities[kind].color) or KIND_COLORS.info
+-	if kind == "error" then Sounds.Play("Error") end
+-	local f = K.new("Frame", { Size = UDim2.fromOffset(380, 56), BackgroundColor3 = Color3.new(1, 1, 1), Parent = toastHolder },
+-		{ K.corner(14), K.stroke(3), K.grad(col:Lerp(Color3.new(1, 1, 1), 0.25), col:Lerp(Color3.new(0, 0, 0), 0.25), 90) })
+-	K.label(text, UDim2.new(1, -20, 1, -12), Color3.new(1, 1, 1), { Position = UDim2.fromOffset(10, 6), Parent = f })
+-	local s = K.new("UIScale", { Scale = 0, Parent = f })
+-	K.tween(s, 0.35, { Scale = 1 }, Enum.EasingStyle.Back)
+-	task.delay(4, function()
+-		K.tween(s, 0.25, { Scale = 0 }, Enum.EasingStyle.Back, Enum.EasingDirection.In)
+-		task.delay(0.3, function() f:Destroy() end)
+-	end)
+-	local kids = {}
+-	for _, c in ipairs(toastHolder:GetChildren()) do if c:IsA("Frame") then table.insert(kids, c) end end
+-	if #kids > 5 then kids[1]:Destroy() end
+-end
+-
+----------------------------------------------------------------- panel framework
+-local blur = Instance.new("BlurEffect"); blur.Size = 0; blur.Parent = game:GetService("Lighting")
+-local openPanel = nil
+-HUD.Panels = {}
+-
+-function HUD.MakePanel(name, title, c1, c2)
+-	local frame = K.new("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.53), Size = UDim2.fromOffset(820, 540),
+-		BackgroundColor3 = K.Panel, Visible = false, Parent = root }, { K.corner(24), K.stroke(5) })
+-	local scale = K.new("UIScale", { Scale = 0, Parent = frame })
+-	local header = K.new("Frame", { Size = UDim2.new(1, 0, 0, 70), BackgroundColor3 = Color3.new(1, 1, 1), Parent = frame },
+-		{ K.corner(24), K.grad(c1, c2, 90) })
+-	K.new("Frame", { Size = UDim2.new(1, 0, 0, 20), Position = UDim2.new(0, 0, 1, -20), BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0, Parent = header }, { K.grad(c2, c2, 90) })
+-	K.label(title, UDim2.new(1, -140, 0, 52), Color3.new(1, 1, 1), { Position = UDim2.fromOffset(24, 9), TextXAlignment = Enum.TextXAlignment.Left, Parent = header })
+-	local close = K.button("X", Color3.fromRGB(255, 90, 90), Color3.fromRGB(200, 40, 60), UDim2.fromOffset(54, 54),
+-		{ AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -10, 0, 8), Parent = header, ZIndex = 3 })
+-	local subbar = K.new("Frame", { Size = UDim2.new(1, -40, 0, 46), Position = UDim2.fromOffset(20, 80), BackgroundTransparency = 1, Parent = frame })
+-	local content = K.new("ScrollingFrame", { Size = UDim2.new(1, -32, 1, -146), Position = UDim2.fromOffset(16, 132), BackgroundTransparency = 1,
+-		BorderSizePixel = 0, ScrollBarThickness = 8, ScrollBarImageColor3 = c2, AutomaticCanvasSize = Enum.AutomaticSize.Y, CanvasSize = UDim2.new(),
+-		Parent = frame }, { K.pad(6) })
+-	local panel = { name = name, frame = frame, scale = scale, content = content, subbar = subbar, refresh = nil }
+-	close.Activated:Connect(function() HUD.Close() end)
+-	HUD.Panels[name] = panel
+-	return panel
+-end
+-
+-function HUD.Open(name)
+-	local p = HUD.Panels[name]
+-	if not p then return end
+-	if openPanel == p then HUD.Close() return end
+-	if openPanel then
+-		local old = openPanel
+-		old.frame.Visible = false
+-		old.scale.Scale = 0
+-	end
+-	openPanel = p
+-	p.frame.Visible = true
+-	p.scale.Scale = 0.6
+-	p.frame.Position = UDim2.fromScale(0.5, 0.6)
+-	K.tween(p.scale, 0.35, { Scale = 1 }, Enum.EasingStyle.Back)
+-	K.tween(p.frame, 0.35, { Position = UDim2.fromScale(0.5, 0.53) }, Enum.EasingStyle.Back)
+-	K.tween(blur, 0.3, { Size = 12 })
+-	if p.refresh then p.refresh() end
+-end
+-
+-function HUD.Close()
+-	local p = openPanel
+-	if not p then return end
+-	openPanel = nil
+-	K.tween(p.scale, 0.2, { Scale = 0.6 }, Enum.EasingStyle.Back, Enum.EasingDirection.In)
+-	K.tween(blur, 0.25, { Size = 0 })
+-	task.delay(0.2, function() if openPanel ~= p then p.frame.Visible = false end end)
+-end
+-
+-function HUD.IsOpen(name) return openPanel ~= nil and openPanel.name == name end
+-
+-State.Changed:Connect(function(full)
+-	HUD.Refresh()
+-	if full and openPanel and openPanel.refresh then openPanel.refresh() end
+-end)
+-
++	local p = tc and tc.Power or 0
++	launch.Visible = tc ~= nil and (tc.Charging or tc.MyThrow ~= nil)
++	throwBtn.Visible = HUD.InZone and not (tc and tc.MyThrow) and not train.Visible
++	if tc and tc.Charging then
++		local d = (State.Data.MaxDistance or 45) * p * (p >= 0.92 and 1.15 or 1)
++		launchTitle.Text = string.format("%d%% charge  |  %d m", p * 100, d)
++		launchHint.Text = p >= 0.92 and "Perfect zone: release now for +15% distance"
++			or "Release to launch. Gold marks the perfect zone."
++		fill.Size = UDim2.fromScale(p, 1)
++		fill.BackgroundColor3 = p >= 0.92 and T.Gold or T.Violet
++		throwBtn.Label.Text = "Release to throw"
++	elseif tc and tc.MyThrow then
++		launchTitle.Text = "Portal in flight"
++		launchHint.Text = "Your creature will be caught automatically."
++		fill.Size = UDim2.fromScale(0, 1)
++		throwBtn.Label.Text = "Portal active"
++	else
++		launchTitle.Text = "Ready to launch"
++		launchHint.Text = Input.GamepadEnabled and "Hold R2, then release."
++			or Input.TouchEnabled and "Hold Charge portal, then release."
++			or "Hold F or click, then release."
++		fill.Size = UDim2.fromScale(0, 1)
++		throwBtn.Label.Text = "Hold to throw"
++	end
++	throwBtn.Label.TextTransparency = HUD.InZone and 0 or 0.25
++end)
++task.defer(rescale)
+ return HUD
+--- a/src/StarterPlayer/StarterPlayerScripts/Client/Panels.lua
++++ b/src/StarterPlayer/StarterPlayerScripts/Client/Panels.lua
+@@ -1,430 +1,920 @@
+--- Panels: Portal Shop, Upgrades, Creatures (inventory), Index, Worlds and Base customization.
+--- Location: StarterPlayer > StarterPlayerScripts > Client > Panels (ModuleScript)
+-
+-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+-local Shared = ReplicatedStorage:WaitForChild("Shared")
+-local Config = require(Shared.Config)
+-local CreatureData = require(Shared.CreatureData)
+-local PortalBuilder = require(Shared.PortalBuilder)
+-local Format = require(Shared.Format)
+-local Odds = require(Shared.Odds)
++-- Sanctuary shops, collection, index, customization and settings.
++-- All spending and ownership changes use the existing authoritative server actions.
++local RS = game:GetService("ReplicatedStorage")
++local Http = game:GetService("HttpService")
++local Players = game:GetService("Players")
++local Config = require(RS.Shared.Config)
++local Data = require(RS.Shared.CreatureData)
++local Portal = require(RS.Shared.PortalBuilder)
++local Format = require(RS.Shared.Format)
++local Odds = require(RS.Shared.Odds)
+ local K = require(script.Parent.UIKit)
++local T = K.Theme
+ local HUD = require(script.Parent.HUD)
+ local State = require(script.Parent.ClientState)
++local Settings = require(script.Parent.ClientSettings)
++local Renderer = require(script.Parent.CreatureRenderer)
+ local Sounds = require(script.Parent.Sounds)
+-local Effects = require(script.Parent.Effects)
+-local Renderer = require(script.Parent.CreatureRenderer)
+-
+ local Panels = {}
+-local GREEN, GREEN2 = Color3.fromRGB(110, 220, 90), Color3.fromRGB(40, 150, 60)
+-local GREY, GREY2 = Color3.fromRGB(170, 170, 185), Color3.fromRGB(110, 110, 125)
+-local BLUE, BLUE2 = Color3.fromRGB(90, 170, 255), Color3.fromRGB(50, 90, 220)
+-local GOLD, GOLD2 = Color3.fromRGB(255, 210, 70), Color3.fromRGB(235, 140, 30)
+-
+-local function request(action, arg, successText)
++local function request(action, arg, message)
++	if not State.Loaded then
++		HUD.Notify("Your data is loading. Please wait.", "info")
++		return false
++	end
+ 	local ok, msg = State.Request(action, arg)
++	HUD.Notify(
++		msg or (ok and (message or "Updated successfully.") or "Could not complete this action. Try again."),
++		ok and "success" or "error"
++	)
+ 	if ok then
+ 		Sounds.Play("Upgrade")
+-		if successText or msg then HUD.Notify(msg or successText, "success") end
+-	else
+-		HUD.Notify(msg or "Can't do that", "error")
+ 	end
+ 	return ok
+ end
++local function scroll(parent, name, size, pos)
++	return K.new("ScrollingFrame", {
++		Name = name,
++		Size = size or UDim2.fromScale(1, 1),
++		Position = pos or UDim2.new(),
++		BackgroundTransparency = 1,
++		CanvasSize = UDim2.new(),
++		AutomaticCanvasSize = Enum.AutomaticSize.Y,
++		ScrollBarThickness = 4,
++		ScrollBarImageColor3 = T.Violet,
++		ScrollingDirection = Enum.ScrollingDirection.Y,
++		Parent = parent,
++	}, { K.pad(3) })
++end
++local function list(parent, gap)
++	K.list(Enum.FillDirection.Vertical, gap or 10).Parent = parent
++end
++local function heading(parent, text, order)
++	local l = K.label(text, UDim2.new(1, -12, 0, 36), T.Text, {
++		TextSize = 20,
++		Font = T.Bold,
++		TextXAlignment = Enum.TextXAlignment.Left,
++		LayoutOrder = order or 0,
++		Parent = parent,
++	})
++	return l
++end
++local function empty(parent, title, hint)
++	local f = K.surface(parent, "Empty", UDim2.new(1, -12, 0, 124))
++	K.text(f, title, 16, 16, -32, 28, 19, T.Text, true)
++	K.text(f, hint, 16, 49, -32, 56, 15, T.Muted)
++	return f
++end
++local previewCache = {}
++local function petView(id, size, silhouette)
++	if not previewCache[id] then
++		previewCache[id] = (Renderer.BuildPreview(id))
++	end
++	return K.viewport(previewCache[id]:Clone(), size, false, silhouette)
++end
++local function bindGrid(container, minWidth, cellHeight)
++	local g = K.new(
++		"UIGridLayout",
++		{ CellPadding = UDim2.fromOffset(10, 10), SortOrder = Enum.SortOrder.LayoutOrder, Parent = container }
++	)
++	local function resize()
++		local w = container.AbsoluteSize.X / HUD.Root:FindFirstChildOfClass("UIScale").Scale - 12
++		local cols = math.max(1, math.floor((w + 10) / (minWidth + 10)))
++		g.CellSize = UDim2.new(1 / cols, -(10 * (cols - 1) + 12) / cols, 0, cellHeight)
++	end
++	container:GetPropertyChangedSignal("AbsoluteSize"):Connect(resize)
++	task.defer(resize)
++	return g
++end
++-- On small screens the catalogue and detail are separate views, not squeezed columns.
++local function split(p)
++	p.content.AutomaticCanvasSize = Enum.AutomaticSize.None
++	p.content.ScrollingEnabled = false
++	local catalogue = scroll(p.content, "Catalogue")
++	local detail = scroll(p.content, "Details", UDim2.new(0.43, -8, 1, 0), UDim2.new(0.57, 8, 0, 0))
++	local back = K.button(
++		"Back to all items",
++		T.Raised,
++		nil,
++		UDim2.new(1, -8, 0, 44),
++		{ Name = "BackToCatalogue", Position = UDim2.fromOffset(4, 0), Parent = p.content, Visible = false }
++	)
++	K.bind(back, function()
++		p.showDetail = false
++		p.layout()
++	end)
++	p.layout = function()
++		if p.compact then
++			catalogue.Size = UDim2.fromScale(1, 1)
++			catalogue.Visible = not p.showDetail
++			detail.Position = UDim2.fromOffset(0, 54)
++			detail.Size = UDim2.new(1, 0, 1, -54)
++			detail.Visible = p.showDetail or false
++			back.Visible = p.showDetail or false
++		else
++			catalogue.Size = UDim2.new(0.56, -8, 1, 0)
++			catalogue.Visible = true
++			detail.Position = UDim2.new(0.57, 8, 0, 0)
++			detail.Size = UDim2.new(0.43, -12, 1, 0)
++			detail.Visible = true
++			back.Visible = false
++		end
++	end
++	p.layout()
++	return catalogue, detail
++end
++local function showDetail(p)
++	p.showDetail = true
++	p.layout()
++end
+ 
+-local function grid(content, cell, pad)
+-	content:ClearAllChildren()
+-	K.pad(6).Parent = content
+-	K.new("UIGridLayout", { CellSize = cell, CellPadding = pad or UDim2.fromOffset(12, 12), SortOrder = Enum.SortOrder.LayoutOrder,
+-		HorizontalAlignment = Enum.HorizontalAlignment.Center, Parent = content })
+-end
+-local function vlist(content)
+-	content:ClearAllChildren()
+-	K.pad(6).Parent = content
+-	K.list(Enum.FillDirection.Vertical, 10).Parent = content
++---------------------------------------------------------------- Portal shop
++local shop = HUD.MakePanel(
++	"Portals",
++	"Portal forge",
++	"Permanent purchases with earned coins. Select a portal to inspect it.",
++	"Portal"
++)
++local catalogue, portalDetail = split(shop)
++bindGrid(catalogue, 155, 204)
++local portalRows = {}
++local selectedPortal = "Basic"
++local builtPortal
++local portalAction, portalStatus
++for i, id in ipairs(Config.PortalOrder) do
++	local def = Config.Portals[id]
++	local b = K.button("", T.Raised, nil, nil, { Name = "Portal_" .. id, LayoutOrder = i, Parent = catalogue })
++	local vp = K.viewport(Portal.BuildGate(id, 3), UDim2.new(1, -10, 0, 114), false)
++	vp.Position = UDim2.fromOffset(5, 2)
++	vp.Parent = b
++	K.text(b, def.name, 12, 119, -24, 25, 16, T.Text, true)
++	local status = K.text(b, "", 12, 146, -24, 20, 14, T.Muted)
++	local price =
++		K.text(b, def.price == 0 and "Starter portal" or Format.Money(def.price), 12, 173, -24, 20, 15, T.Gold, true)
++	portalRows[id] = { button = b, status = status, price = price }
++	K.bind(b, function()
++		selectedPortal = id
++		builtPortal = nil
++		shop.refresh()
++		showDetail(shop)
++	end)
++end
++local function refreshPortalDetail()
++	if builtPortal == selectedPortal then
++		return
++	end
++	builtPortal = selectedPortal
++	portalDetail:ClearAllChildren()
++	K.pad(4).Parent = portalDetail
++	list(portalDetail, 8)
++	local def = Config.Portals[selectedPortal]
++	local preview = K.surface(portalDetail, "Hero", UDim2.new(1, -12, 0, 178), nil, T.Ink)
++	preview.LayoutOrder = 1
++	local vp = K.viewport(Portal.BuildGate(selectedPortal, 4), UDim2.fromScale(1, 1), false)
++	vp.Parent = preview
++	heading(portalDetail, def.name, 2)
++	portalStatus =
++		K.label("", UDim2.new(1, -12, 0, 30), T.Muted, { TextSize = 15, LayoutOrder = 3, Parent = portalDetail })
++	portalAction = K.button(
++		"",
++		T.Gold,
++		nil,
++		UDim2.new(1, -12, 0, 48),
++		{ Name = "PortalAction", LayoutOrder = 4, Parent = portalDetail }
++	)
++	K.bind(portalAction, function()
++		local id = selectedPortal
++		if State.Data.OwnedPortals[id] then
++			request("EquipPortal", id, "Portal equipped.")
++		else
++			request("BuyPortal", id, Config.Portals[id].name .. " purchased.")
++		end
++	end)
++	heading(portalDetail, "Base rarity weights", 5)
++	local sum = 0
++	for _, weight in pairs(def.weights) do
++		sum += weight
++	end
++	for i, r in ipairs(Config.RarityOrder) do
++		local weight = def.weights[r]
++		if weight then
++			local row = K.new("Frame", {
++				Size = UDim2.new(1, -12, 0, 24),
++				BackgroundTransparency = 1,
++				LayoutOrder = 5 + i,
++				Parent = portalDetail,
++			})
++			K.text(row, r, 0, 0, -80, 24, 14, T.Rarity(r, Config))
++			local pct = string.format("%.2f%%", 100 * weight / sum):gsub("%.00%%", "%%")
++			K.label(pct, UDim2.fromOffset(76, 24), T.Text, {
++				TextSize = 14,
++				TextXAlignment = Enum.TextXAlignment.Right,
++				Position = UDim2.new(1, -76, 0, 0),
++				Parent = row,
++			})
++		end
++	end
++	K.label(
++		"These are normalized base weights. Landing zone and distance luck affect the final creature odds; see the Index for attainable odds.",
++		UDim2.new(1, -12, 0, 76),
++		T.Muted,
++		{ TextSize = 14, LayoutOrder = 30, Parent = portalDetail }
++	)
++end
++shop.refresh = function()
++	refreshPortalDetail()
++	local d = State.Data
++	for id, row in pairs(portalRows) do
++		local equipped = d.EquippedPortal == id
++		local owned = d.OwnedPortals[id]
++		row.status.Text = equipped and "Equipped" or owned and "Owned" or "View portal"
++		row.status.TextColor3 = equipped and T.Success or T.Muted
++		row.button:FindFirstChildOfClass("UIStroke").Color = selectedPortal == id and T.Gold or T.Border
++	end
++	local def = Config.Portals[selectedPortal]
++	local owned = d.OwnedPortals[selectedPortal]
++	local equipped = d.EquippedPortal == selectedPortal
++	portalStatus.Text = equipped and "Your active portal"
++		or owned and "Owned permanently"
++		or "Price: " .. Format.Money(def.price) .. " coins"
++	K.setButton(
++		portalAction,
++		equipped and "Equipped"
++			or owned and "Equip portal"
++			or d.Money < def.price and "Need " .. Format.Money(def.price - d.Money) .. " more"
++			or "Buy portal · " .. Format.Money(def.price),
++		T.Gold
++	)
++	K.setEnabled(portalAction, State.Loaded and not equipped and (owned or d.Money >= def.price))
+ end
+ 
+-local function card(parent, order, accent)
+-	return K.new("Frame", { BackgroundColor3 = Color3.new(1, 1, 1), LayoutOrder = order, Parent = parent },
+-		{ K.corner(16), K.stroke(3), K.grad(Color3.new(1, 1, 1), accent:Lerp(Color3.new(1, 1, 1), 0.6), 90) })
++---------------------------------------------------------------- Upgrades
++local upg =
++	HUD.MakePanel("Upgrades", "Sanctuary upgrades", "See the improvement and the exact cost before buying.", "Upgrade")
++list(upg.content, 12)
++local upgradeRefs = {}
++local upgradeIcons = { ThrowPower = "Arrow", BaseSlots = "Home", Storage = "Bag", Training = "Strength" }
++local function effect(kind, lvl)
++	if kind == "ThrowPower" then
++		return math.floor(Config.ThrowDistance(lvl, State.Data.Strength or 0)) .. " m range"
++	end
++	if kind == "BaseSlots" then
++		return Config.StartSlots + lvl .. " garden slots"
++	end
++	if kind == "Storage" then
++		return Config.StartStorage + lvl * Config.StoragePerLevel .. " storage"
++	end
++	return "+" .. math.floor(lvl * Config.TrainingBonus * 100) .. "% income"
++end
++for i, kind in ipairs({ "ThrowPower", "BaseSlots", "Storage", "Training" }) do
++	local def = Config.Upgrades[kind]
++	local row = K.surface(upg.content, "Upgrade_" .. kind, UDim2.new(1, -12, 0, 142))
++	row.LayoutOrder = i
++	K.Icon(upgradeIcons[kind], row, UDim2.fromOffset(26, 26), T.Gold, UDim2.fromOffset(16, 18))
++	local title = K.text(row, def.name, 54, 10, -72, 28, 19, T.Text, true)
++	K.text(row, def.desc, 16, 45, -32, 35, 14, T.Muted)
++	local value = K.text(row, "", 16, 91, -196, 39, 15, T.Cyan)
++	local b = K.button(
++		"",
++		T.Gold,
++		nil,
++		UDim2.fromOffset(164, 44),
++		{ Name = "Buy_" .. kind, Position = UDim2.new(1, -180, 1, -56), Parent = row }
++	)
++	K.bind(b, function()
++		request("Upgrade", kind, def.name .. " improved.")
++	end)
++	upgradeRefs[kind] = { title = title, value = value, button = b }
++end
++upg.refresh = function()
++	for kind, ref in pairs(upgradeRefs) do
++		local def = Config.Upgrades[kind]
++		local lvl = State.Data.Upgrades[kind]
++		local idx = kind == "ThrowPower" and lvl - 1 or lvl
++		local maxed = idx >= def.max
++		local cost = Config.UpgradeCost(kind, idx)
++		ref.title.Text = def.name .. " · " .. idx .. "/" .. def.max
++		ref.value.Text = effect(kind, lvl) .. (maxed and "" or " → " .. effect(kind, lvl + 1))
++		K.setButton(
++			ref.button,
++			maxed and "Maximum level"
++				or State.Data.Money < cost and "Need " .. Format.Money(cost - State.Data.Money)
++				or "Buy · " .. Format.Money(cost),
++			T.Gold
++		)
++		K.setEnabled(ref.button, State.Loaded and not maxed and State.Data.Money >= cost)
++	end
+ end
+ 
+--- creature preview cache (cloning is far cheaper than rebuilding)
+-local previewCache = {}
+-local function creatureViewport(id, size, silhouette)
+-	if not previewCache[id] then previewCache[id] = (Renderer.BuildPreview(id)) end
+-	return K.viewport(previewCache[id]:Clone(), size, false, silhouette)
+-end
++---------------------------------------------------------------- Inventory
++local inv = HUD.MakePanel(
++	"Creatures",
++	"Your creatures",
++	"Select a creature to place it, remove it or review its sell value.",
++	"Pet"
++)
++local invCatalogue, invDetail = split(inv)
++local invSearch = K.search(invCatalogue, "Search creatures", UDim2.new(1, -12, 0, 46), UDim2.fromOffset(4, 4))
++invCatalogue.AutomaticCanvasSize = Enum.AutomaticSize.None
++invCatalogue.ScrollingEnabled = false
++local best = K.button(
++	"Place best",
++	T.Gold,
++	nil,
++	UDim2.new(1, -12, 0, 44),
++	{ Name = "EquipBest", Position = UDim2.fromOffset(4, 58), Parent = invCatalogue }
++)
++K.bind(best, function()
++	request("EquipBest", nil, "Best earners placed in your garden.")
++end)
++local invGrid = scroll(invCatalogue, "Creatures", UDim2.new(1, 0, 1, -116), UDim2.fromOffset(0, 112))
++local selectedUid, inventoryKey, detailKey, armedUid, armToken = nil, nil, nil, nil, 0
++local inventoryButtons = {}
++local function clearArm()
++	armedUid = nil
++	armToken += 1
++end
++local function renderCreatureDetail()
++	local d = State.Data
++	local entry
++	for _, e in ipairs(d.Creatures) do
++		if e.u == selectedUid then
++			entry = e
++			break
++		end
++	end
++	local key = entry and entry.u .. ":" .. tostring(State.IsPlaced(entry.u)) .. ":" .. tostring(armedUid) or "empty"
++	if detailKey == key then
++		return
++	end
++	detailKey = key
++	invDetail:ClearAllChildren()
++	K.pad(4).Parent = invDetail
++	list(invDetail, 10)
++	if not entry then
++		empty(invDetail, "Choose a creature", "Throw a portal in the Launch Hall to start your collection.")
++		return
++	end
++	local def = Data.ById[entry.c]
++	local color = T.Rarity(def.rarity, Config)
++	local hero = K.surface(invDetail, "CreaturePreview", UDim2.new(1, -12, 0, 180), nil, T.Ink)
++	hero.LayoutOrder = 1
++	petView(entry.c, UDim2.fromScale(1, 1)).Parent = hero
++	heading(invDetail, def.name, 2)
++	K.label(
++		def.rarity .. " · " .. Format.Money(Data.Income(entry.c)) .. " / sec",
++		UDim2.new(1, -12, 0, 28),
++		color,
++		{ TextSize = 16, LayoutOrder = 3, Parent = invDetail }
++	)
++	K.label(def.desc or "", UDim2.new(1, -12, 0, 56), T.Muted, { TextSize = 14, LayoutOrder = 4, Parent = invDetail })
++	local isPlaced = State.IsPlaced(entry.u)
++	local place = K.button(
++		isPlaced and "Remove from garden" or "Place in garden",
++		T.Gold,
++		nil,
++		UDim2.new(1, -12, 0, 46),
++		{ Name = "PlaceCreature", LayoutOrder = 5, Parent = invDetail }
++	)
++	K.bind(place, function()
++		clearArm()
++		request(State.IsPlaced(entry.u) and "Unplace" or "Place", entry.u, "Garden updated.")
++	end)
++	local cap = isPlaced and (#d.Creatures - #d.Placed >= d.StorageCap) or (not isPlaced and #d.Placed >= d.SlotsOpen)
++	if cap then
++		K.setButton(place, isPlaced and "Storage is full" or "Garden is full")
++	end
++	K.setEnabled(place, not cap)
++	local sellValue = math.floor(Data.Income(entry.c) * Config.SellMultiplier)
++	local sell = K.button(
++		armedUid == entry.u and "Confirm sale · " .. Format.Money(sellValue)
++			or "Sell creature · " .. Format.Money(sellValue),
++		armedUid == entry.u and T.Danger or T.Raised,
++		nil,
++		UDim2.new(1, -12, 0, 46),
++		{ Name = "SellCreature", LayoutOrder = 6, Parent = invDetail }
++	)
++	K.bind(sell, function()
++		if selectedUid ~= entry.u then
++			clearArm()
++			return
++		end
++		if armedUid ~= entry.u then
++			armedUid = entry.u
++			armToken += 1
++			local token = armToken
++			detailKey = nil
++			renderCreatureDetail()
++			task.delay(4, function()
++				if armToken == token then
++					clearArm()
++					detailKey = nil
++					if HUD.IsOpen("Creatures") then
++						renderCreatureDetail()
++					end
++				end
++			end)
++		else
++			clearArm()
++			if request("Sell", entry.u, "Creature sold.") then
++				selectedUid = nil
++				detailKey = nil
++				inv.refresh()
++			end
++		end
++	end)
++	K.label(
++		armedUid == entry.u and "This permanently removes " .. def.name .. ". Select Confirm sale within 4 seconds."
++			or "Selling permanently removes this creature. A second confirmation is required.",
++		UDim2.new(1, -12, 0, 60),
++		armedUid == entry.u and T.Danger or T.Muted,
++		{ TextSize = 14, LayoutOrder = 7, Parent = invDetail }
++	)
++end
++inv.refresh = function()
++	local d = State.Data
++	inv.subtitle.Text = string.format(
++		"Garden %d/%d · Stored %d/%d · Income %s / sec",
++		#d.Placed,
++		d.SlotsOpen,
++		#d.Creatures - #d.Placed,
++		d.StorageCap,
++		Format.Money(d.Income)
++	)
++	local ids = {}
++	for _, e in ipairs(d.Creatures) do
++		table.insert(ids, e.u .. ":" .. tostring(State.IsPlaced(e.u)))
++	end
++	local key = table.concat(ids, ",") .. invSearch.Text:lower()
++	if inventoryKey ~= key then
++		inventoryKey = key
++		invGrid:ClearAllChildren()
++		inventoryButtons = {}
++		bindGrid(invGrid, 140, 192)
++		local items = table.clone(d.Creatures)
++		table.sort(items, function(a, b)
++			return Data.Income(a.c) > Data.Income(b.c)
++		end)
++		local count = 0
++		for i, entry in ipairs(items) do
++			local def = Data.ById[entry.c]
++			if def and def.name:lower():find(invSearch.Text:lower(), 1, true) then
++				count += 1
++				local b = K.button(
++					"",
++					T.Raised,
++					nil,
++					nil,
++					{ Name = "Creature_" .. entry.u, LayoutOrder = i, Parent = invGrid }
++				)
++				petView(entry.c, UDim2.new(1, -8, 0, 108)).Parent = b
++				K.text(b, def.name, 10, 110, -20, 38, 15, T.Text, true)
++				K.text(b, def.rarity, 10, 151, -20, 18, 13, T.Rarity(def.rarity, Config))
++				K.text(
++					b,
++					State.IsPlaced(entry.u) and "In garden" or "In storage",
++					10,
++					171,
++					-20,
++					18,
++					13,
++					State.IsPlaced(entry.u) and T.Success or T.Muted
++				)
++				inventoryButtons[entry.u] = b
++				K.bind(b, function()
++					clearArm()
++					selectedUid = entry.u
++					detailKey = nil
++					inv.refresh()
++					showDetail(inv)
++				end)
++			end
++		end
++		if count == 0 then
++			invGrid:ClearAllChildren()
++			empty(
++				invGrid,
++				#items == 0 and "Your collection starts here" or "No matching creatures",
++				#items == 0
++						and "Enter the Launch Hall and throw your first portal. Caught creatures appear here automatically."
++					or "Try a different name or clear your search."
++			)
++		end
++	end
++	for uid, b in pairs(inventoryButtons) do
++		b:FindFirstChildOfClass("UIStroke").Color = uid == selectedUid and T.Gold or T.Border
++	end
++	if selectedUid then
++		local found = false
++		for _, e in d.Creatures do
++			if e.u == selectedUid then
++				found = true
++			end
++		end
++		if not found then
++			selectedUid = nil
++			clearArm()
++			detailKey = nil
++		end
++	end
++	renderCreatureDetail()
++end
++inv.onClose = function()
++	clearArm()
++	detailKey = nil
++end
++invSearch:GetPropertyChangedSignal("Text"):Connect(function()
++	inv.refresh()
++end)
+ 
+----------------------------------------------------------------- PORTAL SHOP
+-local shop = HUD.MakePanel("Portals", "🌀 Portal Shop", Color3.fromRGB(170, 110, 255), Color3.fromRGB(100, 50, 220))
+-local function oddsText(P)
+-	local parts, total = {}, 0
+-	for _, w in pairs(P.weights) do total += w end
+-	for _, r in ipairs(Config.RarityOrder) do
+-		local w = P.weights[r]
+-		if w then
+-			local pct = w / total * 100
+-			local hexc = Config.Rarities[r].color:ToHex()
+-			table.insert(parts, string.format("<font color='#%s'>%s %s%%</font>", hexc, r, pct >= 1 and string.format("%d", math.floor(pct + 0.5)) or string.format("%.1f", pct)))
+-		end
+-	end
+-	return table.concat(parts, "  ")
+-end
+-shop.refresh = function()
++---------------------------------------------------------------- Discovery index
++local idx = HUD.MakePanel(
++	"Index",
++	"Creature index",
++	"Discover every species. Odds reflect your equipped portal and best perfect throw.",
++	"Book"
++)
++idx.content.ScrollingEnabled = false
++idx.content.AutomaticCanvasSize = Enum.AutomaticSize.None
++local tabs = K.new("ScrollingFrame", {
++	Name = "Filters",
++	Size = UDim2.new(1, -4, 0, 48),
++	BackgroundTransparency = 1,
++	AutomaticCanvasSize = Enum.AutomaticSize.X,
++	CanvasSize = UDim2.new(),
++	ScrollingDirection = Enum.ScrollingDirection.X,
++	ScrollBarThickness = 3,
++	ScrollBarImageColor3 = T.Violet,
++	Parent = idx.content,
++}, { K.list(Enum.FillDirection.Horizontal, 6, Enum.HorizontalAlignment.Left) })
++local idxGrid = scroll(idx.content, "Species", UDim2.new(1, 0, 1, -62), UDim2.fromOffset(0, 60))
++local idxFilter = "Forest"
++local idxKey
++local idxTabs = {}
++local filters = table.clone(Config.WorldOrder)
++table.insert(filters, "Any")
++for i, id in ipairs(filters) do
++	local name = id == "Any" and "Special" or id
++	local b = K.button(
++		name,
++		T.Raised,
++		nil,
++		UDim2.fromOffset(100, 44),
++		{ Name = "Filter_" .. id, LayoutOrder = i, Parent = tabs }
++	)
++	idxTabs[id] = b
++	K.bind(b, function()
++		idxFilter = id
++		idxKey = nil
++		idxGrid.CanvasPosition = Vector2.zero
++		idx.refresh()
++	end)
++end
++idx.refresh = function()
+ 	local d = State.Data
+-	grid(shop.content, UDim2.fromOffset(240, 300))
+-	for i, id in ipairs(Config.PortalOrder) do
+-		local P = Config.Portals[id]
+-		local c = card(shop.content, i, P.color)
+-		local gate = PortalBuilder.BuildGate(id, 3)
+-		local vp = K.viewport(gate, UDim2.new(1, -20, 0, 130), true)
+-		vp.Position = UDim2.fromOffset(10, 6)
+-		vp.Parent = c
+-		K.label(P.name, UDim2.new(1, -16, 0, 30), Color3.new(1, 1, 1), { Position = UDim2.fromOffset(8, 138), Parent = c })
+-		local odds = K.label(oddsText(P), UDim2.new(1, -16, 0, 56), Color3.new(1, 1, 1), { Position = UDim2.fromOffset(8, 170), Parent = c, TextWrapped = true })
+-		odds.TextScaled = true
+-		local owned, equipped = d.OwnedPortals[id], d.EquippedPortal == id
+-		local text = equipped and "EQUIPPED" or (owned and "EQUIP" or Format.Money(P.price))
+-		local c1, c2 = GREEN, GREEN2
+-		if equipped then c1, c2 = GREY, GREY2 elseif owned then c1, c2 = BLUE, BLUE2 elseif d.Money < P.price then c1, c2 = Color3.fromRGB(255, 110, 110), Color3.fromRGB(200, 50, 70) end
+-		local b = K.button(text, c1, c2, UDim2.new(1, -24, 0, 48), { Position = UDim2.new(0, 12, 1, -58), Parent = c })
+-		b.Activated:Connect(function()
+-			if equipped then return end
+-			if owned then request("EquipPortal", id) else
+-				if request("BuyPortal", id, "Bought " .. P.name .. "!") then
+-					Effects.Flash(P.color, 0.4, 0.35)
+-					Effects.Coins(nil, 8)
+-				end
++	local found = 0
++	for _ in pairs(d.Discovered) do
++		found += 1
++	end
++	idx.title.Text = "Creature index · " .. found .. "/" .. #Data.List
++	local key = idxFilter .. ":" .. found .. ":" .. d.EquippedPortal .. ":" .. math.floor(d.MaxDistance or 0)
++	for id, b in pairs(idxTabs) do
++		K.setButton(b, nil, id == idxFilter and T.Violet or T.Raised)
++	end
++	if idxKey == key then
++		return
++	end
++	idxKey = key
++	idxGrid:ClearAllChildren()
++	bindGrid(idxGrid, 146, 222)
++	for i, def in ipairs(Data.ByWorld[idxFilter] or {}) do
++		local known = d.Discovered[def.id]
++		local b = K.button("", T.Raised, nil, nil, { Name = "Species_" .. def.id, LayoutOrder = i, Parent = idxGrid })
++		petView(def.id, UDim2.new(1, -8, 0, 112), not known).Parent = b
++		K.text(b, known and def.name or "Undiscovered", 10, 116, -20, 36, 15, T.Text, true)
++		K.text(b, def.rarity, 10, 154, -20, 20, 14, T.Rarity(def.rarity, Config))
++		local status, p = Odds.Attainable(def.id, d.EquippedPortal, (d.MaxDistance or 45) * 1.15)
++		local odds = status == "ok" and Odds.OneIn(p)
++			or status == "out_of_range" and "Out of throw range"
++			or "Different portal needed"
++		K.text(b, odds, 10, 178, -20, 36, 13, T.Muted)
++		K.bind(b, function()
++			HUD.Notify(
++				known and def.name .. ": " .. def.desc or "Land in the correct zone to discover this species.",
++				"info"
++			)
++		end)
++	end
++end
++
++---------------------------------------------------------------- Zones
++local worlds = HUD.MakePanel(
++	"Worlds",
++	"Explore the zones",
++	"Throw distance determines the landing zone. Training and upgrades extend your reach.",
++	"Compass"
++)
++list(worlds.content, 10)
++local worldRefs = {}
++for i, id in ipairs(Config.WorldOrder) do
++	local W = Config.Worlds[id]
++	local bounds = Config.ZoneBounds[id]
++	local row = K.surface(worlds.content, "Zone_" .. id, UDim2.new(1, -12, 0, 122))
++	row.LayoutOrder = i
++	K.Icon("Compass", row, UDim2.fromOffset(28, 28), W.atmo:Lerp(T.Text, 0.2), UDim2.fromOffset(16, 16))
++	K.text(row, W.name, 56, 12, -72, 30, 19, T.Text, true)
++	K.text(
++		row,
++		bounds[1] .. "–" .. bounds[2] .. " m · " .. Format.Short(W.incomeMult) .. "× income",
++		16,
++		49,
++		-32,
++		24,
++		15,
++		T.Cyan
++	)
++	worldRefs[id] = K.text(row, "", 16, 82, -32, 26, 15, T.Muted)
++end
++worlds.refresh = function()
++	local max = (State.Data.MaxDistance or 45) * 1.15
++	worlds.subtitle.Text = "Your best perfect throw: "
++		.. math.floor(max)
++		.. " m. Train or buy Throw Power to reach the next zone."
++	for id, label in pairs(worldRefs) do
++		local found, total = 0, 0
++		for _, def in ipairs(Data.ByWorld[id] or {}) do
++			total += 1
++			if State.Data.Discovered[def.id] then
++				found += 1
++			end
++		end
++		label.Text = (
++			max >= Config.ZoneBounds[id][1] and "In range"
++			or "Need " .. math.ceil(Config.ZoneBounds[id][1] - max) .. " m more range"
++		)
++			.. " · Discovered "
++			.. found
++			.. "/"
++			.. total
++	end
++end
++
++---------------------------------------------------------------- Garden shop
++local base = HUD.MakePanel(
++	"Base",
++	"Garden workshop",
++	"Decorations appear in your garden. Floor purchases are applied immediately.",
++	"Decor"
++)
++list(base.content, 10)
++local baseRefs = {}
++local floorRefs = {}
++heading(base.content, "Decorations", 0)
++local decorCopy = {
++	FlowerBed = "Color for the edge of your garden.",
++	Lanterns = "Warm lights around your plot.",
++	MushroomRing = "A small magical garden feature.",
++	Fountain = "Add a decorative portal fountain.",
++	CrystalTree = "A faceted crystal centerpiece.",
++	Statue = "A golden garden monument.",
++	Rainbow = "Frame your garden with a rainbow arch.",
++	FloatingIsland = "A floating display above your plot.",
++}
++local function shopRow(parent, id, title, desc, icon, order)
++	local row = K.surface(parent, id, UDim2.new(1, -12, 0, 130))
++	row.LayoutOrder = order
++	K.Icon(icon, row, UDim2.fromOffset(26, 26), T.Violet, UDim2.fromOffset(16, 14))
++	K.text(row, title, 54, 10, -70, 28, 18, T.Text, true)
++	K.text(row, desc, 16, 43, -32, 28, 14, T.Muted)
++	local b = K.button(
++		"",
++		T.Gold,
++		nil,
++		UDim2.fromOffset(190, 44),
++		{ Name = "Buy_" .. id, Position = UDim2.new(1, -206, 1, -55), Parent = row }
++	)
++	return b, row
++end
++for i, id in ipairs(Config.DecorOrder) do
++	local def = Config.Decor[id]
++	local b = shopRow(base.content, id, def.name, decorCopy[id] or "Garden decoration.", "Decor", i)
++	baseRefs[id] = b
++	K.bind(b, function()
++		request("BuyDecor", id, def.name .. " added to your garden.")
++	end)
++end
++heading(base.content, "Floor finishes", 30)
++for i, def in ipairs(Config.FloorThemes) do
++	local b, row = shopRow(base.content, def.id, def.name, "Choose the surface beneath your creatures.", "Home", 30 + i)
++	K.new("Frame", {
++		Position = UDim2.fromOffset(16, 82),
++		Size = UDim2.fromOffset(70, 32),
++		BackgroundColor3 = def.color,
++		Parent = row,
++	}, { K.corner(4), K.stroke(1) })
++	floorRefs[def.id] = b
++	K.bind(b, function()
++		request("Floor", def.id, "Floor applied.")
++	end)
++end
++base.refresh = function()
++	local d = State.Data
++	for id, b in pairs(baseRefs) do
++		local price = Config.Decor[id].price
++		local owned = d.Decor[id]
++		K.setButton(
++			b,
++			owned and "Owned"
++				or d.Money < price and "Need " .. Format.Money(price - d.Money)
++				or "Buy · " .. Format.Money(price),
++			T.Gold
++		)
++		K.setEnabled(b, State.Loaded and not owned and d.Money >= price)
++	end
++	for id, b in pairs(floorRefs) do
++		local def
++		for _, f in Config.FloorThemes do
++			if f.id == id then
++				def = f
++				break
++			end
++		end
++		local active = d.FloorTheme == id
++		local owned = d.OwnedFloors[id]
++		K.setButton(
++			b,
++			active and "Applied"
++				or owned and "Apply floor"
++				or d.Money < def.price and "Need " .. Format.Money(def.price - d.Money)
++				or "Buy & apply · " .. Format.Money(def.price),
++			T.Gold
++		)
++		K.setEnabled(b, State.Loaded and not active and (owned or d.Money >= def.price))
++	end
++end
++
++---------------------------------------------------------------- Accessible presentation settings
++local settings = HUD.MakePanel(
++	"Settings",
++	"Presentation settings",
++	"Changes last for this session and do not affect rewards or creature odds.",
++	"Settings"
++)
++list(settings.content, 10)
++local settingRefs = {}
++for i, def in ipairs({
++	{ "ReducedMotion", "Reduced motion", "Shorter camera movements and instant interface transitions." },
++	{ "ReducedFlashes", "Reduced flashes", "Suppress full-screen flashes during reveals." },
++	{ "CameraShake", "Camera shake", "Allow impact shake during large reveals." },
++	{ "VFXQuality", "Visual effects", "Low reduces extra particles and trails." },
++	{ "AmbientMotes", "Ambient motes", "Optional floating motes in the world." },
++}) do
++	local b = shopRow(settings.content, def[1], def[2], def[3], "Settings", i)
++	settingRefs[def[1]] = b
++	K.bind(b, function()
++		local value = Settings[def[1]]
++		if typeof(value) == "boolean" then
++			Settings.Set(def[1], not value)
++		else
++			Settings.Set(def[1], value == "High" and "Low" or "High")
++		end
++		settings.refresh()
++	end)
++end
++settings.refresh = function()
++	for key, b in pairs(settingRefs) do
++		local value = Settings[key]
++		K.setButton(
++			b,
++			typeof(value) == "boolean" and (value and "On" or "Off") or value,
++			((value == true) or value == "High") and T.Violet or T.Raised
++		)
++	end
++end
++
++---------------------------------------------------------------- Admin: existing authorized server commands retained
++local admin = HUD.MakePanel(
++	"Admin",
++	"Studio administration",
++	"Server permissions still apply. Use the explicit confirmation to reset your data.",
++	"Settings"
++)
++list(admin.content, 10)
++local adminBox, adminSearch = K.search(admin.content, "Amount or creature ID", UDim2.new(1, -12, 0, 48), UDim2.new())
++adminBox.Text = "1000000"
++adminSearch.LayoutOrder = 1
++local adminGrid = K.new("Frame", {
++	Size = UDim2.new(1, -12, 0, 0),
++	AutomaticSize = Enum.AutomaticSize.Y,
++	BackgroundTransparency = 1,
++	LayoutOrder = 2,
++	Parent = admin.content,
++})
++bindGrid(adminGrid, 190, 46)
++local function cmd(name, value)
++	return request("Admin", Http:JSONEncode({ cmd = name, value = value }))
++end
++local adminCommands = {
++	{ "Add money", "money" },
++	{ "Add strength", "strength" },
++	{ "Set throw level", "throwlevel" },
++	{ "Max upgrades", "maxupgrades" },
++	{ "Unlock portals", "allportals" },
++	{ "Complete index", "discoverall" },
++	{ "Set walk speed", "speed" },
++	{ "Give creature", "give" },
++	{ "Force next creature", "forcenext" },
++}
++for i, def in ipairs(adminCommands) do
++	local b = K.button(def[1], T.Raised, nil, nil, { Name = "Admin_" .. def[2], LayoutOrder = i, Parent = adminGrid })
++	K.bind(b, function()
++		cmd(def[2], tonumber(adminBox.Text) or adminBox.Text)
++	end)
++end
++local reset = K.button(
++	"Reset my data",
++	T.Raised,
++	nil,
++	UDim2.new(1, -12, 0, 46),
++	{ Name = "ResetMyData", LayoutOrder = 3, Parent = admin.content }
++)
++local resetArmed = false
++local resetToken = 0
++K.bind(reset, function()
++	if not resetArmed then
++		resetArmed = true
++		resetToken += 1
++		local token = resetToken
++		K.setButton(reset, "Confirm reset: deletes all progress", T.Danger)
++		task.delay(4, function()
++			if resetToken == token then
++				resetArmed = false
++				K.setButton(reset, "Reset my data", T.Raised)
+ 			end
+ 		end)
+-	end
+-end
++	else
++		resetArmed = false
++		resetToken += 1
++		cmd("reset")
++		K.setButton(reset, "Reset my data", T.Raised)
++	end
++end)
++admin.onClose = function()
++	resetArmed = false
++	resetToken += 1
++	K.setButton(reset, "Reset my data", T.Raised)
++end
++heading(admin.content, "Teleport to zone", 4)
++local zones = K.new("Frame", {
++	Size = UDim2.new(1, -12, 0, 0),
++	AutomaticSize = Enum.AutomaticSize.Y,
++	BackgroundTransparency = 1,
++	LayoutOrder = 5,
++	Parent = admin.content,
++})
++bindGrid(zones, 180, 44)
++local zonesOrder = { "Start" }
++for _, id in Config.WorldOrder do
++	table.insert(zonesOrder, id)
++end
++for i, id in zonesOrder do
++	local b = K.button(id, T.Raised, nil, nil, { Name = "AdminZone_" .. id, LayoutOrder = i, Parent = zones })
++	K.bind(b, function()
++		if cmd("zone", id) then
++			HUD.Close()
++		end
++	end)
++end
++admin.refresh = function() end
+ 
+----------------------------------------------------------------- UPGRADES
+-local upg = HUD.MakePanel("Upgrades", "⬆ Upgrades", Color3.fromRGB(255, 190, 60), Color3.fromRGB(235, 110, 30))
+-local UPG_ORDER = { "ThrowPower", "BaseSlots", "Storage", "Training" }
+-local UPG_ICON = { ThrowPower = "⚡", BaseSlots = "🏠", Storage = "🎒", Training = "💪" }
+-local function upgradeEffect(kind, lvl)
+-	if kind == "ThrowPower" then return math.floor(Config.ThrowDistance(lvl, State.Data.Strength or 0)) .. "m throw" end
+-	if kind == "BaseSlots" then return (Config.StartSlots + lvl) .. " slots" end
+-	if kind == "Storage" then return (Config.StartStorage + lvl * Config.StoragePerLevel) .. " storage" end
+-	if kind == "Training" then return "+" .. math.floor(lvl * Config.TrainingBonus * 100) .. "% income" end
+-	return ""
+-end
+-upg.refresh = function()
+-	local d = State.Data
+-	vlist(upg.content)
+-	for i, kind in ipairs(UPG_ORDER) do
+-		local U = Config.Upgrades[kind]
+-		local lvl = d.Upgrades[kind]
+-		local idx = kind == "ThrowPower" and lvl - 1 or lvl
+-		local maxed = idx >= U.max
+-		local cost = Config.UpgradeCost(kind, idx)
+-		local row = card(upg.content, i, GOLD)
+-		row.Size = UDim2.new(1, -12, 0, 100)
+-		local icon = K.new("Frame", { Size = UDim2.fromOffset(76, 76), Position = UDim2.fromOffset(12, 12), BackgroundColor3 = Color3.new(1, 1, 1), Parent = row },
+-			{ K.corner(16), K.stroke(3), K.grad(GOLD, GOLD2, 90) })
+-		K.label(UPG_ICON[kind], UDim2.fromScale(0.7, 0.7), nil, { Position = UDim2.fromScale(0.15, 0.15), Parent = icon })
+-		K.label(U.name .. "  <font color='#FFE38A'>Lv." .. idx .. "/" .. U.max .. "</font>", UDim2.new(0.55, 0, 0, 34), nil,
+-			{ Position = UDim2.fromOffset(104, 10), TextXAlignment = Enum.TextXAlignment.Left, Parent = row })
+-		K.label(U.desc, UDim2.new(0.55, 0, 0, 22), Color3.fromRGB(90, 70, 120),
+-			{ Position = UDim2.fromOffset(104, 44), TextXAlignment = Enum.TextXAlignment.Left, Parent = row }):FindFirstChildOfClass("UIStroke"):Destroy()
+-		K.label(upgradeEffect(kind, lvl) .. (maxed and "" or ("  ➜  <font color='#7CFF8A'>" .. upgradeEffect(kind, lvl + 1) .. "</font>")), UDim2.new(0.55, 0, 0, 24), nil,
+-			{ Position = UDim2.fromOffset(104, 68), TextXAlignment = Enum.TextXAlignment.Left, Parent = row })
+-		local affordable = d.Money >= cost
+-		local b = K.button(maxed and "MAX" or Format.Money(cost), maxed and GREY or (affordable and GREEN or Color3.fromRGB(255, 110, 110)),
+-			maxed and GREY2 or (affordable and GREEN2 or Color3.fromRGB(200, 50, 70)), UDim2.fromOffset(170, 60),
+-			{ AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -16, 0.5, 0), Parent = row })
+-		b.Activated:Connect(function()
+-			if maxed then return end
+-			if request("Upgrade", kind) then
+-				K.pop(row, 1.05)
+-				Effects.Burst((workspace.CurrentCamera.CFrame * CFrame.new(0, 0, -10)).Position, GOLD, 25, 10, 0.6)
+-			end
++function Panels.Init()
++	local nav = {
++		{ "Shop", "Portal", "Portals" },
++		{ "Upgrades", "Upgrade", "Upgrades" },
++		{ "Pets", "Pet", "Creatures" },
++		{ "Index", "Book", "Index" },
++		{ "Zones", "Compass", "Worlds" },
++		{ "Garden", "Decor", "Base" },
++		{ "Settings", "Settings", "Settings" },
++	}
++	for _, def in nav do
++		HUD.AddSideButton(def[1], def[2], nil, nil, function()
++			HUD.Open(def[3])
+ 		end)
+ 	end
+-end
+-
+----------------------------------------------------------------- CREATURES (inventory)
+-local inv = HUD.MakePanel("Creatures", "🐾 My Creatures", Color3.fromRGB(110, 200, 255), Color3.fromRGB(50, 120, 230))
+-local selectedUid = nil
+-local invInfo = K.label("", UDim2.new(0.5, 0, 1, 0), Color3.fromRGB(70, 50, 110), { TextXAlignment = Enum.TextXAlignment.Left, Parent = inv.subbar })
+-invInfo:FindFirstChildOfClass("UIStroke"):Destroy()
+-local bestBtn = K.button("⭐ Equip Best", GOLD, GOLD2, UDim2.fromOffset(170, 44), { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 0), Parent = inv.subbar })
+-bestBtn.Activated:Connect(function() request("EquipBest", nil, "Placed your best creatures!") end)
+-
+-local actionBar = K.new("Frame", { AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, 70), Size = UDim2.fromOffset(560, 64),
+-	BackgroundColor3 = K.Panel, Visible = false, Parent = inv.frame }, { K.corner(18), K.stroke(4) })
+-local actionName = K.label("", UDim2.new(0.4, 0, 1, -16), Color3.new(1, 1, 1), { Position = UDim2.fromOffset(12, 8), TextXAlignment = Enum.TextXAlignment.Left, Parent = actionBar })
+-local placeBtn = K.button("Place", GREEN, GREEN2, UDim2.fromOffset(150, 48), { Position = UDim2.new(0.42, 0, 0, 8), Parent = actionBar })
+-local sellBtn = K.button("Sell", Color3.fromRGB(255, 110, 110), Color3.fromRGB(200, 50, 70), UDim2.fromOffset(150, 48), { Position = UDim2.new(0.42, 160, 0, 8), Parent = actionBar })
+-local sellArmed = false
+-placeBtn.Activated:Connect(function()
+-	if not selectedUid then return end
+-	if State.IsPlaced(selectedUid) then request("Unplace", selectedUid) else request("Place", selectedUid) end
+-end)
+-sellBtn.Activated:Connect(function()
+-	if not selectedUid then return end
+-	if not sellArmed then
+-		sellArmed = true
+-		K.setButton(sellBtn, "Confirm?")
+-		task.delay(2.5, function() sellArmed = false; K.setButton(sellBtn, "Sell") end)
+-		return
+-	end
+-	sellArmed = false
+-	K.setButton(sellBtn, "Sell")
+-	if request("Sell", selectedUid) then
+-		selectedUid = nil
+-		actionBar.Visible = false
+-		Effects.Coins(nil, 10)
+-	end
+-end)
+-
+-local function selectCreature(entry)
+-	selectedUid = entry.u
+-	local def = CreatureData.ById[entry.c]
+-	actionBar.Visible = true
+-	actionName.Text = def.name
+-	actionName.TextColor3 = Config.Rarities[def.rarity].color
+-	K.setButton(placeBtn, State.IsPlaced(entry.u) and "Remove" or "Place", State.IsPlaced(entry.u) and BLUE or GREEN, State.IsPlaced(entry.u) and BLUE2 or GREEN2)
+-	K.pop(actionBar, 1.06)
+-end
+-
+-inv.refresh = function()
+-	local d = State.Data
+-	invInfo.Text = string.format("In base: %d/%d   •   Storage: %d/%d   •   +%s/s", #d.Placed, d.SlotsOpen, #d.Creatures - #d.Placed, d.StorageCap, Format.Money(d.Income))
+-	grid(inv.content, UDim2.fromOffset(140, 170))
+-	local list = table.clone(d.Creatures)
+-	table.sort(list, function(a, b)
+-		local pa, pb = State.IsPlaced(a.u), State.IsPlaced(b.u)
+-		if pa ~= pb then return pa end
+-		return CreatureData.Income(a.c) > CreatureData.Income(b.c)
+-	end)
+-	if #list == 0 then
+-		K.label("No creatures yet! Throw a portal to find one.", UDim2.fromOffset(500, 40), Color3.fromRGB(90, 70, 120), { Parent = inv.content })
+-	end
+-	for i, entry in ipairs(list) do
+-		local def = CreatureData.ById[entry.c]
+-		if def then
+-			local rc = Config.Rarities[def.rarity]
+-			local c = K.new("TextButton", { Text = "", AutoButtonColor = false, BackgroundColor3 = Color3.new(1, 1, 1), LayoutOrder = i, Parent = inv.content },
+-				{ K.corner(16), K.stroke(selectedUid == entry.u and 5 or 3, selectedUid == entry.u and Color3.fromRGB(255, 220, 60) or K.Dark),
+-					K.grad(Color3.new(1, 1, 1), rc.color:Lerp(Color3.new(1, 1, 1), 0.35), 90) })
+-			local vp = creatureViewport(entry.c, UDim2.new(1, -10, 0, 100))
+-			vp.Position = UDim2.fromOffset(5, 4)
+-			vp.Parent = c
+-			K.label(def.name, UDim2.new(1, -8, 0, 24), Color3.new(1, 1, 1), { Position = UDim2.fromOffset(4, 104), Parent = c })
+-			K.label(Format.Money(CreatureData.Income(entry.c)) .. "/s", UDim2.new(1, -8, 0, 20), Color3.fromRGB(150, 255, 150), { Position = UDim2.fromOffset(4, 128), Parent = c })
+-			K.label(def.rarity, UDim2.new(1, -8, 0, 16), rc.color, { Position = UDim2.fromOffset(4, 149), Parent = c })
+-			if State.IsPlaced(entry.u) then
+-				local badge = K.new("Frame", { Size = UDim2.fromOffset(34, 34), Position = UDim2.fromOffset(-6, -6), BackgroundColor3 = GREEN, Parent = c, ZIndex = 3 }, { K.round(), K.stroke(2) })
+-				K.label("✓", UDim2.fromScale(0.8, 0.8), nil, { Position = UDim2.fromScale(0.1, 0.1), Parent = badge, ZIndex = 4 })
+-			end
+-			c.Activated:Connect(function()
+-				Sounds.Play("Click")
+-				selectCreature(entry)
+-				inv.refresh()
++	HUD.AddSideButton("Home", "Home", nil, nil, function()
++		request("Teleport", "Home", "Returned home.")
++	end)
++	local p = Players.LocalPlayer
++	local function adminNav()
++		if p:GetAttribute("IsAdmin") and not HUD.SideButtons.Admin then
++			HUD.AddSideButton("Admin", "Settings", nil, nil, function()
++				HUD.Open("Admin")
+ 			end)
+-		end
+-	end
+-	if selectedUid then
+-		local still = false
+-		for _, e in ipairs(d.Creatures) do if e.u == selectedUid then still = true; selectCreature(e) end end
+-		if not still then selectedUid = nil; actionBar.Visible = false end
+-	end
+-end
+-
+----------------------------------------------------------------- INDEX
+-local idx = HUD.MakePanel("Index", "📖 Creature Index", Color3.fromRGB(255, 130, 190), Color3.fromRGB(210, 60, 140))
+-local idxFilter = "Forest"
+-local tabs = K.new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Parent = idx.subbar }, { K.list(Enum.FillDirection.Horizontal, 6) })
+-local idxCount = nil
+-local filters = table.clone(Config.WorldOrder)
+-table.insert(filters, "Any")
+-for i, w in ipairs(filters) do
+-	local name = w == "Any" and "Special" or Config.Worlds[w].name:gsub(" World", ""):gsub("Green ", ""):gsub(" Kingdom", ""):gsub(" Dimension", ""):gsub(" Galaxy", ""):gsub(" Caves", "")
+-	local b = K.button(name, Color3.fromRGB(255, 160, 210), Color3.fromRGB(220, 90, 160), UDim2.fromOffset(82, 40), { LayoutOrder = i, Parent = tabs })
+-	b.Activated:Connect(function() idxFilter = w; idx.refresh() end)
+-end
+-idx.refresh = function()
+-	local d = State.Data
+-	grid(idx.content, UDim2.fromOffset(140, 180))
+-	local total, found = #CreatureData.List, 0
+-	for _ in pairs(d.Discovered) do found += 1 end
+-	K.label(string.format("Discovered %d / %d\n\nOdds use your equipped portal", found, total), UDim2.new(1, -20, 0, 34), Color3.fromRGB(90, 60, 130),
+-		{ LayoutOrder = 0, Parent = idx.content, Size = UDim2.fromOffset(140, 180), TextWrapped = true })
+-	for i, def in ipairs(CreatureData.ByWorld[idxFilter] or {}) do
+-		local known = d.Discovered[def.id]
+-		local rc = Config.Rarities[def.rarity]
+-		local c = card(idx.content, i, known and rc.color or GREY)
+-		local vp = creatureViewport(def.id, UDim2.new(1, -10, 0, 104), not known)
+-		vp.Position = UDim2.fromOffset(5, 4)
+-		vp.Parent = c
+-		K.label(known and def.name or "???", UDim2.new(1, -8, 0, 24), Color3.new(1, 1, 1), { Position = UDim2.fromOffset(4, 108), Parent = c })
+-		K.label(def.rarity, UDim2.new(1, -8, 0, 20), rc.color, { Position = UDim2.fromOffset(4, 132), Parent = c })
+-		-- "1 in X" with your equipped portal and your best throw
+-		-- attainable odds (equipped portal + best perfect throw); never clamps into unreachable zones
+-		local status, p = Odds.Attainable(def.id, d.EquippedPortal, (d.MaxDistance or 45) * 1.15)
+-		local oddsText = (status == "ok" and Odds.OneIn(p)) or (status == "out_of_range" and "Out of range") or "Better portal needed"
+-		local oddsCol = status == "ok" and Color3.fromRGB(255, 240, 160) or Color3.fromRGB(200, 190, 215)
+-		K.label(oddsText, UDim2.new(1, -8, 0, 20), oddsCol, { Position = UDim2.fromOffset(4, 154), Parent = c })
+-		if known then
+-			c.InputBegan:Connect(function(input)
+-				if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+-					HUD.Notify(def.name .. ": " .. def.desc, def.rarity)
+-				end
+-			end)
+-		end
+-	end
+-end
+-
+----------------------------------------------------------------- WORLDS
+-local worlds = HUD.MakePanel("Worlds", "📏 Zones", Color3.fromRGB(100, 220, 200), Color3.fromRGB(30, 150, 160))
+-worlds.refresh = function()
+-	local d = State.Data
+-	vlist(worlds.content)
+-	local maxD = (d.MaxDistance or 45) * 1.15
+-	local tip = card(worlds.content, 0, GOLD)
+-	tip.Size = UDim2.new(1, -12, 0, 60)
+-	K.label(string.format("Your best throw reaches <font color='#FFE38A'>%dm</font>. Train and upgrade Throw Power to reach new zones!", math.floor(maxD)),
+-		UDim2.new(1, -24, 1, -12), nil, { Position = UDim2.fromOffset(12, 6), Parent = tip })
+-	for i, id in ipairs(Config.WorldOrder) do
+-		local W = Config.Worlds[id]
+-		local b = Config.ZoneBounds[id]
+-		local reach = maxD >= b[1]
+-		local row = card(worlds.content, i, W.groundColor)
+-		row.Size = UDim2.new(1, -12, 0, 92)
+-		local sw = K.new("Frame", { Size = UDim2.fromOffset(70, 70), Position = UDim2.fromOffset(12, 11), BackgroundColor3 = Color3.new(1, 1, 1), Parent = row },
+-			{ K.corner(16), K.stroke(3), K.grad(W.groundColor:Lerp(Color3.new(1, 1, 1), 0.3), W.atmo, 90) })
+-		K.label(reach and tostring(i) or "🔒", UDim2.fromScale(0.6, 0.6), nil, { Position = UDim2.fromScale(0.2, 0.2), Parent = sw })
+-		K.label(W.name .. "  <font color='#FFE38A'>" .. b[1] .. "m – " .. b[2] .. "m</font>", UDim2.new(0.62, 0, 0, 36), nil,
+-			{ Position = UDim2.fromOffset(96, 10), TextXAlignment = Enum.TextXAlignment.Left, Parent = row })
+-		local found, total = 0, 0
+-		for _, c in ipairs(CreatureData.ByWorld[id] or {}) do
+-			total += 1
+-			if d.Discovered[c.id] then found += 1 end
+-		end
+-		K.label(string.format("%s  •  Creatures found: %d/%d  •  x%s income", reach and "In range!" or ("Need a " .. b[1] .. "m throw"), found, total, Format.Short(W.incomeMult)),
+-			UDim2.new(0.8, 0, 0, 26), reach and Color3.fromRGB(180, 255, 180) or Color3.fromRGB(255, 200, 200),
+-			{ Position = UDim2.fromOffset(96, 50), TextXAlignment = Enum.TextXAlignment.Left, Parent = row })
+-	end
+-end
+-
+----------------------------------------------------------------- ADMIN
+-local admin = HUD.MakePanel("Admin", "🛠 Admin Panel", Color3.fromRGB(255, 90, 90), Color3.fromRGB(160, 30, 60))
+-local function adminCmd(cmd, value)
+-	local json = game:GetService("HttpService"):JSONEncode({ cmd = cmd, value = value })
+-	request("Admin", json)
+-end
+-admin.refresh = function()
+-	vlist(admin.content)
+-	local amountRow = card(admin.content, 1, Color3.fromRGB(255, 120, 120))
+-	amountRow.Size = UDim2.new(1, -12, 0, 70)
+-	K.label("Amount:", UDim2.fromOffset(120, 40), nil, { Position = UDim2.fromOffset(14, 15), Parent = amountRow })
+-	local box = K.new("TextBox", { Text = "1000000", PlaceholderText = "number / creature id", Font = K.Font, TextScaled = true, ClearTextOnFocus = false,
+-		Size = UDim2.new(1, -160, 0, 46), Position = UDim2.fromOffset(140, 12), BackgroundColor3 = Color3.new(1, 1, 1), TextColor3 = K.Dark, Parent = amountRow },
+-		{ K.corner(12), K.stroke(3) })
+-	local function val() return tonumber(box.Text) or box.Text end
+-
+-	local btns = K.new("Frame", { Size = UDim2.new(1, -12, 0, 240), BackgroundTransparency = 1, LayoutOrder = 2, Parent = admin.content },
+-		{ K.new("UIGridLayout", { CellSize = UDim2.fromOffset(180, 52), CellPadding = UDim2.fromOffset(10, 10), HorizontalAlignment = Enum.HorizontalAlignment.Center }) })
+-	local function add(text, c1, c2, fn)
+-		local b = K.button(text, c1, c2, nil, { Parent = btns })
+-		b.Activated:Connect(fn)
+-	end
+-	add("+ Money", GREEN, GREEN2, function() adminCmd("money", val()) end)
+-	add("- Money", Color3.fromRGB(255, 110, 110), Color3.fromRGB(200, 50, 70), function() adminCmd("money", -(tonumber(box.Text) or 0)) end)
+-	add("+ Strength", Color3.fromRGB(255, 120, 90), Color3.fromRGB(210, 50, 60), function() adminCmd("strength", val()) end)
+-	add("Set Throw Lv", GOLD, GOLD2, function() adminCmd("throwlevel", val()) end)
+-	add("Max Upgrades", GOLD, GOLD2, function() adminCmd("maxupgrades") end)
+-	add("All Portals", Color3.fromRGB(180, 120, 255), Color3.fromRGB(110, 60, 220), function() adminCmd("allportals") end)
+-	add("Complete Index", Color3.fromRGB(255, 140, 200), Color3.fromRGB(210, 60, 140), function() adminCmd("discoverall") end)
+-	add("WalkSpeed", BLUE, BLUE2, function() adminCmd("speed", val()) end)
+-	add("Give Creature (id)", BLUE, BLUE2, function() adminCmd("give", box.Text) end)
+-	add("Force Next Throw (id)", Color3.fromRGB(255, 160, 60), Color3.fromRGB(210, 90, 30), function() adminCmd("forcenext", box.Text) end)
+-	local resetArmed = false
+-	add("RESET MY DATA", Color3.fromRGB(90, 90, 100), Color3.fromRGB(40, 40, 50), function()
+-		if not resetArmed then
+-			resetArmed = true
+-			HUD.Notify("Click RESET again within 3s to wipe your data", "error")
+-			task.delay(3, function() resetArmed = false end)
+-			return
+-		end
+-		resetArmed = false
+-		adminCmd("reset")
+-	end)
+-
+-	K.label("Teleport to zone", UDim2.new(1, -12, 0, 30), Color3.fromRGB(160, 40, 70), { LayoutOrder = 3, Parent = admin.content })
+-	local tp = K.new("Frame", { Size = UDim2.new(1, -12, 0, 130), BackgroundTransparency = 1, LayoutOrder = 4, Parent = admin.content },
+-		{ K.new("UIGridLayout", { CellSize = UDim2.fromOffset(170, 50), CellPadding = UDim2.fromOffset(10, 10), HorizontalAlignment = Enum.HorizontalAlignment.Center }) })
+-	local zoneIds = { "Start" }
+-	for _, id in ipairs(Config.WorldOrder) do table.insert(zoneIds, id) end
+-	for _, id in ipairs(zoneIds) do
+-		local W = Config.Worlds[id]
+-		local c = W and W.atmo or GREEN
+-		local b = K.button(W and W.name or "Start", c, c:Lerp(Color3.new(0, 0, 0), 0.35), nil, { Parent = tp })
+-		b.Activated:Connect(function() adminCmd("zone", id); HUD.Close() end)
+-	end
+-
+-	K.label("Give creature (click one)", UDim2.new(1, -12, 0, 30), Color3.fromRGB(160, 40, 70), { LayoutOrder = 5, Parent = admin.content })
+-	local list = K.new("Frame", { Size = UDim2.new(1, -12, 0, math.ceil(#CreatureData.List / 4) * 46), BackgroundTransparency = 1, LayoutOrder = 6, Parent = admin.content },
+-		{ K.new("UIGridLayout", { CellSize = UDim2.fromOffset(180, 38), CellPadding = UDim2.fromOffset(8, 8), HorizontalAlignment = Enum.HorizontalAlignment.Center }) })
+-	for _, def in ipairs(CreatureData.List) do
+-		local rc = Config.Rarities[def.rarity].color
+-		local b = K.button(def.name, rc, rc:Lerp(Color3.new(0, 0, 0), 0.35), nil, { Parent = list })
+-		b.Activated:Connect(function() adminCmd("give", def.id) end)
+-	end
+-end
+-
+----------------------------------------------------------------- BASE CUSTOMIZATION
+-local basePanel = HUD.MakePanel("Base", "🏡 Decorate Base", Color3.fromRGB(150, 220, 110), Color3.fromRGB(70, 160, 70))
+-basePanel.refresh = function()
+-	local d = State.Data
+-	vlist(basePanel.content)
+-	K.label("Decorations", UDim2.new(1, -12, 0, 34), Color3.fromRGB(70, 130, 60), { LayoutOrder = 0, Parent = basePanel.content })
+-	for i, id in ipairs(Config.DecorOrder) do
+-		local D = Config.Decor[id]
+-		local row = card(basePanel.content, i, GREEN)
+-		row.Size = UDim2.new(1, -12, 0, 64)
+-		K.label(D.name, UDim2.new(0.6, 0, 0, 40), nil, { Position = UDim2.fromOffset(16, 12), TextXAlignment = Enum.TextXAlignment.Left, Parent = row })
+-		local owned = d.Decor[id]
+-		local b = K.button(owned and "OWNED" or Format.Money(D.price), owned and GREY or GREEN, owned and GREY2 or GREEN2, UDim2.fromOffset(160, 48),
+-			{ AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -12, 0.5, 0), Parent = row })
+-		b.Activated:Connect(function() if not owned then request("BuyDecor", id, D.name .. " added to your base!") end end)
+-	end
+-	K.label("Floor Themes", UDim2.new(1, -12, 0, 34), Color3.fromRGB(70, 130, 60), { LayoutOrder = 50, Parent = basePanel.content })
+-	for i, t in ipairs(Config.FloorThemes) do
+-		local row = card(basePanel.content, 50 + i, t.color)
+-		row.Size = UDim2.new(1, -12, 0, 64)
+-		K.label(t.name, UDim2.new(0.6, 0, 0, 40), nil, { Position = UDim2.fromOffset(16, 12), TextXAlignment = Enum.TextXAlignment.Left, Parent = row })
+-		local active, owned = d.FloorTheme == t.id, d.OwnedFloors[t.id]
+-		local b = K.button(active and "ACTIVE" or (owned and "USE" or Format.Money(t.price)), active and GREY or (owned and BLUE or GREEN),
+-			active and GREY2 or (owned and BLUE2 or GREEN2), UDim2.fromOffset(160, 48), { AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -12, 0.5, 0), Parent = row })
+-		b.Activated:Connect(function() if not active then request("Floor", t.id) end end)
+-	end
+-end
+-
+----------------------------------------------------------------- side buttons
+-function Panels.Init()
+-	HUD.AddSideButton("Shop", "🌀", Color3.fromRGB(180, 120, 255), Color3.fromRGB(110, 60, 220), function() HUD.Open("Portals") end)
+-	HUD.AddSideButton("Upgrade", "⬆", Color3.fromRGB(255, 200, 70), Color3.fromRGB(235, 120, 30), function() HUD.Open("Upgrades") end)
+-	HUD.AddSideButton("Pets", "🐾", Color3.fromRGB(110, 200, 255), Color3.fromRGB(50, 120, 230), function() HUD.Open("Creatures") end)
+-	HUD.AddSideButton("Index", "📖", Color3.fromRGB(255, 140, 200), Color3.fromRGB(210, 60, 140), function() HUD.Open("Index") end)
+-	HUD.AddSideButton("Zones", "📏", Color3.fromRGB(100, 220, 200), Color3.fromRGB(30, 150, 160), function() HUD.Open("Worlds") end)
+-	HUD.AddSideButton("Base", "🏡", Color3.fromRGB(150, 220, 110), Color3.fromRGB(70, 160, 70), function() HUD.Open("Base") end)
+-	HUD.AddSideButton("Home", "🏠", Color3.fromRGB(255, 150, 110), Color3.fromRGB(220, 80, 60), function()
+-		if request("Teleport", "Home") then Effects.Flash(Color3.new(1, 1, 1), 0.4, 0.4) end
+-	end)
+-	-- admin button only for admins (server decides via the IsAdmin attribute)
+-	local player = game:GetService("Players").LocalPlayer
+-	local function checkAdmin()
+-		if player:GetAttribute("IsAdmin") and not HUD.SideButtons["Admin"] then
+-			HUD.AddSideButton("Admin", "🛠", Color3.fromRGB(255, 90, 90), Color3.fromRGB(160, 30, 60), function() HUD.Open("Admin") end)
+-		end
+-	end
+-	player:GetAttributeChangedSignal("IsAdmin"):Connect(checkAdmin)
+-	checkAdmin()
+-end
+-
++			HUD.Rescale()
++		end
++	end
++	p:GetAttributeChangedSignal("IsAdmin"):Connect(adminNav)
++	adminNav()
++	HUD.Rescale()
++end
+ return Panels
+--- a/src/StarterPlayer/StarterPlayerScripts/Client/ThrowController.lua
++++ b/src/StarterPlayer/StarterPlayerScripts/Client/ThrowController.lua
+@@ -59,7 +59,7 @@
+ 
+ ---------------------------------------------------------------- charging
+ function TC.BeginCharge()
+-	if TC.Charging or not State.Loaded then return end
++	if TC.InputBlocked or TC.Charging or not State.Loaded then return end
+ 	if os.clock() - lastThrow < Config.ThrowCooldown then return end
+ 	local char = player.Character
+ 	if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+--- /dev/null
++++ b/src/StarterPlayer/StarterPlayerScripts/Client/UIIcons.lua
+@@ -0,0 +1,119 @@
++-- Crisp native geometry. Every navigation icon also has a visible text label.
++local T = require(script.Parent.UITheme)
++local Icons = {}
++function Icons.Draw(name, parent, size, color, position)
++	local root = Instance.new("Frame")
++	root.Name = "Icon_" .. name
++	root.BackgroundTransparency = 1
++	root.Size = size or UDim2.fromOffset(24, 24)
++	root.Position = position or UDim2.new()
++	root.Parent = parent
++	local col = color or T.Text
++	local function box(x, y, w, h, rotation, outline, round)
++		local f = Instance.new("Frame")
++		f.BorderSizePixel = 0
++		f.BackgroundColor3 = col
++		f.AnchorPoint = Vector2.new(0.5, 0.5)
++		f.Position = UDim2.fromScale(x, y)
++		f.Size = UDim2.fromScale(w, h)
++		f.Rotation = rotation or 0
++		f.Parent = root
++		if outline then
++			f.BackgroundTransparency = 1
++			local s = Instance.new("UIStroke")
++			s.Thickness = 2
++			s.Color = col
++			s.Parent = f
++		end
++		if round then
++			local r = Instance.new("UICorner")
++			r.CornerRadius = UDim.new(round, 0)
++			r.Parent = f
++		end
++		return f
++	end
++	local function line(x, y, x2, y2)
++		local dx, dy = x2 - x, y2 - y
++		return box((x + x2) / 2, (y + y2) / 2, math.sqrt(dx * dx + dy * dy), 0.075, math.deg(math.atan2(dy, dx)))
++	end
++	if name == "Menu" then
++		for _, y in { 0.25, 0.5, 0.75 } do
++			line(0.16, y, 0.84, y)
++		end
++	elseif name == "Portal" then
++		box(0.5, 0.5, 0.62, 0.78, 0, true, 0.5)
++		box(0.5, 0.5, 0.28, 0.42, 0, true, 0.5)
++		box(0.5, 0.08, 0.15, 0.15, 45)
++	elseif name == "Upgrade" or name == "Arrow" then
++		line(0.5, 0.85, 0.5, 0.2)
++		line(0.24, 0.45, 0.5, 0.2)
++		line(0.76, 0.45, 0.5, 0.2)
++		if name == "Upgrade" then
++			line(0.18, 0.92, 0.82, 0.92)
++		end
++	elseif name == "Pet" then
++		box(0.5, 0.63, 0.47, 0.38, 45, false, 0.2)
++		box(0.18, 0.38, 0.17, 0.23, -25, false, 0.5)
++		box(0.4, 0.19, 0.17, 0.23, -8, false, 0.5)
++		box(0.65, 0.2, 0.17, 0.23, 8, false, 0.5)
++		box(0.84, 0.4, 0.17, 0.23, 25, false, 0.5)
++	elseif name == "Book" then
++		box(0.28, 0.5, 0.33, 0.65, 0, true, 0.08)
++		box(0.7, 0.5, 0.33, 0.65, 0, true, 0.08)
++		line(0.5, 0.2, 0.5, 0.86)
++	elseif name == "Compass" then
++		box(0.5, 0.5, 0.75, 0.75, 0, true, 0.5)
++		box(0.5, 0.5, 0.24, 0.49, 35, true)
++		box(0.5, 0.5, 0.1, 0.1, 45)
++	elseif name == "Home" then
++		line(0.12, 0.47, 0.5, 0.13)
++		line(0.5, 0.13, 0.88, 0.47)
++		line(0.24, 0.43, 0.24, 0.86)
++		line(0.24, 0.86, 0.77, 0.86)
++		line(0.77, 0.86, 0.77, 0.43)
++		box(0.5, 0.72, 0.15, 0.3)
++	elseif name == "Decor" then
++		box(0.5, 0.42, 0.4, 0.4, 45, true)
++		line(0.5, 0.66, 0.5, 0.9)
++		line(0.25, 0.9, 0.75, 0.9)
++		box(0.15, 0.2, 0.11, 0.11, 45)
++		box(0.85, 0.28, 0.11, 0.11, 45)
++	elseif name == "Coin" then
++		box(0.5, 0.5, 0.69, 0.69, 0, true, 0.5)
++		box(0.5, 0.5, 0.22, 0.34, 45, true)
++	elseif name == "Strength" then
++		line(0.19, 0.5, 0.81, 0.5)
++		box(0.15, 0.5, 0.14, 0.4)
++		box(0.3, 0.5, 0.12, 0.65)
++		box(0.7, 0.5, 0.12, 0.65)
++		box(0.85, 0.5, 0.14, 0.4)
++	elseif name == "Bag" then
++		box(0.5, 0.59, 0.6, 0.64, 0, true, 0.16)
++		box(0.5, 0.22, 0.27, 0.23, 0, true, 0.3)
++		line(0.29, 0.6, 0.71, 0.6)
++	elseif name == "Settings" then
++		for i = 0, 3 do
++			box(0.5, 0.5, 0.14, 0.92, i * 45)
++		end
++		box(0.5, 0.5, 0.62, 0.62, 0, false, 0.5)
++		local hole = box(0.5, 0.5, 0.26, 0.26, 0, false, 0.5)
++		hole.BackgroundColor3 = T.Panel
++	elseif name == "Check" then
++		line(0.16, 0.5, 0.4, 0.75)
++		line(0.4, 0.75, 0.87, 0.2)
++	elseif name == "Close" then
++		line(0.23, 0.23, 0.77, 0.77)
++		line(0.23, 0.77, 0.77, 0.23)
++	elseif name == "Lock" then
++		box(0.5, 0.61, 0.61, 0.47, 0, true, 0.1)
++		box(0.5, 0.31, 0.35, 0.4, 0, true, 0.4)
++		box(0.5, 0.61, 0.08, 0.19)
++	elseif name == "Search" then
++		box(0.42, 0.4, 0.48, 0.48, 0, true, 0.5)
++		line(0.6, 0.6, 0.9, 0.9)
++	else
++		box(0.5, 0.5, 0.45, 0.45, 45, true)
++	end
++	return root
++end
++return Icons
+--- a/src/StarterPlayer/StarterPlayerScripts/Client/UIKit.lua
++++ b/src/StarterPlayer/StarterPlayerScripts/Client/UIKit.lua
+@@ -1,78 +1,237 @@
+--- UIKit: small helper library for building the polished, animated simulator UI.
+--- Location: StarterPlayer > StarterPlayerScripts > Client > UIKit (ModuleScript)
++-- Native sanctuary components. No uploaded icon/font dependency.
+ local TweenService = game:GetService("TweenService")
+ local Sounds = require(script.Parent.Sounds)
+-local Builder = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("CreatureBuilder"))
+-
+-local K = {}
+-K.Font = Enum.Font.FredokaOne
+-K.Dark = Color3.fromRGB(28, 18, 45)
+-K.Panel = Color3.fromRGB(250, 246, 255)
+-
++local Settings = require(script.Parent.ClientSettings)
++local T = require(script.Parent.UITheme)
++local Icons = require(script.Parent.UIIcons)
++local Builder = require(game:GetService("ReplicatedStorage").Shared.CreatureBuilder)
++local K = { Font = T.Font, Dark = T.Ink, Panel = T.Panel, Theme = T, Icon = Icons.Draw }
+ function K.new(class, props, children)
+ 	local o = Instance.new(class)
++	if o:IsA("GuiObject") then
++		o.BorderSizePixel = 0
++	end
+ 	for k, v in pairs(props or {}) do
+-		if k ~= "Parent" then o[k] = v end
+-	end
+-	for _, c in ipairs(children or {}) do c.Parent = o end
+-	if props and props.Parent then o.Parent = props.Parent end
++		if k ~= "Parent" then
++			o[k] = v
++		end
++	end
++	for _, c in ipairs(children or {}) do
++		c.Parent = o
++	end
++	if props and props.Parent then
++		o.Parent = props.Parent
++	end
+ 	return o
+ end
+-
+-function K.corner(r) return K.new("UICorner", { CornerRadius = UDim.new(0, r or 12) }) end
+-function K.round() return K.new("UICorner", { CornerRadius = UDim.new(1, 0) }) end
+-function K.stroke(t, c) return K.new("UIStroke", { Thickness = t or 3, Color = c or K.Dark, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }) end
+-function K.textStroke(t, c) return K.new("UIStroke", { Thickness = t or 2.5, Color = c or K.Dark }) end
+-function K.grad(c1, c2, rot) return K.new("UIGradient", { Color = ColorSequence.new(c1, c2), Rotation = rot or 90 }) end
+-function K.pad(n) return K.new("UIPadding", { PaddingTop = UDim.new(0, n), PaddingBottom = UDim.new(0, n), PaddingLeft = UDim.new(0, n), PaddingRight = UDim.new(0, n) }) end
+-function K.list(dir, padding, align)
+-	return K.new("UIListLayout", { FillDirection = dir or Enum.FillDirection.Vertical, Padding = UDim.new(0, padding or 8),
+-		SortOrder = Enum.SortOrder.LayoutOrder, HorizontalAlignment = align or Enum.HorizontalAlignment.Center })
+-end
+-
++function K.corner(r)
++	return K.new("UICorner", { CornerRadius = UDim.new(0, r or 8) })
++end
++function K.round()
++	return K.new("UICorner", { CornerRadius = UDim.new(1, 0) })
++end
++function K.stroke(t, c)
++	return K.new(
++		"UIStroke",
++		{ Thickness = t or 1, Color = c or T.Border, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }
++	)
++end
++function K.textStroke()
++	return K.new("UIStroke", { Thickness = 0, Transparency = 1 })
++end
++function K.grad(a, b, rot)
++	return K.new("UIGradient", { Color = ColorSequence.new(a, b), Rotation = rot or 90 })
++end
++function K.pad(n)
++	return K.new(
++		"UIPadding",
++		{
++			PaddingTop = UDim.new(0, n),
++			PaddingBottom = UDim.new(0, n),
++			PaddingLeft = UDim.new(0, n),
++			PaddingRight = UDim.new(0, n),
++		}
++	)
++end
++function K.list(dir, gap, align)
++	return K.new("UIListLayout", {
++		FillDirection = dir or Enum.FillDirection.Vertical,
++		Padding = UDim.new(0, gap or 8),
++		SortOrder = Enum.SortOrder.LayoutOrder,
++		HorizontalAlignment = align or Enum.HorizontalAlignment.Center,
++	})
++end
+ function K.tween(o, t, props, style, dir)
+-	local tw = TweenService:Create(o, TweenInfo.new(t, style or Enum.EasingStyle.Quad, dir or Enum.EasingDirection.Out), props)
++	local tw = TweenService:Create(
++		o,
++		TweenInfo.new(
++			Settings.ReducedMotion and 0 or math.min(t, 0.25),
++			style == Enum.EasingStyle.Linear and style or Enum.EasingStyle.Quart,
++			dir or Enum.EasingDirection.Out
++		),
++		props
++	)
+ 	tw:Play()
+ 	return tw
+ end
+-
+ function K.label(text, size, color, props)
+ 	local l = K.new("TextLabel", {
+-		Text = text, Font = K.Font, TextScaled = true, BackgroundTransparency = 1, TextColor3 = color or Color3.new(1, 1, 1),
+-		Size = size or UDim2.fromScale(1, 1), RichText = true,
++		Text = text,
++		Font = T.Font,
++		TextSize = 16,
++		TextScaled = false,
++		BackgroundTransparency = 1,
++		TextColor3 = color or T.Text,
++		Size = size or UDim2.fromScale(1, 1),
++		RichText = true,
++		TextWrapped = true,
+ 	}, { K.textStroke() })
+-	for k, v in pairs(props or {}) do l[k] = v end
++	for k, v in pairs(props or {}) do
++		l[k] = v
++	end
+ 	return l
+ end
+-
+--- Animated button: hover grow, press squash, springy release, click sound.
+-function K.button(text, c1, c2, size, props)
++function K.text(parent, text, x, y, w, h, sz, col, bold)
++	return K.label(text, UDim2.new(w < 0 and 1 or 0, w, 0, h), col, {
++		Position = UDim2.fromOffset(x, y),
++		TextSize = sz or 16,
++		Font = bold and T.Bold or T.Font,
++		TextXAlignment = Enum.TextXAlignment.Left,
++		Parent = parent,
++	})
++end
++function K.surface(parent, name, size, pos, color)
++	return K.new(
++		"Frame",
++		{
++			Name = name,
++			Size = size,
++			Position = pos or UDim2.new(),
++			BackgroundColor3 = color or T.Raised,
++			Parent = parent,
++		},
++		{ K.corner(10), K.stroke(1) }
++	)
++end
++function K.button(text, c1, _c2, size, props)
+ 	local b = K.new("TextButton", {
+-		Text = "", AutoButtonColor = false, BackgroundColor3 = Color3.new(1, 1, 1), Size = size or UDim2.fromOffset(160, 50),
+-	}, { K.corner(14), K.stroke(3), K.grad(c1, c2 or c1:Lerp(Color3.new(0, 0, 0), 0.25), 90) })
++		Text = "",
++		AutoButtonColor = false,
++		BackgroundColor3 = c1 or T.Raised,
++		Size = size or UDim2.fromOffset(160, 44),
++		Selectable = true,
++	}, { K.corner(8), K.stroke(1) })
++	b:SetAttribute("Enabled", true)
+ 	local scale = K.new("UIScale", { Parent = b })
+-	local shine = K.new("Frame", { BackgroundColor3 = Color3.new(1, 1, 1), BackgroundTransparency = 0.75, Size = UDim2.new(1, -8, 0.42, 0),
+-		Position = UDim2.fromOffset(4, 3), BorderSizePixel = 0, Parent = b }, { K.corner(10) })
+-	local l = K.label(text, UDim2.new(1, -12, 1, -8), Color3.new(1, 1, 1), { Position = UDim2.fromOffset(6, 4), Parent = b, Name = "Label", ZIndex = 2 })
+-	for k, v in pairs(props or {}) do b[k] = v end
+-	b.MouseEnter:Connect(function() K.tween(scale, 0.15, { Scale = 1.06 }, Enum.EasingStyle.Back) end)
+-	b.MouseLeave:Connect(function() K.tween(scale, 0.15, { Scale = 1 }) end)
+-	b.MouseButton1Down:Connect(function() K.tween(scale, 0.08, { Scale = 0.9 }) end)
+-	b.MouseButton1Up:Connect(function() K.tween(scale, 0.35, { Scale = 1 }, Enum.EasingStyle.Elastic) end)
+-	b.Activated:Connect(function() Sounds.Play("Click") end)
+-	return b, l
+-end
+-
+-function K.setButton(b, text, c1, c2)
+-	if text then b.Label.Text = text end
+-	if c1 then b:FindFirstChildOfClass("UIGradient").Color = ColorSequence.new(c1, c2 or c1:Lerp(Color3.new(0, 0, 0), 0.25)) end
+-end
+-
+--- Bouncy "pop" used for counters when values change
++	K.label(
++		text,
++		UDim2.new(1, -16, 1, -4),
++		T.Readable(c1 or T.Raised),
++		{ Name = "Label", Position = UDim2.fromOffset(8, 2), Font = T.Bold, TextSize = 15, Parent = b }
++	)
++	for k, v in pairs(props or {}) do
++		b[k] = v
++	end
++	local function focus(on)
++		local st = b:FindFirstChildOfClass("UIStroke")
++		st.Color = on and T.Gold or T.Border
++		st.Thickness = on and 2 or 1
++	end
++	b.MouseEnter:Connect(function()
++		if b:GetAttribute("Enabled") then
++			focus(true)
++		end
++	end)
++	b.MouseLeave:Connect(function()
++		focus(false)
++		K.tween(scale, 0.1, { Scale = 1 })
++	end)
++	b.SelectionGained:Connect(function()
++		focus(true)
++	end)
++	b.SelectionLost:Connect(function()
++		focus(false)
++	end)
++	b.MouseButton1Down:Connect(function()
++		if b:GetAttribute("Enabled") then
++			K.tween(scale, 0.08, { Scale = 0.98 })
++		end
++	end)
++	b.MouseButton1Up:Connect(function()
++		K.tween(scale, 0.12, { Scale = 1 })
++	end)
++	b.Activated:Connect(function()
++		if b:GetAttribute("Enabled") then
++			Sounds.Play("Click")
++		end
++	end)
++	return b, b.Label
++end
++function K.setButton(b, text, c1, _c2)
++	if text then
++		b.Label.Text = text
++	end
++	if c1 then
++		b.BackgroundColor3 = c1
++		b.Label.TextColor3 = T.Readable(c1)
++	end
++end
++function K.setEnabled(b, enabled)
++	b:SetAttribute("Enabled", enabled)
++	b.Active = enabled
++	b.Selectable = enabled
++	if not enabled then
++		b.BackgroundColor3 = T.Raised
++		b.Label.TextColor3 = T.Muted
++	end
++end
++function K.bind(b, fn)
++	b.Activated:Connect(function()
++		if not b:GetAttribute("Enabled") or b:GetAttribute("Busy") then
++			return
++		end
++		b:SetAttribute("Busy", true)
++		local text = b.Label.Text
++		b.Label.Text = "Working..."
++		local ok, err = pcall(fn)
++		if b.Parent then
++			b:SetAttribute("Busy", false)
++			if b.Label.Text == "Working..." then
++				b.Label.Text = text
++			end
++		end
++		if not ok then
++			warn("[Sanctuary UI] " .. tostring(err))
++		end
++	end)
++end
+ function K.pop(o, amount)
++	if Settings.ReducedMotion then
++		return
++	end
+ 	local s = o:FindFirstChildOfClass("UIScale") or K.new("UIScale", { Parent = o })
+-	s.Scale = amount or 1.18
+-	K.tween(s, 0.4, { Scale = 1 }, Enum.EasingStyle.Elastic)
++	s.Scale = math.min(amount or 1.04, 1.04)
++	K.tween(s, 0.16, { Scale = 1 })
++end
++function K.search(parent, placeholder, size, pos)
++	local f = K.surface(parent, "Search", size, pos, T.Ink)
++	K.Icon("Search", f, UDim2.fromOffset(19, 19), T.Muted, UDim2.fromOffset(12, 13))
++	local box = K.new("TextBox", {
++		Name = "Input",
++		Size = UDim2.new(1, -52, 1, 0),
++		Position = UDim2.fromOffset(42, 0),
++		BackgroundTransparency = 1,
++		Text = "",
++		PlaceholderText = placeholder,
++		PlaceholderColor3 = T.Muted,
++		TextColor3 = T.Text,
++		Font = T.Font,
++		TextSize = 16,
++		TextXAlignment = Enum.TextXAlignment.Left,
++		ClearTextOnFocus = false,
++		Parent = f,
++	})
++	return box, f
+ end
+ 
+ -- Welds don't simulate inside ViewportFrames, so compute every welded part's CFrame
+@@ -80,11 +239,15 @@
+ function K.bakeWelds(model)
+ 	local welds = {}
+ 	for _, d in ipairs(model:GetDescendants()) do
+-		if d:IsA("Weld") and d.Part0 and d.Part1 then table.insert(welds, d) end
++		if d:IsA("Weld") and d.Part0 and d.Part1 then
++			table.insert(welds, d)
++		end
+ 	end
+ 	local done = {}
+ 	for _, d in ipairs(model:GetDescendants()) do
+-		if d:IsA("BasePart") and d.Anchored then done[d] = true end
++		if d:IsA("BasePart") and d.Anchored then
++			done[d] = true
++		end
+ 	end
+ 	local progress = true
+ 	while progress do
+@@ -98,16 +261,26 @@
+ 		end
+ 	end
+ 	for _, d in ipairs(model:GetDescendants()) do
+-		if d:IsA("BasePart") then d.Anchored = true end
++		if d:IsA("BasePart") then
++			d.Anchored = true
++		end
+ 	end
+ end
+ 
+ -- ViewportFrame showing a model, auto-framed, optional slow spin
+ function K.viewport(model, size, spin, silhouette)
+ 	K.bakeWelds(model)
+-	local vp = K.new("ViewportFrame", { Size = size or UDim2.fromScale(1, 1), BackgroundTransparency = 1, Ambient = Color3.fromRGB(200, 200, 210),
+-		LightColor = Color3.new(1, 1, 1), LightDirection = Vector3.new(-1, -1, -1) })
+-	if silhouette then vp.ImageColor3 = Color3.new(0, 0, 0); vp.ImageTransparency = 0.15 end
++	local vp = K.new("ViewportFrame", {
++		Size = size or UDim2.fromScale(1, 1),
++		BackgroundTransparency = 1,
++		Ambient = Color3.fromRGB(200, 200, 210),
++		LightColor = Color3.new(1, 1, 1),
++		LightDirection = Vector3.new(-1, -1, -1),
++	})
++	if silhouette then
++		vp.ImageColor3 = Color3.new(0, 0, 0)
++		vp.ImageTransparency = 0.15
++	end
+ 	local cam = K.new("Camera", { FieldOfView = 35, Parent = vp })
+ 	vp.CurrentCamera = cam
+ 	model.Parent = vp
+@@ -128,9 +301,21 @@
+ 			while true do
+ 				task.wait(1 / 30)
+ 				local inGame = vp:IsDescendantOf(game)
+-				if inGame then seen = true elseif seen or a > 60 then break end
++				if inGame then
++					seen = true
++				elseif seen or a > 60 then
++					break
++				end
+ 				a += 0.03
+-				if inGame and vp.Visible then place(math.sin(a) * 0.6 + 0.2) end
++				local showing = inGame and not Settings.ReducedMotion
++				local ancestor = vp
++				while showing and ancestor and ancestor:IsA("GuiObject") do
++					showing = ancestor.Visible
++					ancestor = ancestor.Parent
++				end
++				if showing then
++					place(math.sin(a) * 0.6 + 0.2)
++				end
+ 			end
+ 		end)
+ 	end
+--- /dev/null
++++ b/src/StarterPlayer/StarterPlayerScripts/Client/UITheme.lua
+@@ -0,0 +1,32 @@
++-- Sanctuary UI tokens, shared by the HUD, icons and every shop.
++local T = {
++	Ink = Color3.fromRGB(20, 16, 32),
++	Panel = Color3.fromRGB(33, 26, 52),
++	Raised = Color3.fromRGB(48, 38, 68),
++	Border = Color3.fromRGB(89, 77, 112),
++	Text = Color3.fromRGB(246, 242, 255),
++	Muted = Color3.fromRGB(196, 186, 213),
++	Gold = Color3.fromRGB(241, 202, 115),
++	Violet = Color3.fromRGB(168, 139, 244),
++	Cyan = Color3.fromRGB(147, 217, 235),
++	Success = Color3.fromRGB(159, 223, 180),
++	Danger = Color3.fromRGB(255, 172, 181),
++	Font = Enum.Font.Gotham,
++	Bold = Enum.Font.GothamBold,
++}
++function T.Readable(c)
++	-- Relative luminance determines whether an accent needs dark or light lettering.
++	local function linear(v)
++		return v <= 0.04045 and v / 12.92 or ((v + 0.055) / 1.055) ^ 2.4
++	end
++	local l = 0.2126 * linear(c.R) + 0.7152 * linear(c.G) + 0.0722 * linear(c.B)
++	return l > 0.32 and T.Ink or T.Text
++end
++function T.Rarity(name, config)
++	if name == "Secret" then
++		return T.Cyan
++	end
++	local c = config.Rarities[name] and config.Rarities[name].color or T.Muted
++	return c:Lerp(T.Text, 0.18)
++end
++return T
+--- a/src/StarterPlayer/StarterPlayerScripts/Client/WorldFx.lua
++++ b/src/StarterPlayer/StarterPlayerScripts/Client/WorldFx.lua
+@@ -23,56 +23,126 @@
+ WorldFx.TC = nil -- ThrowController (for charge channels), set by ClientMain
+ 
+ local function add(kind, p)
+-	if items[p] then return end
++	if items[p] then
++		return
++	end
+ 	local model = p:IsA("Model")
+-	if not p:IsA("BasePart") and not (model and (kind == "TPFC_Bob" or kind == "TPFC_Spin")) then return end
++	if not p:IsA("BasePart") and not (model and (kind == "TPFC_Bob" or kind == "TPFC_Spin")) then
++		return
++	end
+ 	local base = model and p:GetPivot() or p.CFrame
+ 	local seed = (base.X * 12.9898 + base.Z * 78.233) % 1
+ 	local rotor = kind == "TPFC_Rotor" and p:FindFirstChild("PortalRotor") or nil
+-	items[p] = { kind = kind, base = rotor and rotor.C0 or base, baseTr = not model and p.Transparency or 0,
+-		baseCol = not model and p.Color or Color3.new(1, 1, 1), phase = seed * 100, model = model, rotor = rotor }
++	items[p] = {
++		kind = kind,
++		base = rotor and rotor.C0 or base,
++		baseTr = not model and p.Transparency or 0,
++		baseCol = not model and p.Color or Color3.new(1, 1, 1),
++		phase = seed * 100,
++		model = model,
++		rotor = rotor,
++	}
+ end
+ 
+ function WorldFx.Start()
+ 	for _, t in ipairs(TAGS) do
+-		for _, p in ipairs(CollectionService:GetTagged(t)) do add(t, p) end
+-		CollectionService:GetInstanceAddedSignal(t):Connect(function(p) add(t, p) end)
+-		CollectionService:GetInstanceRemovedSignal(t):Connect(function(p) items[p] = nil end)
++		for _, p in ipairs(CollectionService:GetTagged(t)) do
++			add(t, p)
++		end
++		CollectionService:GetInstanceAddedSignal(t):Connect(function(p)
++			add(t, p)
++		end)
++		CollectionService:GetInstanceRemovedSignal(t):Connect(function(p)
++			items[p] = nil
++		end)
+ 	end
++	local emitters = {}
++	local function addEmitter(pe)
++		if pe:IsA("ParticleEmitter") then
++			emitters[pe] = pe:GetAttribute("BaseRate") or pe.Rate
++		end
++	end
++	for _, pe in CollectionService:GetTagged("TPFC_EnvironmentEmitter") do
++		addEmitter(pe)
++	end
++	CollectionService:GetInstanceAddedSignal("TPFC_EnvironmentEmitter"):Connect(addEmitter)
++	CollectionService:GetInstanceRemovedSignal("TPFC_EnvironmentEmitter"):Connect(function(pe)
++		emitters[pe] = nil
++	end)
++	local envAccumulator = 0
+ 	local acc = 0
+ 	RunService.Heartbeat:Connect(function(dt)
+ 		acc += dt
+-		if acc < 0.05 then return end
++		if acc < 0.05 then
++			return
++		end
+ 		acc = 0
+ 		local t = os.clock()
+ 		camera = workspace.CurrentCamera or camera
+-		if not camera then return end
++		if not camera then
++			return
++		end
+ 		local cam = camera.CFrame.Position
++		envAccumulator += 0.05
++		if envAccumulator > 0.5 then
++			envAccumulator = 0
++			for pe, rate in emitters do
++				if not pe.Parent then
++					emitters[pe] = nil
++					continue
++				end
++				local pos = pe.Parent:IsA("BasePart") and pe.Parent.Position or cam
++				pe.Rate = (Settings.LowVFX() or (pos - cam).Magnitude > 220) and 0 or rate
++			end
++		end
+ 		local motionK = Settings.ReducedMotion and 0.4 or 1
+ 		local tc = WorldFx.TC
+ 		local charging = tc and tc.Charging
+ 		local power = tc and tc.Power or 0
+ 		for p, it in pairs(items) do
+-			if not p.Parent then items[p] = nil; continue end
++			if not p.Parent then
++				items[p] = nil
++				continue
++			end
+ 			local kind = it.kind
+ 			local position = it.model and p:GetPivot().Position or p.Position
+-			if kind ~= "TPFC_ChargeChannel" and (position - cam).Magnitude > RANGE then continue end
++			if kind ~= "TPFC_ChargeChannel" and (position - cam).Magnitude > RANGE then
++				continue
++			end
+ 			local ph = t + it.phase
+ 			if kind == "TPFC_Sway" then
+ 				local per, amp = p:GetAttribute("Period") or 6, (p:GetAttribute("Amp") or 0.02) * motionK
+ 				local w = math.pi * 2 / per
+ 				p.CFrame = it.base * CFrame.Angles(math.sin(ph * w) * amp, 0, math.cos(ph * w * 0.8) * amp * 0.7)
+ 			elseif kind == "TPFC_Bob" then
+-				local per, amp, spin = p:GetAttribute("Period") or 4, (p:GetAttribute("Amp") or 0.25) * motionK, p:GetAttribute("Spin") or 0
++				local per, amp, spin =
++					p:GetAttribute("Period") or 4,
++					(p:GetAttribute("Amp") or 0.25) * motionK,
++					p:GetAttribute("Spin") or 0
+ 				local pos = it.base.Position + Vector3.new(0, math.sin(ph * math.pi * 2 / per) * amp, 0)
+ 				local cf = CFrame.new(pos) * CFrame.Angles(0, math.rad(spin * t * motionK), 0) * it.base.Rotation
+-				if it.model then p:PivotTo(cf) else p.CFrame = cf end
++				if it.model then
++					p:PivotTo(cf)
++				else
++					p.CFrame = cf
++				end
+ 			elseif kind == "TPFC_Spin" then
+ 				local rate = (p:GetAttribute("Rate") or 4) * motionK
+ 				local cf = CFrame.new(it.base.Position) * CFrame.Angles(0, math.rad(rate * t), 0) * it.base.Rotation
+-				if it.model then p:PivotTo(cf) else p.CFrame = cf end
++				if it.model then
++					p:PivotTo(cf)
++				else
++					p.CFrame = cf
++				end
+ 			elseif kind == "TPFC_Rotor" then
+-				if it.rotor then it.rotor.C0 = it.base * CFrame.Angles(0, 0, t * (p:FindFirstChild("PortalRotor"):GetAttribute("Rate") or 0.5) * motionK) end
++				if it.rotor then
++					it.rotor.C0 = it.base
++						* CFrame.Angles(
++							0,
++							0,
++							t * (p:FindFirstChild("PortalRotor"):GetAttribute("Rate") or 0.5) * motionK
++						)
++				end
+ 			elseif kind == "TPFC_Pulse" then
+ 				local per = p:GetAttribute("Period") or 6
+ 				local base, peak = p:GetAttribute("Base") or it.baseTr, p:GetAttribute("Peak") or 0
+@@ -96,7 +166,10 @@
+ 					p.Color = power >= 0.92 and Color3.fromRGB(255, 215, 90) or it.baseCol
+ 				elseif p.Transparency ~= it.baseTr then
+ 					p.Transparency = math.min(it.baseTr, p.Transparency + 0.08) -- ~0.3 s recovery
+-					if p.Transparency >= it.baseTr - 0.01 then p.Transparency = it.baseTr; p.Color = it.baseCol end
++					if p.Transparency >= it.baseTr - 0.01 then
++						p.Transparency = it.baseTr
++						p.Color = it.baseCol
++					end
+ 				end
+ 			end
+ 		end
+--- /dev/null
++++ b/tests/studio/UIReview.client.lua
+@@ -0,0 +1,125 @@
++-- Studio-only UI review bridge. Inject as a LocalScript for isolated QA, never production.
++local Run = game:GetService("RunService")
++if not Run:IsStudio() or not workspace:GetAttribute("UIReview") then
++	return
++end
++local player = game:GetService("Players").LocalPlayer
++local Client = player:WaitForChild("PlayerScripts"):WaitForChild("Client")
++local State = require(Client.ClientState)
++local HUD = require(Client.HUD)
++local Settings = require(Client.ClientSettings)
++local TC = require(Client.ThrowController)
++local Http = game:GetService("HttpService")
++while not State.Loaded do
++	State.Request("Sync")
++	task.wait(0.3)
++end
++local bridge = Instance.new("BindableFunction")
++bridge.Name = "UIReviewControl"
++bridge.Parent = player.PlayerGui
++local passed, failures = 0, {}
++local function check(value, message)
++	if value then
++		passed += 1
++	else
++		table.insert(failures, message)
++	end
++end
++local function snapshot()
++	local d = State.Data
++	local ids = {}
++	for _, e in ipairs(d.Creatures) do
++		table.insert(ids, { uid = e.u, id = e.c, placed = State.IsPlaced(e.u) })
++	end
++	return {
++		money = d.Money,
++		equipped = d.EquippedPortal,
++		owned = d.OwnedPortals,
++		creatures = ids,
++		placed = d.Placed,
++		upgrades = d.Upgrades,
++		decor = d.Decor,
++		floor = d.FloorTheme,
++		settings = { motion = Settings.ReducedMotion, flashes = Settings.ReducedFlashes, vfx = Settings.VFXQuality },
++		charging = TC.Charging,
++		blocked = TC.InputBlocked,
++		panels = (function()
++			local names = {}
++			for name in HUD.Panels do
++				table.insert(names, name)
++			end
++			return names
++		end)(),
++	}
++end
++bridge.OnInvoke = function(action, arg)
++	if action == "Snapshot" then
++		return Http:JSONEncode(snapshot())
++	end
++	if action == "Open" then
++		HUD.Open(arg)
++		return "Opened"
++	end
++	if action == "Close" then
++		HUD.Close()
++		return "Closed"
++	end
++	if action == "Fixture" then
++		for _, req in ipairs({ { "money", 10000 }, { "give", "Mossbun" }, { "give", "Acornip" } }) do
++			local ok, msg = State.Request("Admin", Http:JSONEncode({ cmd = req[1], value = req[2] }))
++			check(ok, "Fixture " .. req[1] .. ": " .. tostring(msg))
++			task.wait(0.25)
++		end
++		State.Request("Sync")
++		task.wait(0.3)
++		return Http:JSONEncode(snapshot())
++	end
++	if action == "Check" then
++		local d = State.Data
++		if arg == "initial" then
++			check(State.Loaded, "data loaded")
++			check(#snapshot().panels == 9, "nine menu panels")
++			check(#player.PlayerGui:GetChildren() > 0, "player GUI exists")
++			for _, name in
++				{ "Portals", "Upgrades", "Creatures", "Index", "Worlds", "Base", "Settings", "Admin", "Menu" }
++			do
++				check(HUD.Panels[name] ~= nil, "panel " .. name)
++			end
++		elseif arg == "portalBought" then
++			check(d.OwnedPortals.Forest == true, "Forest purchase persisted")
++			check(d.Money == 9650, "Forest debited exactly 400")
++		elseif arg == "portalEquipped" then
++			check(d.EquippedPortal == "Forest", "Forest equipped")
++		elseif arg == "upgradeBought" then
++			check(d.Upgrades.ThrowPower == 2, "Throw Power upgraded once")
++			check(d.Money == 9590, "upgrade debited exactly 60")
++		elseif arg == "settings" then
++			check(Settings.ReducedMotion, "reduced motion enabled")
++			check(Settings.ReducedFlashes, "reduced flashes enabled")
++			check(Settings.VFXQuality == "Low", "low effects selected")
++		elseif arg == "saleCancelled" then
++			check(#d.Creatures == 2, "changing selection did not sell either pet")
++		elseif arg == "soldOnce" then
++			check(#d.Creatures == 1, "confirmed sale removed exactly one pet")
++		elseif arg == "decorBought" then
++			check(d.Decor.FlowerBed == true, "flower bed purchased")
++		elseif arg == "floorBought" then
++			check(d.FloorTheme == "Stone", "stone floor applied")
++			check(d.OwnedFloors.Stone == true, "stone ownership recorded")
++		elseif arg == "modalGuard" then
++			check(HUD.AnyPanelOpen(), "panel open")
++			check(TC.InputBlocked, "throw blocked while menu open")
++			TC.BeginCharge()
++			check(not TC.Charging, "menu cannot charge portal")
++		elseif arg == "close" then
++			check(not HUD.AnyPanelOpen(), "panel closed")
++			check(not TC.InputBlocked, "throw guard released")
++			check(HUD.Root.Gameplay.Visible, "gameplay HUD restored")
++		end
++		player:SetAttribute("UIReviewResult", Http:JSONEncode({ passed = passed, failures = failures }))
++		return Http:JSONEncode({ passed = passed, failures = failures, snapshot = snapshot() })
++	end
++	return "Unknown review command"
++end
++player:SetAttribute("UIReviewReady", true)
++print("[UI REVIEW] Isolated interaction review ready")

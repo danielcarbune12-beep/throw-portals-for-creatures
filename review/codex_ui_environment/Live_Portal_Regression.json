@@ -1,0 +1,61 @@
+{
+  "completed": true,
+  "failures": [],
+  "passed": 95,
+  "portalRuns": [
+    {
+      "id": "Basic",
+      "seconds": 6.18,
+      "sawOrb": true,
+      "sawGate": true
+    },
+    {
+      "id": "Forest",
+      "seconds": 6.15,
+      "sawOrb": true,
+      "sawGate": true
+    },
+    {
+      "id": "Lava",
+      "seconds": 6.1,
+      "sawOrb": true,
+      "sawGate": true
+    },
+    {
+      "id": "Ice",
+      "seconds": 6.15,
+      "sawOrb": true,
+      "sawGate": true
+    },
+    {
+      "id": "Galaxy",
+      "seconds": 6.2,
+      "sawOrb": true,
+      "sawGate": true
+    },
+    {
+      "id": "Dark",
+      "seconds": 6.2,
+      "sawOrb": true,
+      "sawGate": true
+    },
+    {
+      "id": "Rainbow",
+      "seconds": 6.17,
+      "sawOrb": true,
+      "sawGate": true
+    },
+    {
+      "id": "Divine",
+      "seconds": 6.13,
+      "sawOrb": true,
+      "sawGate": true
+    },
+    {
+      "id": "Secret",
+      "seconds": 6.12,
+      "sawOrb": true,
+      "sawGate": true
+    }
+  ]
+}

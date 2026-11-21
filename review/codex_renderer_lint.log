@@ -1,0 +1,10 @@
+warning[unused_variable]: collectorId is defined, but never used
+    ┌─ src\StarterPlayer\StarterPlayerScripts\Client\CreatureRenderer.lua:637:47
+    │
+637 │ function Renderer.RemoveWild(throwId, reason, collectorId)
+    │                                               ^^^^^^^^^^^
+
+Results:
+0 errors
+1 warnings
+0 parse errors
