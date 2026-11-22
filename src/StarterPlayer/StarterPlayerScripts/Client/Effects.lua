@@ -211,7 +211,7 @@ function Effects.SetupLighting()
 	pcall(function()
 		Lighting.GlobalShadows = true
 		Lighting.Brightness = 3
-		Lighting.ShadowSoftness = 0.12 -- clean directional shadows
+		Lighting.ShadowSoftness = 0.06 -- crisp directional shadows
 		Lighting.EnvironmentDiffuseScale = 0.55
 		Lighting.EnvironmentSpecularScale = 0.3 -- stone/wood read matte, not plastic
 		Lighting.GeographicLatitude = 38

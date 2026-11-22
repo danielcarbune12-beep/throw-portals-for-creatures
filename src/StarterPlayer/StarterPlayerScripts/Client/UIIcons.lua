@@ -18,6 +18,29 @@ function Icons.Draw(name, parent, size, color, position)
 	if name == "Shop" then
 		name = "Bag" -- vector set calls the shop icon a bag
 	end
+	-- Navigation buttons have no backing of their own (the uploaded cutout art was the whole button).
+	-- When the vector fallback stands in, give it a light round plate so it reads over the 3D world.
+	if parent and parent:IsA("GuiObject") and parent.BackgroundTransparency >= 0.9 and (name == "Pet" or name == "Bag" or name == "Compass") then
+		local plate = Instance.new("Frame")
+		plate.Name = "IconPlate"
+		plate.AnchorPoint = Vector2.new(0.5, 0.5)
+		plate.Position = UDim2.fromScale(0.5, 0.5)
+		plate.Size = UDim2.fromScale(1, 1)
+		plate.BackgroundColor3 = Color3.fromRGB(252, 248, 240)
+		plate.BorderSizePixel = 0
+		plate.ZIndex = math.max(1, parent.ZIndex)
+		local c = Instance.new("UICorner")
+		c.CornerRadius = UDim.new(1, 0)
+		c.Parent = plate
+		local st = Instance.new("UIStroke")
+		st.Color = T.Gold or Color3.fromRGB(200, 160, 80)
+		st.Thickness = 2
+		st.Parent = plate
+		plate.Parent = parent
+		parent = plate
+		size = UDim2.fromScale(0.62, 0.62)
+		position = UDim2.fromScale(0.19, 0.19)
+	end
 	local root = Instance.new("Frame")
 	root.Name = "Icon_" .. name
 	root.BackgroundTransparency = 1

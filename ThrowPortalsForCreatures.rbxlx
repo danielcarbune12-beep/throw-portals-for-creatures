@@ -4080,7 +4080,7 @@ local Look = {
 	ambient = Color3.fromRGB(112, 118, 132), -- outdoor shade fill (cool, not purple)
 	indoor = Color3.fromRGB(62, 64, 72), -- occluded areas: readable but darker
 	fog = Color3.fromRGB(188, 198, 212),
-	clock = 15.3,
+	clock = 15.9, -- lower sun: longer, more graphic shadows
 	tint = Color3.fromRGB(255, 246, 232),
 	atmo = Color3.fromRGB(214, 212, 204),
 	density = 0.3,
@@ -4100,7 +4100,7 @@ function Look.Apply(lighting)
 	lighting.OutdoorAmbient = Look.ambient
 	lighting.ColorShift_Top = Look.sunTop
 	lighting.ColorShift_Bottom = Look.shadeBottom
-	lighting.ShadowSoftness = 0.12
+	lighting.ShadowSoftness = 0.06
 	lighting.EnvironmentDiffuseScale = 0.55
 	lighting.EnvironmentSpecularScale = 0.3 -- less plastic shine
 	lighting.ExposureCompensation = -0.15 -- keeps pale paving from blowing out
@@ -15801,6 +15801,50 @@ local function wallCourses(root)
 	end
 end
 
+-- Walkways: large flat plastic slabs read as shiny toy plastic under real lighting. Give paving its
+-- real material (colour kept): light stone -> Pavement, darker stone -> Slate. Thin trim strips,
+-- glowing inlays and metal edging are left alone.
+local function pavingMaterials(root)
+	for _, p in ipairs(root:GetDescendants()) do
+		if p:IsA("BasePart") and p.Material == Enum.Material.SmoothPlastic and p.Transparency < 0.1
+			and p.Size.Y < 1.6 and math.max(p.Size.X, p.Size.Z) > 8 and math.min(p.Size.X, p.Size.Z) > 2.5 then
+			local c = p.Color
+			local lum = c.R * 0.3 + c.G * 0.59 + c.B * 0.11
+			local sat = math.max(c.R, c.G, c.B) - math.min(c.R, c.G, c.B)
+			if sat < 0.25 then -- neutral stone tones only; coloured rugs/inlays keep their finish
+				p.Material = lum > 0.55 and Enum.Material.Pavement or Enum.Material.Slate
+			end
+		end
+	end
+end
+
+-- Animated terrain grass grows through thin paving laid on top of grass terrain. Under every flat
+-- walkway/floor piece that sits on the ground, swap the terrain grass for plain ground (blades only
+-- render on Grass), so lawns keep their grass and paths stay clean; the 4-stud terrain grid leaves a
+-- narrow worn edge along paths, which reads as foot traffic.
+local function clearGrassUnderPaving(root)
+	local terrain = workspace.Terrain
+	local n = 0
+	for _, p in ipairs(root:GetDescendants()) do
+		if p:IsA("BasePart") and p.Transparency < 0.5 and p.Size.Y < 2.5 and p.CFrame.UpVector.Y > 0.98 then
+			local cf, size = p.CFrame, p.Size
+			local half = (cf.RightVector * size.X / 2):Abs() + (cf.LookVector * size.Z / 2):Abs()
+			if math.min(half.X, half.Z) * 2 > 2 then
+				local bottom = cf.Position.Y - size.Y / 2
+				if bottom < 3 then
+					local lo = Vector3.new(cf.Position.X - half.X, bottom - 6, cf.Position.Z - half.Z)
+					local hi = Vector3.new(cf.Position.X + half.X, bottom + 2, cf.Position.Z + half.Z)
+					pcall(function()
+						terrain:ReplaceMaterial(Region3.new(lo, hi):ExpandToGrid(4), 4, Enum.Material.Grass, Enum.Material.Ground)
+					end)
+					n += 1
+				end
+			end
+		end
+	end
+	return n
+end
+
 local function construction()
 	local roots = { workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Start"), workspace:FindFirstChild("Bases") }
 	for _, r in ipairs(roots) do
@@ -15809,6 +15853,8 @@ local function construction()
 			timberStraps(r)
 			roofDetail(r)
 			wallCourses(r)
+			pavingMaterials(r)
+			clearGrassUnderPaving(r)
 		end
 	end
 	-- (the hall arches already carry a crystal crest at the apex, so no keystone is added there)
@@ -15894,6 +15940,8 @@ function D.Apply()
 	folder.Name = "MedievalDressing"
 	folder.Parent = workspace
 	folder:ClearAllChildren()
+	-- animated terrain grass (not scriptable on every Roblox build, so it is tried, not required)
+	pcall(function() workspace.Terrain.Decoration = true end)
 	local bases = workspace:FindFirstChild("Bases")
 	if bases then
 		for _, b in ipairs(bases:GetChildren()) do
@@ -19783,7 +19831,7 @@ return L
 ]]></ProtectedString></Properties></Item>
 </Item>
 </Item>
-<Item class="StarterPlayer" referent="RBX89"><Properties><string name="Name">StarterPlayer</string></Properties>
+<Item class="StarterPlayer" referent="RBX90"><Properties><string name="Name">StarterPlayer</string></Properties>
 <Item class="StarterPlayerScripts" referent="RBX62"><Properties><string name="Name">StarterPlayerScripts</string></Properties>
 <Item class="Folder" referent="RBX63"><Properties><string name="Name">Client</string></Properties>
 <Item class="ModuleScript" referent="RBX64"><Properties><string name="Name">CaughtPresentation</string><ProtectedString name="Source"><![CDATA[-- Caught card for an already confirmed catch, styled after Actions/02_Rarity_Reveal_and_Capture ("03 ADDED"):
@@ -20055,7 +20103,7 @@ glow.Threshold = 2.8
 glow.Size = 40
 glow.Parent = Lighting
 
-pcall(function() Lighting.ShadowSoftness = 0.12 end)
+pcall(function() Lighting.ShadowSoftness = 0.06 end)
 
 ---------------------------------------------------------------- ground mist (low drifting fog sheets around the view)
 -- Built-in smoke texture, no uploads. A box emitter follows a point ahead of the camera at ground level;
@@ -20685,6 +20733,7 @@ local function caughtPlaque(pos, rarity, big)
 	bb.AlwaysOnTop = true
 	bb.LightInfluence = 0
 	bb.Parent = anchor
+	bb:SetAttribute("LabelPriority", 20)
 	local order = Config.Rarities[rarity] and Config.Rarities[rarity].order or 1
 	local style = order >= 5 and rarity or "Caught"
 	local plaque = Plaque.Make(bb, order >= 5 and (string.upper(rarity) .. " CAUGHT") or "CAUGHT", style, big and 260 or 190, big and 40 or 34,
@@ -21239,6 +21288,11 @@ function Renderer.SpawnWild(throwId, creatureId, pos, ownerId, chanceText, vsize
 	local mine = ownerId == player.UserId
 	local sub = (not mine) and string.format("%s  ·  %s", chanceText or "", owner and owner.DisplayName or "?") or (chanceText or "")
 	rarityTag(e, def, sub, heightFor(def, vsize) + 0.5, Variants.Prefix(vsize, vmat) .. def.name, Variants.Color(vsize, vmat))
+	-- your own catch always wins label space; other players' plaques fade out sooner
+	if e.tag then
+		e.tag:SetAttribute("LabelPriority", mine and 10 or 1)
+		e.tag.MaxDistance = mine and 110 or 70
+	end
 	if mine then
 		-- glowing floor ring marks the automatic catch spot (reference: thin gold ring, purple for Epic)
 		local center = pos + Vector3.new(0, 0.1, -9)
@@ -21901,7 +21955,7 @@ function Effects.SetupLighting()
 	pcall(function()
 		Lighting.GlobalShadows = true
 		Lighting.Brightness = 3
-		Lighting.ShadowSoftness = 0.12 -- clean directional shadows
+		Lighting.ShadowSoftness = 0.06 -- crisp directional shadows
 		Lighting.EnvironmentDiffuseScale = 0.55
 		Lighting.EnvironmentSpecularScale = 0.3 -- stone/wood read matte, not plastic
 		Lighting.GeographicLatitude = 38
@@ -24650,7 +24704,144 @@ end
 
 return Intro
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX77"><Properties><string name="Name">Panels</string><ProtectedString name="Source"><![CDATA[-- Sanctuary shops, collection, index, customization and settings.
+<Item class="LocalScript" referent="RBX77"><Properties><string name="Name">LabelDeclutter</string><ProtectedString name="Source"><![CDATA[-- LabelDeclutter: keeps floating world labels (BillboardGuis) from piling on top of each other.
+-- Location: StarterPlayer > StarterPlayerScripts > Client > LabelDeclutter (LocalScript)
+--
+-- Most labels are drawn at a fixed pixel size, so a label 30 studs away is as big on screen as one
+-- next to you, and busy areas (crops, garden pets, other players' throws) stack them. A few times a
+-- second this projects every visible label to the screen and, where two overlap, keeps the more
+-- important / closer one and hides the other until there is room again.
+--
+--   * Priority: attribute "LabelPriority" (higher wins), then distance (closer wins).
+--   * Only labels that are Enabled (or that this script hid) are considered, so labels other scripts
+--     switch off on purpose are never turned back on. Attribute "NoDeclutter" opts a label out.
+--   * Purely visual and client-side.
+
+local RunService = game:GetService("RunService")
+
+local camera = workspace.CurrentCamera
+local labels = {} -- [BillboardGui] = true
+local hiddenByUs = {} -- [BillboardGui] = true
+local lastSize = {} -- [BillboardGui] = Vector2
+
+local function track(d)
+	if d:IsA("BillboardGui") then labels[d] = true end
+end
+for _, d in ipairs(workspace:GetDescendants()) do track(d) end
+workspace.DescendantAdded:Connect(track)
+workspace.DescendantRemoving:Connect(function(d)
+	if labels[d] then
+		labels[d], hiddenByUs[d], lastSize[d] = nil, nil, nil
+	end
+end)
+
+local function anchorPosition(b)
+	local a = b.Adornee or b.Parent
+	if not a then return nil end
+	local pos
+	if a:IsA("BasePart") then
+		pos = a.Position
+	elseif a:IsA("Attachment") then
+		pos = a.WorldPosition
+	elseif a:IsA("Model") then
+		pos = a:GetPivot().Position
+	else
+		return nil
+	end
+	return pos + b.StudsOffsetWorldSpace + Vector3.new(0, b.StudsOffset.Y, 0)
+end
+
+local function overlapRatio(a, b)
+	local x = math.max(0, math.min(a.x2, b.x2) - math.max(a.x1, b.x1))
+	local y = math.max(0, math.min(a.y2, b.y2) - math.max(a.y1, b.y1))
+	local inter = x * y
+	if inter <= 0 then return 0 end
+	local smaller = math.min((a.x2 - a.x1) * (a.y2 - a.y1), (b.x2 - b.x1) * (b.y2 - b.y1))
+	return smaller > 0 and inter / smaller or 0
+end
+
+local acc = 0
+RunService.Heartbeat:Connect(function(dt)
+	acc += dt
+	if acc < 0.2 then return end
+	acc = 0
+	camera = workspace.CurrentCamera or camera
+	if not camera then return end
+	local camPos = camera.CFrame.Position
+	local list = {}
+	for b in pairs(labels) do
+		if b.Parent and (b.Enabled or hiddenByUs[b]) and not b:GetAttribute("NoDeclutter") then
+			local pos = anchorPosition(b)
+			if pos then
+				local dist = (pos - camPos).Magnitude
+				local maxD = b.MaxDistance > 0 and b.MaxDistance or math.huge
+				local sp, onScreen = camera:WorldToViewportPoint(pos)
+				if onScreen and sp.Z > 0 and dist <= maxD then
+					local size = b.AbsoluteSize
+					if size.X > 1 and size.Y > 1 then
+						lastSize[b] = size
+					else
+						size = lastSize[b]
+					end
+					if size then
+						local hasText = false
+						for _, t in ipairs(b:GetDescendants()) do
+							if (t:IsA("TextLabel") or t:IsA("ImageLabel")) and t.Visible and (not t:IsA("TextLabel") or t.Text ~= "") then
+								hasText = true
+								break
+							end
+						end
+						if hasText then
+							table.insert(list, {
+								b = b, dist = dist, pri = b:GetAttribute("LabelPriority") or 0,
+								r = { x1 = sp.X - size.X / 2, x2 = sp.X + size.X / 2, y1 = sp.Y - size.Y / 2, y2 = sp.Y + size.Y / 2 },
+							})
+						end
+					end
+				end
+			end
+		end
+	end
+	table.sort(list, function(a, b)
+		if a.pri ~= b.pri then return a.pri > b.pri end
+		return a.dist < b.dist
+	end)
+	local placed = {}
+	for _, e in ipairs(list) do
+		local clash = false
+		for _, r in ipairs(placed) do
+			if overlapRatio(e.r, r) > 0.3 then
+				clash = true
+				break
+			end
+		end
+		if clash then
+			if e.b.Enabled then
+				e.b.Enabled = false
+				hiddenByUs[e.b] = true
+			end
+		else
+			table.insert(placed, e.r)
+			if hiddenByUs[e.b] then
+				hiddenByUs[e.b] = nil
+				e.b.Enabled = true
+			end
+		end
+	end
+	-- anything we hid that is now off-screen or out of range: give it back to its owner
+	for b in pairs(hiddenByUs) do
+		local still = false
+		for _, e in ipairs(list) do
+			if e.b == b then still = true break end
+		end
+		if not still and b.Parent then
+			hiddenByUs[b] = nil
+			b.Enabled = true
+		end
+	end
+end)
+]]></ProtectedString></Properties></Item>
+<Item class="ModuleScript" referent="RBX78"><Properties><string name="Name">Panels</string><ProtectedString name="Source"><![CDATA[-- Sanctuary shops, collection, index, customization and settings.
 -- All spending and ownership changes use the existing authoritative server actions.
 local RS = game:GetService("ReplicatedStorage")
 local Http = game:GetService("HttpService")
@@ -25771,7 +25962,7 @@ function Panels.Init()
 end
 return Panels
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX78"><Properties><string name="Name">Plaque</string><ProtectedString name="Source"><![CDATA[-- Plaque: the carved rarity plaque from the reveal reference sheet (Actions/02_Rarity_Reveal_and_Capture):
+<Item class="ModuleScript" referent="RBX79"><Properties><string name="Name">Plaque</string><ProtectedString name="Source"><![CDATA[-- Plaque: the carved rarity plaque from the reveal reference sheet (Actions/02_Rarity_Reveal_and_Capture):
 -- a bevelled bar with pointed diamond ends, double gold trim, small gold diamond ornaments, serif caps,
 -- and gold laurels for the showcase tiers. Pixel sized, so it works in ScreenGuis and BillboardGuis.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > Plaque (ModuleScript)
@@ -25928,7 +26119,7 @@ end
 
 return P
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX79"><Properties><string name="Name">PlayerFeel</string><ProtectedString name="Source"><![CDATA[-- PlayerFeel: how the local player's character moves and feels.
+<Item class="LocalScript" referent="RBX80"><Properties><string name="Name">PlayerFeel</string><ProtectedString name="Source"><![CDATA[-- PlayerFeel: how the local player's character moves and feels.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > PlayerFeel (LocalScript)
 --
 --   * Run: hold Left Shift (PC), press L3 (gamepad) or tap the Run button (mobile, toggles).
@@ -26239,7 +26430,7 @@ task.spawn(function()
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX80"><Properties><string name="Name">RevealTitle</string><ProtectedString name="Source"><![CDATA[-- RevealTitle: on-screen title for a creature reveal, styled after Actions/02_Rarity_Reveal_and_Capture.
+<Item class="ModuleScript" referent="RBX81"><Properties><string name="Name">RevealTitle</string><ProtectedString name="Source"><![CDATA[-- RevealTitle: on-screen title for a creature reveal, styled after Actions/02_Rarity_Reveal_and_Capture.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > RevealTitle (ModuleScript)
 --
 --   Common / Uncommon      nothing on screen: the carved plaque above the pet carries it (restrained tiers)
@@ -26555,7 +26746,7 @@ end
 
 return R
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX81"><Properties><string name="Name">SkyforgeUI</string><ProtectedString name="Source"><![CDATA[-- Light sanctuary surfaces and large standalone navigation artwork.
+<Item class="ModuleScript" referent="RBX82"><Properties><string name="Name">SkyforgeUI</string><ProtectedString name="Source"><![CDATA[-- Light sanctuary surfaces and large standalone navigation artwork.
 local T = require(script.Parent.UITheme)
 local S = {}
 S.Atlas = "rbxassetid://110533210650310"
@@ -26711,7 +26902,7 @@ function S.Card(frame, icon)
 end
 return S
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX82"><Properties><string name="Name">Sounds</string><ProtectedString name="Source"><![CDATA[-- Restrained event audio. Built-in assets keep the game independent of uploaded audio.
+<Item class="ModuleScript" referent="RBX83"><Properties><string name="Name">Sounds</string><ProtectedString name="Source"><![CDATA[-- Restrained event audio. Built-in assets keep the game independent of uploaded audio.
 local SoundService = game:GetService("SoundService")
 local TweenService = game:GetService("TweenService")
 local Sounds = {}
@@ -26830,7 +27021,7 @@ function Sounds.Get(name)
 end
 return Sounds
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX83"><Properties><string name="Name">ThrowCinematic</string><ProtectedString name="Source"><![CDATA[-- ThrowCinematic: the throw cutscene (owner only). Full screen, no letterbox.
+<Item class="ModuleScript" referent="RBX84"><Properties><string name="Name">ThrowCinematic</string><ProtectedString name="Source"><![CDATA[-- ThrowCinematic: the throw cutscene (owner only). Full screen, no letterbox.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ThrowCinematic (ModuleScript)
 --
 -- A short film in up to four camera shots, with HARD CUTS between them (w = wind-up seconds sent
@@ -27712,7 +27903,7 @@ end
 
 return Cine
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX84"><Properties><string name="Name">ThrowController</string><ProtectedString name="Source"><![CDATA[-- ThrowController: charge meter input, held-portal + arm wind-up, the portal flight arc,
+<Item class="ModuleScript" referent="RBX85"><Properties><string name="Name">ThrowController</string><ProtectedString name="Source"><![CDATA[-- ThrowController: charge meter input, held-portal + arm wind-up, the portal flight arc,
 -- landing bounce, portal gate opening and creature reveal choreography (for ALL players' throws).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ThrowController (ModuleScript)
 
@@ -28691,7 +28882,7 @@ end)
 
 return TC
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX85"><Properties><string name="Name">UIIcons</string><ProtectedString name="Source"><![CDATA[-- Crisp native geometry. Every navigation icon also has a visible text label.
+<Item class="ModuleScript" referent="RBX86"><Properties><string name="Name">UIIcons</string><ProtectedString name="Source"><![CDATA[-- Crisp native geometry. Every navigation icon also has a visible text label.
 local T = require(script.Parent.UITheme)
 local Sky = require(script.Parent.SkyforgeUI)
 local Icons = {}
@@ -28710,6 +28901,29 @@ function Icons.Draw(name, parent, size, color, position)
 	end
 	if name == "Shop" then
 		name = "Bag" -- vector set calls the shop icon a bag
+	end
+	-- Navigation buttons have no backing of their own (the uploaded cutout art was the whole button).
+	-- When the vector fallback stands in, give it a light round plate so it reads over the 3D world.
+	if parent and parent:IsA("GuiObject") and parent.BackgroundTransparency >= 0.9 and (name == "Pet" or name == "Bag" or name == "Compass") then
+		local plate = Instance.new("Frame")
+		plate.Name = "IconPlate"
+		plate.AnchorPoint = Vector2.new(0.5, 0.5)
+		plate.Position = UDim2.fromScale(0.5, 0.5)
+		plate.Size = UDim2.fromScale(1, 1)
+		plate.BackgroundColor3 = Color3.fromRGB(252, 248, 240)
+		plate.BorderSizePixel = 0
+		plate.ZIndex = math.max(1, parent.ZIndex)
+		local c = Instance.new("UICorner")
+		c.CornerRadius = UDim.new(1, 0)
+		c.Parent = plate
+		local st = Instance.new("UIStroke")
+		st.Color = T.Gold or Color3.fromRGB(200, 160, 80)
+		st.Thickness = 2
+		st.Parent = plate
+		plate.Parent = parent
+		parent = plate
+		size = UDim2.fromScale(0.62, 0.62)
+		position = UDim2.fromScale(0.19, 0.19)
 	end
 	local root = Instance.new("Frame")
 	root.Name = "Icon_" .. name
@@ -28827,7 +29041,7 @@ function Icons.Draw(name, parent, size, color, position)
 end
 return Icons
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX86"><Properties><string name="Name">UIKit</string><ProtectedString name="Source"><![CDATA[-- Native sanctuary components. No uploaded icon/font dependency.
+<Item class="ModuleScript" referent="RBX87"><Properties><string name="Name">UIKit</string><ProtectedString name="Source"><![CDATA[-- Native sanctuary components. No uploaded icon/font dependency.
 local TweenService = game:GetService("TweenService")
 local Sounds = require(script.Parent.Sounds)
 local Settings = require(script.Parent.ClientSettings)
@@ -29177,7 +29391,7 @@ end
 
 return K
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX87"><Properties><string name="Name">UITheme</string><ProtectedString name="Source"><![CDATA[-- Sanctuary UI tokens, shared by the HUD, icons and every shop.
+<Item class="ModuleScript" referent="RBX88"><Properties><string name="Name">UITheme</string><ProtectedString name="Source"><![CDATA[-- Sanctuary UI tokens, shared by the HUD, icons and every shop.
 -- Fonts: Builder Sans (Roblox's modern UI family) for text, Montserrat Black for display titles;
 -- resolved with a fallback so an older client without these enums still renders.
 local function font(name, fallback)
@@ -29237,7 +29451,7 @@ function T.Rarity(name, config)
 end
 return T
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX88"><Properties><string name="Name">WorldFx</string><ProtectedString name="Source"><![CDATA[-- WorldFx: ONE shared, staggered scheduler for environment motion on tagged map parts
+<Item class="ModuleScript" referent="RBX89"><Properties><string name="Name">WorldFx</string><ProtectedString name="Source"><![CDATA[-- WorldFx: ONE shared, staggered scheduler for environment motion on tagged map parts
 -- (no per-prop RenderStepped connections, no camera-following particles).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > WorldFx (ModuleScript)
 --

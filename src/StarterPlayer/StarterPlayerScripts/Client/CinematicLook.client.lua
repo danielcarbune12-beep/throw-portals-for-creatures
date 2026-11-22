@@ -49,7 +49,7 @@ glow.Threshold = 2.8
 glow.Size = 40
 glow.Parent = Lighting
 
-pcall(function() Lighting.ShadowSoftness = 0.12 end)
+pcall(function() Lighting.ShadowSoftness = 0.06 end)
 
 ---------------------------------------------------------------- ground mist (low drifting fog sheets around the view)
 -- Built-in smoke texture, no uploads. A box emitter follows a point ahead of the camera at ground level;

@@ -4,7 +4,7 @@ local Look = {
 	ambient = Color3.fromRGB(112, 118, 132), -- outdoor shade fill (cool, not purple)
 	indoor = Color3.fromRGB(62, 64, 72), -- occluded areas: readable but darker
 	fog = Color3.fromRGB(188, 198, 212),
-	clock = 15.3,
+	clock = 15.9, -- lower sun: longer, more graphic shadows
 	tint = Color3.fromRGB(255, 246, 232),
 	atmo = Color3.fromRGB(214, 212, 204),
 	density = 0.3,
@@ -24,7 +24,7 @@ function Look.Apply(lighting)
 	lighting.OutdoorAmbient = Look.ambient
 	lighting.ColorShift_Top = Look.sunTop
 	lighting.ColorShift_Bottom = Look.shadeBottom
-	lighting.ShadowSoftness = 0.12
+	lighting.ShadowSoftness = 0.06
 	lighting.EnvironmentDiffuseScale = 0.55
 	lighting.EnvironmentSpecularScale = 0.3 -- less plastic shine
 	lighting.ExposureCompensation = -0.15 -- keeps pale paving from blowing out

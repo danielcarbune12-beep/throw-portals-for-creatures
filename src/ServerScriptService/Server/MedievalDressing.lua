@@ -316,6 +316,50 @@ local function wallCourses(root)
 	end
 end
 
+-- Walkways: large flat plastic slabs read as shiny toy plastic under real lighting. Give paving its
+-- real material (colour kept): light stone -> Pavement, darker stone -> Slate. Thin trim strips,
+-- glowing inlays and metal edging are left alone.
+local function pavingMaterials(root)
+	for _, p in ipairs(root:GetDescendants()) do
+		if p:IsA("BasePart") and p.Material == Enum.Material.SmoothPlastic and p.Transparency < 0.1
+			and p.Size.Y < 1.6 and math.max(p.Size.X, p.Size.Z) > 8 and math.min(p.Size.X, p.Size.Z) > 2.5 then
+			local c = p.Color
+			local lum = c.R * 0.3 + c.G * 0.59 + c.B * 0.11
+			local sat = math.max(c.R, c.G, c.B) - math.min(c.R, c.G, c.B)
+			if sat < 0.25 then -- neutral stone tones only; coloured rugs/inlays keep their finish
+				p.Material = lum > 0.55 and Enum.Material.Pavement or Enum.Material.Slate
+			end
+		end
+	end
+end
+
+-- Animated terrain grass grows through thin paving laid on top of grass terrain. Under every flat
+-- walkway/floor piece that sits on the ground, swap the terrain grass for plain ground (blades only
+-- render on Grass), so lawns keep their grass and paths stay clean; the 4-stud terrain grid leaves a
+-- narrow worn edge along paths, which reads as foot traffic.
+local function clearGrassUnderPaving(root)
+	local terrain = workspace.Terrain
+	local n = 0
+	for _, p in ipairs(root:GetDescendants()) do
+		if p:IsA("BasePart") and p.Transparency < 0.5 and p.Size.Y < 2.5 and p.CFrame.UpVector.Y > 0.98 then
+			local cf, size = p.CFrame, p.Size
+			local half = (cf.RightVector * size.X / 2):Abs() + (cf.LookVector * size.Z / 2):Abs()
+			if math.min(half.X, half.Z) * 2 > 2 then
+				local bottom = cf.Position.Y - size.Y / 2
+				if bottom < 3 then
+					local lo = Vector3.new(cf.Position.X - half.X, bottom - 6, cf.Position.Z - half.Z)
+					local hi = Vector3.new(cf.Position.X + half.X, bottom + 2, cf.Position.Z + half.Z)
+					pcall(function()
+						terrain:ReplaceMaterial(Region3.new(lo, hi):ExpandToGrid(4), 4, Enum.Material.Grass, Enum.Material.Ground)
+					end)
+					n += 1
+				end
+			end
+		end
+	end
+	return n
+end
+
 local function construction()
 	local roots = { workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Start"), workspace:FindFirstChild("Bases") }
 	for _, r in ipairs(roots) do
@@ -324,6 +368,8 @@ local function construction()
 			timberStraps(r)
 			roofDetail(r)
 			wallCourses(r)
+			pavingMaterials(r)
+			clearGrassUnderPaving(r)
 		end
 	end
 	-- (the hall arches already carry a crystal crest at the apex, so no keystone is added there)
@@ -409,6 +455,8 @@ function D.Apply()
 	folder.Name = "MedievalDressing"
 	folder.Parent = workspace
 	folder:ClearAllChildren()
+	-- animated terrain grass (not scriptable on every Roblox build, so it is tried, not required)
+	pcall(function() workspace.Terrain.Decoration = true end)
 	local bases = workspace:FindFirstChild("Bases")
 	if bases then
 		for _, b in ipairs(bases:GetChildren()) do
