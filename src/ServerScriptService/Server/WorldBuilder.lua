@@ -108,6 +108,14 @@ local function buildZone(map, id)
 		local ok, err = pcall(mod.Build, b, m.Z, { Config = Config, textLabel = textLabel, World = Wd })
 		K.mirror = false
 		if not ok then warn("[WorldBuilder] biome failed", id, err) end
+		-- the world beyond the lane (|X| >= 130 to the skyline), one Outer<Id> module per biome
+		local outer = script.Parent:FindFirstChild("Outer" .. id)
+		if outer then
+			local ok2, err2 = pcall(function() require(outer).Build(b, m.Z) end)
+			K.mirror = false
+			K.SetFolder(folder)
+			if not ok2 then warn("[WorldBuilder] outer world failed", id, err2) end
+		end
 	else
 		Landmarks.SetFolder(folder)
 		Landmarks.SetTerrain(Terrain)
