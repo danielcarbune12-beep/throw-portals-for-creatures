@@ -203,6 +203,20 @@ Config.MaxPendingPerPlayer = 1     -- one portal at a time
 Config.PendingLifetime = 90
 Config.CollectRange = 18
 Config.CarryLimit = 4
+
+-- Equipped pets: up to 3 follow you and give buffs. Each pet adds its rarity's bonus:
+-- luck multiplies the odds of rarer rolls, income adds to your base income per second.
+Config.EquipLimit = 3
+Config.EquipBuff = {
+	Common    = { luck = 0.03, income = 0.02 },
+	Uncommon  = { luck = 0.05, income = 0.04 },
+	Rare      = { luck = 0.08, income = 0.06 },
+	Epic      = { luck = 0.12, income = 0.09 },
+	Legendary = { luck = 0.18, income = 0.13 },
+	Mythical  = { luck = 0.25, income = 0.18 },
+	Secret    = { luck = 0.30, income = 0.22 },
+	Divine    = { luck = 0.35, income = 0.25 },
+}
 Config.BaseRadius = 40
 Config.MaxBases = 8
 Config.OfflineCapSeconds = 2 * 3600

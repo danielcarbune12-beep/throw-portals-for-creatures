@@ -39,6 +39,7 @@ local function defaultData()
 		EquippedPortal = "Basic",
 		Creatures = {}, -- array of { u = uid, c = creatureId }
 		Placed = {}, -- array of uids placed in base
+		EquippedPets = {}, -- up to Config.EquipLimit uids that follow you and give buffs
 		Discovered = {}, -- [creatureId] = true
 		UnlockedWorlds = { Forest = true },
 		Decor = {}, -- [decorId] = true

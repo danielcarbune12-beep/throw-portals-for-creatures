@@ -82,6 +82,25 @@ local function isPlaced(data, uid)
 	return table.find(data.Placed, uid) ~= nil
 end
 
+-- equipped pets (max Config.EquipLimit): prunes invalid entries, returns luck and income multipliers
+local function equippedBuffs(data)
+	local luck, income, keep = 0, 0, {}
+	for _, uid in ipairs(data.EquippedPets or {}) do
+		local c = findCreature(data, uid)
+		if c and not Expeditions.IsAway(data, uid) and #keep < Config.EquipLimit and not table.find(keep, uid) then
+			table.insert(keep, uid)
+			local def = CreatureData.ById[c.c]
+			local b = def and Config.EquipBuff[def.rarity]
+			if b then
+				luck += b.luck
+				income += b.income
+			end
+		end
+	end
+	data.EquippedPets = keep
+	return 1 + luck, 1 + income
+end
+
 local function incomePerSec(data)
 	local total = 0
 	for _, uid in ipairs(data.Placed) do
@@ -90,7 +109,8 @@ local function incomePerSec(data)
 			total += CreatureData.Income(c.c) * Variants.Mult(c.s, c.v)
 		end
 	end
-	return total * trainingMult(data)
+	local _, incomeBuff = equippedBuffs(data)
+	return total * trainingMult(data) * incomeBuff
 end
 
 local function storedCount(data)
@@ -111,6 +131,15 @@ local function updateAttributes(player, data)
 		end
 	end
 	player:SetAttribute("BaseCreatures", HttpService:JSONEncode(ids))
+	equippedBuffs(data)
+	local eq = {}
+	for _, uid in ipairs(data.EquippedPets) do
+		local c = findCreature(data, uid)
+		if c then
+			table.insert(eq, Variants.Key(c.c, c.s, c.v))
+		end
+	end
+	player:SetAttribute("Equipped", HttpService:JSONEncode(eq))
 	local ls = player:FindFirstChild("leaderstats")
 	if ls then
 		ls.Money.Value = Format.Money(data.Money)
@@ -152,6 +181,8 @@ local function sync(player, partial)
 		Strength = data.Strength,
 		EquipLevel = data.EquipLevel,
 		Carry = st and st.carry or {},
+		EquippedPets = data.EquippedPets or {},
+		EquipBuff = { equippedBuffs(data) },
 		BaseIndex = st and st.base and st.base.index or 0,
 		Expeditions = Expeditions.BuildView(data),
 	})
@@ -295,7 +326,7 @@ ThrowRE.OnServerEvent:Connect(function(player, power, dir)
 
 	nextThrowId += 1
 	local id = nextThrowId
-	local creatureId, chance = Odds.Roll(data.EquippedPortal, worldId, realDist)
+	local creatureId, chance = Odds.Roll(data.EquippedPortal, worldId, realDist, (equippedBuffs(data)))
 	-- pet variant: size (Big/Huge/Titan) and material (Gold/Emerald/Ruby/Diamond), rolled independently
 	local petSize, petMaterial = Variants.Roll(variantRng)
 	if st.forceNext then -- admin: force the next creature (optionally "Id|Size|Material")
@@ -829,6 +860,26 @@ function Actions.Sell(player, data, st, uid)
 	end
 	data.Money += price
 	return true, "Sold for " .. Format.Money(price)
+end
+
+function Actions.ToggleEquip(player, data, st, uid)
+	data.EquippedPets = data.EquippedPets or {}
+	local i = table.find(data.EquippedPets, uid)
+	if i then
+		table.remove(data.EquippedPets, i)
+		return true, "Pet unequipped"
+	end
+	if not findCreature(data, uid) then
+		return false, "Not found"
+	end
+	if Expeditions.IsAway(data, uid) then
+		return false, "This pet is on an expedition."
+	end
+	if #data.EquippedPets >= Config.EquipLimit then
+		return false, "You can equip up to " .. Config.EquipLimit .. " pets. Unequip one first."
+	end
+	table.insert(data.EquippedPets, uid)
+	return true, "Pet equipped"
 end
 
 function Actions.EquipBest(player, data, st)

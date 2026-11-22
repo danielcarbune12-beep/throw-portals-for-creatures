@@ -397,6 +397,32 @@ local function renderCreatureDetail()
 		K.setButton(place, isPlaced and "Storage is full" or "Garden is full")
 	end
 	K.setEnabled(place, not cap and not away)
+	-- equip: up to Config.EquipLimit pets follow you and give luck/income buffs
+	local equippedList = d.EquippedPets or {}
+	local isEquipped = table.find(equippedList, entry.u) ~= nil
+	local buff = Config.EquipBuff[def.rarity] or { luck = 0, income = 0 }
+	local full = not isEquipped and #equippedList >= Config.EquipLimit
+	local equip = K.button(
+		away and "On expedition"
+			or isEquipped and "Unequip · following you"
+			or full and ("Equipped " .. #equippedList .. "/" .. Config.EquipLimit .. " · unequip one first")
+			or string.format("Equip · +%d%% luck, +%d%% income", math.floor(buff.luck * 100 + 0.5), math.floor(buff.income * 100 + 0.5)),
+		isEquipped and T.Raised or T.Violet,
+		nil,
+		UDim2.new(1, -12, 0, 46),
+		{ Name = "EquipCreature", LayoutOrder = 5, Parent = invDetail }
+	)
+	K.setEnabled(equip, not away and not full)
+	K.bind(equip, function()
+		if away or full then
+			return
+		end
+		clearArm()
+		if request("ToggleEquip", entry.u, isEquipped and "Pet unequipped." or "Pet equipped. It follows you now.") then
+			detailKey = nil
+			renderCreatureDetail()
+		end
+	end)
 	local sellValue = math.floor(entryIncome * Config.SellMultiplier)
 	local sell = K.button(
 		armedUid == entry.u and "Confirm sale · " .. Format.Money(sellValue)

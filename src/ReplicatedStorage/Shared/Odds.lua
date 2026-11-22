@@ -9,9 +9,9 @@ local Format = require(script.Parent.Format)
 local Odds = {}
 
 -- Returns { [creatureId] = probability } for a throw with this portal into this zone at this distance.
-function Odds.Table(portalId: string, worldId: string, dist: number)
+function Odds.Table(portalId: string, worldId: string, dist: number, luckMult: number?)
 	local portal = Config.Portals[portalId]
-	local luck = Config.LuckFromDistance(dist)
+	local luck = Config.LuckFromDistance(dist) * (luckMult or 1)
 	local pool = {}
 	for _, c in ipairs(CreatureData.ByWorld[worldId] or {}) do table.insert(pool, c) end
 	for _, c in ipairs(CreatureData.ByWorld.Any or {}) do table.insert(pool, c) end
@@ -41,8 +41,8 @@ function Odds.Table(portalId: string, worldId: string, dist: number)
 end
 
 -- Rolls one creature. Returns creatureId, probability.
-function Odds.Roll(portalId: string, worldId: string, dist: number)
-	local t = Odds.Table(portalId, worldId, dist)
+function Odds.Roll(portalId: string, worldId: string, dist: number, luckMult: number?)
+	local t = Odds.Table(portalId, worldId, dist, luckMult)
 	local ids = {}
 	for id in pairs(t) do table.insert(ids, id) end
 	table.sort(ids) -- deterministic order

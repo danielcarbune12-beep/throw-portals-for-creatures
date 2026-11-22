@@ -38,6 +38,7 @@ local groundParams = RaycastParams.new()
 groundParams.FilterType = Enum.RaycastFilterType.Exclude
 local basePets = {} -- [userId] = array of entries
 local carried = {} -- [userId] = array of entries
+local equippedPets = {} -- [userId] = array of entries (pets that follow and give buffs)
 local wild = {} -- [throwId] = entry
 Renderer.Wild = wild
 Renderer.OnCollectRequest = nil -- set by ClientMain
@@ -443,9 +444,41 @@ local function refreshCarry(plr)
 			existing[i] = e
 		end
 		e.follow = plr
-		e.followIndex = i
+		e.followIndex = i + 3 -- slots 1-3 belong to equipped pets
 	end
 	carried[plr.UserId] = existing
+end
+
+-- equipped pets (max 3) trail right behind their owner; attribute "Equipped" is a JSON list of variant keys
+local function refreshEquipped(plr)
+	local ok, keys = pcall(function() return HttpService:JSONDecode(plr:GetAttribute("Equipped") or "[]") end)
+	keys = ok and keys or {}
+	local existing = equippedPets[plr.UserId] or {}
+	while #existing > #keys do
+		destroyEntry(table.remove(existing))
+	end
+	for i, key in ipairs(keys) do
+		local e = existing[i]
+		if e and e.key ~= key then
+			destroyEntry(e)
+			e = nil
+		end
+		if not e then
+			local cid, vsize, vmat = Variants.Parse(key)
+			if CreatureData.ById[cid] then
+				local hrp = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
+				local cf = hrp and (hrp.CFrame * CFrame.new(0, -2.5, 3 + i * 2.6)) or CFrame.new()
+				e = spawnEntry(cid, cf, "carry", 0.45, vsize, vmat)
+				e.key = key
+				existing[i] = e
+			end
+		end
+		if e then
+			e.follow = plr
+			e.followIndex = i
+		end
+	end
+	equippedPets[plr.UserId] = existing
 end
 
 ---------------------------------------------------------------- wild creatures: species entrances
@@ -1044,10 +1077,18 @@ local function watchPlayer(plr)
 	plr:GetAttributeChangedSignal("Carry"):Connect(function()
 		refreshCarry(plr)
 	end)
+	plr:GetAttributeChangedSignal("Equipped"):Connect(function()
+		refreshEquipped(plr)
+	end)
+	plr.CharacterAdded:Connect(function()
+		task.wait(1)
+		refreshEquipped(plr)
+	end)
 	task.spawn(function()
 		workspace:WaitForChild("Bases", 30)
 		refreshBase(plr)
 		refreshCarry(plr)
+		refreshEquipped(plr)
 	end)
 end
 
@@ -1064,6 +1105,10 @@ function Renderer.Start()
 			destroyEntry(e)
 		end
 		basePets[plr.UserId], carried[plr.UserId] = nil, nil
+		for _, e in ipairs(equippedPets[plr.UserId] or {}) do
+			destroyEntry(e)
+		end
+		equippedPets[plr.UserId] = nil
 		for id, e in pairs(wild) do
 			if e.owner == plr.UserId then
 				wild[id] = nil

@@ -208,6 +208,20 @@ Config.MaxPendingPerPlayer = 1     -- one portal at a time
 Config.PendingLifetime = 90
 Config.CollectRange = 18
 Config.CarryLimit = 4
+
+-- Equipped pets: up to 3 follow you and give buffs. Each pet adds its rarity's bonus:
+-- luck multiplies the odds of rarer rolls, income adds to your base income per second.
+Config.EquipLimit = 3
+Config.EquipBuff = {
+	Common    = { luck = 0.03, income = 0.02 },
+	Uncommon  = { luck = 0.05, income = 0.04 },
+	Rare      = { luck = 0.08, income = 0.06 },
+	Epic      = { luck = 0.12, income = 0.09 },
+	Legendary = { luck = 0.18, income = 0.13 },
+	Mythical  = { luck = 0.25, income = 0.18 },
+	Secret    = { luck = 0.30, income = 0.22 },
+	Divine    = { luck = 0.35, income = 0.25 },
+}
 Config.BaseRadius = 40
 Config.MaxBases = 8
 Config.OfflineCapSeconds = 2 * 3600
@@ -2678,9 +2692,9 @@ local Format = require(script.Parent.Format)
 local Odds = {}
 
 -- Returns { [creatureId] = probability } for a throw with this portal into this zone at this distance.
-function Odds.Table(portalId: string, worldId: string, dist: number)
+function Odds.Table(portalId: string, worldId: string, dist: number, luckMult: number?)
 	local portal = Config.Portals[portalId]
-	local luck = Config.LuckFromDistance(dist)
+	local luck = Config.LuckFromDistance(dist) * (luckMult or 1)
 	local pool = {}
 	for _, c in ipairs(CreatureData.ByWorld[worldId] or {}) do table.insert(pool, c) end
 	for _, c in ipairs(CreatureData.ByWorld.Any or {}) do table.insert(pool, c) end
@@ -2710,8 +2724,8 @@ function Odds.Table(portalId: string, worldId: string, dist: number)
 end
 
 -- Rolls one creature. Returns creatureId, probability.
-function Odds.Roll(portalId: string, worldId: string, dist: number)
-	local t = Odds.Table(portalId, worldId, dist)
+function Odds.Roll(portalId: string, worldId: string, dist: number, luckMult: number?)
+	local t = Odds.Table(portalId, worldId, dist, luckMult)
 	local ids = {}
 	for id in pairs(t) do table.insert(ids, id) end
 	table.sort(ids) -- deterministic order
@@ -8356,6 +8370,7 @@ local function defaultData()
 		EquippedPortal = "Basic",
 		Creatures = {}, -- array of { u = uid, c = creatureId }
 		Placed = {}, -- array of uids placed in base
+		EquippedPets = {}, -- up to Config.EquipLimit uids that follow you and give buffs
 		Discovered = {}, -- [creatureId] = true
 		UnlockedWorlds = { Forest = true },
 		Decor = {}, -- [decorId] = true
@@ -8859,6 +8874,25 @@ local function isPlaced(data, uid)
 	return table.find(data.Placed, uid) ~= nil
 end
 
+-- equipped pets (max Config.EquipLimit): prunes invalid entries, returns luck and income multipliers
+local function equippedBuffs(data)
+	local luck, income, keep = 0, 0, {}
+	for _, uid in ipairs(data.EquippedPets or {}) do
+		local c = findCreature(data, uid)
+		if c and not Expeditions.IsAway(data, uid) and #keep < Config.EquipLimit and not table.find(keep, uid) then
+			table.insert(keep, uid)
+			local def = CreatureData.ById[c.c]
+			local b = def and Config.EquipBuff[def.rarity]
+			if b then
+				luck += b.luck
+				income += b.income
+			end
+		end
+	end
+	data.EquippedPets = keep
+	return 1 + luck, 1 + income
+end
+
 local function incomePerSec(data)
 	local total = 0
 	for _, uid in ipairs(data.Placed) do
@@ -8867,7 +8901,8 @@ local function incomePerSec(data)
 			total += CreatureData.Income(c.c) * Variants.Mult(c.s, c.v)
 		end
 	end
-	return total * trainingMult(data)
+	local _, incomeBuff = equippedBuffs(data)
+	return total * trainingMult(data) * incomeBuff
 end
 
 local function storedCount(data)
@@ -8888,6 +8923,15 @@ local function updateAttributes(player, data)
 		end
 	end
 	player:SetAttribute("BaseCreatures", HttpService:JSONEncode(ids))
+	equippedBuffs(data)
+	local eq = {}
+	for _, uid in ipairs(data.EquippedPets) do
+		local c = findCreature(data, uid)
+		if c then
+			table.insert(eq, Variants.Key(c.c, c.s, c.v))
+		end
+	end
+	player:SetAttribute("Equipped", HttpService:JSONEncode(eq))
 	local ls = player:FindFirstChild("leaderstats")
 	if ls then
 		ls.Money.Value = Format.Money(data.Money)
@@ -8929,6 +8973,8 @@ local function sync(player, partial)
 		Strength = data.Strength,
 		EquipLevel = data.EquipLevel,
 		Carry = st and st.carry or {},
+		EquippedPets = data.EquippedPets or {},
+		EquipBuff = { equippedBuffs(data) },
 		BaseIndex = st and st.base and st.base.index or 0,
 		Expeditions = Expeditions.BuildView(data),
 	})
@@ -9072,7 +9118,7 @@ ThrowRE.OnServerEvent:Connect(function(player, power, dir)
 
 	nextThrowId += 1
 	local id = nextThrowId
-	local creatureId, chance = Odds.Roll(data.EquippedPortal, worldId, realDist)
+	local creatureId, chance = Odds.Roll(data.EquippedPortal, worldId, realDist, (equippedBuffs(data)))
 	-- pet variant: size (Big/Huge/Titan) and material (Gold/Emerald/Ruby/Diamond), rolled independently
 	local petSize, petMaterial = Variants.Roll(variantRng)
 	if st.forceNext then -- admin: force the next creature (optionally "Id|Size|Material")
@@ -9606,6 +9652,26 @@ function Actions.Sell(player, data, st, uid)
 	end
 	data.Money += price
 	return true, "Sold for " .. Format.Money(price)
+end
+
+function Actions.ToggleEquip(player, data, st, uid)
+	data.EquippedPets = data.EquippedPets or {}
+	local i = table.find(data.EquippedPets, uid)
+	if i then
+		table.remove(data.EquippedPets, i)
+		return true, "Pet unequipped"
+	end
+	if not findCreature(data, uid) then
+		return false, "Not found"
+	end
+	if Expeditions.IsAway(data, uid) then
+		return false, "This pet is on an expedition."
+	end
+	if #data.EquippedPets >= Config.EquipLimit then
+		return false, "You can equip up to " .. Config.EquipLimit .. " pets. Unequip one first."
+	end
+	table.insert(data.EquippedPets, uid)
+	return true, "Pet equipped"
 end
 
 function Actions.EquipBest(player, data, st)
@@ -14107,6 +14173,7 @@ local groundParams = RaycastParams.new()
 groundParams.FilterType = Enum.RaycastFilterType.Exclude
 local basePets = {} -- [userId] = array of entries
 local carried = {} -- [userId] = array of entries
+local equippedPets = {} -- [userId] = array of entries (pets that follow and give buffs)
 local wild = {} -- [throwId] = entry
 Renderer.Wild = wild
 Renderer.OnCollectRequest = nil -- set by ClientMain
@@ -14512,9 +14579,41 @@ local function refreshCarry(plr)
 			existing[i] = e
 		end
 		e.follow = plr
-		e.followIndex = i
+		e.followIndex = i + 3 -- slots 1-3 belong to equipped pets
 	end
 	carried[plr.UserId] = existing
+end
+
+-- equipped pets (max 3) trail right behind their owner; attribute "Equipped" is a JSON list of variant keys
+local function refreshEquipped(plr)
+	local ok, keys = pcall(function() return HttpService:JSONDecode(plr:GetAttribute("Equipped") or "[]") end)
+	keys = ok and keys or {}
+	local existing = equippedPets[plr.UserId] or {}
+	while #existing > #keys do
+		destroyEntry(table.remove(existing))
+	end
+	for i, key in ipairs(keys) do
+		local e = existing[i]
+		if e and e.key ~= key then
+			destroyEntry(e)
+			e = nil
+		end
+		if not e then
+			local cid, vsize, vmat = Variants.Parse(key)
+			if CreatureData.ById[cid] then
+				local hrp = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
+				local cf = hrp and (hrp.CFrame * CFrame.new(0, -2.5, 3 + i * 2.6)) or CFrame.new()
+				e = spawnEntry(cid, cf, "carry", 0.45, vsize, vmat)
+				e.key = key
+				existing[i] = e
+			end
+		end
+		if e then
+			e.follow = plr
+			e.followIndex = i
+		end
+	end
+	equippedPets[plr.UserId] = existing
 end
 
 ---------------------------------------------------------------- wild creatures: species entrances
@@ -15113,10 +15212,18 @@ local function watchPlayer(plr)
 	plr:GetAttributeChangedSignal("Carry"):Connect(function()
 		refreshCarry(plr)
 	end)
+	plr:GetAttributeChangedSignal("Equipped"):Connect(function()
+		refreshEquipped(plr)
+	end)
+	plr.CharacterAdded:Connect(function()
+		task.wait(1)
+		refreshEquipped(plr)
+	end)
 	task.spawn(function()
 		workspace:WaitForChild("Bases", 30)
 		refreshBase(plr)
 		refreshCarry(plr)
+		refreshEquipped(plr)
 	end)
 end
 
@@ -15133,6 +15240,10 @@ function Renderer.Start()
 			destroyEntry(e)
 		end
 		basePets[plr.UserId], carried[plr.UserId] = nil, nil
+		for _, e in ipairs(equippedPets[plr.UserId] or {}) do
+			destroyEntry(e)
+		end
+		equippedPets[plr.UserId] = nil
 		for id, e in pairs(wild) do
 			if e.owner == plr.UserId then
 				wild[id] = nil
@@ -17710,6 +17821,32 @@ local function renderCreatureDetail()
 		K.setButton(place, isPlaced and "Storage is full" or "Garden is full")
 	end
 	K.setEnabled(place, not cap and not away)
+	-- equip: up to Config.EquipLimit pets follow you and give luck/income buffs
+	local equippedList = d.EquippedPets or {}
+	local isEquipped = table.find(equippedList, entry.u) ~= nil
+	local buff = Config.EquipBuff[def.rarity] or { luck = 0, income = 0 }
+	local full = not isEquipped and #equippedList >= Config.EquipLimit
+	local equip = K.button(
+		away and "On expedition"
+			or isEquipped and "Unequip · following you"
+			or full and ("Equipped " .. #equippedList .. "/" .. Config.EquipLimit .. " · unequip one first")
+			or string.format("Equip · +%d%% luck, +%d%% income", math.floor(buff.luck * 100 + 0.5), math.floor(buff.income * 100 + 0.5)),
+		isEquipped and T.Raised or T.Violet,
+		nil,
+		UDim2.new(1, -12, 0, 46),
+		{ Name = "EquipCreature", LayoutOrder = 5, Parent = invDetail }
+	)
+	K.setEnabled(equip, not away and not full)
+	K.bind(equip, function()
+		if away or full then
+			return
+		end
+		clearArm()
+		if request("ToggleEquip", entry.u, isEquipped and "Pet unequipped." or "Pet equipped. It follows you now.") then
+			detailKey = nil
+			renderCreatureDetail()
+		end
+	end)
 	local sellValue = math.floor(entryIncome * Config.SellMultiplier)
 	local sell = K.button(
 		armedUid == entry.u and "Confirm sale · " .. Format.Money(sellValue)
