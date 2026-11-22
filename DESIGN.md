@@ -18,7 +18,20 @@ Compact balance/income strip and one labeled Menu button on every device. Menu h
 
 ## Symbols
 
-The four primary destinations use approved C Relic enamel artwork: silver wolf, violet merchant stall, compass map, and silver/gold cog. SkyforgeUI clips the transparent atlas into four icons. Small utility symbols remain native Frames/UIStroke. Visible labels accompany navigation. White panels use restrained gold edges and angled corner accents from Skyforge concept 2.
+The four primary destinations use large standalone cutout artwork: pale silver
+wolf, oak/jade merchant stall, parchment compass map, and silver/gold/jade cog.
+No dark icon backplates. Desktop art is 136px; compact menu art is 96px. Four
+lightly tinted destination surfaces pair each image with a visible label and
+short description. Ordinary panels use quiet rounded stone edges; decorative
+angled corner marks are removed. Small utility symbols remain native geometry.
+
+Expeditions use an expanded desktop map/scout composition. Eight native biome
+vignettes have distinct landmarks, terrain and marked routes. The active map
+marker follows authoritative timer progress through Departure, Exploration and
+Return. Owned scout portraits have a loading state, and the scrolling picker
+loads only nearby models. The relic gallery uses eight illustrated artifacts,
+with compact card sizing on phones. Wallet HUD text distinguishes Treasury
+earnings awaiting collection from banked money and income per second.
 
 ## States and Motion
 

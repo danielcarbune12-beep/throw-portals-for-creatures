@@ -272,3 +272,37 @@ error placement, clearing and layout restoration. Twenty real server messages
 also created zero popup objects. Three edited modules pass Selene without errors
 or warnings, and shared source equality was verified before saving. Restart Play
 to refresh the running scripts. No public Roblox publish was performed.
+
+## Sanctuary cutouts and richer expeditions (2026-11-22)
+
+Shared Team Create version 44 contains all 64 project scripts synchronized from
+Git main (including Claude's Treasury and loading-screen changes), plus this UI
+revision. The generated courtyards and lobby were rebuilt so the Treasury is
+visible in Edit as well as Play. The wallet HUD distinguishes stored Treasury
+earnings from the banked balance and current income.
+
+The four navigation icons are new standalone stone/gold/jade cutouts, with no
+dark plaques. Desktop menu artwork is 136px, up from 70px, with 96px artwork in
+the compact menu. Destination cards use coordinated light tints and short labels.
+The light palette, transparent outside-click target and no-popup behavior remain.
+
+The larger expedition view pairs a detailed native biome vignette with a scout
+portrait, exact server reward preview and dispatch action. Eight distinct scenes
+include terrain, shrines, paths and landmarks. The active marker follows timer
+progress through Departure, Exploration and Return. The collectible gallery uses
+eight new artifact illustrations. Pet images show a loading state, and the picker
+creates only nearby portrait models. Relic/menu refreshes preserve existing UI
+when their data has not changed.
+
+Validation: the real 90-second mission/navigation review passed 66 checks. Treasury
+collection moved 181 stored coins into the wallet and cleared its stored balance.
+All eight vignette markers moved correctly, with 69–91 parts per scene. A 100-pet
+UI fixture loaded eight portraits before and after scrolling. Phone menu art,
+planner bounds and the first relic row were inspected on Galaxy A06 landscape;
+desktop previews were also checked. All 64 shared scripts match source, and the
+five scoped changed/review files pass Selene. Tests used isolated profiles. No
+physical controller/device or live DataStore rejoin test was added in this pass.
+No public Roblox publish was performed.
+
+Generated bitmap sources and prompts are under `assets/ui`. Atlas assets are
+`110533210650310` (four navigation cutouts) and `111238084547615` (eight relics).

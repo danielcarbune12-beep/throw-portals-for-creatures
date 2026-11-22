@@ -50,6 +50,7 @@ local ok, err = pcall(function()
 		base:FindFirstChild("ExpeditionTable") ~= nil and base:FindFirstChild("WorkoutSeat", true) == nil,
 		"functional table replaces bench"
 	)
+	check(base:FindFirstChild("TreasuryCrystal", true) ~= nil, "latest Git Treasury is built")
 	check(
 		waitFor(function()
 			return base.ExpeditionAnchor:FindFirstChild("OwnExpeditionPrompt") ~= nil
@@ -84,7 +85,7 @@ local ok, err = pcall(function()
 	char:PivotTo(cf * CFrame.new(0, 4, -40))
 	task.wait(0.3)
 	walk(0, -25, "walk through open entrance")
-	walk(-19, -21, "reach collection pad")
+	walk(-24, -21, "approach Treasury within collection range")
 	walk(0, -24, "collection route clear")
 	walk(19, -24, "reach expedition planning position")
 	check(not request("StartExpedition", "invalid JSON"), "malformed dispatch rejected")
@@ -167,8 +168,10 @@ local ok, err = pcall(function()
 				waitFor(function()
 					return image and image.IsLoaded
 				end, 8),
-				"approved enamel icon loaded: " .. child.Name
+				"navigation cutout loaded: " .. child.Name
 			)
+			check(image and image.Image == "rbxassetid://110533210650310", "new cutout icon: " .. child.Name)
+			check(image and image.Parent.AbsoluteSize.X >= 90, "large navigation art: " .. child.Name)
 		end
 	end
 	check(buttons == 4, "four destinations rendered in menu")

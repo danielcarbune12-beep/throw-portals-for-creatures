@@ -54,32 +54,30 @@ K.new("UIGridLayout", {
 	Parent = side,
 })
 
--- Portal Sanctuary style, matching the lobby gate: white marble, gold trim, purple medallions.
-local SANCT = {
-	Marble = Color3.fromRGB(248, 245, 252),
-	Marble2 = Color3.fromRGB(221, 214, 236),
-	Purple = Color3.fromRGB(112, 72, 196),
-	PurpleLight = Color3.fromRGB(156, 118, 242),
-	PurpleDeep = Color3.fromRGB(58, 34, 112),
-	Gold = Color3.fromRGB(241, 202, 115),
-	Cream = Color3.fromRGB(255, 242, 205),
-}
-HUD.SanctuaryColors = SANCT
-
--- Approved enamel art, one consistent restrained Skyforge tile.
-local function sanctuaryTile(name, icon, size, parent, order)
-	local b = K.button("", T.Panel, nil, size or UDim2.fromOffset(148, 126), {
+-- Larger cutout artwork belongs to the light surface, without dark icon plaques.
+local function sanctuaryTile(name, icon, size, parent, order, dense)
+	local b = K.button("", T.Panel, nil, size or UDim2.fromOffset(200, 212), {
 		Name = "Nav_" .. name,
 		LayoutOrder = order or 0,
 		Parent = parent,
 	})
-	Sky.Trim(b)
-	K.Icon(icon, b, UDim2.fromOffset(70, 70), T.Text, UDim2.new(0.5, -35, 0, 5))
+	Sky.Card(b, icon)
+	local art = dense and 96 or 136
+	K.Icon(icon, b, UDim2.fromOffset(art, art), T.Text, UDim2.new(0.5, -art / 2, 0, 2))
 	b.Label.Text = name
-	b.Label.Position = UDim2.new(0, 4, 1, -40)
-	b.Label.Size = UDim2.new(1, -8, 0, 32)
+	b.Label.Position = UDim2.new(0, 6, 1, -55)
+	b.Label.Size = UDim2.new(1, -12, 0, 26)
 	b.Label.TextColor3 = T.Text
-	b.Label.TextSize = 16
+	b.Label.TextSize = dense and 18 or 20
+	local descriptions = {
+		Pets = "Your creatures",
+		Shop = "Gear & upgrades",
+		Expeditions = "Explore the biomes",
+		Settings = "Controls & visuals",
+	}
+	local caption = K.text(b, descriptions[name] or "", 6, 0, -12, 18, 13, T.Muted)
+	caption.Position = UDim2.new(0, 6, 1, -22)
+	caption.TextXAlignment = Enum.TextXAlignment.Center
 	return b
 end
 HUD.SanctuaryTile = sanctuaryTile
@@ -406,15 +404,20 @@ Input.InputBegan:Connect(function(i, processed)
 end)
 local menuPanel = HUD.MakePanel("Menu", "Your sanctuary", "Everything you need, in four places.", "Compass")
 menuPanel.refresh = function()
+	local key = tostring(#navOrder) .. ":" .. tostring(menuPanel.tileHeight)
+	if menuPanel.renderKey == key and menuPanel.content:FindFirstChild("Menu_Pets") then
+		return
+	end
+	menuPanel.renderKey = key
 	menuPanel.content:ClearAllChildren()
 	K.new("UIGridLayout", {
-		CellSize = UDim2.new(0.25, -8, 0, 126),
-		CellPadding = UDim2.fromOffset(8, 10),
+		CellSize = UDim2.new(0.25, -12, 0, menuPanel.tileHeight or 212),
+		CellPadding = UDim2.fromOffset(12, 12),
 		SortOrder = Enum.SortOrder.LayoutOrder,
 		Parent = menuPanel.content,
 	})
 	for i, n in ipairs(navOrder) do
-		local b = sanctuaryTile(n.name, n.icon, nil, menuPanel.content, i)
+		local b = sanctuaryTile(n.name, n.icon, nil, menuPanel.content, i, (menuPanel.tileHeight or 212) < 190)
 		b.Name = "Menu_" .. n.name
 		K.bind(b, function()
 			HUD.Close()
@@ -423,11 +426,21 @@ menuPanel.refresh = function()
 	end
 end
 menuPanel.layout = function()
-	local w = math.min(700, width - 24)
-	menuPanel.frame.Size = UDim2.fromOffset(w, math.min(height - 24, w < 540 and 404 or 292))
+	local w = math.min(900, width - 24)
+	local h = math.min(344, height - 24)
+	menuPanel.frame.Size = UDim2.fromOffset(w, h)
+	menuPanel.content.Position = UDim2.fromOffset(16, 80)
+	menuPanel.contentSize = UDim2.new(1, -32, 1, -96)
+	menuPanel.content.Size = menuPanel.contentSize - UDim2.fromOffset(0, menuPanel.feedback.Visible and 40 or 0)
+	menuPanel.subtitle.Position = UDim2.fromOffset(20, 52)
+	menuPanel.subtitle.Size = UDim2.new(1, -92, 0, 22)
+	menuPanel.tileHeight = math.max(132, math.min(212, h - 104))
 	local grid = menuPanel.content:FindFirstChildOfClass("UIGridLayout")
 	if grid then
-		grid.CellSize = UDim2.new(w < 540 and 0.5 or 0.25, -8, 0, 126)
+		grid.CellSize = UDim2.new(w < 540 and 0.5 or 0.25, -12, 0, menuPanel.tileHeight)
+	end
+	if menuPanel.frame.Visible then
+		menuPanel.refresh()
 	end
 end
 K.bind(menuBtn, function()
@@ -450,7 +463,7 @@ function HUD.Refresh()
 	gui:SetAttribute("EquippedPortal", d.EquippedPortal)
 	gui:SetAttribute("Money", d.Money or 0)
 	-- The displayed balance settles in the existing render loop; server data stays exact.
-	income.Text = "+" .. Format.Money(d.Income or 0) .. " / sec"
+	income.Text = "Treasury " .. Format.Money(d.Uncollected or 0) .. "  /  +" .. Format.Money(d.Income or 0) .. "/s"
 	power.Text = math.floor(d.MaxDistance or 0) .. " m"
 	distance.Text = "Throw level " .. (d.Upgrades.ThrowPower or 1)
 	strength.Text = Format.Short(d.Strength or 0)
@@ -467,7 +480,7 @@ local function rescale()
 	local compact = Input.TouchEnabled or width < 700 or height < 580
 	HUD.Compact = compact
 
-	top.Size = UDim2.fromOffset(math.min(250, width - 144), 50)
+	top.Size = UDim2.fromOffset(math.min(290, width - 144), 50)
 	top.Position = UDim2.fromOffset(12, 8)
 	for i, f in ipairs(stats) do
 		f.Visible = i == 1
