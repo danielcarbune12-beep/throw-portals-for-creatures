@@ -344,7 +344,12 @@ local function renderCreatureDetail()
 			break
 		end
 	end
-	local key = entry and entry.u .. ":" .. tostring(State.IsPlaced(entry.u)) .. ":" .. tostring(armedUid) or "empty"
+	local awayUid = d.Expeditions and d.Expeditions.active and d.Expeditions.active.petUid
+	local key = entry
+			and entry.u .. ":" .. tostring(State.IsPlaced(entry.u)) .. ":" .. tostring(armedUid) .. ":" .. tostring(
+				awayUid
+			)
+		or "empty"
 	if detailKey == key then
 		return
 	end
@@ -364,15 +369,20 @@ local function renderCreatureDetail()
 	petView(entry.c, UDim2.fromScale(1, 1), nil, entry.v).Parent = hero
 	heading(invDetail, Variants.Prefix(entry.s, entry.v) .. def.name, 2)
 	K.label(
-		def.rarity .. " · " .. Format.Money(entryIncome) .. " / sec" .. (Variants.Mult(entry.s, entry.v) > 1 and ("  (x" .. Variants.Mult(entry.s, entry.v) .. ")") or ""),
+		def.rarity
+			.. " · "
+			.. Format.Money(entryIncome)
+			.. " / sec"
+			.. (Variants.Mult(entry.s, entry.v) > 1 and ("  (x" .. Variants.Mult(entry.s, entry.v) .. ")") or ""),
 		UDim2.new(1, -12, 0, 28),
 		color,
 		{ TextSize = 16, LayoutOrder = 3, Parent = invDetail }
 	)
 	K.label(def.desc or "", UDim2.new(1, -12, 0, 56), T.Muted, { TextSize = 14, LayoutOrder = 4, Parent = invDetail })
 	local isPlaced = State.IsPlaced(entry.u)
+	local away = awayUid == entry.u
 	local place = K.button(
-		isPlaced and "Remove from garden" or "Place in garden",
+		away and "On expedition" or isPlaced and "Remove from garden" or "Place in garden",
 		T.Gold,
 		nil,
 		UDim2.new(1, -12, 0, 46),
@@ -383,10 +393,10 @@ local function renderCreatureDetail()
 		request(State.IsPlaced(entry.u) and "Unplace" or "Place", entry.u, "Garden updated.")
 	end)
 	local cap = isPlaced and (#d.Creatures - #d.Placed >= d.StorageCap) or (not isPlaced and #d.Placed >= d.SlotsOpen)
-	if cap then
+	if cap and not away then
 		K.setButton(place, isPlaced and "Storage is full" or "Garden is full")
 	end
-	K.setEnabled(place, not cap)
+	K.setEnabled(place, not cap and not away)
 	local sellValue = math.floor(entryIncome * Config.SellMultiplier)
 	local sell = K.button(
 		armedUid == entry.u and "Confirm sale · " .. Format.Money(sellValue)
@@ -396,7 +406,11 @@ local function renderCreatureDetail()
 		UDim2.new(1, -12, 0, 46),
 		{ Name = "SellCreature", LayoutOrder = 6, Parent = invDetail }
 	)
+	K.setEnabled(sell, not away)
 	K.bind(sell, function()
+		if away then
+			return
+		end
 		if selectedUid ~= entry.u then
 			clearArm()
 			return
@@ -426,7 +440,8 @@ local function renderCreatureDetail()
 		end
 	end)
 	K.label(
-		armedUid == entry.u and "This permanently removes " .. def.name .. ". Select Confirm sale within 4 seconds."
+		away and "Your pet is exploring. Claim its return at the expedition table to make it available again."
+			or armedUid == entry.u and "This permanently removes " .. def.name .. ". Select Confirm sale within 4 seconds."
 			or "Selling permanently removes this creature. A second confirmation is required.",
 		UDim2.new(1, -12, 0, 60),
 		armedUid == entry.u and T.Danger or T.Muted,
@@ -470,7 +485,17 @@ inv.refresh = function()
 					{ Name = "Creature_" .. entry.u, LayoutOrder = i, Parent = invGrid }
 				)
 				petView(entry.c, UDim2.new(1, -8, 0, 108), nil, entry.v).Parent = b
-				K.text(b, Variants.Prefix(entry.s, entry.v) .. def.name, 10, 110, -20, 38, 15, Variants.Color(entry.s, entry.v) or T.Text, true)
+				K.text(
+					b,
+					Variants.Prefix(entry.s, entry.v) .. def.name,
+					10,
+					110,
+					-20,
+					38,
+					15,
+					Variants.Color(entry.s, entry.v) or T.Text,
+					true
+				)
 				K.text(b, def.rarity, 10, 151, -20, 18, 13, T.Rarity(def.rarity, Config))
 				K.text(
 					b,
@@ -613,7 +638,7 @@ end
 local worlds = HUD.MakePanel(
 	"Worlds",
 	"Explore the zones",
-	"Throw distance determines the landing zone. Training and upgrades extend your reach.",
+	"Throw distance determines the landing zone. Throw Power upgrades extend your reach.",
 	"Compass"
 )
 list(worlds.content, 10)
@@ -641,7 +666,7 @@ worlds.refresh = function()
 	local max = (State.Data.MaxDistance or 45) * 1.15
 	worlds.subtitle.Text = "Your best perfect throw: "
 		.. math.floor(max)
-		.. " m. Train or buy Throw Power to reach the next zone."
+		.. " m. Upgrade Throw Power to reach the next zone."
 	for id, label in pairs(worldRefs) do
 		local found, total = 0, 0
 		for _, def in ipairs(Data.ByWorld[id] or {}) do

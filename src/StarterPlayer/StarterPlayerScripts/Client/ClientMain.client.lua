@@ -8,7 +8,6 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local CreatureData = require(Shared.CreatureData)
 local Config = require(Shared.Config)
-local Format = require(Shared.Format)
 local Timeline = require(Shared.PresentationTimeline)
 local Variants = require(Shared.Variants)
 
@@ -38,6 +37,7 @@ HUD.TC = TC
 TC.OnThrowResult = HUD.ThrowFeedback
 HUD.Refresh()
 Feel.Start(TC, HUD)
+require(Client.ExpeditionPanel).Init()
 
 -- ask the server for a full data sync (retries until our save has loaded)
 task.spawn(function()
@@ -88,100 +88,8 @@ TC.OnLaunchFailed = function(message)
 	HUD.Notify(message, "error")
 end
 
----------------------------------------------------------------- training: buy equipment + lifting animation
-HUD.OnUpgradeGym = function()
-	local ok, msg = State.Request("UpgradeEquipment")
-	if ok then
-		local st = Config.TrainingStations[math.clamp(State.Data.EquipLevel or 1, 1, #Config.TrainingStations)]
-		Sounds.Play("Upgrade")
-		task.delay(0.15, Sounds.Play, "Rare", 1.3)
-		HUD.Notify(msg or "Gym upgraded!", "success")
-		Effects.Coins(nil, 12)
-		local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-		if root then
-			Effects.Burst(root.Position + Vector3.new(0, 2, 0), st.color, 50, 18, 1)
-			Effects.Shockwave(root.Position - Vector3.new(0, 2.5, 0), st.color, 12, 0.5)
-		end
-		HUD._shownGym = nil -- refresh the buttons
-	else
-		HUD.Notify(msg or "Can't upgrade", "error")
-	end
-end
-
--- Lifting uses Roblox's built-in "cheer" animation (both arms raise the weight overhead).
--- It plays on your own character, so other players see it too.
-local LIFT_ANIM =
-	{ [Enum.HumanoidRigType.R15] = "rbxassetid://507770677", [Enum.HumanoidRigType.R6] = "rbxassetid://129423030" }
-local liftTrack, liftHum, lastLift = nil, nil, 0
-local function playLift()
-	local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-	if not hum then
-		return
-	end
-	if hum ~= liftHum then
-		liftHum = hum
-		liftTrack = nil
-		local animator = hum:FindFirstChildOfClass("Animator") or hum
-		local anim = Instance.new("Animation")
-		anim.AnimationId = LIFT_ANIM[hum.RigType] or LIFT_ANIM[Enum.HumanoidRigType.R15]
-		local ok, track = pcall(function()
-			return animator:LoadAnimation(anim)
-		end)
-		if ok and track then
-			track.Priority = Enum.AnimationPriority.Action
-			track.Looped = true
-			liftTrack = track
-		end
-	end
-	lastLift = os.clock()
-	if liftTrack and not liftTrack.IsPlaying then
-		liftTrack:Play(0.15, 1, 1.7)
-	end
-end
-RunService.Heartbeat:Connect(function()
-	if liftTrack and liftTrack.IsPlaying and os.clock() - lastLift > 0.7 then
-		liftTrack:Stop(0.25)
-	end
-end)
-
-local lastRep = 0
-local function doRep()
-	local idx = HUD.TrainStation
-	if not idx or os.clock() - lastRep < Config.TrainCooldown then
-		return
-	end
-	lastRep = os.clock()
-	local st = Config.TrainingStations[idx]
-	playLift()
-	HUD.TrainPulse()
-	task.spawn(function()
-		local ok, msg = State.Request("Train", idx)
-		if ok then
-			Sounds.Play("Collect", 1.4 + math.random() * 0.2)
-			local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-			if root then
-				Effects.FloatingText(
-					root.Position + Vector3.new(math.random(-2, 2), 4, 0),
-					"+" .. Format.Short(st.gain) .. " 💪",
-					Color3.fromRGB(255, 150, 120),
-					0.8
-				)
-			end
-		elseif msg then
-			HUD.Notify(msg, "error")
-		end
-	end)
-end
-RunService.Heartbeat:Connect(function()
-	if HUD.TrainStation and (HUD.TrainHeld or HUD.AutoTrain) then
-		doRep()
-	end
-end)
-game:GetService("UserInputService").InputBegan:Connect(function(input, processed)
-	if not processed and input.KeyCode == Enum.KeyCode.E and HUD.TrainStation then
-		doRep()
-	end
-end)
+-- Pet missions replace the old lift controls and held-weight animation.
+HUD.SetGym(nil)
 
 ---------------------------------------------------------------- server messages
 Remotes.Notify.OnClientEvent:Connect(function(text, kind)
@@ -322,21 +230,7 @@ RunService.Heartbeat:Connect(function(dt)
 		barrierPulse(root.Position)
 		HUD.ShowThrowHere()
 	end
-	-- standing in YOUR OWN gym?
-	local inGym = false
-	local idx = player:GetAttribute("BaseIndex")
-	local myBase = idx and workspace:FindFirstChild("Bases") and workspace.Bases:FindFirstChild("Base" .. idx)
-	local gymPad = myBase and myBase:FindFirstChild("GymPad")
-	if gymPad then
-		inGym = ((root.Position - gymPad.Position) * Vector3.new(1, 0, 1)).Magnitude < Config.TrainRange
-	end
-	local level = inGym and math.clamp(State.Data.EquipLevel or 1, 1, #Config.TrainingStations) or nil
-	local nextSt = level and Config.TrainingStations[level + 1]
-	local canBuy = nextSt and (State.Data.Money or 0) >= nextSt.price
-	if level ~= HUD._shownGym or canBuy ~= HUD._shownCanBuy then
-		HUD._shownGym, HUD._shownCanBuy = level, canBuy
-		HUD.SetGym(level)
-	end
+	HUD.SetGym(nil)
 	-- creatures are caught automatically now, so the manual collect button stays hidden
 	HUD.SetCollectable(nil)
 	-- show a sparkly guide beam to your base while carrying creatures
@@ -362,7 +256,9 @@ end)
 
 -- Cinematic intro fly-over; first-throw guidance stays context driven by GameplayFeel (no welcome toast).
 task.spawn(function()
-	local ok, err = pcall(function() require(Client.Intro).Play(HUD.Gui) end)
+	local ok, err = pcall(function()
+		require(Client.Intro).Play(HUD.Gui)
+	end)
 	if not ok then
 		warn("[Intro] " .. tostring(err))
 		workspace.CurrentCamera.CameraType = Enum.CameraType.Custom

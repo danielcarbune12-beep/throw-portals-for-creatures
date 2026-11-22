@@ -13,7 +13,11 @@ local LOCK_TIMEOUT = 300
 local store
 -- Explicit Studio test sessions use temporary profiles and never acquire a live save lock.
 local isolatedStudioTest = game:GetService("RunService"):IsStudio()
-	and (workspace:FindFirstChild("AutoTest") ~= nil or workspace:FindFirstChild("SanctuaryTest") ~= nil or workspace:GetAttribute("SanctuaryTest") == true)
+	and (
+		workspace:FindFirstChild("AutoTest") ~= nil
+		or workspace:FindFirstChild("SanctuaryTest") ~= nil
+		or workspace:GetAttribute("SanctuaryTest") == true
+	)
 local storeOk = not isolatedStudioTest and pcall(function()
 	store = DataStoreService:GetDataStore(STORE_NAME)
 end)
@@ -27,20 +31,22 @@ local function defaultData()
 	return {
 		Money = 50,
 		Strength = 0,
-		OwnedEquipment = { ["1"] = true },  -- (old system, kept for save compatibility)
-		EquipLevel = 1,                     -- your personal gym's equipment level (1-5)
+		OwnedEquipment = { ["1"] = true }, -- (old system, kept for save compatibility)
+		EquipLevel = 1, -- your personal gym's equipment level (1-5)
 		TotalEarned = 0,
 		Upgrades = { ThrowPower = 1, BaseSlots = 0, Storage = 0, Training = 0 },
 		OwnedPortals = { Basic = true },
 		EquippedPortal = "Basic",
-		Creatures = {},        -- array of { u = uid, c = creatureId }
-		Placed = {},           -- array of uids placed in base
-		Discovered = {},       -- [creatureId] = true
+		Creatures = {}, -- array of { u = uid, c = creatureId }
+		Placed = {}, -- array of uids placed in base
+		Discovered = {}, -- [creatureId] = true
 		UnlockedWorlds = { Forest = true },
-		Decor = {},            -- [decorId] = true
+		Decor = {}, -- [decorId] = true
 		FloorTheme = "Meadow",
 		OwnedFloors = { Meadow = true },
 		Uncollected = 0,
+		ExpeditionRelics = {},
+		ExpeditionCompletions = 0,
 		NextUid = 1,
 		LastOnline = 0,
 		Throws = 0,
@@ -62,7 +68,9 @@ local function retry(fn, tries)
 	local lastErr
 	for i = 1, tries or 4 do
 		local ok, res = pcall(fn)
-		if ok then return true, res end
+		if ok then
+			return true, res
+		end
 		lastErr = res
 		task.wait(1.5 * i)
 	end
@@ -88,13 +96,22 @@ function DataService.Load(player: Player)
 					return old
 				end)
 			end)
-			if not ok then warn("[DataService] load failed:", err); break end
-			if loaded ~= "locked" then break end
+			if not ok then
+				warn("[DataService] load failed:", err)
+				break
+			end
+			if loaded ~= "locked" then
+				break
+			end
 			task.wait(4) -- previous server still saving; wait and retry (steals lock on last attempt)
 		end
-		if type(loaded) == "table" then data = loaded end
+		if type(loaded) == "table" then
+			data = loaded
+		end
 	end
-	if not player.Parent then return nil end
+	if not player.Parent then
+		return nil
+	end
 	data = reconcile(data or {}, defaultData())
 	data._lock = nil
 	DataService.Profiles[player] = data
@@ -103,7 +120,9 @@ end
 
 function DataService.Save(player: Player, release: boolean?)
 	local data = DataService.Profiles[player]
-	if not data or not store then return end
+	if not data or not store then
+		return
+	end
 	data.LastOnline = os.time()
 	local key = "u_" .. player.UserId
 	local ok, err = retry(function()
@@ -113,7 +132,9 @@ function DataService.Save(player: Player, release: boolean?)
 			return copy
 		end)
 	end, 3)
-	if not ok then warn("[DataService] save failed for", player.Name, err) end
+	if not ok then
+		warn("[DataService] save failed for", player.Name, err)
+	end
 end
 
 DataService.Default = defaultData
@@ -153,7 +174,9 @@ game:BindToClose(function()
 		end)
 	end
 	local start = os.clock()
-	while threads > 0 and os.clock() - start < 25 do task.wait(0.2) end
+	while threads > 0 and os.clock() - start < 25 do
+		task.wait(0.2)
+	end
 end)
 
 return DataService

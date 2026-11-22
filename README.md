@@ -1,6 +1,6 @@
 # Throw Portals For Creatures — Setup Guide
 
-A complete, playable Roblox simulator. **Everything is built from code**: one long map with 8 zones, the Portal Launch Hall, 8 player bases (each with its own gym), 90 creatures, 9 portals, a cinematic intro, all UI, effects and animations. No asset uploads are required to play.
+A complete, playable Roblox simulator. **Everything is built from code**: one long map with 8 zones, the Portal Launch Hall, 8 Skyforge player courtyards with pet expedition tables, 90 creatures, 9 portals, a cinematic intro, all UI, effects and animations. No asset uploads are required to play.
 
 ## Install (pick one)
 
@@ -189,3 +189,33 @@ Evidence and limitations are in `review/codex_ui_environment/README.txt`.
 A newer concurrent Frozen-biome source edit is preserved in the working folder and
 is separate from this delivered UI/lobby scene. Stop and restart Play in Team Create
 to rebuild UI after source changes.
+
+## Skyforge courtyards and pet expeditions (2026-11-22)
+
+The shared Team Create place `129975585465401` is saved as version 30. Stop and
+restart Play to load the updated courtyard and client scripts. The public place
+has not been published by this update.
+
+The player base follows the approved Skyforge concept: an open timber lodge with
+layered violet roof tiles, stone footings, slate paths, low timber rails, a portal
+shrine and a floating relic pavilion. The old workout bench and lifting controls
+are replaced by a detailed expedition map table.
+
+At your own table, select an owned creature and an unlocked biome. A matching
+native biome earns a 25% coin bonus. One trip can run at a time; its pet and slot
+remain owned and reserved, but the pet leaves the courtyard and pauses its income
+until its return is claimed. Trips use saved Unix return times, including while
+offline. Claims consume their server-issued ID before awarding coins. A biome's
+first completed trip adds a permanent relic token to the table. Missions do not
+increase throw strength. Existing strength/equipment save fields are retained.
+
+`ExpeditionConfig` contains fallback route definitions. The server optionally reads
+the bounded ConfigService keys `expeditionDurationScale` and
+`expeditionRewardScale`; missing keys use the defaults. Rewards and durations are
+frozen when a pet departs. No live config values or experiments were published.
+
+Studio reviews: 799 construction checks, 57 expedition service checks and 43 real
+request/90-second mission checks passed. Review scripts are under `tests/studio`.
+The expedition panel was inspected on desktop and iPhone 17 Pro landscape; Studio
+was reset to its default viewport afterward. Physical phone/gamepad hardware and
+live DataStore rejoin were not tested. Existing imported-asset warnings remain.

@@ -1,7 +1,7 @@
 <roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" version="4">
 <Item class="Workspace" referent="RBX1"><Properties><string name="Name">Workspace</string><bool name="StreamingEnabled">false</bool></Properties></Item>
 <Item class="Lighting" referent="RBX2"><Properties><string name="Name">Lighting</string><token name="Technology">4</token><bool name="GlobalShadows">true</bool></Properties></Item>
-<Item class="ReplicatedStorage" referent="RBX19"><Properties><string name="Name">ReplicatedStorage</string></Properties>
+<Item class="ReplicatedStorage" referent="RBX20"><Properties><string name="Name">ReplicatedStorage</string></Properties>
 <Item class="Folder" referent="RBX3"><Properties><string name="Name">Shared</string></Properties>
 <Item class="ModuleScript" referent="RBX4"><Properties><string name="Name">Config</string><ProtectedString name="Source"><![CDATA[-- Config: every tunable number in the game lives here.
 -- Location: ReplicatedStorage > Shared > Config (ModuleScript)
@@ -2607,7 +2607,42 @@ end
 
 return CreatureData
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX8"><Properties><string name="Name">Format</string><ProtectedString name="Source"><![CDATA[-- Format: number formatting helpers.
+<Item class="ModuleScript" referent="RBX8"><Properties><string name="Name">ExpeditionConfig</string><ProtectedString name="Source"><![CDATA[-- Shared mission descriptions and fallback values. Live pacing/reward scales
+-- are read by ExpeditionService on the server, never by clients.
+local Config = require(script.Parent.Config)
+local Rules = {
+	Order = table.clone(Config.WorldOrder),
+	ById = {},
+	TableRange = 12,
+	IncomeFraction = 0.8,
+	MatchingBiomeMultiplier = 1.25,
+}
+
+local pacing = {
+	Forest = { 90, 120 },
+	Volcano = { 120, 300 },
+	Frozen = { 150, 600 },
+	Crystal = { 180, 1200 },
+	Candy = { 210, 2000 },
+	Space = { 240, 4000 },
+	Shadow = { 270, 8000 },
+	Heaven = { 300, 16000 },
+}
+
+for _, id in Rules.Order do
+	local values = pacing[id]
+	Rules.ById[id] = {
+		id = id,
+		world = id,
+		name = Config.Worlds[id].name .. " Expedition",
+		duration = values[1],
+		coins = values[2],
+	}
+end
+
+return Rules
+]]></ProtectedString></Properties></Item>
+<Item class="ModuleScript" referent="RBX9"><Properties><string name="Name">Format</string><ProtectedString name="Source"><![CDATA[-- Format: number formatting helpers.
 -- Location: ReplicatedStorage > Shared > Format (ModuleScript)
 local Format = {}
 local SUFFIX = { "", "K", "M", "B", "T", "Qa", "Qi", "Sx", "Sp", "Oc", "No", "Dc" }
@@ -2632,7 +2667,7 @@ end
 
 return Format
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX9"><Properties><string name="Name">Odds</string><ProtectedString name="Source"><![CDATA[-- Odds: the single source of truth for creature chances ("1 in X").
+<Item class="ModuleScript" referent="RBX10"><Properties><string name="Name">Odds</string><ProtectedString name="Source"><![CDATA[-- Odds: the single source of truth for creature chances ("1 in X").
 -- Used by the server to roll and by the client to display odds.
 -- Location: ReplicatedStorage > Shared > Odds (ModuleScript)
 
@@ -2751,7 +2786,7 @@ end
 
 return Odds
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX10"><Properties><string name="Name">PetMeshManifest</string><ProtectedString name="Source"><![CDATA[-- PetMeshManifest: AI-generated, textured meshes (Roblox Studio mesh generation) for species that
+<Item class="ModuleScript" referent="RBX11"><Properties><string name="Name">PetMeshManifest</string><ProtectedString name="Source"><![CDATA[-- PetMeshManifest: AI-generated, textured meshes (Roblox Studio mesh generation) for species that
 -- have been upgraded to sculpted meshes. Each part is a separate MeshPart so the rig can still animate
 -- head / ears / legs / tail / wings. Positions are relative to the model's ground-centre, facing -Z,
 -- at their generated size (studs). Species NOT listed here use the procedural builder (fallback).
@@ -2906,7 +2941,7 @@ return {
 	} },
 }
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX11"><Properties><string name="Name">PortalBuilder</string><ProtectedString name="Source"><![CDATA[-- PortalBuilder: builds the throwable portal orb and the opened portal gate.
+<Item class="ModuleScript" referent="RBX12"><Properties><string name="Name">PortalBuilder</string><ProtectedString name="Source"><![CDATA[-- PortalBuilder: builds the throwable portal orb and the opened portal gate.
 -- Location: ReplicatedStorage > Shared > PortalBuilder (ModuleScript)
 
 local Config = require(script.Parent.Config)
@@ -2967,7 +3002,7 @@ end
 
 return require(script.Parent.PortalDesign)(PortalBuilder, Config)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX12"><Properties><string name="Name">PortalDesign</string><ProtectedString name="Source"><![CDATA[-- Architectural portals and faceted throw orbs. No uploaded meshes or textures required.
+<Item class="ModuleScript" referent="RBX13"><Properties><string name="Name">PortalDesign</string><ProtectedString name="Source"><![CDATA[-- Architectural portals and faceted throw orbs. No uploaded meshes or textures required.
 -- API refs deliberately match ThrowController/UIKit. Structural frames do not spin.
 local V, CF, A = Vector3.new, CFrame.new, CFrame.Angles
 local PI, M = math.pi, Enum.Material
@@ -3488,7 +3523,7 @@ return function(API, Config)
 	return API
 end
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX13"><Properties><string name="Name">PresentationTimeline</string><ProtectedString name="Source"><![CDATA[-- PresentationTimeline: the ONE table of reveal / capture / card timings used by every client
+<Item class="ModuleScript" referent="RBX14"><Properties><string name="Name">PresentationTimeline</string><ProtectedString name="Source"><![CDATA[-- PresentationTimeline: the ONE table of reveal / capture / card timings used by every client
 -- module (CreatureRenderer, ThrowController, ClientMain). Presentation only: the server still owns
 -- the authoritative catch deadline (Config.CatchDelay, unchanged) and never waits for clients.
 -- Location: ReplicatedStorage > Shared > PresentationTimeline (ModuleScript)
@@ -3560,7 +3595,7 @@ end
 
 return T
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX14"><Properties><string name="Name">SanctuaryLook</string><ProtectedString name="Source"><![CDATA[-- Shared art direction so Edit preview and runtime use the same sanctuary atmosphere.
+<Item class="ModuleScript" referent="RBX15"><Properties><string name="Name">SanctuaryLook</string><ProtectedString name="Source"><![CDATA[-- Shared art direction so Edit preview and runtime use the same sanctuary atmosphere.
 local Look = {
 	ambient = Color3.fromRGB(129, 120, 148),
 	fog = Color3.fromRGB(179, 183, 207),
@@ -3614,7 +3649,7 @@ function Look.Apply(lighting)
 end
 return Look
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX15"><Properties><string name="Name">SpeciesAnatomy</string><ProtectedString name="Source"><![CDATA[-- SpeciesAnatomy: species-specific anatomy for every creature + extra body plans.
+<Item class="ModuleScript" referent="RBX16"><Properties><string name="Name">SpeciesAnatomy</string><ProtectedString name="Source"><![CDATA[-- SpeciesAnatomy: species-specific anatomy for every creature + extra body plans.
 -- Location: ReplicatedStorage > Shared > SpeciesAnatomy (ModuleScript)
 --
 -- Each builder is called as A[key](H, rig, vd, s, prof) AFTER the generic body plan, face,
@@ -4682,7 +4717,7 @@ end
 
 return A
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX16"><Properties><string name="Name">SpeciesModels</string><ProtectedString name="Source"><![CDATA[-- SpeciesModels: hand-authored, reference-faithful creature models (highest priority path).
+<Item class="ModuleScript" referent="RBX17"><Properties><string name="Name">SpeciesModels</string><ProtectedString name="Source"><![CDATA[-- SpeciesModels: hand-authored, reference-faithful creature models (highest priority path).
 -- Location: ReplicatedStorage > Shared > SpeciesModels (ModuleScript)
 --
 -- Each entry is model(H, rig, vd, s) and must fill the standard rig channels used by
@@ -4839,7 +4874,7 @@ end
 
 return M
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX17"><Properties><string name="Name">SpeciesProfiles</string><ProtectedString name="Source"><![CDATA[-- SpeciesProfiles: per-species VISUAL + MOTION metadata for all 74 creatures.
+<Item class="ModuleScript" referent="RBX18"><Properties><string name="Name">SpeciesProfiles</string><ProtectedString name="Source"><![CDATA[-- SpeciesProfiles: per-species VISUAL + MOTION metadata for all 74 creatures.
 -- Location: ReplicatedStorage > Shared > SpeciesProfiles (ModuleScript)
 --
 -- Identity (id, name, rarity, world, palette, economy) stays in CreatureData and is never
@@ -5541,7 +5576,7 @@ end
 
 return Profiles
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX18"><Properties><string name="Name">Variants</string><ProtectedString name="Source"><![CDATA[-- Variants: pet SIZES (Big / Huge / Titan) and MATERIALS (Gold / Emerald / Ruby / Diamond).
+<Item class="ModuleScript" referent="RBX19"><Properties><string name="Name">Variants</string><ProtectedString name="Source"><![CDATA[-- Variants: pet SIZES (Big / Huge / Titan) and MATERIALS (Gold / Emerald / Ruby / Diamond).
 -- Rolled by the server on every catch, independently of the creature itself, and saved on the
 -- creature entry ({ u, c, s = size, v = material }). Both multiply the creature's income.
 -- Shared by server (rolls, income, selling) and client (looks, names).
@@ -5669,28 +5704,32 @@ return V
 ]]></ProtectedString></Properties></Item>
 </Item>
 </Item>
-<Item class="ServerScriptService" referent="RBX41"><Properties><string name="Name">ServerScriptService</string></Properties>
-<Item class="Folder" referent="RBX20"><Properties><string name="Name">Server</string></Properties>
-<Item class="ModuleScript" referent="RBX21"><Properties><string name="Name">BaseBuilder</string><ProtectedString name="Source"><![CDATA[-- BaseBuilder: builds the 8 player bases (with a personal gym each) and their decorations.
+<Item class="ServerScriptService" referent="RBX45"><Properties><string name="Name">ServerScriptService</string></Properties>
+<Item class="Folder" referent="RBX21"><Properties><string name="Name">Server</string></Properties>
+<Item class="ModuleScript" referent="RBX22"><Properties><string name="Name">BaseBuilder</string><ProtectedString name="Source"><![CDATA[-- BaseBuilder: builds eight Skyforge courtyards and owned decorations.
 -- Location: ServerScriptService > Server > BaseBuilder (ModuleScript)
 --
--- Layout of one base (local space, -Z = entrance facing the street):
---   entrance gateway + stone path -> central fountain with a ring of glowing pet slots
---   front-left: money collect pad      front-right: personal GYM
---   back-left:  pet cottage            back-right:  pond
---   string lights between the four corner lamps; pets roam the whole plot
+-- Open timber lodge, portal shrine, floating relic pavilion and expedition map table.
+-- Original slot, collect-pad and spawn references remain stable.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Config = require(ReplicatedStorage.Shared.Config)
+local SkyforgeStyle = require(script.Parent.SkyforgeStyle)
+local SkyforgeDetails = require(script.Parent.SkyforgeDetails)
 
 local BaseBuilder = {}
 BaseBuilder.Bases = {}
 
 local DECOR_SPOTS = {
-	Vector3.new(-30, 0, -4), Vector3.new(30, 0, -4), Vector3.new(-30, 0, 9), Vector3.new(30, 0, 9),
-	Vector3.new(-7, 0, 29), Vector3.new(7, 0, 29), Vector3.new(0, 0, 22), Vector3.new(0, 22, 4),
+	Vector3.new(-30, 0, -4),
+	Vector3.new(30, 0, -4),
+	Vector3.new(-30, 0, 9),
+	Vector3.new(30, 0, 9),
+	Vector3.new(-7, 0, 29),
+	Vector3.new(7, 0, 29),
+	Vector3.new(0, 0, 22),
+	Vector3.new(0, 22, 4),
 }
-local SPARKLE = "rbxasset://textures/particles/sparkles_main.dds"
 
 ---------------------------------------------------------------- helpers
 local function part(parent, size, cf, color, mat, collide, shape, transp)
@@ -5701,6 +5740,7 @@ local function part(parent, size, cf, color, mat, collide, shape, transp)
 	p.Color = color
 	p.Material = mat or Enum.Material.SmoothPlastic
 	p.Anchored = true
+	p.CanQuery, p.CanTouch = false, false
 	p.CanCollide = collide ~= false
 	p.Transparency = transp or 0
 	p.TopSurface = Enum.SurfaceType.Smooth
@@ -5708,193 +5748,86 @@ local function part(parent, size, cf, color, mat, collide, shape, transp)
 	p.Parent = parent
 	return p
 end
-local function sphereMesh(p) local m = Instance.new("SpecialMesh"); m.MeshType = Enum.MeshType.Sphere; m.Parent = p; return p end
-local function ball(parent, d, cf, color, mat, collide) return sphereMesh(part(parent, Vector3.new(d, d, d), cf, color, mat, collide)) end
-local function vcylCF(cf, h, d) return cf * CFrame.new(0, h / 2, 0) * CFrame.Angles(0, 0, math.pi / 2), Vector3.new(h, d, d) end
+local function sphereMesh(p)
+	local m = Instance.new("SpecialMesh")
+	m.MeshType = Enum.MeshType.Sphere
+	m.Parent = p
+	return p
+end
+local function ball(parent, d, cf, color, mat, collide)
+	return sphereMesh(part(parent, Vector3.new(d, d, d), cf, color, mat, collide))
+end
+local function vcylCF(cf, h, d)
+	return cf * CFrame.new(0, h / 2, 0) * CFrame.Angles(0, 0, math.pi / 2), Vector3.new(h, d, d)
+end
 local function cyl(parent, cf, h, d, color, mat, collide, transp)
 	local c, s = vcylCF(cf, h, d)
 	return part(parent, s, c, color, mat, collide, Enum.PartType.Cylinder, transp)
 end
-local function light(p, color, range, b) local l = Instance.new("PointLight"); l.Color = color; l.Range = range; l.Brightness = b or 1.4; l.Parent = p; return l end
+local function light(p, color, range, b)
+	local l = Instance.new("PointLight")
+	l.Color = color
+	l.Range = range
+	l.Brightness = b or 1.4
+	l.Parent = p
+	return l
+end
 
 ---------------------------------------------------------------- one base
 local function buildBase(index)
 	return require(script.Parent.SanctuaryBase).Build(index)
 end
 
----------------------------------------------------------------- gym equipment (by level)
-local function buildGymEquipment(base, level)
-	local f = base.gym
-	f:ClearAllChildren()
-	local st = Config.TrainingStations[level]
-	local g = base.cf * CFrame.new(Config.GymOffset) * CFrame.new(0, 1.25, 3)
-	local STEEL, DARKSTEEL = Color3.fromRGB(150, 155, 168), Color3.fromRGB(60, 62, 72)
-	local HZ = Enum.PartType.Cylinder -- part cylinders run along X (horizontal)
-	-- every tier has its own geometry (not a recolour); positions stay inside the gym pad
-	if level == 1 then
-		-- Wooden Dumbbell: soft mat, low wooden rack, two rounded wooden dumbbells, instruction plate
-		part(f, Vector3.new(7, 0.2, 5), g * CFrame.new(0, 0.1, 0), Color3.fromRGB(110, 170, 120), Enum.Material.Fabric, false)
-		part(f, Vector3.new(6, 0.5, 1.6), g * CFrame.new(0, 1.4, 2.2), Color3.fromRGB(170, 120, 70), Enum.Material.WoodPlanks)
-		for _, s in ipairs({ -1, 1 }) do part(f, Vector3.new(0.5, 1.4, 1.4), g * CFrame.new(s * 2.7, 0.7, 2.2), Color3.fromRGB(140, 95, 55), Enum.Material.Wood) end
-		for _, x in ipairs({ -1.4, 1.4 }) do
-			part(f, Vector3.new(1.6, 0.35, 0.35), g * CFrame.new(x, 1.95, 2.2), Color3.fromRGB(150, 105, 60), Enum.Material.Wood, false, HZ)
-			for _, s in ipairs({ -1, 1 }) do ball(f, 0.95, g * CFrame.new(x + s * 0.85, 1.95, 2.2), st.color, Enum.Material.Wood, false) end
-		end
-		part(f, Vector3.new(3, 1.4, 0.2), g * CFrame.new(0, 2.6, 3.3), Color3.fromRGB(245, 235, 210), Enum.Material.Wood, false)
-	elseif level == 2 then
-		-- Iron Barbell: rubber mat, steel uprights with J-hooks, plates + collars
-		part(f, Vector3.new(9, 0.2, 7), g * CFrame.new(0, 0.1, 0), Color3.fromRGB(40, 40, 46), Enum.Material.Rubber, false)
-		for _, s in ipairs({ -1, 1 }) do
-			part(f, Vector3.new(0.5, 5, 0.5), g * CFrame.new(s * 3.4, 2.5, 1.5), DARKSTEEL, Enum.Material.Metal)
-			part(f, Vector3.new(0.5, 0.3, 0.9), g * CFrame.new(s * 3.4, 4.15, 1.2), STEEL, Enum.Material.Metal, false) -- J-hook
-			for k = 0, 2 do
-				part(f, Vector3.new(0.28, 2.6 - k * 0.5, 2.6 - k * 0.5), g * CFrame.new(s * (2.4 + k * 0.3), 4.4, 1.5), Color3.fromRGB(50, 52, 60), Enum.Material.Metal, false, HZ)
-			end
-			part(f, Vector3.new(0.3, 0.8, 0.8), g * CFrame.new(s * 3.3, 4.4, 1.5), STEEL, Enum.Material.Metal, false, HZ) -- collar
-		end
-		part(f, Vector3.new(8.4, 0.32, 0.32), g * CFrame.new(0, 4.4, 1.5), STEEL, Enum.Material.Metal, false, HZ)
-	elseif level == 3 then
-		-- Golden Kettlebell: pedestal rack with three real kettlebells (body + arched handle)
-		part(f, Vector3.new(8, 0.2, 6), g * CFrame.new(0, 0.1, 0), Color3.fromRGB(60, 40, 30), Enum.Material.Rubber, false)
-		part(f, Vector3.new(7.5, 1.2, 2.4), g * CFrame.new(0, 0.6, 1.5), Color3.fromRGB(240, 232, 215), Enum.Material.Marble)
-		part(f, Vector3.new(7.7, 0.2, 2.6), g * CFrame.new(0, 1.25, 1.5), st.color, Enum.Material.Metal, false)
-		for k = -1, 1 do
-			local bcf = g * CFrame.new(k * 2.3, 2.45, 1.5)
-			ball(f, 2.1, bcf, st.color, Enum.Material.Metal, false)
-			for seg = 0, 4 do -- handle arch
-				local a = seg / 4 * math.pi
-				part(f, Vector3.new(0.75, 0.3, 0.3), bcf * CFrame.new(math.cos(a) * 0.7, 1.05 + math.sin(a) * 0.65, 0) * CFrame.Angles(0, 0, a + math.pi / 2), st.color, Enum.Material.Metal, false, HZ)
-			end
-		end
-	elseif level == 4 then
-		-- Crystal Weights: reinforced grip, faceted crystal plates, mounting brackets, luminous channels
-		part(f, Vector3.new(9, 0.2, 7), g * CFrame.new(0, 0.1, 0), Color3.fromRGB(35, 30, 50), Enum.Material.Rubber, false)
-		for _, s in ipairs({ -1, 1 }) do
-			part(f, Vector3.new(0.7, 4.6, 1.2), g * CFrame.new(s * 3.6, 2.3, 1.5), Color3.fromRGB(70, 60, 95), Enum.Material.Metal)
-			part(f, Vector3.new(0.72, 3.8, 0.15), g * CFrame.new(s * 3.6, 2.3, 0.88), st.color, Enum.Material.Neon, false) -- recessed channel
-			for k = 0, 1 do
-				local plate = part(f, Vector3.new(0.5, 2.4 - k * 0.6, 2.4 - k * 0.6), g * CFrame.new(s * (2.5 + k * 0.5), 4.4, 1.5) * CFrame.Angles(math.rad(45), 0, 0), st.color, Enum.Material.Glass, false)
-				plate.Transparency = 0.12
-			end
-		end
-		part(f, Vector3.new(7.6, 0.4, 0.4), g * CFrame.new(0, 4.4, 1.5), Color3.fromRGB(200, 200, 215), Enum.Material.Metal, false, HZ)
-		part(f, Vector3.new(2.4, 0.5, 0.5), g * CFrame.new(0, 4.4, 1.5), Color3.fromRGB(60, 50, 80), Enum.Material.Fabric, false, HZ) -- grip
-	else
-		-- Cosmic Gravity Machine: A-frame, three offset orbital rings, contained core, safe grips
-		part(f, Vector3.new(10, 0.2, 8), g * CFrame.new(0, 0.1, 0), Color3.fromRGB(20, 25, 45), Enum.Material.Rubber, false)
-		for _, s in ipairs({ -1, 1 }) do
-			for _, z in ipairs({ -0.6, 0.6 }) do
-				part(f, Vector3.new(0.5, 8.5, 0.5), g * CFrame.new(s * 4.2, 4, 1.5 + z) * CFrame.Angles(z * 0.25, 0, 0), Color3.fromRGB(45, 50, 75), Enum.Material.Metal)
-			end
-			part(f, Vector3.new(1.6, 0.4, 0.4), g * CFrame.new(s * 1.8, 3.2, -0.3), Color3.fromRGB(200, 205, 220), Enum.Material.Metal, false, HZ) -- grip
-		end
-		part(f, Vector3.new(8.8, 0.5, 0.5), g * CFrame.new(0, 8.2, 1.5), Color3.fromRGB(45, 50, 75), Enum.Material.Metal, false, HZ)
-		for k = 1, 3 do
-			local ring = part(f, Vector3.new(0.35, 5 + k * 1.2, 5 + k * 1.2), g * CFrame.new(0, 5, 1.5) * CFrame.Angles(k * 0.9, k * 0.5, 0), st.color, Enum.Material.Neon, false, Enum.PartType.Cylinder, 0.25)
-			ring.Name = "GravityRing" .. k
-		end
-		local glass = ball(f, 3.4, g * CFrame.new(0, 5, 1.5), Color3.fromRGB(180, 230, 255), Enum.Material.Glass, false)
-		glass.Transparency = 0.6
-		local core = ball(f, 1.8, g * CFrame.new(0, 5, 1.5), Color3.new(1, 1, 1), Enum.Material.Neon, false)
-		core.Name = "GravityCore"
-		light(core, st.color, 18, 2)
-		local pe = Instance.new("ParticleEmitter")
-		pe.Texture = SPARKLE; pe.Color = ColorSequence.new(st.color); pe.Rate = 6; pe.LightEmission = 1
-		pe.Speed = NumberRange.new(0.5, 1.5); pe.Size = NumberSequence.new(0.4, 0); pe.Parent = core
-	end
-	-- WORKOUT BENCH (every level): you sit here and press the weights. Faces away from the rack.
-	local benchCF = g * CFrame.new(0, 0, -2.4)
-	local IVORY, GOLD, PURPLE = Color3.fromRGB(243, 235, 219), Color3.fromRGB(234, 196, 111), Color3.fromRGB(96, 60, 168)
-	for _, s in ipairs({ -1, 1 }) do
-		part(f, Vector3.new(0.35, 1.3, 0.35), benchCF * CFrame.new(s * 0.85, 0.65, 0.8), DARKSTEEL, Enum.Material.Metal)
-		part(f, Vector3.new(0.35, 1.3, 0.35), benchCF * CFrame.new(s * 0.85, 0.65, -0.8), DARKSTEEL, Enum.Material.Metal)
-	end
-	part(f, Vector3.new(2.3, 0.3, 2.4), benchCF * CFrame.new(0, 1.35, 0), IVORY, Enum.Material.Limestone)
-	part(f, Vector3.new(2.42, 0.1, 2.52), benchCF * CFrame.new(0, 1.22, 0), GOLD, Enum.Material.Metal, false)
-	-- padded backrest behind the sitter, tilted slightly back
-	local back = benchCF * CFrame.new(0, 2.55, 1.15) * CFrame.Angles(math.rad(-12), 0, 0)
-	part(f, Vector3.new(2.2, 2.6, 0.45), back, PURPLE, Enum.Material.Fabric)
-	part(f, Vector3.new(2.32, 0.12, 0.5), back * CFrame.new(0, 1.32, 0), GOLD, Enum.Material.Metal, false)
-	part(f, Vector3.new(0.3, 2.1, 0.3), benchCF * CFrame.new(0, 1.9, 1.35), DARKSTEEL, Enum.Material.Metal)
-	local seat = Instance.new("Seat")
-	seat.Name = "WorkoutSeat"
-	seat.Size = Vector3.new(2.1, 0.35, 2.1)
-	seat.CFrame = benchCF * CFrame.new(0, 1.65, 0)
-	seat.Color = PURPLE
-	seat.Material = Enum.Material.Fabric
-	seat.Anchored = true
-	seat.TopSurface, seat.BottomSurface = Enum.SurfaceType.Smooth, Enum.SurfaceType.Smooth
-	seat.Parent = f
-
-	BaseBuilder.SetGymSign(base, level)
-end
-
--- Gym sign in the Portal Sanctuary style: violet board, gold frame and keystone, cream/gold lettering.
-function BaseBuilder.SetGymSign(base, level)
-	local label = base.gymLabel
-	local bb = label and label.Parent
-	if not bb then return end
-	-- the big floating sign above the dumbbells was removed on request (the gym panel shows this info)
-	local gui = bb:IsA("BillboardGui") and bb or bb:FindFirstAncestorWhichIsA("BillboardGui")
-	if gui then gui.Enabled = false end
-	do return end
-	if not bb:FindFirstChild("SanctuaryPanel") then
-		bb.Size = UDim2.fromScale(9, 3.4)
-		bb.MaxDistance = 70
-		local panel = Instance.new("Frame")
-		panel.Name = "SanctuaryPanel"
-		panel.Size = UDim2.fromScale(1, 1)
-		panel.BackgroundColor3 = Color3.new(1, 1, 1)
-		local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0.12, 0); corner.Parent = panel
-		local stroke = Instance.new("UIStroke"); stroke.Thickness = 3; stroke.Color = Color3.fromRGB(234, 196, 111); stroke.Parent = panel
-		local grad = Instance.new("UIGradient")
-		grad.Rotation = 90
-		grad.Color = ColorSequence.new(Color3.fromRGB(112, 74, 190), Color3.fromRGB(64, 40, 118))
-		grad.Parent = panel
-		local key = Instance.new("Frame")
-		key.Name = "Keystone"
-		key.AnchorPoint = Vector2.new(0.5, 0.5)
-		key.Position = UDim2.fromScale(0.5, 0)
-		key.Size = UDim2.fromScale(0.09, 0.24)
-		key.SizeConstraint = Enum.SizeConstraint.RelativeYY
-		key.Rotation = 45
-		key.BackgroundColor3 = Color3.fromRGB(234, 196, 111)
-		key.BorderSizePixel = 0
-		key.Parent = panel
-		panel.Parent = bb
-		label.Parent = panel
-		label.Size = UDim2.fromScale(0.9, 0.8)
-		label.Position = UDim2.fromScale(0.05, 0.12)
-		label.Font = Enum.Font.GothamBold
-		label.TextColor3 = Color3.fromRGB(255, 242, 205)
-		local ls = label:FindFirstChildOfClass("UIStroke")
-		if ls then ls.Color = Color3.fromRGB(40, 22, 80); ls.Thickness = 1.5; ls.Transparency = 0 end
-	end
-	local st = Config.TrainingStations[level]
-	local nextSt = Config.TrainingStations[level + 1]
-	label.Text = string.format("<font color='#F1CA73'><b>PERSONAL GYM</b></font>\n%s\n<font color='#C9F2D2'>+%d STRENGTH / LIFT</font>\n<font color='#CDB8FF'>%s</font>",
-		string.upper(st.name), st.gain, nextSt and ("NEXT: " .. string.upper(nextSt.name)) or "MAXED OUT")
-end
-
 ---------------------------------------------------------------- decorations
 local DecorBuild = {}
-local function D(base, spot) return base.cf * CFrame.new(spot) end
+local function D(base, spot)
+	return base.cf * CFrame.new(spot)
+end
 
 function DecorBuild.FlowerBed(f, cf)
 	-- stone border + soil + three distinct flower shapes (tulip, daisy, bell) with leaves
-	part(f, Vector3.new(8.4, 0.8, 4.4), cf * CFrame.new(0, 1.3, 0), Color3.fromRGB(175, 170, 165), Enum.Material.Cobblestone)
-	part(f, Vector3.new(7.6, 0.3, 3.6), cf * CFrame.new(0, 1.75, 0), Color3.fromRGB(95, 65, 45), Enum.Material.Ground, false)
+	part(
+		f,
+		Vector3.new(8.4, 0.8, 4.4),
+		cf * CFrame.new(0, 1.3, 0),
+		Color3.fromRGB(175, 170, 165),
+		Enum.Material.Cobblestone
+	)
+	part(
+		f,
+		Vector3.new(7.6, 0.3, 3.6),
+		cf * CFrame.new(0, 1.75, 0),
+		Color3.fromRGB(95, 65, 45),
+		Enum.Material.Ground,
+		false
+	)
 	for i = 1, 9 do
 		local x, z = -3 + (i - 1) % 5 * 1.5, i > 5 and 0.9 or -0.9
 		local base = cf * CFrame.new(x, 1.9, z)
 		part(f, Vector3.new(0.15, 1.1, 0.15), base * CFrame.new(0, 0.55, 0), Color3.fromRGB(70, 150, 60), nil, false)
-		ball(f, 1, base * CFrame.new(0.25, 0.35, 0) * CFrame.Angles(0, 0, -0.6), Color3.fromRGB(90, 180, 70), Enum.Material.Grass, false).Size = Vector3.new(0.6, 0.2, 0.35)
+		ball(
+			f,
+			1,
+			base * CFrame.new(0.25, 0.35, 0) * CFrame.Angles(0, 0, -0.6),
+			Color3.fromRGB(90, 180, 70),
+			Enum.Material.Grass,
+			false
+		).Size =
+			Vector3.new(0.6, 0.2, 0.35)
 		local kind = i % 3
 		local col = Color3.fromHSV((i * 0.13) % 1, 0.55, 1)
 		if kind == 0 then -- tulip cup
 			ball(f, 1, base * CFrame.new(0, 1.25, 0), col, nil, false).Size = Vector3.new(0.55, 0.75, 0.55)
 		elseif kind == 1 then -- daisy: petal disc + centre
-			part(f, Vector3.new(0.12, 0.95, 0.95), base * CFrame.new(0, 1.2, 0) * CFrame.Angles(0, 0, math.pi / 2), Color3.fromRGB(255, 252, 245), nil, false, Enum.PartType.Cylinder)
+			part(
+				f,
+				Vector3.new(0.12, 0.95, 0.95),
+				base * CFrame.new(0, 1.2, 0) * CFrame.Angles(0, 0, math.pi / 2),
+				Color3.fromRGB(255, 252, 245),
+				nil,
+				false,
+				Enum.PartType.Cylinder
+			)
 			ball(f, 0.35, base * CFrame.new(0, 1.28, 0), Color3.fromRGB(255, 210, 60), nil, false)
 		else -- bell: drooping bloom
 			ball(f, 1, base * CFrame.new(0.2, 1.05, 0), col, nil, false).Size = Vector3.new(0.45, 0.55, 0.45)
@@ -5905,16 +5838,45 @@ function DecorBuild.Lanterns(f, cf)
 	-- real post + bracket + caged lantern bodies (warm glass inserts); one light per pair
 	for s = -1, 1, 2 do
 		local base = cf * CFrame.new(s * 2.5, 0, 0)
-		part(f, Vector3.new(1.2, 0.6, 1.2), base * CFrame.new(0, 1.3, 0), Color3.fromRGB(70, 60, 80), Enum.Material.Metal)
+		part(
+			f,
+			Vector3.new(1.2, 0.6, 1.2),
+			base * CFrame.new(0, 1.3, 0),
+			Color3.fromRGB(70, 60, 80),
+			Enum.Material.Metal
+		)
 		part(f, Vector3.new(0.4, 7, 0.4), base * CFrame.new(0, 4.6, 0), Color3.fromRGB(60, 50, 70), Enum.Material.Metal)
-		part(f, Vector3.new(1.6, 0.25, 0.25), base * CFrame.new(-s * 0.6, 8, 0), Color3.fromRGB(60, 50, 70), Enum.Material.Metal, false)
+		part(
+			f,
+			Vector3.new(1.6, 0.25, 0.25),
+			base * CFrame.new(-s * 0.6, 8, 0),
+			Color3.fromRGB(60, 50, 70),
+			Enum.Material.Metal,
+			false
+		)
 		local lcf = base * CFrame.new(-s * 1.3, 6.9, 0)
 		local glass = part(f, Vector3.new(0.9, 1.3, 0.9), lcf, Color3.fromRGB(255, 190, 110), Enum.Material.Neon, false)
 		for _, c in ipairs({ { 1, 1 }, { 1, -1 }, { -1, 1 }, { -1, -1 } }) do
-			part(f, Vector3.new(0.12, 1.5, 0.12), lcf * CFrame.new(c[1] * 0.5, 0, c[2] * 0.5), Color3.fromRGB(45, 38, 50), Enum.Material.Metal, false)
+			part(
+				f,
+				Vector3.new(0.12, 1.5, 0.12),
+				lcf * CFrame.new(c[1] * 0.5, 0, c[2] * 0.5),
+				Color3.fromRGB(45, 38, 50),
+				Enum.Material.Metal,
+				false
+			)
 		end
-		part(f, Vector3.new(1.2, 0.3, 1.2), lcf * CFrame.new(0, 0.8, 0), Color3.fromRGB(45, 38, 50), Enum.Material.Metal, false)
-		if s == 1 then light(glass, Color3.fromRGB(255, 190, 110), 16) end
+		part(
+			f,
+			Vector3.new(1.2, 0.3, 1.2),
+			lcf * CFrame.new(0, 0.8, 0),
+			Color3.fromRGB(45, 38, 50),
+			Enum.Material.Metal,
+			false
+		)
+		if s == 1 then
+			light(glass, Color3.fromRGB(255, 190, 110), 16)
+		end
 	end
 end
 function DecorBuild.MushroomRing(f, cf)
@@ -5922,7 +5884,8 @@ function DecorBuild.MushroomRing(f, cf)
 		local a = i / 6 * math.pi * 2
 		local p = cf * CFrame.new(math.cos(a) * 2.6, 1, math.sin(a) * 2.6)
 		part(f, Vector3.new(0.6, 1.6, 0.6), p * CFrame.new(0, 0.8, 0), Color3.fromRGB(245, 235, 220), nil, false)
-		ball(f, 1, p * CFrame.new(0, 1.8, 0), Color3.fromHSV(0.8 + i * 0.03, 0.7, 1), Enum.Material.Neon, false).Size = Vector3.new(1.8, 1, 1.8)
+		ball(f, 1, p * CFrame.new(0, 1.8, 0), Color3.fromHSV(0.8 + i * 0.03, 0.7, 1), Enum.Material.Neon, false).Size =
+			Vector3.new(1.8, 1, 1.8)
 	end
 end
 function DecorBuild.Fountain(f, cf)
@@ -5936,8 +5899,16 @@ function DecorBuild.CrystalTree(f, cf)
 	local last
 	for i = 1, 7 do
 		local a = i * 0.9
-		last = part(f, Vector3.new(1, 3.5, 1), cf * CFrame.new(math.cos(a) * 2, 8 + (i % 3), math.sin(a) * 2) * CFrame.Angles(math.cos(a) * 0.6, 0, math.sin(a) * 0.6),
-			Color3.fromHSV(0.55 + i * 0.05, 0.6, 1), Enum.Material.Neon, false)
+		last = part(
+			f,
+			Vector3.new(1, 3.5, 1),
+			cf
+				* CFrame.new(math.cos(a) * 2, 8 + (i % 3), math.sin(a) * 2)
+				* CFrame.Angles(math.cos(a) * 0.6, 0, math.sin(a) * 0.6),
+			Color3.fromHSV(0.55 + i * 0.05, 0.6, 1),
+			Enum.Material.Neon,
+			false
+		)
 	end
 	light(last, Color3.fromRGB(150, 200, 255), 20)
 end
@@ -5952,16 +5923,32 @@ function DecorBuild.Statue(f, cf)
 	ball(f, 1, s * CFrame.new(0, 2.9, -0.6), gold, Enum.Material.Metal).Size = Vector3.new(1.7, 1.5, 1.6) -- head
 	ball(f, 1, s * CFrame.new(0, 2.6, -1.4), gold, Enum.Material.Metal, false).Size = Vector3.new(0.8, 0.6, 0.9) -- muzzle
 	for side = -1, 1, 2 do
-		local ear = part(f, Vector3.new(0.5, 1.1, 0.3), s * CFrame.new(side * 0.55, 3.9, -0.5) * CFrame.Angles(0, 0, -side * 0.35), gold, Enum.Material.Metal, false)
+		local ear = part(
+			f,
+			Vector3.new(0.5, 1.1, 0.3),
+			s * CFrame.new(side * 0.55, 3.9, -0.5) * CFrame.Angles(0, 0, -side * 0.35),
+			gold,
+			Enum.Material.Metal,
+			false
+		)
 		ear.Shape = Enum.PartType.Block
-		ball(f, 1, s * CFrame.new(side * 0.6, 0.4, -0.9), gold, Enum.Material.Metal, false).Size = Vector3.new(0.7, 0.6, 1.1) -- front paws
+		ball(f, 1, s * CFrame.new(side * 0.6, 0.4, -0.9), gold, Enum.Material.Metal, false).Size =
+			Vector3.new(0.7, 0.6, 1.1) -- front paws
 	end
-	ball(f, 1, s * CFrame.new(1.2, 0.7, 1.2) * CFrame.Angles(0, 0.6, 0), gold, Enum.Material.Metal, false).Size = Vector3.new(0.9, 0.9, 2.6) -- curled tail
+	ball(f, 1, s * CFrame.new(1.2, 0.7, 1.2) * CFrame.Angles(0, 0.6, 0), gold, Enum.Material.Metal, false).Size =
+		Vector3.new(0.9, 0.9, 2.6) -- curled tail
 end
 function DecorBuild.Rainbow(f, cf)
 	-- continuous seven-band arch with cloud feet and neat end caps
-	local cols = { Color3.fromRGB(255, 80, 80), Color3.fromRGB(255, 160, 50), Color3.fromRGB(255, 230, 70), Color3.fromRGB(90, 220, 110),
-		Color3.fromRGB(80, 170, 255), Color3.fromRGB(110, 100, 255), Color3.fromRGB(200, 100, 255) }
+	local cols = {
+		Color3.fromRGB(255, 80, 80),
+		Color3.fromRGB(255, 160, 50),
+		Color3.fromRGB(255, 230, 70),
+		Color3.fromRGB(90, 220, 110),
+		Color3.fromRGB(80, 170, 255),
+		Color3.fromRGB(110, 100, 255),
+		Color3.fromRGB(200, 100, 255),
+	}
 	local segs = 14
 	for b, col in ipairs(cols) do
 		local r = 6.2 - b * 0.42
@@ -5970,33 +5957,64 @@ function DecorBuild.Rainbow(f, cf)
 			local p0 = Vector3.new(math.cos(a0) * r, math.sin(a0) * r, 0)
 			local p1 = Vector3.new(math.cos(a1) * r, math.sin(a1) * r, 0)
 			local mid = (p0 + p1) / 2
-			part(f, Vector3.new(0.45, (p1 - p0).Magnitude + 0.08, 0.6), cf * CFrame.new(0, 1.2, 0) * CFrame.new(mid) * CFrame.Angles(0, 0, (a0 + a1) / 2), col, Enum.Material.Neon, false)
+			part(
+				f,
+				Vector3.new(0.45, (p1 - p0).Magnitude + 0.08, 0.6),
+				cf * CFrame.new(0, 1.2, 0) * CFrame.new(mid) * CFrame.Angles(0, 0, (a0 + a1) / 2),
+				col,
+				Enum.Material.Neon,
+				false
+			)
 		end
 	end
 	for s = -1, 1, 2 do
 		for k = 0, 2 do
-			ball(f, 1, cf * CFrame.new(s * (4.6 + k * 0.5 - 0.5), 1.4 + (k % 2) * 0.3, (k - 1) * 0.7), Color3.fromRGB(255, 255, 255), nil, false).Size = Vector3.new(2, 1.4, 1.8)
+			ball(
+				f,
+				1,
+				cf * CFrame.new(s * (4.6 + k * 0.5 - 0.5), 1.4 + (k % 2) * 0.3, (k - 1) * 0.7),
+				Color3.fromRGB(255, 255, 255),
+				nil,
+				false
+			).Size =
+				Vector3.new(2, 1.4, 1.8)
 		end
 	end
 end
 function DecorBuild.FloatingIsland(f, cf)
 	ball(f, 1, cf, Color3.fromRGB(120, 90, 70), Enum.Material.Slate, false).Size = Vector3.new(12, 5, 10)
-	ball(f, 1, cf * CFrame.new(0, 2, 0), Color3.fromRGB(110, 210, 90), Enum.Material.Grass, false).Size = Vector3.new(12, 1.5, 10)
-	part(f, Vector3.new(0.8, 4, 0.8), cf * CFrame.new(0, 4.5, 0), Color3.fromRGB(120, 80, 50), Enum.Material.Wood, false)
-	ball(f, 1, cf * CFrame.new(0, 7, 0), Color3.fromRGB(255, 160, 210), Enum.Material.Grass, false).Size = Vector3.new(4.5, 4, 4.5)
+	ball(f, 1, cf * CFrame.new(0, 2, 0), Color3.fromRGB(110, 210, 90), Enum.Material.Grass, false).Size =
+		Vector3.new(12, 1.5, 10)
+	part(
+		f,
+		Vector3.new(0.8, 4, 0.8),
+		cf * CFrame.new(0, 4.5, 0),
+		Color3.fromRGB(120, 80, 50),
+		Enum.Material.Wood,
+		false
+	)
+	ball(f, 1, cf * CFrame.new(0, 7, 0), Color3.fromRGB(255, 160, 210), Enum.Material.Grass, false).Size =
+		Vector3.new(4.5, 4, 4.5)
 end
 
 ---------------------------------------------------------------- public API
 function BaseBuilder.BuildAll()
 	for _, old in ipairs(workspace:GetChildren()) do
-		if old.Name == "Bases" and old:IsA("Folder") and (old:GetAttribute("TPFCGenerated") or old:FindFirstChild("Base1")) then old:Destroy() end
+		if
+			old.Name == "Bases"
+			and old:IsA("Folder")
+			and (old:GetAttribute("TPFCGenerated") or old:FindFirstChild("Base1"))
+		then
+			old:Destroy()
+		end
 	end
 	BaseBuilder.Bases = {}
-	local f = Instance.new("Folder"); f.Name = "Bases"; f.Parent = workspace
+	local f = Instance.new("Folder")
+	f.Name = "Bases"
+	f.Parent = workspace
 	f:SetAttribute("TPFCGenerated", true)
 	for i = 1, Config.MaxBases do
 		BaseBuilder.Bases[i] = buildBase(i)
-		buildGymEquipment(BaseBuilder.Bases[i], 1)
 		task.wait()
 	end
 end
@@ -6005,7 +6023,9 @@ function BaseBuilder.Claim(player)
 	for _, b in ipairs(BaseBuilder.Bases) do
 		if not b.owner then
 			b.owner = player
-			for _, l in ipairs(b.signLabels) do l.Text = player.DisplayName .. "'s Base" end
+			for _, l in ipairs(b.signLabels) do
+				l.Text = player.DisplayName .. "'s Courtyard"
+			end
 			b.model:SetAttribute("OwnerId", player.UserId)
 			return b
 		end
@@ -6015,50 +6035,56 @@ end
 
 function BaseBuilder.Release(base)
 	base.owner = nil
-	for _, l in ipairs(base.signLabels) do l.Text = "UNCLAIMED GARDEN" end
+	for _, l in ipairs(base.signLabels) do
+		l.Text = "Available courtyard"
+	end
 	base.model:SetAttribute("OwnerId", nil)
-	base.decor:ClearAllChildren()
-	base.gym:ClearAllChildren()
-	buildGymEquipment(base, 1)
-	base.crystalLabel.Text = ""
+	BaseBuilder.Refresh(
+		base,
+		{ Decor = {}, FloorTheme = "Meadow", EquipLevel = 1, Upgrades = { Training = 0, BaseSlots = 0 } }
+	)
 	base.collectLabel.Text = "$0"
 end
 
--- Rebuild decorations, floor theme, gym equipment and slot colours from player data
+-- Refresh owned decorations, floor theme, earned relics and pet slot markers.
 function BaseBuilder.Refresh(base, data)
 	base.decor:ClearAllChildren()
 	for i, id in ipairs(Config.DecorOrder) do
 		if data.Decor[id] and DecorBuild[id] then
-			local holder = Instance.new("Folder"); holder.Name = id; holder.Parent = base.decor
+			local holder = Instance.new("Folder")
+			holder.Name = id
+			holder.Parent = base.decor
 			DecorBuild[id](holder, D(base, DECOR_SPOTS[i]))
 		end
 	end
 	for _, theme in ipairs(Config.FloorThemes) do
 		if theme.id == data.FloorTheme then
-			base.floor.Color = theme.id == "Meadow" and Color3.fromRGB(108, 161, 76) or theme.color
+			base.floor.Color = theme.id == "Meadow" and SkyforgeStyle.grass or theme.color
 			base.floor.Material = theme.material
 		end
 	end
-	buildGymEquipment(base, math.clamp(data.EquipLevel or 1, 1, #Config.TrainingStations))
-	local lvl = data.Upgrades.Training
-	base.crystalLabel.Text = lvl > 0 and ("🐾 Pet Trainer Lv." .. lvl .. "  (+" .. math.floor(lvl * Config.TrainingBonus * 100) .. "% income)") or ""
+	SkyforgeDetails.RefreshRelics(base, data.ExpeditionRelics or {})
+	base.gymLabel.Text = "Expeditions"
+	base.crystalLabel.Text = ""
 	local slotsOpen = Config.StartSlots + data.Upgrades.BaseSlots
 	for i = 1, #base.slots do
 		local ring = base.slotFolder:FindFirstChild("SlotRing" .. i)
 		local pad = base.slotFolder:FindFirstChild("Slot" .. i)
 		local open = i <= slotsOpen
 		if ring then
-			ring.Color = open and Color3.fromRGB(150, 120, 255) or Color3.fromRGB(90, 90, 100)
-			ring.Material = open and Enum.Material.Neon or Enum.Material.SmoothPlastic
-			ring.Transparency = open and 0 or 0.5
+			ring.Color = open and SkyforgeStyle.gold or SkyforgeStyle.stone
+			ring.Material = Enum.Material.SmoothPlastic
+			ring.Transparency = open and 0.15 or 0.88
 		end
-		if pad then pad.Transparency = open and 0 or 0.6 end
+		if pad then
+			pad.Transparency = open and 0.20 or 0.93
+		end
 	end
 end
 
 return BaseBuilder
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX22"><Properties><string name="Name">BiomeCandy</string><ProtectedString name="Source"><![CDATA[-- BiomeCandy: Candy World, Z [900, 1300). Reference: roblox pets/Maps/05_Candy_Biome_Final.png (1:1 inventory).
+<Item class="ModuleScript" referent="RBX23"><Properties><string name="Name">BiomeCandy</string><ProtectedString name="Source"><![CDATA[-- BiomeCandy: Candy World, Z [900, 1300). Reference: roblox pets/Maps/05_Candy_Biome_Final.png (1:1 inventory).
 -- Authored as seen in the reference (K.mirror = true: design -X = screen-left). ONE palace, no plots/hall/houses.
 --  LEFT : CaL1 faceted chocolate cliff with icing caps, three-step chocolate waterfall + gold-edged canal ·
 --         CaL2 chunky pink candy trees · CaL3 swirl lollipops on striped sticks · CaL4 pink crystals ·
@@ -6324,7 +6350,7 @@ end
 
 return B
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX23"><Properties><string name="Name">BiomeCrystal</string><ProtectedString name="Source"><![CDATA[-- BiomeCrystal: Crystal Caves, Z [600, 900). Reference: roblox pets/Maps/04_Crystal_Biome_Final.png (1:1 inventory).
+<Item class="ModuleScript" referent="RBX24"><Properties><string name="Name">BiomeCrystal</string><ProtectedString name="Source"><![CDATA[-- BiomeCrystal: Crystal Caves, Z [600, 900). Reference: roblox pets/Maps/04_Crystal_Biome_Final.png (1:1 inventory).
 -- Authored as seen in the reference (K.mirror = true: design -X = screen-left). NO creature landmark.
 --  LEFT : CL1 giant split geode (purple shell, pale-pink quartz rim, huge cyan + violet crystal fan, stepped
 --         ledges) · CL2 turquoise mineral pool with ledges · CL3 rune monolith (dark slab, gold trim, cyan
@@ -6555,7 +6581,7 @@ end
 
 return B
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX24"><Properties><string name="Name">BiomeForest</string><ProtectedString name="Source"><![CDATA[-- BiomeForest: Green Forest, Z [0, 150). Reference: roblox pets/Maps/01_Forest_Biome.png (built 1:1 from
+<Item class="ModuleScript" referent="RBX25"><Properties><string name="Name">BiomeForest</string><ProtectedString name="Source"><![CDATA[-- BiomeForest: Green Forest, Z [0, 150). Reference: roblox pets/Maps/01_Forest_Biome.png (built 1:1 from
 -- its element inventory). Authored as seen in the reference (K.mirror = true: design -X = screen-left).
 --  LEFT : L1 big curved-trunk tree (near) · L2 vine-covered ruin arch with carved leaf panels ·
 --         L3 turquoise pool + small fall behind the arch · L4 corner bed: lilies, spotted mushrooms, ferns,
@@ -6915,7 +6941,7 @@ end
 
 return B
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX25"><Properties><string name="Name">BiomeFrozen</string><ProtectedString name="Source"><![CDATA[-- BiomeFrozen: Frozen Kingdom, Z [350, 600). Reference: roblox pets/Maps/03_Frozen_Biome.png (1:1 inventory).
+<Item class="ModuleScript" referent="RBX26"><Properties><string name="Name">BiomeFrozen</string><ProtectedString name="Source"><![CDATA[-- BiomeFrozen: Frozen Kingdom, Z [350, 600). Reference: roblox pets/Maps/03_Frozen_Biome.png (1:1 inventory).
 -- Authored as seen in the reference (K.mirror = true: design -X = screen-left).
 --  LEFT : FL1 two natural ice-rock arches with snow drapes, icicles, glowing ice · FL2 ice cave with glowing
 --         crystals + snowman (goggles, scarf, satchel) + sled and lantern · FL3 small frozen fall + pond with
@@ -7203,7 +7229,7 @@ end
 
 return B
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX26"><Properties><string name="Name">BiomeHeaven</string><ProtectedString name="Source"><![CDATA[-- BiomeHeaven: Heaven World, Z [2400, 3200). Reference: roblox pets/Maps/08_Heaven_Biome.png (1:1 inventory).
+<Item class="ModuleScript" referent="RBX27"><Properties><string name="Name">BiomeHeaven</string><ProtectedString name="Source"><![CDATA[-- BiomeHeaven: Heaven World, Z [2400, 3200). Reference: roblox pets/Maps/08_Heaven_Biome.png (1:1 inventory).
 -- Authored as seen in the reference (K.mirror = true: design -X = screen-left).
 --  LEFT : HL1 winged angel statue (hooded robe, praying hands, feathered wings, golden halo ring + star, gold-banded
 --         plinth) · HL2 cascading blue waterfalls down grassy marble tiers · HL3 green bonsai trees · HL4 cypresses ·
@@ -7484,7 +7510,7 @@ end
 
 return B
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX27"><Properties><string name="Name">BiomeShadow</string><ProtectedString name="Source"><![CDATA[-- BiomeShadow: Shadow Dimension, Z [1800, 2400). Reference: roblox pets/Maps/07_Shadow_Biome.png (1:1 inventory).
+<Item class="ModuleScript" referent="RBX28"><Properties><string name="Name">BiomeShadow</string><ProtectedString name="Source"><![CDATA[-- BiomeShadow: Shadow Dimension, Z [1800, 2400). Reference: roblox pets/Maps/07_Shadow_Biome.png (1:1 inventory).
 -- Authored as seen in the reference (K.mirror = true: design -X = screen-left).
 --  LEFT : ShL1 decorative side chasm (teal glowing veins, mist) · ShL2 twisted bare trees · ShL3 crimson plants ·
 --         ShL4 broken double-arch ruin · ShL5 red banner posts, small shrines
@@ -7771,7 +7797,7 @@ end
 
 return B
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX28"><Properties><string name="Name">BiomeSpace</string><ProtectedString name="Source"><![CDATA[-- BiomeSpace: Space Galaxy, Z [1300, 1800). Reference: roblox pets/Maps/06_Space_Biome.png (1:1 inventory).
+<Item class="ModuleScript" referent="RBX29"><Properties><string name="Name">BiomeSpace</string><ProtectedString name="Source"><![CDATA[-- BiomeSpace: Space Galaxy, Z [1300, 1800). Reference: roblox pets/Maps/06_Space_Biome.png (1:1 inventory).
 -- Authored as seen in the reference (K.mirror = true: design -X = screen-left).
 --  LEFT : SL1 observatory (ribbed stone/brass dome with an open slot + brass telescope, drum with gold bands,
 --         columned portico with blue emblem banners, wide stairs, segmented brass orbital arc, golden beacon star
@@ -8008,7 +8034,7 @@ end
 
 return B
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX29"><Properties><string name="Name">BiomeVolcano</string><ProtectedString name="Source"><![CDATA[-- BiomeVolcano: Volcano World, Z [150, 350). Reference: roblox pets/Maps/02_Volcano_Biome.png (1:1 inventory).
+<Item class="ModuleScript" referent="RBX30"><Properties><string name="Name">BiomeVolcano</string><ProtectedString name="Source"><![CDATA[-- BiomeVolcano: Volcano World, Z [150, 350). Reference: roblox pets/Maps/02_Volcano_Biome.png (1:1 inventory).
 -- Authored as seen in the reference (K.mirror = true: design -X = screen-left).
 --  LEFT : VL1 giant jagged volcano (spiky peaks, crater, smoke plume, two winding lava rivers) ·
 --         VL2 cliff lavafall into a glowing pool · VL3 hexagonal basalt column clusters with molten seams ·
@@ -8285,7 +8311,7 @@ end
 
 return B
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX30"><Properties><string name="Name">DataService</string><ProtectedString name="Source"><![CDATA[-- DataService: DataStore saving with session locking, retries, autosave and BindToClose.
+<Item class="ModuleScript" referent="RBX31"><Properties><string name="Name">DataService</string><ProtectedString name="Source"><![CDATA[-- DataService: DataStore saving with session locking, retries, autosave and BindToClose.
 -- Location: ServerScriptService > Server > DataService (ModuleScript)
 
 local DataStoreService = game:GetService("DataStoreService")
@@ -8300,7 +8326,11 @@ local LOCK_TIMEOUT = 300
 local store
 -- Explicit Studio test sessions use temporary profiles and never acquire a live save lock.
 local isolatedStudioTest = game:GetService("RunService"):IsStudio()
-	and (workspace:FindFirstChild("AutoTest") ~= nil or workspace:FindFirstChild("SanctuaryTest") ~= nil or workspace:GetAttribute("SanctuaryTest") == true)
+	and (
+		workspace:FindFirstChild("AutoTest") ~= nil
+		or workspace:FindFirstChild("SanctuaryTest") ~= nil
+		or workspace:GetAttribute("SanctuaryTest") == true
+	)
 local storeOk = not isolatedStudioTest and pcall(function()
 	store = DataStoreService:GetDataStore(STORE_NAME)
 end)
@@ -8314,20 +8344,22 @@ local function defaultData()
 	return {
 		Money = 50,
 		Strength = 0,
-		OwnedEquipment = { ["1"] = true },  -- (old system, kept for save compatibility)
-		EquipLevel = 1,                     -- your personal gym's equipment level (1-5)
+		OwnedEquipment = { ["1"] = true }, -- (old system, kept for save compatibility)
+		EquipLevel = 1, -- your personal gym's equipment level (1-5)
 		TotalEarned = 0,
 		Upgrades = { ThrowPower = 1, BaseSlots = 0, Storage = 0, Training = 0 },
 		OwnedPortals = { Basic = true },
 		EquippedPortal = "Basic",
-		Creatures = {},        -- array of { u = uid, c = creatureId }
-		Placed = {},           -- array of uids placed in base
-		Discovered = {},       -- [creatureId] = true
+		Creatures = {}, -- array of { u = uid, c = creatureId }
+		Placed = {}, -- array of uids placed in base
+		Discovered = {}, -- [creatureId] = true
 		UnlockedWorlds = { Forest = true },
-		Decor = {},            -- [decorId] = true
+		Decor = {}, -- [decorId] = true
 		FloorTheme = "Meadow",
 		OwnedFloors = { Meadow = true },
 		Uncollected = 0,
+		ExpeditionRelics = {},
+		ExpeditionCompletions = 0,
 		NextUid = 1,
 		LastOnline = 0,
 		Throws = 0,
@@ -8349,7 +8381,9 @@ local function retry(fn, tries)
 	local lastErr
 	for i = 1, tries or 4 do
 		local ok, res = pcall(fn)
-		if ok then return true, res end
+		if ok then
+			return true, res
+		end
 		lastErr = res
 		task.wait(1.5 * i)
 	end
@@ -8375,13 +8409,22 @@ function DataService.Load(player: Player)
 					return old
 				end)
 			end)
-			if not ok then warn("[DataService] load failed:", err); break end
-			if loaded ~= "locked" then break end
+			if not ok then
+				warn("[DataService] load failed:", err)
+				break
+			end
+			if loaded ~= "locked" then
+				break
+			end
 			task.wait(4) -- previous server still saving; wait and retry (steals lock on last attempt)
 		end
-		if type(loaded) == "table" then data = loaded end
+		if type(loaded) == "table" then
+			data = loaded
+		end
 	end
-	if not player.Parent then return nil end
+	if not player.Parent then
+		return nil
+	end
 	data = reconcile(data or {}, defaultData())
 	data._lock = nil
 	DataService.Profiles[player] = data
@@ -8390,7 +8433,9 @@ end
 
 function DataService.Save(player: Player, release: boolean?)
 	local data = DataService.Profiles[player]
-	if not data or not store then return end
+	if not data or not store then
+		return
+	end
 	data.LastOnline = os.time()
 	local key = "u_" .. player.UserId
 	local ok, err = retry(function()
@@ -8400,7 +8445,9 @@ function DataService.Save(player: Player, release: boolean?)
 			return copy
 		end)
 	end, 3)
-	if not ok then warn("[DataService] save failed for", player.Name, err) end
+	if not ok then
+		warn("[DataService] save failed for", player.Name, err)
+	end
 end
 
 DataService.Default = defaultData
@@ -8440,12 +8487,291 @@ game:BindToClose(function()
 		end)
 	end
 	local start = os.clock()
-	while threads > 0 and os.clock() - start < 25 do task.wait(0.2) end
+	while threads > 0 and os.clock() - start < 25 do
+		task.wait(0.2)
+	end
 end)
 
 return DataService
 ]]></ProtectedString></Properties></Item>
-<Item class="Script" referent="RBX31"><Properties><string name="Name">GameServer</string><ProtectedString name="Source"><![CDATA[-- GameServer: authoritative game logic (throwing, rolling, collecting, income, shop, upgrades).
+<Item class="ModuleScript" referent="RBX32"><Properties><string name="Name">ExpeditionService</string><ProtectedString name="Source"><![CDATA[-- One saved expedition per player. Dispatch/claim never yield: identity, time,
+-- ownership and rewards are resolved on the server and a claim consumes its ID.
+local RS = game:GetService("ReplicatedStorage")
+local Http = game:GetService("HttpService")
+local Rules = require(RS.Shared.ExpeditionConfig)
+local Creatures = require(RS.Shared.CreatureData)
+local variantModule = RS.Shared:FindFirstChild("Variants")
+local Variants = variantModule and require(variantModule)
+local Service = {}
+
+local MAX_REWARD = 1e12
+local MAX_DURATION = 3600
+local tuning = { duration = 1, reward = 1 }
+local initialized = false
+
+local function finite(n)
+	return type(n) == "number" and n == n and n > -math.huge and n < math.huge
+end
+
+local function integer(n)
+	return finite(n) and n == math.floor(n)
+end
+
+local function validUid(n)
+	return integer(n) and n > 0 and n <= 2 ^ 53 - 1
+end
+
+local function getPet(data, uid)
+	for _, pet in type(data.Creatures) == "table" and data.Creatures or {} do
+		if type(pet) == "table" and pet.u == uid and Creatures.ById[pet.c] then
+			return pet
+		end
+	end
+	return nil
+end
+
+local function petIncome(pet)
+	local multiplier = Variants and Variants.Mult(pet.s, pet.v) or 1
+	return Creatures.Income(pet.c) * multiplier
+end
+
+local function scaled(value, fallback)
+	return finite(value) and math.clamp(value, 0.25, 4) or fallback
+end
+
+-- Loading/refreshing config snapshots can yield, so it happens outside action
+-- handlers. New dispatches use the latest available values; active jobs keep
+-- their saved duration and payout regardless of subsequent tuning.
+function Service.Init()
+	if initialized then
+		return
+	end
+	initialized = true
+	task.spawn(function()
+		local ok, snapshot = pcall(function()
+			return game:GetService("ConfigService"):GetConfigAsync()
+		end)
+		if not ok or not snapshot then
+			return
+		end
+		local function read()
+			local success, duration, reward = pcall(function()
+				return snapshot:GetValue("expeditionDurationScale"), snapshot:GetValue("expeditionRewardScale")
+			end)
+			if success then
+				tuning = { duration = scaled(duration, 1), reward = scaled(reward, 1) }
+			end
+		end
+		read()
+		local refreshing, pending = false, false
+		snapshot.UpdateAvailable:Connect(function()
+			pending = true
+			if refreshing then
+				return
+			end
+			refreshing = true
+			task.spawn(function()
+				repeat
+					pending = false
+					local success = pcall(function()
+						snapshot:Refresh()
+					end)
+					if success then
+						read()
+					end
+				until not pending
+				refreshing = false
+			end)
+		end)
+	end)
+end
+
+local function cleanActive(data, active)
+	if type(active) ~= "table" then
+		return nil
+	end
+	local pet = validUid(active.petUid) and getPet(data, active.petUid)
+	if not pet or pet.c ~= active.creature or not Rules.ById[active.world] then
+		return nil
+	end
+	if type(active.id) ~= "string" or #active.id < 1 or #active.id > 80 then
+		return nil
+	end
+	if not integer(active.startedAt) or not integer(active.endsAt) then
+		return nil
+	end
+	local duration = active.endsAt - active.startedAt
+	if active.startedAt < 0 or duration < 1 or duration > MAX_DURATION then
+		return nil
+	end
+	-- Expired jobs remain claimable, but a corrupted far-future start must not
+	-- lock a pet for years. Servers only ever dispatch at the current Unix time.
+	if active.startedAt > os.time() + 600 then
+		return nil
+	end
+	if not integer(active.coins) or active.coins < 0 or active.coins > MAX_REWARD then
+		return nil
+	end
+	return {
+		id = active.id,
+		petUid = active.petUid,
+		creature = active.creature,
+		s = type(active.s) == "string" and active.s or nil,
+		v = type(active.v) == "string" and active.v or nil,
+		world = active.world,
+		startedAt = active.startedAt,
+		endsAt = active.endsAt,
+		coins = active.coins,
+		matched = active.matched == true,
+		wasPlaced = active.wasPlaced == true,
+	}
+end
+
+-- Called after profile load and before public operations. An older/malformed
+-- record cannot strand a creature forever or grant an invalid saved payout.
+function Service.Ensure(data)
+	local relics = {}
+	if type(data.ExpeditionRelics) == "table" then
+		for _, id in Rules.Order do
+			if data.ExpeditionRelics[id] == true then
+				relics[id] = true
+			end
+		end
+	end
+	data.ExpeditionRelics = relics
+	local completed = data.ExpeditionCompletions
+	data.ExpeditionCompletions = integer(completed) and math.clamp(completed, 0, 2147483647) or 0
+	data.ActiveExpedition = cleanActive(data, data.ActiveExpedition)
+end
+
+function Service.IsAway(data, uid)
+	local active = data.ActiveExpedition
+	return validUid(uid) and type(active) == "table" and active.petUid == uid or false
+end
+
+local function nearTable(player, base)
+	if not base or base.owner ~= player then
+		return false
+	end
+	local anchor = base.expeditionAnchor
+	if typeof(anchor) ~= "Instance" or not anchor:IsA("BasePart") or not anchor.Parent then
+		return false
+	end
+	local character = player.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	local hum = character and character:FindFirstChildOfClass("Humanoid")
+	return root ~= nil
+		and hum ~= nil
+		and hum.Health > 0
+		and (root.Position - anchor.Position).Magnitude <= Rules.TableRange
+end
+
+local function unix(now)
+	return integer(now) and now >= 0 and now or os.time()
+end
+
+local function durationFor(route)
+	return math.clamp(math.floor(route.duration * tuning.duration + 0.5), 15, MAX_DURATION)
+end
+
+function Service.Start(player, data, base, routeId, petUid, now)
+	Service.Ensure(data)
+	if not nearTable(player, base) then
+		return false, "Use the expedition table in your courtyard."
+	end
+	if data.ActiveExpedition then
+		return false, "Your pet is already on an expedition. Claim its return first."
+	end
+	local route = type(routeId) == "string" and Rules.ById[routeId]
+	if not route then
+		return false, "Choose a valid biome expedition."
+	end
+	if type(data.UnlockedWorlds) ~= "table" or data.UnlockedWorlds[route.world] ~= true then
+		return false, "Unlock this biome before sending an expedition."
+	end
+	local pet = validUid(petUid) and getPet(data, petUid)
+	if not pet then
+		return false, "Choose a creature you own."
+	end
+	local creature = Creatures.ById[pet.c]
+	local matched = creature.world == route.world
+	local duration = durationFor(route)
+	local coins = (route.coins + petIncome(pet) * Rules.IncomeFraction * duration)
+		* (matched and Rules.MatchingBiomeMultiplier or 1)
+		* tuning.reward
+	local startedAt = unix(now)
+	data.ActiveExpedition = {
+		id = Http:GenerateGUID(false),
+		petUid = petUid,
+		creature = pet.c,
+		s = type(pet.s) == "string" and pet.s or nil,
+		v = type(pet.v) == "string" and pet.v or nil,
+		world = route.world,
+		startedAt = startedAt,
+		endsAt = startedAt + duration,
+		coins = math.clamp(math.floor(coins), 0, MAX_REWARD),
+		matched = matched,
+		wasPlaced = type(data.Placed) == "table" and table.find(data.Placed, petUid) ~= nil,
+	}
+	return true, creature.name .. " departed for " .. route.name .. "."
+end
+
+function Service.Claim(player, data, base, expeditionId, now)
+	Service.Ensure(data)
+	if not nearTable(player, base) then
+		return false, "Return to your expedition table to claim the finds."
+	end
+	local active = data.ActiveExpedition
+	if not active or type(expeditionId) ~= "string" or active.id ~= expeditionId then
+		return false, "This expedition has already been claimed or is no longer active."
+	end
+	if unix(now) < active.endsAt then
+		return false, "Your pet is still exploring."
+	end
+	local firstRelic = data.ExpeditionRelics[active.world] ~= true
+	-- Consume the ID before awarding anything. There are no yielding operations
+	-- between the validation, consumption and profile mutation.
+	data.ActiveExpedition = nil
+	data.Money = (finite(data.Money) and data.Money or 0) + active.coins
+	data.TotalEarned = (finite(data.TotalEarned) and data.TotalEarned or 0) + active.coins
+	data.ExpeditionRelics[active.world] = true
+	data.ExpeditionCompletions = math.min(2147483647, data.ExpeditionCompletions + 1)
+	return true,
+		firstRelic and "Expedition complete. Coins and a new biome relic recovered."
+			or "Expedition complete. Coins recovered and your pet is home."
+end
+
+function Service.BuildView(data, now)
+	Service.Ensure(data)
+	local routes, relics = {}, {}
+	for _, id in Rules.Order do
+		local route = Rules.ById[id]
+		table.insert(routes, {
+			id = id,
+			name = route.name,
+			world = route.world,
+			duration = durationFor(route),
+			coins = route.coins * tuning.reward,
+			incomeCoinsPerSecond = Rules.IncomeFraction * tuning.reward,
+			matchMultiplier = Rules.MatchingBiomeMultiplier,
+			unlocked = type(data.UnlockedWorlds) == "table" and data.UnlockedWorlds[route.world] == true,
+		})
+		if data.ExpeditionRelics[id] then
+			relics[id] = true
+		end
+	end
+	return {
+		active = data.ActiveExpedition and table.clone(data.ActiveExpedition) or nil,
+		relics = relics,
+		completed = data.ExpeditionCompletions,
+		routes = routes,
+		serverNow = unix(now),
+	}
+end
+
+return Service
+]]></ProtectedString></Properties></Item>
+<Item class="Script" referent="RBX33"><Properties><string name="Name">GameServer</string><ProtectedString name="Source"><![CDATA[-- GameServer: authoritative game logic (throwing, rolling, collecting, income, shop, upgrades).
 -- Location: ServerScriptService > Server > GameServer (Script)
 -- The client only sends *requests*; every price, cooldown, distance and roll is decided here.
 
@@ -8464,11 +8790,18 @@ local Timeline = require(Shared.PresentationTimeline)
 local DataService = require(script.Parent.DataService)
 local WorldBuilder = require(script.Parent.WorldBuilder)
 local BaseBuilder = require(script.Parent.BaseBuilder)
+local Expeditions = require(script.Parent.ExpeditionService)
+Expeditions.Init()
 
 ---------------------------------------------------------------- remotes
 local Remotes = Instance.new("Folder")
 Remotes.Name = "Remotes"
-local function RE(name) local r = Instance.new("RemoteEvent"); r.Name = name; r.Parent = Remotes; return r end
+local function RE(name)
+	local r = Instance.new("RemoteEvent")
+	r.Name = name
+	r.Parent = Remotes
+	return r
+end
 local ThrowRE = RE("Throw")
 local SyncRE = RE("Sync")
 local PortalThrownRE = RE("PortalThrown")
@@ -8477,45 +8810,65 @@ local CreatureGoneRE = RE("CreatureGone")
 local NotifyRE = RE("Notify")
 local MoneyFxRE = RE("MoneyFx")
 local DepositRE = RE("Deposit")
-local RequestRF = Instance.new("RemoteFunction"); RequestRF.Name = "Request"; RequestRF.Parent = Remotes
+local RequestRF = Instance.new("RemoteFunction")
+RequestRF.Name = "Request"
+RequestRF.Parent = Remotes
 Remotes.Parent = ReplicatedStorage
 
 ---------------------------------------------------------------- world
 -- sculpted pet meshes load in the background; species fall back to procedural models until ready
 task.spawn(function()
-	local ok, err = pcall(function() require(script.Parent.PetMeshLoader).Load() end)
-	if not ok then warn("[GameServer] PetMeshLoader:", err) end
+	local ok, err = pcall(function()
+		require(script.Parent.PetMeshLoader).Load()
+	end)
+	if not ok then
+		warn("[GameServer] PetMeshLoader:", err)
+	end
 end)
 BaseBuilder.BuildAll()
 WorldBuilder.BuildAll()
 
 ---------------------------------------------------------------- state
-local State = {}      -- [player] = { base, carry = {ids}, lastThrow, tokens, lastTokenT, dirty }
-local Pending = {}    -- [throwId] = { owner, creature, pos, opened, world }
+local State = {} -- [player] = { base, carry = {ids}, lastThrow, tokens, lastTokenT, dirty }
+local Pending = {} -- [throwId] = { owner, creature, pos, opened, world }
 local nextThrowId = 0
-local Actions = {}    -- request handlers (filled in below)
+local Actions = {} -- request handlers (filled in below)
 
-local function slotsOpen(data) return Config.StartSlots + data.Upgrades.BaseSlots end
-local function storageCap(data) return Config.StartStorage + data.Upgrades.Storage * Config.StoragePerLevel end
-local function trainingMult(data) return 1 + data.Upgrades.Training * Config.TrainingBonus end
+local function slotsOpen(data)
+	return Config.StartSlots + data.Upgrades.BaseSlots
+end
+local function storageCap(data)
+	return Config.StartStorage + data.Upgrades.Storage * Config.StoragePerLevel
+end
+local function trainingMult(data)
+	return 1 + data.Upgrades.Training * Config.TrainingBonus
+end
 
 local function findCreature(data, uid)
 	for i, c in ipairs(data.Creatures) do
-		if c.u == uid then return c, i end
+		if c.u == uid then
+			return c, i
+		end
 	end
 end
-local function isPlaced(data, uid) return table.find(data.Placed, uid) ~= nil end
+local function isPlaced(data, uid)
+	return table.find(data.Placed, uid) ~= nil
+end
 
 local function incomePerSec(data)
 	local total = 0
 	for _, uid in ipairs(data.Placed) do
 		local c = findCreature(data, uid)
-		if c then total += CreatureData.Income(c.c) * Variants.Mult(c.s, c.v) end
+		if c and not Expeditions.IsAway(data, uid) then
+			total += CreatureData.Income(c.c) * Variants.Mult(c.s, c.v)
+		end
 	end
 	return total * trainingMult(data)
 end
 
-local function storedCount(data) return #data.Creatures - #data.Placed end
+local function storedCount(data)
+	return #data.Creatures - #data.Placed
+end
 
 local function freeSpace(player, data)
 	local st = State[player]
@@ -8526,7 +8879,9 @@ local function updateAttributes(player, data)
 	local ids = {}
 	for _, uid in ipairs(data.Placed) do
 		local c = findCreature(data, uid)
-		if c then table.insert(ids, Variants.Key(c.c, c.s, c.v)) end
+		if c and not Expeditions.IsAway(data, uid) then
+			table.insert(ids, Variants.Key(c.c, c.s, c.v))
+		end
 	end
 	player:SetAttribute("BaseCreatures", HttpService:JSONEncode(ids))
 	local ls = player:FindFirstChild("leaderstats")
@@ -8538,21 +8893,40 @@ end
 
 local function sync(player, partial)
 	local data = DataService.Get(player)
-	if not data then return end
+	if not data then
+		return
+	end
 	local maxDist = Config.ThrowDistance(data.Upgrades.ThrowPower, data.Strength)
 	if partial then
-		SyncRE:FireClient(player, { Money = data.Money, Uncollected = data.Uncollected, Strength = data.Strength, MaxDistance = maxDist })
+		SyncRE:FireClient(
+			player,
+			{ Money = data.Money, Uncollected = data.Uncollected, Strength = data.Strength, MaxDistance = maxDist }
+		)
 		return
 	end
 	local st = State[player]
 	SyncRE:FireClient(player, {
-		Money = data.Money, Uncollected = data.Uncollected, Upgrades = data.Upgrades,
-		OwnedPortals = data.OwnedPortals, EquippedPortal = data.EquippedPortal,
-		Creatures = data.Creatures, Placed = data.Placed, Discovered = data.Discovered,
-		UnlockedWorlds = data.UnlockedWorlds, Decor = data.Decor, FloorTheme = data.FloorTheme, OwnedFloors = data.OwnedFloors,
-		Income = incomePerSec(data), SlotsOpen = slotsOpen(data), StorageCap = storageCap(data),
-		MaxDistance = maxDist, Strength = data.Strength, EquipLevel = data.EquipLevel,
-		Carry = st and st.carry or {}, BaseIndex = st and st.base and st.base.index or 0,
+		Money = data.Money,
+		Uncollected = data.Uncollected,
+		Upgrades = data.Upgrades,
+		OwnedPortals = data.OwnedPortals,
+		EquippedPortal = data.EquippedPortal,
+		Creatures = data.Creatures,
+		Placed = data.Placed,
+		Discovered = data.Discovered,
+		UnlockedWorlds = data.UnlockedWorlds,
+		Decor = data.Decor,
+		FloorTheme = data.FloorTheme,
+		OwnedFloors = data.OwnedFloors,
+		Income = incomePerSec(data),
+		SlotsOpen = slotsOpen(data),
+		StorageCap = storageCap(data),
+		MaxDistance = maxDist,
+		Strength = data.Strength,
+		EquipLevel = data.EquipLevel,
+		Carry = st and st.carry or {},
+		BaseIndex = st and st.base and st.base.index or 0,
+		Expeditions = Expeditions.BuildView(data),
 	})
 	updateAttributes(player, data)
 end
@@ -8571,29 +8945,47 @@ local function rollCreature(portalId, worldId, dist)
 	local portal = Config.Portals[portalId]
 	local luck = Config.LuckFromDistance(dist)
 	local pool = {}
-	for _, c in ipairs(CreatureData.ByWorld[worldId] or {}) do table.insert(pool, c) end
-	for _, c in ipairs(CreatureData.ByWorld.Any or {}) do table.insert(pool, c) end
+	for _, c in ipairs(CreatureData.ByWorld[worldId] or {}) do
+		table.insert(pool, c)
+	end
+	for _, c in ipairs(CreatureData.ByWorld.Any or {}) do
+		table.insert(pool, c)
+	end
 
 	local total, entries = 0, {}
 	for rarity, w in pairs(portal.weights) do
 		local order = Config.Rarities[rarity].order
 		local has = false
-		for _, c in ipairs(pool) do if c.rarity == rarity then has = true break end end
+		for _, c in ipairs(pool) do
+			if c.rarity == rarity then
+				has = true
+				break
+			end
+		end
 		if has then
 			local weight = w * luck ^ (math.max(0, order - 2) * 0.5)
 			total += weight
 			table.insert(entries, { rarity = rarity, w = weight })
 		end
 	end
-	table.sort(entries, function(a, b) return Config.Rarities[a.rarity].order < Config.Rarities[b.rarity].order end)
+	table.sort(entries, function(a, b)
+		return Config.Rarities[a.rarity].order < Config.Rarities[b.rarity].order
+	end)
 	local r = math.random() * total
 	local chosen = entries[1].rarity
 	for _, e in ipairs(entries) do
 		r -= e.w
-		if r <= 0 then chosen = e.rarity break end
+		if r <= 0 then
+			chosen = e.rarity
+			break
+		end
 	end
 	local candidates = {}
-	for _, c in ipairs(pool) do if c.rarity == chosen then table.insert(candidates, c) end end
+	for _, c in ipairs(pool) do
+		if c.rarity == chosen then
+			table.insert(candidates, c)
+		end
+	end
 	return candidates[math.random(1, #candidates)].id
 end
 
@@ -8613,21 +9005,35 @@ end
 
 local function pendingCount(player)
 	local n = 0
-	for _, p in pairs(Pending) do if p.owner == player then n += 1 end end
+	for _, p in pairs(Pending) do
+		if p.owner == player then
+			n += 1
+		end
+	end
 	return n
 end
 
 ThrowRE.OnServerEvent:Connect(function(player, power, dir)
 	local data, st = DataService.Get(player), State[player]
-	if not data or not st then return end
-	if typeof(power) ~= "number" or power ~= power or typeof(dir) ~= "Vector3" then return end
-	if dir.X ~= dir.X or dir.Z ~= dir.Z then return end
+	if not data or not st then
+		return
+	end
+	if typeof(power) ~= "number" or power ~= power or typeof(dir) ~= "Vector3" then
+		return
+	end
+	if dir.X ~= dir.X or dir.Z ~= dir.Z then
+		return
+	end
 	local now = os.clock()
-	if now - st.lastThrow < Config.ThrowCooldown then return end
+	if now - st.lastThrow < Config.ThrowCooldown then
+		return
+	end
 	local char = player.Character
 	local hrp = char and char:FindFirstChild("HumanoidRootPart")
 	local hum = char and char:FindFirstChildOfClass("Humanoid")
-	if not hrp or not hum or hum.Health <= 0 then return end
+	if not hrp or not hum or hum.Health <= 0 then
+		return
+	end
 	if pendingCount(player) >= Config.MaxPendingPerPlayer then
 		notify(player, "One portal at a time! Wait for your creature.", "error")
 		return
@@ -8648,7 +9054,9 @@ ThrowRE.OnServerEvent:Connect(function(player, power, dir)
 	power = math.clamp(power, 0.05, 1)
 	local flat = Vector3.new(dir.X, 0, dir.Z)
 	local side = 0
-	if flat.Magnitude > 0.1 and flat.Unit.Z > 0.2 then side = flat.Unit.X / flat.Unit.Z end
+	if flat.Magnitude > 0.1 and flat.Unit.Z > 0.2 then
+		side = flat.Unit.X / flat.Unit.Z
+	end
 	local perfect = power >= 0.92
 	local dist = Config.ThrowDistance(data.Upgrades.ThrowPower, data.Strength) * power * (perfect and 1.15 or 1)
 	dist = math.clamp(dist, 8, Config.LaneLength - 15)
@@ -8668,40 +9076,91 @@ ThrowRE.OnServerEvent:Connect(function(player, power, dir)
 		if CreatureData.ById[fid] then
 			creatureId = fid
 			chance = Odds.Table(data.EquippedPortal, worldId, realDist)[creatureId] or 0.0001
-			if fs or fm then petSize, petMaterial = fs, fm end
+			if fs or fm then
+				petSize, petMaterial = fs, fm
+			end
 		end
 		st.forceNext = nil
 	end
-	Pending[id] = { owner = player, creature = creatureId, pos = landing, opened = false, world = worldId, size = petSize, variant = petMaterial }
+	Pending[id] = {
+		owner = player,
+		creature = creatureId,
+		pos = landing,
+		opened = false,
+		world = worldId,
+		size = petSize,
+		variant = petMaterial,
+	}
 	-- throw cutscene length (rarer creature = longer, crazier wind-up); the opening waits for it
 	local rolledRarity = CreatureData.ById[creatureId].rarity
 	local windup = Timeline.WindupFor(rolledRarity)
 
 	PortalThrownRE:FireAllClients({
-		id = id, owner = player.UserId, portal = data.EquippedPortal,
-		from = origin + Vector3.new(0, 1.5, 2), to = landing, t = flight, perfect = perfect, dist = realDist, zone = worldId,
-		rarity = rolledRarity, windup = windup,
+		id = id,
+		owner = player.UserId,
+		portal = data.EquippedPortal,
+		from = origin + Vector3.new(0, 1.5, 2),
+		to = landing,
+		t = flight,
+		perfect = perfect,
+		dist = realDist,
+		zone = worldId,
+		rarity = rolledRarity,
+		windup = windup,
 	})
 	task.delay(windup + flight + 0.9, function()
 		local p = Pending[id]
-		if not p then return end
+		if not p then
+			return
+		end
 		p.opened = true
 		local def = CreatureData.ById[creatureId]
-		PortalOpenedRE:FireAllClients({ id = id, owner = player.UserId, creature = creatureId, pos = landing, portal = data.EquippedPortal, chance = chance, size = petSize, variant = petMaterial })
+		PortalOpenedRE:FireAllClients({
+			id = id,
+			owner = player.UserId,
+			creature = creatureId,
+			pos = landing,
+			portal = data.EquippedPortal,
+			chance = chance,
+			size = petSize,
+			variant = petMaterial,
+		})
 		if Config.Rarities[def.rarity].order >= 5 then
 			for _, other in ipairs(Players:GetPlayers()) do
-				notify(other, player.DisplayName .. " found a " .. def.rarity:upper() .. " " .. Variants.Prefix(petSize, petMaterial) .. def.name .. " (" .. Odds.OneIn(chance) .. ")!", def.rarity)
+				notify(
+					other,
+					player.DisplayName
+						.. " found a "
+						.. def.rarity:upper()
+						.. " "
+						.. Variants.Prefix(petSize, petMaterial)
+						.. def.name
+						.. " ("
+						.. Odds.OneIn(chance)
+						.. ")!",
+					def.rarity
+				)
 			end
 		elseif petSize == "Titan" or petMaterial == "Diamond" or petMaterial == "Ruby" then
 			for _, other in ipairs(Players:GetPlayers()) do
-				notify(other, player.DisplayName .. " found a " .. Variants.Prefix(petSize, petMaterial):upper() .. def.name .. "!", "Legendary")
+				notify(
+					other,
+					player.DisplayName
+						.. " found a "
+						.. Variants.Prefix(petSize, petMaterial):upper()
+						.. def.name
+						.. "!",
+					"Legendary"
+				)
 			end
 		end
 		-- caught automatically once its entrance animation has played
 		task.delay(Config.CatchDelay[def.rarity] or 3, function()
 			if Pending[id] and player.Parent and State[player] then
 				local ok, msg = Actions.Collect(player, DataService.Get(player), State[player], id)
-				if not ok and msg then notify(player, msg, "error") end
+				if not ok and msg then
+					notify(player, msg, "error")
+				end
 			end
 		end)
 	end)
@@ -8715,24 +9174,36 @@ end)
 
 ---------------------------------------------------------------- deposit + income loops
 local function depositCarry(player, data, st, silent)
-	if #st.carry == 0 then return end
+	if #st.carry == 0 then
+		return
+	end
 	local newOnes = {}
 	for _, key in ipairs(st.carry) do
 		local cid, vs, vm = Variants.Parse(key)
 		local uid = DataService.NewUid(data)
 		table.insert(data.Creatures, { u = uid, c = cid, s = vs, v = vm })
-		if #data.Placed < slotsOpen(data) then table.insert(data.Placed, uid) end
+		if #data.Placed < slotsOpen(data) then
+			table.insert(data.Placed, uid)
+		end
 		if not data.Discovered[cid] then
 			data.Discovered[cid] = true
 			local bonus = math.floor(CreatureData.Income(cid) * Config.DiscoveryBonus)
 			data.Money += bonus
-			if not silent then notify(player, "NEW to your index: " .. CreatureData.ById[cid].name .. "!  +" .. Format.Money(bonus), "discover") end
+			if not silent then
+				notify(
+					player,
+					"NEW to your index: " .. CreatureData.ById[cid].name .. "!  +" .. Format.Money(bonus),
+					"discover"
+				)
+			end
 		end
 		table.insert(newOnes, key)
 	end
 	st.carry = {}
 	setCarry(player)
-	if not silent then DepositRE:FireClient(player, newOnes) end
+	if not silent then
+		DepositRE:FireClient(player, newOnes)
+	end
 	sync(player)
 end
 
@@ -8750,7 +9221,9 @@ task.spawn(function()
 			-- get up off the bench once you've stopped lifting for a bit
 			if st.benchSeat and os.clock() - (st.lastTrain or 0) > 2.5 then
 				local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-				if hum and hum.SeatPart == st.benchSeat then hum.Sit = false end
+				if hum and hum.SeatPart == st.benchSeat then
+					hum.Sit = false
+				end
 				st.benchSeat = nil
 			end
 			if data and hrp and st.base then
@@ -8760,7 +9233,11 @@ task.spawn(function()
 					depositCarry(player, data, st)
 				end
 				local pad = st.base.collect.Position
-				if data.Uncollected >= 1 and ((hrp.Position - pad) * Vector3.new(1, 0, 1)).Magnitude < 5.5 and math.abs(hrp.Position.Y - pad.Y) < 8 then
+				if
+					data.Uncollected >= 1
+					and ((hrp.Position - pad) * Vector3.new(1, 0, 1)).Magnitude < 5.5
+					and math.abs(hrp.Position.Y - pad.Y) < 8
+				then
 					local amt = math.floor(data.Uncollected)
 					data.Money += amt
 					data.TotalEarned += amt
@@ -8784,7 +9261,13 @@ task.spawn(function()
 				data.Uncollected += incomePerSec(data)
 				if st.base then
 					st.base.collectLabel.Text = Format.Money(data.Uncollected)
-					st.base.incomeLabel.Text = "+" .. Format.Money(incomePerSec(data)) .. "/s  •  " .. #data.Placed .. "/" .. slotsOpen(data) .. " pets"
+					st.base.incomeLabel.Text = "+"
+						.. Format.Money(incomePerSec(data))
+						.. "/s  •  "
+						.. #data.Placed
+						.. "/"
+						.. slotsOpen(data)
+						.. " pets"
 				end
 				sync(player, true)
 			end
@@ -8797,9 +9280,13 @@ end)
 
 function Actions.Collect(player, data, st, throwId)
 	local p = Pending[throwId]
-	if not p or p.owner ~= player or not p.opened then return false, "Nothing to collect" end
+	if not p or p.owner ~= player or not p.opened then
+		return false, "Nothing to collect"
+	end
 	-- caught! it goes straight into your inventory (and into a free base slot, where it roams)
-	if freeSpace(player, data) <= 0 then return false, "Storage full! Sell creatures or upgrade storage." end
+	if freeSpace(player, data) <= 0 then
+		return false, "Storage full! Sell creatures or upgrade storage."
+	end
 	Pending[throwId] = nil
 	CreatureGoneRE:FireAllClients(throwId, "collected", player.UserId)
 	table.insert(st.carry, Variants.Key(p.creature, p.size, p.variant))
@@ -8809,9 +9296,15 @@ end
 
 function Actions.BuyPortal(player, data, st, id)
 	local P = Config.Portals[id]
-	if not P then return false, "Unknown portal" end
-	if data.OwnedPortals[id] then return false, "Already owned" end
-	if data.Money < P.price then return false, "Not enough money" end
+	if not P then
+		return false, "Unknown portal"
+	end
+	if data.OwnedPortals[id] then
+		return false, "Already owned"
+	end
+	if data.Money < P.price then
+		return false, "Not enough money"
+	end
 	data.Money -= P.price
 	data.OwnedPortals[id] = true
 	data.EquippedPortal = id
@@ -8819,27 +9312,41 @@ function Actions.BuyPortal(player, data, st, id)
 end
 
 function Actions.EquipPortal(player, data, st, id)
-	if not data.OwnedPortals[id] then return false, "Not owned" end
+	if not data.OwnedPortals[id] then
+		return false, "Not owned"
+	end
 	data.EquippedPortal = id
 	return true
 end
 
 function Actions.Upgrade(player, data, st, kind)
 	local U = Config.Upgrades[kind]
-	if not U then return false, "Unknown upgrade" end
+	if not U then
+		return false, "Unknown upgrade"
+	end
 	local lvl = data.Upgrades[kind]
 	local idx = (kind == "ThrowPower") and lvl - 1 or lvl
-	if idx >= U.max then return false, "Max level!" end
+	if idx >= U.max then
+		return false, "Max level!"
+	end
 	local cost = Config.UpgradeCost(kind, idx)
-	if data.Money < cost then return false, "Not enough money" end
+	if data.Money < cost then
+		return false, "Not enough money"
+	end
 	data.Money -= cost
 	data.Upgrades[kind] = lvl + 1
-	if (kind == "Training" or kind == "BaseSlots") and st.base then BaseBuilder.Refresh(st.base, data) end
+	if (kind == "Training" or kind == "BaseSlots") and st.base then
+		BaseBuilder.Refresh(st.base, data)
+	end
 	if kind == "BaseSlots" then
 		-- auto-fill the new slot from storage
 		for _, c in ipairs(data.Creatures) do
-			if #data.Placed >= slotsOpen(data) then break end
-			if not isPlaced(data, c.u) then table.insert(data.Placed, c.u) end
+			if #data.Placed >= slotsOpen(data) then
+				break
+			end
+			if not isPlaced(data, c.u) and not Expeditions.IsAway(data, c.u) then
+				table.insert(data.Placed, c.u)
+			end
 		end
 	end
 	return true
@@ -8847,12 +9354,22 @@ end
 
 function Actions.UnlockWorld(player, data, st, id)
 	local W = Config.Worlds[id]
-	if not W then return false, "Unknown world" end
-	if data.UnlockedWorlds[id] then return false, "Already unlocked" end
+	if not W then
+		return false, "Unknown world"
+	end
+	if data.UnlockedWorlds[id] then
+		return false, "Already unlocked"
+	end
 	local prev = Config.WorldOrder[W.index - 1]
-	if prev and not data.UnlockedWorlds[prev] then return false, "Unlock " .. Config.Worlds[prev].name .. " first" end
-	if data.Upgrades.ThrowPower < W.throwLevel then return false, "Need Throw Power Lv." .. W.throwLevel end
-	if data.Money < W.cost then return false, "Not enough money" end
+	if prev and not data.UnlockedWorlds[prev] then
+		return false, "Unlock " .. Config.Worlds[prev].name .. " first"
+	end
+	if data.Upgrades.ThrowPower < W.throwLevel then
+		return false, "Need Throw Power Lv." .. W.throwLevel
+	end
+	if data.Money < W.cost then
+		return false, "Not enough money"
+	end
 	data.Money -= W.cost
 	data.UnlockedWorlds[id] = true
 	return true
@@ -8860,291 +9377,315 @@ end
 
 function Actions.Teleport(player, data, st, id)
 	local char = player.Character
-	if not char then return false, "No character" end
+	if not char then
+		return false, "No character"
+	end
 	if id == "Home" then
-		if st.base then char:PivotTo(st.base.spawnCF) end
+		if st.base then
+			char:PivotTo(st.base.spawnCF)
+		end
 		return true
 	end
 	return false, "Walk down the lane to explore!"
 end
 
----------------------------------------------------------------- training
--- the weight appears in your hand while you lift (made on the server so everyone sees it)
-local buildLiftWeight -- defined just below
-local function liftProp(player, st, index)
-	local char = player.Character
-	local right = char and (char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm"))
-	local left = char and (char:FindFirstChild("LeftHand") or char:FindFirstChild("Left Arm"))
-	if not right then return end
-	if st.prop and st.prop.Parent and st.propIndex == index then return end
-	if st.prop then st.prop:Destroy() end
-	local container = Instance.new("Model")
-	container.Name = "LiftProp"
-	-- one weight in each hand (seated press on the bench)
-	for _, hand in ipairs({ right, left }) do
-		if hand then
-			local m = buildLiftWeight(index, hand)
-			m.Parent = container
-		end
-	end
-	container.Parent = char
-	st.prop, st.propIndex = container, index
+---------------------------------------------------------------- pet expeditions
+-- The table owns a different activity loop. Old equipment fields stay in saves,
+-- but the retired lift requests cannot award strength or spend more coins.
+function Actions.Train()
+	return false, "The courtyard now has pet expeditions. Use the map table."
 end
-
--- builds one hand-held weight for an equipment level, welded to `hand`
-function buildLiftWeight(index, hand)
-	local station = Config.TrainingStations[index]
-	local model = Instance.new("Model")
-	model.Name = "Weight"
-	local s = (0.8 + index * 0.18) * 0.7
-	local function p(shape, size, color, mat)
-		local part = Instance.new("Part")
-		part.Shape = shape
-		part.Size = size
-		part.Color = color
-		part.Material = mat or Enum.Material.Metal
-		part.CanCollide, part.CanQuery, part.CanTouch, part.Massless = false, false, false, true
-		part.Parent = model
-		return part
-	end
-	-- the held prop matches the owned equipment (dumbbell / barbell / kettlebell / crystal / gravity core)
-	local function attachTo(part0, part1, c0)
-		local w = Instance.new("Weld"); w.Part0 = part0; w.Part1 = part1; w.C0 = c0; w.Parent = part1
-	end
-	local barCol = index == 1 and Color3.fromRGB(150, 105, 60) or Color3.fromRGB(70, 70, 80)
-	local bar = p(Enum.PartType.Cylinder, Vector3.new((index == 3 and 1.2 or 2.6) * s, 0.3, 0.3), barCol, index == 1 and Enum.Material.Wood or Enum.Material.Metal)
-	if index == 1 then
-		for side = -1, 1, 2 do attachTo(bar, p(Enum.PartType.Ball, Vector3.new(1, 1, 1) * s, station.color, Enum.Material.Wood), CFrame.new(side * 1.1 * s, 0, 0)) end
-	elseif index == 2 then
-		for side = -1, 1, 2 do
-			for k = 0, 1 do
-				attachTo(bar, p(Enum.PartType.Cylinder, Vector3.new(0.22 * s, (1.4 - k * 0.35) * s, (1.4 - k * 0.35) * s), Color3.fromRGB(55, 58, 66)), CFrame.new(side * (0.95 + k * 0.24) * s, 0, 0))
-			end
-		end
-	elseif index == 3 then
-		local bell = p(Enum.PartType.Ball, Vector3.new(1.5, 1.5, 1.5) * s, station.color)
-		attachTo(bar, bell, CFrame.new(0, -0.95 * s, 0))
-		for side = -1, 1, 2 do attachTo(bar, p(Enum.PartType.Cylinder, Vector3.new(0.7 * s, 0.25, 0.25), station.color), CFrame.new(side * 0.6 * s, -0.35 * s, 0) * CFrame.Angles(0, 0, side * 1.2)) end
-	elseif index == 4 then
-		for side = -1, 1, 2 do
-			local crystal = p(Enum.PartType.Block, Vector3.new(0.4, 1.1, 1.1) * s, station.color, Enum.Material.Glass)
-			crystal.Transparency = 0.15
-			attachTo(bar, crystal, CFrame.new(side * 1.1 * s, 0, 0) * CFrame.Angles(math.rad(45), 0, 0))
-			attachTo(bar, p(Enum.PartType.Block, Vector3.new(0.42, 0.15, 0.9) * s, Color3.fromRGB(220, 200, 255), Enum.Material.Neon), CFrame.new(side * 1.1 * s, 0, 0) * CFrame.Angles(math.rad(45), 0, 0))
-		end
-	else
-		local core = p(Enum.PartType.Ball, Vector3.new(1.1, 1.1, 1.1) * s, Color3.new(1, 1, 1), Enum.Material.Neon)
-		attachTo(bar, core, CFrame.identity)
-		for k = 1, 2 do attachTo(bar, p(Enum.PartType.Cylinder, Vector3.new(0.1, 1.9 * s, 1.9 * s), station.color, Enum.Material.Neon), CFrame.Angles(k * 0.9, k * 0.6, 0)) end
-	end
-	if index == 5 then
-		local fx = Instance.new("ParticleEmitter")
-		fx.Texture = "rbxasset://textures/particles/sparkles_main.dds"
-		fx.Color = ColorSequence.new(station.color); fx.Rate = 20; fx.LightEmission = 1
-		fx.Size = NumberSequence.new(0.4, 0); fx.Speed = NumberRange.new(1, 2); fx.Parent = bar
-	end
-	local w = Instance.new("Weld")
-	w.Part0 = hand
-	w.Part1 = bar
-	w.C0 = CFrame.new(0, -hand.Size.Y / 2, 0) * CFrame.Angles(0, math.rad(90), 0)
-	w.Parent = bar
-	return model
+function Actions.UpgradeEquipment()
+	return false, "Equipment lifting has been replaced by pet expeditions."
 end
-
--- PERSONAL GYM: lift in your own base's gym
-function Actions.Train(player, data, st)
-	if not st.base then return false, "You don't have a base" end
-	local level = math.clamp(data.EquipLevel or 1, 1, #Config.TrainingStations)
-	local station = Config.TrainingStations[level]
-	local gymPos = (st.base.cf * CFrame.new(Config.GymOffset)).Position
-	local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-	if not hrp or ((hrp.Position - gymPos) * Vector3.new(1, 0, 1)).Magnitude > Config.TrainRange + 2 then return false, "Stand in your gym" end
-	local now = os.clock()
-	if now - (st.lastTrain or 0) < Config.TrainCooldown * 0.9 then return false, nil end
-	st.lastTrain = now
-	data.Strength += station.gain
-	-- sit down on your workout bench (you stand back up a moment after you stop lifting)
-	local hum = player.Character:FindFirstChildOfClass("Humanoid")
-	local seat = st.base.gym:FindFirstChild("WorkoutSeat")
-	if hum and seat and hum.SeatPart ~= seat and (seat.Occupant == nil or seat.Occupant == hum) then
-		seat:Sit(hum)
+function Actions.StartExpedition(player, data, st, arg)
+	if type(arg) ~= "string" or #arg > 256 then
+		return false, "Invalid expedition request."
 	end
-	st.benchSeat = seat
-	liftProp(player, st, level)
-	return true, nil, "partial"
+	local ok, request = pcall(HttpService.JSONDecode, HttpService, arg)
+	if not ok or type(request) ~= "table" then
+		return false, "Choose a pet and biome."
+	end
+	local started, message = Expeditions.Start(player, data, st.base, request.route, request.petUid)
+	if started and st.base then
+		BaseBuilder.Refresh(st.base, data)
+	end
+	return started, message
 end
-
--- buy the next piece of equipment for your gym
-function Actions.UpgradeEquipment(player, data, st)
-	local level = data.EquipLevel or 1
-	local nextStation = Config.TrainingStations[level + 1]
-	if not nextStation then return false, "Your gym is maxed out!" end
-	if data.Money < nextStation.price then return false, "Not enough money (" .. Format.Money(nextStation.price) .. ")" end
-	data.Money -= nextStation.price
-	data.EquipLevel = level + 1
-	if st.base then BaseBuilder.Refresh(st.base, data) end
-	return true, "Gym upgraded: " .. nextStation.name .. "! +" .. nextStation.gain .. " Strength per lift"
+function Actions.ClaimExpedition(player, data, st, id)
+	local claimed, message = Expeditions.Claim(player, data, st.base, id)
+	if claimed and st.base then
+		BaseBuilder.Refresh(st.base, data)
+	end
+	return claimed, message
 end
 
 ---------------------------------------------------------------- admin
 local RunService = game:GetService("RunService")
 local function isAdmin(player)
-	if RunService:IsStudio() then return true end
-	if table.find(Config.AdminIds, player.UserId) then return true end
-	if game.CreatorType == Enum.CreatorType.User and player.UserId == game.CreatorId then return true end
+	if RunService:IsStudio() then
+		return true
+	end
+	if table.find(Config.AdminIds, player.UserId) then
+		return true
+	end
+	if game.CreatorType == Enum.CreatorType.User and player.UserId == game.CreatorId then
+		return true
+	end
 	if game.CreatorType == Enum.CreatorType.Group then
 		local ok, rank = pcall(player.GetRankInGroup, player, game.CreatorId)
-		if ok and rank >= 254 then return true end
+		if ok and rank >= 254 then
+			return true
+		end
 	end
 	return false
 end
 
 local AdminCmds = {}
-function AdminCmds.money(player, data, st, v) data.Money = math.max(0, data.Money + (tonumber(v) or 0)); return true, "Money changed" end
-function AdminCmds.strength(player, data, st, v) data.Strength = math.max(0, data.Strength + (tonumber(v) or 0)); return true, "Strength changed" end
+function AdminCmds.money(player, data, st, v)
+	data.Money = math.max(0, data.Money + (tonumber(v) or 0))
+	return true, "Money changed"
+end
+function AdminCmds.strength(player, data, st, v)
+	data.Strength = math.max(0, data.Strength + (tonumber(v) or 0))
+	return true, "Strength changed"
+end
 function AdminCmds.throwlevel(player, data, st, v)
 	data.Upgrades.ThrowPower = math.clamp(math.floor(tonumber(v) or 1), 1, Config.Upgrades.ThrowPower.max + 1)
 	return true, "Throw Power set"
 end
 function AdminCmds.maxupgrades(player, data, st)
 	data.Upgrades.ThrowPower = Config.Upgrades.ThrowPower.max + 1
-	for _, k in ipairs({ "BaseSlots", "Storage", "Training" }) do data.Upgrades[k] = Config.Upgrades[k].max end
-	if st.base then BaseBuilder.Refresh(st.base, data) end
+	for _, k in ipairs({ "BaseSlots", "Storage", "Training" }) do
+		data.Upgrades[k] = Config.Upgrades[k].max
+	end
+	if st.base then
+		BaseBuilder.Refresh(st.base, data)
+	end
 	return true, "All upgrades maxed"
 end
 function AdminCmds.allportals(player, data, st)
-	for id in pairs(Config.Portals) do data.OwnedPortals[id] = true end
+	for id in pairs(Config.Portals) do
+		data.OwnedPortals[id] = true
+	end
 	return true, "All portals unlocked"
 end
 function AdminCmds.give(player, data, st, key)
 	local id, gs, gm = Variants.Parse(tostring(key))
-	if not CreatureData.ById[id] then return false, "Unknown creature (use Id or Id|Size|Material)" end
+	if not CreatureData.ById[id] then
+		return false, "Unknown creature (use Id or Id|Size|Material)"
+	end
 	local uid = DataService.NewUid(data)
 	table.insert(data.Creatures, { u = uid, c = id, s = gs, v = gm })
 	data.Discovered[id] = true
-	if #data.Placed < slotsOpen(data) then table.insert(data.Placed, uid) end
+	if #data.Placed < slotsOpen(data) then
+		table.insert(data.Placed, uid)
+	end
 	return true, "Gave " .. Variants.Prefix(gs, gm) .. CreatureData.ById[id].name
 end
 function AdminCmds.forcenext(player, data, st, id)
 	local fid, fs, fm = Variants.Parse(tostring(id))
-	if not CreatureData.ById[fid] then return false, "Unknown creature id (use Id or Id|Size|Material)" end
+	if not CreatureData.ById[fid] then
+		return false, "Unknown creature id (use Id or Id|Size|Material)"
+	end
 	st.forceNext = tostring(id)
 	return true, "Your next throw will be " .. Variants.Prefix(fs, fm) .. CreatureData.ById[fid].name
 end
 function AdminCmds.discoverall(player, data, st)
-	for _, c in ipairs(CreatureData.List) do data.Discovered[c.id] = true end
+	for _, c in ipairs(CreatureData.List) do
+		data.Discovered[c.id] = true
+	end
 	return true, "Index completed"
 end
 function AdminCmds.zone(player, data, st, id)
-	if id ~= "Start" and not Config.ZoneBounds[id] then return false, "Unknown zone" end
+	if id ~= "Start" and not Config.ZoneBounds[id] then
+		return false, "Unknown zone"
+	end
 	local char = player.Character
-	if not char then return false, "No character" end
+	if not char then
+		return false, "No character"
+	end
 	local pos = id == "Start" and Vector3.new(0, 5, -60) or (Config.WorldCenter(id) + Vector3.new(0, 5, 0))
 	char:PivotTo(CFrame.new(pos))
 	return true, "Teleported"
 end
 function AdminCmds.speed(player, data, st, v)
 	local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-	if hum then hum.WalkSpeed = math.clamp(tonumber(v) or 16, 8, 300) end
+	if hum then
+		hum.WalkSpeed = math.clamp(tonumber(v) or 16, 8, 300)
+	end
 	return true, "WalkSpeed set"
 end
 function AdminCmds.reset(player, data, st)
 	local keep = data.NextUid
-	for k in pairs(data) do data[k] = nil end
+	for k in pairs(data) do
+		data[k] = nil
+	end
 	local fresh = DataService.Default()
-	for k, v in pairs(fresh) do data[k] = v end
+	for k, v in pairs(fresh) do
+		data[k] = v
+	end
 	data.NextUid = keep
 	st.carry = {}
 	setCarry(player)
-	if st.base then BaseBuilder.Refresh(st.base, data) end
+	if st.base then
+		BaseBuilder.Refresh(st.base, data)
+	end
 	return true, "Your data was reset"
 end
 
 function Actions.Admin(player, data, st, json)
-	if not isAdmin(player) then return false, "Not an admin" end
+	if not isAdmin(player) then
+		return false, "Not an admin"
+	end
 	local ok, req = pcall(HttpService.JSONDecode, HttpService, tostring(json))
-	if not ok or type(req) ~= "table" or type(req.cmd) ~= "string" then return false, "Bad admin request" end
+	if not ok or type(req) ~= "table" or type(req.cmd) ~= "string" then
+		return false, "Bad admin request"
+	end
 	local fn = AdminCmds[req.cmd]
-	if not fn then return false, "Unknown command" end
+	if not fn then
+		return false, "Unknown command"
+	end
 	return fn(player, data, st, req.value)
 end
 
 function Actions.Place(player, data, st, uid)
-	if not findCreature(data, uid) or isPlaced(data, uid) then return false, "Can't place" end
-	if #data.Placed >= slotsOpen(data) then return false, "Base is full! Buy more slots." end
+	if Expeditions.IsAway(data, uid) then
+		return false, "This pet is on an expedition. Claim its return first."
+	end
+	if not findCreature(data, uid) or isPlaced(data, uid) then
+		return false, "Can't place"
+	end
+	if #data.Placed >= slotsOpen(data) then
+		return false, "Base is full! Buy more slots."
+	end
 	table.insert(data.Placed, uid)
 	return true
 end
 
 function Actions.Unplace(player, data, st, uid)
+	if Expeditions.IsAway(data, uid) then
+		return false, "This pet is on an expedition. Claim its return first."
+	end
 	local i = table.find(data.Placed, uid)
-	if not i then return false, "Not placed" end
-	if storedCount(data) >= storageCap(data) then return false, "Storage full" end
+	if not i then
+		return false, "Not placed"
+	end
+	if storedCount(data) >= storageCap(data) then
+		return false, "Storage full"
+	end
 	table.remove(data.Placed, i)
 	return true
 end
 
 function Actions.Sell(player, data, st, uid)
+	if Expeditions.IsAway(data, uid) then
+		return false, "This pet is on an expedition. Claim its return first."
+	end
 	local c, i = findCreature(data, uid)
-	if not c then return false, "Not found" end
+	if not c then
+		return false, "Not found"
+	end
 	local price = math.floor(CreatureData.Income(c.c) * Variants.Mult(c.s, c.v) * Config.SellMultiplier)
 	table.remove(data.Creatures, i)
 	local pi = table.find(data.Placed, uid)
-	if pi then table.remove(data.Placed, pi) end
+	if pi then
+		table.remove(data.Placed, pi)
+	end
 	data.Money += price
 	return true, "Sold for " .. Format.Money(price)
 end
 
 function Actions.EquipBest(player, data, st)
+	if data.ActiveExpedition then
+		return false, "Claim your expedition pet before rearranging all slots."
+	end
 	local list = table.clone(data.Creatures)
-	table.sort(list, function(a, b) return CreatureData.Income(a.c) * Variants.Mult(a.s, a.v) > CreatureData.Income(b.c) * Variants.Mult(b.s, b.v) end)
+	table.sort(list, function(a, b)
+		return CreatureData.Income(a.c) * Variants.Mult(a.s, a.v) > CreatureData.Income(b.c) * Variants.Mult(b.s, b.v)
+	end)
 	local n = math.min(#list, slotsOpen(data))
-	if #list - n > storageCap(data) then return false, "Storage full" end
+	if #list - n > storageCap(data) then
+		return false, "Storage full"
+	end
 	data.Placed = {}
-	for i = 1, n do table.insert(data.Placed, list[i].u) end
+	for i = 1, n do
+		table.insert(data.Placed, list[i].u)
+	end
 	return true
 end
 
 function Actions.BuyDecor(player, data, st, id)
 	local D = Config.Decor[id]
-	if not D then return false, "Unknown" end
-	if data.Decor[id] then return false, "Owned" end
-	if data.Money < D.price then return false, "Not enough money" end
+	if not D then
+		return false, "Unknown"
+	end
+	if data.Decor[id] then
+		return false, "Owned"
+	end
+	if data.Money < D.price then
+		return false, "Not enough money"
+	end
 	data.Money -= D.price
 	data.Decor[id] = true
-	if st.base then BaseBuilder.Refresh(st.base, data) end
+	if st.base then
+		BaseBuilder.Refresh(st.base, data)
+	end
 	return true
 end
 
 function Actions.Floor(player, data, st, id)
 	local theme
-	for _, t in ipairs(Config.FloorThemes) do if t.id == id then theme = t end end
-	if not theme then return false, "Unknown" end
+	for _, t in ipairs(Config.FloorThemes) do
+		if t.id == id then
+			theme = t
+		end
+	end
+	if not theme then
+		return false, "Unknown"
+	end
 	if not data.OwnedFloors[id] then
-		if data.Money < theme.price then return false, "Not enough money" end
+		if data.Money < theme.price then
+			return false, "Not enough money"
+		end
 		data.Money -= theme.price
 		data.OwnedFloors[id] = true
 	end
 	data.FloorTheme = id
-	if st.base then BaseBuilder.Refresh(st.base, data) end
+	if st.base then
+		BaseBuilder.Refresh(st.base, data)
+	end
 	return true
 end
 
 RequestRF.OnServerInvoke = function(player, action, arg)
 	local data, st = DataService.Get(player), State[player]
-	if not data or not st then return false, "Loading..." end
+	if not data or not st then
+		return false, "Loading..."
+	end
 	-- token bucket rate limit: 8 requests / second
 	local now = os.clock()
 	st.tokens = math.min(8, st.tokens + (now - st.lastTokenT) * 8)
 	st.lastTokenT = now
-	if st.tokens < 1 then return false, "Slow down!" end
+	if st.tokens < 1 then
+		return false, "Slow down!"
+	end
 	st.tokens -= 1
 	local fn = typeof(action) == "string" and Actions[action]
-	if not fn then return false, "Bad request" end
-	if arg ~= nil and typeof(arg) ~= "string" and typeof(arg) ~= "number" then return false, "Bad argument" end
+	if not fn then
+		return false, "Bad request"
+	end
+	if arg ~= nil and typeof(arg) ~= "string" and typeof(arg) ~= "number" then
+		return false, "Bad argument"
+	end
 	local ok, res, msg, mode = pcall(fn, player, data, st, arg)
-	if not ok then warn("[GameServer] action error", action, res); return false, "Error" end
-	if res then sync(player, mode == "partial") end
+	if not ok then
+		warn("[GameServer] action error", action, res)
+		return false, "Error"
+	end
+	if res then
+		sync(player, mode == "partial")
+	end
 	return res, msg
 end
 
@@ -9159,13 +9700,22 @@ local function onCharacter(player, char)
 end
 
 local function onPlayerAdded(player)
-	local ls = Instance.new("Folder"); ls.Name = "leaderstats"
-	local m = Instance.new("StringValue"); m.Name = "Money"; m.Value = "$0"; m.Parent = ls
-	local c = Instance.new("IntValue"); c.Name = "Creatures"; c.Parent = ls
+	local ls = Instance.new("Folder")
+	ls.Name = "leaderstats"
+	local m = Instance.new("StringValue")
+	m.Name = "Money"
+	m.Value = "$0"
+	m.Parent = ls
+	local c = Instance.new("IntValue")
+	c.Name = "Creatures"
+	c.Parent = ls
 	ls.Parent = player
 
 	local data = DataService.Load(player)
-	if not data or not player.Parent then return end
+	if not data or not player.Parent then
+		return
+	end
+	Expeditions.Ensure(data)
 	-- carry over equipment bought under the old shared-station system
 	for i = #Config.TrainingStations, 1, -1 do
 		if data.OwnedEquipment and data.OwnedEquipment[tostring(i)] then
@@ -9178,7 +9728,9 @@ local function onPlayerAdded(player)
 	player:SetAttribute("BaseIndex", base and base.index or 0)
 	player:SetAttribute("IsAdmin", isAdmin(player))
 	setCarry(player)
-	if base then BaseBuilder.Refresh(base, data) end
+	if base then
+		BaseBuilder.Refresh(base, data)
+	end
 
 	-- offline earnings
 	if data.LastOnline > 0 then
@@ -9186,26 +9738,45 @@ local function onPlayerAdded(player)
 		local earned = math.floor(incomePerSec(data) * away * Config.OfflineRate)
 		if earned > 0 then
 			data.Uncollected += earned
-			task.delay(4, notify, player, "Welcome back! Your creatures earned " .. Format.Money(earned) .. " while you were away. Collect it at your base!", "money")
+			task.delay(
+				4,
+				notify,
+				player,
+				"Welcome back! Your creatures earned "
+					.. Format.Money(earned)
+					.. " while you were away. Collect it at your base!",
+				"money"
+			)
 		end
 	end
-	player.CharacterAdded:Connect(function(ch) onCharacter(player, ch) end)
-	if player.Character then task.spawn(onCharacter, player, player.Character) end
+	player.CharacterAdded:Connect(function(ch)
+		onCharacter(player, ch)
+	end)
+	if player.Character then
+		task.spawn(onCharacter, player, player.Character)
+	end
 	sync(player)
 	player:SetAttribute("Loaded", true)
 end
 Players.PlayerAdded:Connect(onPlayerAdded)
-for _, p in ipairs(Players:GetPlayers()) do task.spawn(onPlayerAdded, p) end
+for _, p in ipairs(Players:GetPlayers()) do
+	task.spawn(onPlayerAdded, p)
+end
 
 Players.PlayerRemoving:Connect(function(player)
 	local st = State[player]
 	local data = DataService.Get(player)
 	if st and data then
 		depositCarry(player, data, st, true) -- never lose carried creatures
-		if st.base then BaseBuilder.Release(st.base) end
+		if st.base then
+			BaseBuilder.Release(st.base)
+		end
 	end
 	for id, p in pairs(Pending) do
-		if p.owner == player then Pending[id] = nil; CreatureGoneRE:FireAllClients(id, "expired") end
+		if p.owner == player then
+			Pending[id] = nil
+			CreatureGoneRE:FireAllClients(id, "expired")
+		end
 	end
 	State[player] = nil
 	DataService.Release(player)
@@ -9213,9 +9784,11 @@ end)
 
 -- Client asks for a full sync once its UI is ready
 RequestRF:SetAttribute("Ready", true)
-Actions.Sync = function(player) return true end
+Actions.Sync = function(player)
+	return true
+end
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX32"><Properties><string name="Name">PetMeshLoader</string><ProtectedString name="Source"><![CDATA[-- PetMeshLoader: builds ReplicatedStorage.PetMeshes/<CreatureId>/<role> MeshPart templates from the
+<Item class="ModuleScript" referent="RBX34"><Properties><string name="Name">PetMeshLoader</string><ProtectedString name="Source"><![CDATA[-- PetMeshLoader: builds ReplicatedStorage.PetMeshes/<CreatureId>/<role> MeshPart templates from the
 -- asset ids in PetMeshManifest, so the client CreatureBuilder can use sculpted meshes.
 -- Location: ServerScriptService > Server > PetMeshLoader (ModuleScript)
 -- If a mesh can't be created (offline, permissions), that species simply keeps the procedural model.
@@ -9272,7 +9845,7 @@ end
 
 return Loader
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX33"><Properties><string name="Name">SanctuaryArchitecture</string><ProtectedString name="Source"><![CDATA[-- Original block/wedge architecture matching Maps/00_Portal_Sanctuary_Hub.png.
+<Item class="ModuleScript" referent="RBX35"><Properties><string name="Name">SanctuaryArchitecture</string><ProtectedString name="Source"><![CDATA[-- Original block/wedge architecture matching Maps/00_Portal_Sanctuary_Hub.png.
 -- Shared by the public sanctuary and the eight gardens. All decoration is non-queryable.
 local K = require(script.Parent.WorldKit)
 local Art = {}
@@ -9457,36 +10030,39 @@ function Art.Planter(cf, length, pink)
 end
 return Art
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX34"><Properties><string name="Name">SanctuaryBase</string><ProtectedString name="Source"><![CDATA[-- The eight reference gardens. Cosmetic construction with the original BaseBuilder reference contract.
+<Item class="ModuleScript" referent="RBX36"><Properties><string name="Name">SanctuaryBase</string><ProtectedString name="Source"><![CDATA[-- Skyforge Courtyard, matching the owner's approved concept2. Original plot,
+-- collection and pet-slot anchors stay compatible with saved player gardens.
 local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
 local K = require(script.Parent.WorldKit)
 local Art = require(script.Parent.SanctuaryArchitecture)
+local P = require(script.Parent.SkyforgeStyle)
+local Details = require(script.Parent.SkyforgeDetails)
 local Base = {}
 local V, CF, A, PI = Vector3.new, CFrame.new, CFrame.Angles, math.pi
-local C, M, P = Color3.fromRGB, Enum.Material, Art.Palette
+local M = Enum.Material
 
 local function label(parent, text, size, offset, color, distance)
 	local gui = Instance.new("BillboardGui")
-	gui.Size, gui.StudsOffset, gui.MaxDistance = size, offset, distance or 45
+	gui.Size, gui.StudsOffset, gui.MaxDistance = size, offset, distance or 40
 	gui.LightInfluence, gui.AlwaysOnTop = 0, false
 	local t = Instance.new("TextLabel")
 	t.Name, t.Size, t.BackgroundTransparency = "Label", UDim2.fromScale(1, 1), 1
 	t.Font, t.TextScaled, t.RichText, t.Text = Enum.Font.GothamMedium, true, true, text
-	t.TextColor3 = color or P.light
+	t.TextColor3 = color or P.text
 	local stroke = Instance.new("UIStroke")
-	stroke.Thickness, stroke.Transparency = 1, 0.25
-	stroke.Color = P.roof
+	stroke.Thickness, stroke.Transparency, stroke.Color = 1, 0.25, P.joint
 	stroke.Parent = t
 	t.Parent, gui.Parent = gui, parent
 	return t
 end
+
 local function ownerLabel(part, face)
 	local gui = Instance.new("SurfaceGui")
-	gui.Face, gui.CanvasSize, gui.LightInfluence = face, Vector2.new(600, 120), 0.5
+	gui.Face, gui.CanvasSize, gui.LightInfluence = face, Vector2.new(700, 120), 0
 	local t = Instance.new("TextLabel")
-	t.Name, t.Size, t.BackgroundTransparency = "Owner", UDim2.fromScale(0.92, 0.80), 1
-	t.Position, t.Font, t.TextScaled = UDim2.fromScale(0.04, 0.1), Enum.Font.GothamMedium, true
-	t.TextColor3, t.Text = P.light, "UNCLAIMED GARDEN"
+	t.Name, t.Size, t.BackgroundTransparency = "Owner", UDim2.fromScale(0.94, 0.8), 1
+	t.Position, t.Font, t.TextScaled = UDim2.fromScale(0.03, 0.1), Enum.Font.GothamBold, true
+	t.TextColor3, t.Text = P.text, "Available courtyard"
 	t.Parent, gui.Parent = gui, part
 	return t
 end
@@ -9503,144 +10079,233 @@ function Base.Build(index)
 	K.SetFolder(model)
 	K.mirror = false
 	K.Seed(7400 + index)
-	local function b(name, size, at, color, mat, collide)
-		local p = K.block(at, size, color, mat, collide)
+	local function b(name, size, frame, color, material, collide)
+		local p = K.block(frame, size, color, material, collide)
 		p.Name = name
 		return p
 	end
-	b("Foundation", V(71, 1.0, 71), L(0, 0.25, 0), P.stone, M.Limestone, true)
+	local function beam(name, from, to, width, height, color, material)
+		local a, z = cf:PointToWorldSpace(from), cf:PointToWorldSpace(to)
+		return b(name, V(width, height, (z - a).Magnitude + 0.12), CFrame.lookAt((a + z) / 2, z), color, material)
+	end
+	local function route(from, to, width)
+		return beam("SlateWalk", from, to, width or 3.3, 0.07, P.slate, M.Slate)
+	end
+	b("Foundation", V(71, 1, 71), L(0, 0.25, 0), P.stone, M.Limestone, true)
 	local floor = b("Floor", V(68, 1, 68), L(0, 0.5, 0), P.grass, M.Grass, true)
 	floor.CanQuery, model.PrimaryPart = true, floor
-	-- Low clipped hedges and pale retaining edges, with a full 20-stud street entrance.
-	local function border(at, len)
-		b("GardenCoping", V(len, 0.65, 2.7), at * CF(0, 0.9, 0), P.light, M.Limestone)
-		b("GardenGoldEdge", V(len, 0.11, 0.18), at * CF(0, 1.28, -1.22), P.gold, M.Metal)
-		b("ClippedHedge", V(len - 0.8, 1.55, 1.9), at * CF(0, 2.05, 0), P.leaf, M.SmoothPlastic)
-		for x = -len / 2 + 2, len / 2 - 1, 7 do
-			b("HedgeTop", V(3.8, 0.55, 2.0), at * CF(x, 3.0, 0), C(103, 157, 69), M.SmoothPlastic)
+	-- Roofless front and low rail bays leave the pets and the courtyard visible.
+	local function post(x, z)
+		b("BoundaryFooting", V(2.6, 0.45, 2.6), L(x, 1.2, z), P.stone, M.Limestone)
+		b("BoundaryPillar", V(1.65, 2.7, 1.65), L(x, 2.75, z), P.pale, M.Limestone, true)
+		b("BoundaryGoldCollar", V(1.95, 0.16, 1.95), L(x, 4.18, z), P.gold, M.Metal)
+		b("BoundaryCap", V(2.25, 0.27, 2.25), L(x, 4.40, z), P.light, M.Limestone)
+	end
+	local function fence(from, to)
+		for _, y in { 2.0, 3.25 } do
+			beam("TimberRail", V(from.X, y, from.Z), V(to.X, y, to.Z), 0.35, 0.40, P.wood, M.Wood)
 		end
 	end
-	border(L(0, 0, 34), 68)
-	border(L(-34, 0, 0) * A(0, PI / 2, 0), 68)
-	border(L(34, 0, 0) * A(0, PI / 2, 0), 68)
-	for _, sd in ipairs({ -1, 1 }) do
-		border(L(sd * 22, 0, -34), 24)
+	for _, sd in { -1, 1 } do
+		for _, z in { -33, -16.5, 0, 16.5, 33 } do
+			post(sd * 33, z)
+		end
+		for i = 0, 3 do
+			fence(V(sd * 33, 0, -33 + i * 16.5), V(sd * 33, 0, -16.5 + i * 16.5))
+		end
+		post(sd * 8.5, -33)
+		fence(V(sd * 8.5, 0, -33), V(sd * 33, 0, -33))
+		post(sd * 16.5, 33)
+		fence(V(sd * 16.5, 0, 33), V(sd * 33, 0, 33))
 	end
-	for _, sd in ipairs({ -1, 1 }) do
-		Art.Column(L(sd * 8.5, 0.7, -34), 8.3, 2.0)
-		Art.Lantern(L(sd * 11, 0.5, -33.8), 0.8, false)
-	end
-	local sign = b("Sign", V(14, 2.8, 0.65), L(0, 10.4, -34), P.violet, M.SmoothPlastic)
-	b("SignGoldCap", V(14.6, 0.3, 0.86), L(0, 12.0, -34), P.gold, M.Metal)
-	Art.Crest(L(0, 13.1, -34.2), 2.4)
+	fence(V(-16.5, 0, 33), V(16.5, 0, 33))
+	local sign = b("Sign", V(17, 1.9, 0.35), L(-21, 3.1, -33.1), P.darkWood, M.WoodPlanks)
+	b("SignGoldHeader", V(17.2, 0.10, 0.4), L(-21, 4.1, -33.1), P.gold, M.Metal)
 	local sl, sl2 = ownerLabel(sign, Enum.NormalId.Front), ownerLabel(sign, Enum.NormalId.Back)
-	local income = label(sign, "", UDim2.fromScale(10, 1.25), V(0, 2.4, 0), C(204, 229, 182), 48)
-	b("GardenWalk", V(6.8, 0.14, 25), L(0, 1.08, -20.5), P.ivory, M.Limestone)
-	for _, sd in ipairs({ -1, 1 }) do
-		b("WalkInlay", V(0.14, 0.035, 24), L(sd * 3.25, 1.17, -20.5), P.gold, M.Metal)
+	local income = label(sign, "", UDim2.fromScale(9, 1), V(0, 1.8, 0), P.text, 35)
+	b("Approach", V(6.8, 0.08, 25), L(0, 1.025, -20.5), P.slate, M.Slate)
+	for _, sd in { -1, 1 } do
+		route(V(sd * 3.5, 1.025, -24), V(sd * 13, 1.025, -21))
+		route(V(sd * 19, 1.025, -6), V(sd * 19, 1.025, 6))
+		route(V(sd * 19, 1.025, 6), V(sd * 10, 1.025, 19))
 	end
-	-- Two-tier flowing basin and actual multi-facet violet crystal cluster.
-	local crystal = Art.Fountain(L(0, 1.0, 0), 0.69, "GardenCrystalFountain")
-	crystal.Name = "IncomeCrystal"
-	local crystalLabel = label(crystal, "", UDim2.fromScale(9, 1.4), V(0, 3, 0), P.light, 45)
-	local slotFolder = Instance.new("Folder")
-	slotFolder.Name = "Slots"
-	slotFolder.Parent = model
-	local slots = {}
+	route(V(-10, 1.025, 19), V(10, 1.025, 19))
+	route(V(-10, 1.025, 19), V(-20, 1.025, 16), 3.8)
+	-- The central shrine is a small architectural portal, not a water fountain.
+	local shrine = Instance.new("Model")
+	shrine.Name = "PortalShrine"
+	K.SetFolder(shrine)
+	local pedestal = K.vcyl(L(0, 1.0, 0).Position, 0.45, 12.8, P.stone, M.Limestone, true)
+	pedestal.Name = "ShrineFoundation"
+	K.vcyl(L(0, 1.45, 0).Position, 0.32, 11.5, P.pale, M.Limestone, true)
+	K.vcyl(L(0, 1.77, 0).Position, 0.10, 10.8, P.slate, M.Slate)
+	for _, sd in { -1, 1 } do
+		b("ShrineFoot", V(2.45, 0.48, 2.8), L(sd * 3.5, 2.0, 0), P.stone, M.Limestone)
+		for i = 0, 2 do
+			b(
+				"ShrineAshlar",
+				V(1.25, 1.42, 1.65),
+				L(sd * 3.5, 2.9 + i * 1.45, 0),
+				i % 2 == 0 and P.pale or P.light,
+				M.Limestone
+			)
+		end
+		b("ShrineGoldCollar", V(1.48, 0.18, 1.85), L(sd * 3.5, 6.75, 0), P.gold, M.Metal)
+	end
+	for i = 0, 4 do
+		local a, z = i / 5 * PI, (i + 1) / 5 * PI
+		beam(
+			"ShrineVoussoir",
+			V(math.cos(a) * 3.5, 6.1 + math.sin(a) * 2.6, 0),
+			V(math.cos(z) * 3.5, 6.1 + math.sin(z) * 2.6, 0),
+			0.95,
+			1.65,
+			i % 2 == 0 and P.pale or P.light,
+			M.Limestone
+		)
+	end
+	local portal = K.cyl(L(0, 5.2, 0) * A(0, PI / 2, 0), 0.10, 5.8, P.portal, M.Neon, false, 0.14)
+	portal.Name = "SkyforgeAperture"
+	K.cyl(L(0, 5.2, -0.065) * A(0, PI / 2, 0), 0.035, 4.6, P.portalDark, M.Neon, false, 0.2)
+	for i = 0, 5 do
+		local a = i / 6 * PI * 2
+		b(
+			"PortalRune",
+			V(0.16, 0.7, 0.08),
+			L(math.cos(a) * 1.95, 5.2 + math.sin(a) * 1.95, -0.10) * A(0, 0, a),
+			P.light,
+			M.Neon
+		)
+	end
+	b("ShrineCrest", V(0.83, 0.83, 0.20), L(0, 8.75, -0.88) * A(0, 0, PI / 4), P.gold, M.Metal)
+	shrine.Parent = model
+	K.SetFolder(model)
+	local anchor = b("IncomeCrystal", V(0.1, 0.1, 0.1), L(0, 7, 0), P.portal)
+	anchor.Transparency = 1
+	local crystalLabel = label(anchor, "", UDim2.fromScale(8, 1.1), V(0, 1.7, 0), P.text, 32)
+	local slots, slotFolder = {}, Instance.new("Folder")
+	slotFolder.Name, slotFolder.Parent = "Slots", model
 	K.SetFolder(slotFolder)
 	for i = 1, 24 do
 		local a = (i - 1) / 24 * PI * 2 + PI / 2
-		local x, z = math.cos(a) * 14, math.sin(a) * 14
-		local ring = K.vcyl(L(x, 1.015, z).Position, 0.055, 2.9, C(153, 142, 169), M.SmoothPlastic, false, 0.55)
+		local x, z, open = math.cos(a) * 14, math.sin(a) * 14, i <= Config.StartSlots
+		local ring = K.vcyl(
+			L(x, 1.015, z).Position,
+			0.055,
+			2.9,
+			open and P.gold or P.stone,
+			M.SmoothPlastic,
+			false,
+			open and 0.15 or 0.88
+		)
 		ring.Name = "SlotRing" .. i
-		local pad = K.vcyl(L(x, 1.05, z).Position, 0.05, 2.5, P.light, M.SmoothPlastic, false, 0.4)
+		local pad = K.vcyl(L(x, 1.05, z).Position, 0.05, 2.5, P.slate, M.SmoothPlastic, false, open and 0.20 or 0.93)
 		pad.Name = "Slot" .. i
 		pad:SetAttribute("Index", i)
 		slots[i] = L(x, 1.1, z)
 	end
 	K.SetFolder(model)
-	-- Square green collect pad, gold corners, restrained world text close to the player.
-	local cp = V(-19, 0, -21)
-	b("CollectFoundation", V(9.6, 0.45, 9.6), L(cp.X, 1.2, cp.Z), P.ivory, M.Limestone)
-	local collect = b("CollectPad", V(8.1, 0.16, 8.1), L(cp.X, 1.53, cp.Z), C(87, 190, 96), M.SmoothPlastic)
-	for _, sd in ipairs({ -1, 1 }) do
-		for _, zz in ipairs({ -1, 1 }) do
-			b("CollectCorner", V(1.3, 0.25, 1.3), L(cp.X + sd * 4.2, 1.48, cp.Z + zz * 4.2), P.gold, M.Metal)
-		end
+	b("CollectFoundation", V(9.6, 0.45, 9.6), L(-19, 1.2, -21), P.stone, M.Limestone)
+	b("CollectFrame", V(8.8, 0.13, 8.8), L(-19, 1.45, -21), P.gold, M.Metal)
+	local collect = b("CollectPad", V(8.1, 0.16, 8.1), L(-19, 1.53, -21), P.mint, M.SmoothPlastic)
+	for _, sd in { -1, 1 } do
+		b("CollectChevron", V(0.13, 0.035, 2.8), L(-19 + sd * 0.8, 1.64, -21) * A(0, sd * PI / 4, 0), P.light)
+	end
+	local collectLabel = label(collect, "$0", UDim2.fromScale(5, 1.2), V(0, 3.0, 0), P.text, 28)
+	label(collect, "Collect", UDim2.fromScale(4, 0.65), V(0, 1.9, 0), P.text, 23)
+	-- Rear-left lodge: an open timber hall on stone footings, with a broad tiled roof.
+	b("LodgeFoundation", V(17, 0.48, 12.8), L(-20, 1.2, 24), P.stone, M.Limestone, true)
+	for i = 0, 7 do
 		b(
-			"CollectMark",
-			V(0.12, 0.035, 5),
-			L(cp.X + sd * 1.77, 1.64, cp.Z) * A(0, sd * PI / 4, 0),
-			C(216, 249, 185),
-			M.Neon
+			"LodgeDeckBoard",
+			V(1.95, 0.17, 11.5),
+			L(-26.85 + i * 1.96, 1.52, 24),
+			i % 2 == 0 and P.timber or P.wood,
+			M.WoodPlanks
 		)
 	end
-	local collectLabel = label(collect, "$0", UDim2.fromScale(5, 1.25), V(0, 3.0, 0), C(222, 248, 185), 30)
-	label(collect, "COLLECT", UDim2.fromScale(4, 0.7), V(0, 1.9, 0), P.light, 24)
-	local g = Config.GymOffset
-	b("GymFoundation", V(16.4, 0.45, 16.4), L(g.X, 1.15, g.Z), P.ivory, M.Limestone)
-	b("GymPad", V(15, 0.14, 15), L(g.X, 1.48, g.Z), C(58, 45, 76), M.SmoothPlastic)
-	for _, sd in ipairs({ -1, 1 }) do
-		b("GymTrim", V(15.4, 0.10, 0.24), L(g.X, 1.58, g.Z + sd * 7.6), P.gold, M.Metal)
-		b("GymTrim", V(0.24, 0.10, 15.4), L(g.X + sd * 7.6, 1.58, g.Z), P.gold, M.Metal)
+	b("LodgeStep", V(6.0, 0.18, 1.4), L(-20, 1.11, 16.8), P.pale, M.Limestone)
+	for _, x in { -27, -13 } do
+		for _, z in { 19, 29 } do
+			b("LodgeStoneFoot", V(1.8, 0.75, 1.8), L(x, 1.8, z), P.pale, M.Limestone)
+			b("LodgeTimberPost", V(0.85, 6.4, 0.85), L(x, 5.25, z), P.timber, M.Wood, true)
+			b("PostBrassShoe", V(0.98, 0.16, 0.98), L(x, 2.15, z), P.gold, M.Metal)
+		end
+		b("LodgeSideRafter", V(0.85, 0.8, 11.5), L(x, 8.1, 24), P.wood, M.Wood)
 	end
-	local gymSign = b("GymSign", V(0.1, 0.1, 0.1), L(g.X, 8, g.Z + 4), P.light)
-	gymSign.Transparency = 1
-	local gymLabel = label(gymSign, "GYM", UDim2.fromScale(8, 1.8), V(0, 0, 0), P.goldLight, 42)
-	-- Cottage: violet ridge roof, cream gable, framed warm windows and gold eaves.
-	local hc = L(-20, 1.0, 24)
-	b("CottageFoundation", V(14.6, 0.7, 10.6), hc * CF(0, 0.35, 0), P.stone, M.Limestone, true)
-	b("CottageWalls", V(13, 7.5, 9), hc * CF(0, 4.1, 0), C(202, 177, 135), M.SmoothPlastic, true)
-	Art.Gable(hc * CF(0, 7.8, 0), 15.5, 5, 11, P.roof)
-	Art.Gable(hc * CF(0, 7.8, -4.55), 12.7, 4.1, 0.20, P.ivory)
-	for _, sd in ipairs({ -1, 1 }) do
-		Art.Beam(
-			(hc * CF(0, 12.8, -5.6)).Position,
-			(hc * CF(sd * 7.75, 7.8, -5.6)).Position,
-			0.38,
-			0.40,
-			P.gold,
-			M.Metal
-		)
-		b("CottagePillar", V(0.7, 7.6, 0.7), hc * CF(sd * 6.15, 4.1, -4.3), P.ivory, M.Limestone)
-		b("WindowFrame", V(2.7, 3.2, 0.32), hc * CF(sd * 3.8, 4.4, -4.65), P.roof, M.SmoothPlastic)
-		b("WindowLight", V(2.25, 2.7, 0.12), hc * CF(sd * 3.8, 4.4, -4.86), C(245, 204, 132), M.SmoothPlastic)
-		b("WindowMullion", V(0.15, 2.8, 0.14), hc * CF(sd * 3.8, 4.4, -4.96), P.gold, M.Metal)
-		b("WindowMullion", V(2.3, 0.15, 0.14), hc * CF(sd * 3.8, 4.4, -4.96), P.gold, M.Metal)
+	for _, z in { 19, 29 } do
+		b("LodgeCrossRafter", V(15.7, 0.9, 0.8), L(-20, 8.2, z), P.wood, M.Wood)
 	end
-	b("CottageDoor", V(2.5, 5.3, 0.30), hc * CF(0, 3.0, -4.7), P.roof, M.SmoothPlastic)
-	Art.Crest(hc * CF(0, 9.2, -4.83), 1.65)
-	-- Pond, lily pads and a stepped stone rim. No fake neon water or cloud of sparkles.
-	local pc = L(21, 1.10, 23)
-	K.vcyl(pc.Position, 0.25, 13.2, P.stone, M.Limestone)
-	K.vcyl((pc * CF(0, 0.28, 0)).Position, 0.12, 11.7, P.water, M.SmoothPlastic)
+	for i = 0, 4 do
+		b("LodgeRearPanel", V(2.6, 5.7, 0.35), L(-25.4 + i * 2.7, 4.7, 29.35), P.timber, M.WoodPlanks)
+	end
+	Art.Gable(L(-20, 8.8, 24), 19.7, 3.3, 15.7, P.roof)
+	-- Rear-right floating relic pavilion sits on the original pond exclusion area.
+	b("RelicRockBase", V(11.4, 1.9, 10.4), L(21, 1.95, 23) * A(0, 0.10, 0), P.stone, M.Slate, true)
+	b("RelicRockTier", V(9.6, 1.1, 9.0), L(21, 3.0, 23) * A(0, -0.10, 0), P.pale, M.Limestone)
+	b("RelicMossCap", V(8.8, 0.25, 8.1), L(21, 3.67, 23), P.grass, M.Grass)
+	for i = 0, 2 do
+		b("RelicSteps", V(3.8, 0.32, 1.2), L(21, 1.2 + i * 0.55, 16.6 + i * 1.0), P.pale, M.Limestone)
+	end
+	for _, x in { 17.7, 24.3 } do
+		for _, z in { 19.7, 26.3 } do
+			b("RelicColumnFoot", V(1.65, 0.30, 1.65), L(x, 3.95, z), P.gold, M.Metal)
+			b("RelicColumn", V(0.92, 3.9, 0.92), L(x, 6.05, z), P.pale, M.Limestone)
+			b("RelicCapital", V(1.45, 0.26, 1.45), L(x, 8.1, z), P.gold, M.Metal)
+		end
+	end
 	for i = 0, 7 do
 		local a = i / 8 * PI * 2
 		b(
-			"PondRim",
-			V(4.8, 0.38, 0.8),
-			pc * CF(math.sin(a) * 6.35, 0.36, math.cos(a) * 6.35) * A(0, a, 0),
-			P.light,
-			M.Limestone
+			"RelicOpenCanopy",
+			V(3.0, 0.28, 0.65),
+			L(21 + math.sin(a) * 3.7, 8.45, 23 + math.cos(a) * 3.7) * A(0, a, 0),
+			P.gold,
+			M.Metal
 		)
 	end
-	for i = 1, 3 do
-		local px, pz = 2.6 * math.cos(i * 2), 2.6 * math.sin(i * 2)
-		b("LilyPad", V(1.4, 0.10, 1.4), pc * CF(px, 0.42, pz) * A(0, i, 0), P.leaf, M.SmoothPlastic)
-		b("LilyFlower", V(0.60, 0.18, 0.60), pc * CF(px, 0.55, pz), P.pink, M.SmoothPlastic)
+	local relicCore = b("FloatingRelic", V(1.8, 1.9, 1.8), L(21, 6.7, 23) * A(0, PI / 4, 0), P.portal, M.SmoothPlastic)
+	K.pyramid(L(21, 7.65, 23) * A(0, PI / 4, 0), 1.8, 1.2, P.portal, M.SmoothPlastic)
+	K.pyramid(L(21, 5.75, 23) * A(PI, PI / 4, 0), 1.8, 0.7, P.roofLight, M.SmoothPlastic)
+	relicCore:SetAttribute("SkyforgeRelic", true)
+	-- Front-right map station replaces the old workout bench entirely.
+	local expeditionTable = Instance.new("Model")
+	expeditionTable.Name = "ExpeditionTable"
+	K.SetFolder(expeditionTable)
+	b("ExpeditionFoundation", V(15.8, 0.35, 15.8), L(19, 1.2, -19), P.pale, M.Limestone)
+	b("ExpeditionSlateInset", V(14.7, 0.11, 14.7), L(19, 1.43, -19), P.slate, M.Slate)
+	for _, x in { 15.8, 22.2 } do
+		for _, z in { -20.9, -17.1 } do
+			b("MapTableLeg", V(0.60, 1.62, 0.60), L(x, 2.15, z), P.timber, M.Wood, true)
+			b("MapLegCollar", V(0.72, 0.12, 0.72), L(x, 1.55, z), P.gold, M.Metal)
+		end
 	end
-	K.tree(L(27, 1, 5).Position, 0.72, P.pink, nil, true)
-	for _, x in ipairs({ -29, 29 }) do
-		Art.Lantern(L(x, 1, 29), 0.85, false)
+	b("MapTableTop", V(8.6, 0.32, 5.8), L(19, 3.05, -19), P.wood, M.WoodPlanks, true)
+	for _, sd in { -1, 1 } do
+		b("MapTableEdge", V(8.7, 0.16, 0.20), L(19, 3.27, -19 + sd * 2.8), P.gold, M.Metal)
+		b("MapTableEdge", V(0.20, 0.16, 5.5), L(19 + sd * 4.2, 3.27, -19), P.gold, M.Metal)
 	end
-	local center = b("Center", V(0.1, 0.1, 0.1), L(0, 1, 0), P.ivory)
+	for _, sd in { -1, 1 } do
+		b("DeparturePostFoot", V(1.4, 0.40, 1.4), L(19 + sd * 3.5, 1.7, -13.6), P.stone, M.Limestone)
+		b("DepartureArchPost", V(0.8, 3.6, 0.8), L(19 + sd * 3.5, 3.7, -13.6), P.pale, M.Limestone)
+		beam("DepartureArchShoulder", V(19 + sd * 3.5, 5.5, -13.6), V(19, 7.0, -13.6), 0.85, 0.75, P.pale, M.Limestone)
+	end
+	b("DepartureCrest", V(0.70, 0.70, 0.16), L(19, 6.85, -14.04) * A(0, 0, PI / 4), P.gold, M.Metal)
+	expeditionTable.Parent = model
+	K.SetFolder(model)
+	local expeditionAnchor = b("ExpeditionAnchor", V(0.2, 0.2, 0.2), L(19, 2, -19), P.paper)
+	expeditionAnchor.Transparency = 1
+	local gymLabel = label(expeditionAnchor, "Expeditions", UDim2.fromScale(6.5, 0.9), V(0, 5.9, 0), P.text, 26)
+	local center = b("Center", V(0.1, 0.1, 0.1), L(0, 1, 0), P.pale)
 	center.Transparency = 1
 	local decor, gym = Instance.new("Folder"), Instance.new("Folder")
-	decor.Name, gym.Name, decor.Parent, gym.Parent = "Decor", "Gym", model, model
+	decor.Name, gym.Name, decor.Parent, gym.Parent = "Decor", "ExpeditionLegacy", model, model
+	Details.Build(model, cf)
 	model:SetAttribute("Index", index)
-	model:SetAttribute("SanctuaryVersion", 2)
+	model:SetAttribute("SanctuaryVersion", 5)
+	model:SetAttribute("BaseStyle", "SkyforgeCourtyard")
 	model.Parent = workspace:FindFirstChild("Bases")
-	return {
+	local base = {
 		index = index,
 		model = model,
 		cf = cf,
@@ -9657,12 +10322,16 @@ function Base.Build(index)
 		gymLabel = gymLabel,
 		owner = nil,
 		training = gym,
+		expeditionAnchor = expeditionAnchor,
 		spawnCF = L(0, 4, -28) * A(0, PI, 0),
 	}
+	Details.RefreshRelics(base, {})
+	return base
 end
+
 return Base
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX35"><Properties><string name="Name">SanctuaryDetails</string><ProtectedString name="Source"><![CDATA[-- Deliberate close-up detail for the lobby. Decorative only; all gameplay paths stay clear.
+<Item class="ModuleScript" referent="RBX37"><Properties><string name="Name">SanctuaryDetails</string><ProtectedString name="Source"><![CDATA[-- Deliberate close-up detail for the lobby. Decorative only; all gameplay paths stay clear.
 local P = require(script.Parent.SanctuaryArchitecture).Palette
 local Details = {}
 local V, CF, A = Vector3.new, CFrame.new, CFrame.Angles
@@ -9886,7 +10555,7 @@ function Details.Build(start)
 end
 return Details
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX36"><Properties><string name="Name">SanctuaryHub</string><ProtectedString name="Source"><![CDATA[-- Portal Sanctuary: a composed, walkable lobby, built from the supplied hub reference.
+<Item class="ModuleScript" referent="RBX38"><Properties><string name="Name">SanctuaryHub</string><ProtectedString name="Source"><![CDATA[-- Portal Sanctuary: a composed, walkable lobby, built from the supplied hub reference.
 -- Plot centers, throw zone, collision barrier and lane direction retain their existing contracts.
 local RS = game:GetService("ReplicatedStorage")
 local Config = require(RS.Shared.Config)
@@ -10199,7 +10868,187 @@ function Hub.Build(folder, textLabel)
 end
 return Hub
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX37"><Properties><string name="Name">WorldBuilder</string><ProtectedString name="Source"><![CDATA[-- WorldBuilder: builds ONE long map — the hub (bases + launch hall) and the 3200-stud throwing
+<Item class="ModuleScript" referent="RBX39"><Properties><string name="Name">SkyforgeDetails</string><ProtectedString name="Source"><![CDATA[-- Small-scale craft for the approved Skyforge courtyard. No extra prompts or
+-- physics obstacles are created here; the expedition table owns interaction.
+local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
+local P = require(script.Parent.SkyforgeStyle)
+local Details = {}
+local V, CF, A = Vector3.new, CFrame.new, CFrame.Angles
+local M = Enum.Material
+
+local function factory(root, cf)
+	return function(name, size, frame, color, material, shape)
+		local p = Instance.new("Part")
+		p.Name, p.Size, p.CFrame = name, size, cf * frame
+		p.Color, p.Material = color, material or M.SmoothPlastic
+		p.Shape = shape or Enum.PartType.Block
+		p.Anchored, p.CanCollide, p.CanQuery, p.CanTouch = true, false, false, false
+		p.CastShadow = size.X * size.Y * size.Z > 28
+		p.TopSurface, p.BottomSurface = Enum.SurfaceType.Smooth, Enum.SurfaceType.Smooth
+		p.Parent = root
+		return p
+	end
+end
+
+function Details.Build(model, cf)
+	local root = Instance.new("Folder")
+	root.Name = "SkyforgeDetails"
+	local part = factory(root, cf)
+	local function beam(name, from, to, width, depth, color, material)
+		return part(name, V(width, depth, (to - from).Magnitude), CFrame.lookAt((from + to) / 2, to), color, material)
+	end
+	-- Four rows of individually laid roof courses, split into six staggered tiles.
+	local roofSlope = math.atan(3.3 / 9.85)
+	for _, side in { -1, 1 } do
+		for course = 0, 3 do
+			local x = 1.2 + course * 2.4
+			local y = 8.8 + 3.3 * (1 - x / 9.85) + 0.10
+			for tile = 0, 5 do
+				part(
+					"VioletRoofTile",
+					V(2.48, 0.13, 2.38),
+					CF(-20 + side * x, y, 18 + tile * 2.4) * A(0, 0, -side * roofSlope),
+					(course + tile) % 3 == 0 and P.roofLight or P.roof
+				)
+			end
+		end
+		part("GoldEave", V(0.22, 0.25, 15.8), CF(-20 + side * 9.85, 8.87, 24), P.gold, M.Metal)
+		for _, z in { 16.1, 31.9 } do
+			beam("GableGoldEdge", V(-20, 12.25, z), V(-20 + side * 9.85, 8.87, z), 0.24, 0.25, P.gold, M.Metal)
+		end
+		for _, z in { 19, 29 } do
+			beam(
+				"TimberKneeBrace",
+				V(-20 + side * 6.8, 6.1, z),
+				V(-20 + side * 4.8, 8.2, z),
+				0.40,
+				0.42,
+				P.wood,
+				M.Wood
+			)
+		end
+	end
+	part("GoldRidge", V(0.60, 0.40, 16.2), CF(-20, 12.35, 24), P.gold, M.Metal)
+	for _, side in { -1, 1 } do
+		part("RidgeEnd", V(0.65, 1.45, 0.70), CF(-20, 12.9, 24 + side * 7.9) * A(side * 0.36, 0, 0), P.gold, M.Metal)
+	end
+	part("LodgeBanner", V(2.3, 3.3, 0.12), CF(-20, 5.3, 29.05), P.roof, M.Fabric)
+	part("BannerCrest", V(0.73, 0.73, 0.10), CF(-20, 5.65, 28.95) * A(0, 0, math.pi / 4), P.gold, M.Metal)
+	part("BannerCrestInset", V(0.40, 0.40, 0.08), CF(-20, 5.65, 28.87) * A(0, 0, math.pi / 4), P.roof)
+	-- Slab joints and cut corners are broad enough to read from the game camera.
+	for i = 0, 4 do
+		local z = -29.8 + i * 4.4
+		part("FlagstoneJoint", V(6.3, 0.016, 0.09), CF(0, 1.085, z) * A(0, i % 2 == 0 and 0.10 or -0.08, 0), P.joint)
+	end
+	for _, x in { -3.0, 3.0 } do
+		part("ThresholdInlay", V(0.16, 0.022, 2.7), CF(x, 1.093, -31), P.gold, M.Metal)
+	end
+	-- Back-corner trees are rooted inside the old lodge/relic obstacle volumes.
+	for _, point in { V(-25.5, 0, 29), V(26.5, 0, 26.2) } do
+		part("TimberTreeTrunk", V(0.88, 7.2, 0.88), CF(point.X, 4.6, point.Z), P.timber, M.Wood)
+		part("TreeBough", V(2.2, 0.55, 0.55), CF(point.X + 0.5, 7.0, point.Z) * A(0, 0, 0.35), P.wood, M.Wood)
+		part("BlockCanopy", V(4.8, 3.4, 4.7), CF(point.X, 10.0, point.Z), P.leaf)
+		part("BlockCanopy", V(3.7, 2.9, 3.9), CF(point.X + 2.1, 10.9, point.Z - 0.8), P.leafLight)
+		part("BlockCanopy", V(3.4, 2.5, 3.5), CF(point.X - 1.6, 11.4, point.Z + 0.2), P.leaf)
+	end
+	-- Physical map props. These stay low so they never obscure the expedition UI.
+	part("ExpeditionMap", V(7.1, 0.06, 4.5), CF(19, 3.33, -19), P.paper)
+	for _, x in { 15.25, 22.75 } do
+		part(
+			"RolledMap",
+			V(4.5, 0.46, 0.46),
+			CF(x, 3.53, -19) * A(0, math.pi / 2, 0),
+			P.light,
+			M.SmoothPlastic,
+			Enum.PartType.Cylinder
+		)
+		for _, z in { -21.2, -16.8 } do
+			part(
+				"ScrollRod",
+				V(0.22, 0.58, 0.58),
+				CF(x, 3.53, z) * A(0, math.pi / 2, 0),
+				P.wood,
+				M.Wood,
+				Enum.PartType.Cylinder
+			)
+		end
+	end
+	local mapColors = {
+		Color3.fromRGB(115, 154, 83),
+		Color3.fromRGB(105, 142, 177),
+		Color3.fromRGB(147, 119, 168),
+		Color3.fromRGB(163, 130, 94),
+	}
+	for i, point in { V(17, 0, -19.5), V(19.1, 0, -18.7), V(21, 0, -19.9), V(20.8, 0, -17.9) } do
+		part("PaintedMapBiome", V(1.5, 0.023, 0.95), CF(point.X, 3.374, point.Z) * A(0, i * 0.26, 0), mapColors[i])
+		part("MapPin", V(0.10, 0.47, 0.10), CF(point.X + 0.25, 3.62, point.Z), P.gold, M.Metal)
+		part("MapPinFlag", V(0.45, 0.23, 0.05), CF(point.X + 0.48, 3.79, point.Z), P.roof, M.Fabric)
+	end
+	part("MapCompass", V(0.85, 0.035, 0.85), CF(16.6, 3.405, -17.4) * A(0, math.pi / 4, 0), P.gold, M.Metal)
+	part("CompassPointer", V(0.10, 0.027, 0.72), CF(16.6, 3.44, -17.4) * A(0, -0.45, 0), P.roof)
+	for i = 0, 5 do
+		part("MapRouteDot", V(0.10, 0.025, 0.10), CF(17.8 + i * 0.45, 3.39, -19.6 + i * 0.2), P.joint)
+	end
+	root:SetAttribute("PartCount", #root:GetChildren())
+	root.Parent = model
+	return root
+end
+
+function Details.RefreshRelics(base, relics)
+	local folder = base.model:FindFirstChild("ExpeditionRelics") or Instance.new("Folder")
+	folder.Name, folder.Parent = "ExpeditionRelics", base.model
+	folder:ClearAllChildren()
+	local part = factory(folder, base.cf)
+	for i, world in Config.WorldOrder do
+		local x = 15.65 + (i - 1) * 0.95
+		local found = relics and relics[world] == true
+		local pad = part(
+			"RelicSocket_" .. world,
+			V(0.62, 0.08, 0.62),
+			CF(x, 3.51, -16.95),
+			found and P.gold or P.stone,
+			M.Metal
+		)
+		pad:SetAttribute("Found", found == true)
+		if found then
+			local tone = Config.Worlds[world].atmo:Lerp(P.portal, 0.35)
+			local gem =
+				part("BiomeRelic_" .. world, V(0.35, 0.52, 0.35), CF(x, 3.82, -16.95) * A(0, math.pi / 4, 0), tone)
+			gem:SetAttribute("World", world)
+		end
+	end
+	return folder
+end
+
+return Details
+]]></ProtectedString></Properties></Item>
+<Item class="ModuleScript" referent="RBX40"><Properties><string name="Name">SkyforgeStyle</string><ProtectedString name="Source"><![CDATA[-- Approved Skyforge concept: pale stone, dark timber, violet tiled roofs and
+-- small warm brass accents. Colors stay readable under the sanctuary lighting.
+local C = Color3.fromRGB
+return {
+	grass = C(108, 161, 76),
+	stone = C(165, 158, 153),
+	pale = C(226, 220, 207),
+	light = C(243, 236, 219),
+	slate = C(131, 124, 148),
+	joint = C(82, 76, 95),
+	timber = C(101, 67, 43),
+	wood = C(145, 100, 61),
+	darkWood = C(66, 45, 34),
+	roof = C(86, 48, 145),
+	roofLight = C(104, 58, 167),
+	gold = C(202, 157, 74),
+	goldLight = C(231, 191, 107),
+	portal = C(161, 105, 238),
+	portalDark = C(84, 39, 150),
+	leaf = C(91, 143, 47),
+	leafLight = C(122, 169, 61),
+	mint = C(102, 171, 116),
+	paper = C(213, 203, 171),
+	text = C(244, 238, 225),
+}
+]]></ProtectedString></Properties></Item>
+<Item class="ModuleScript" referent="RBX41"><Properties><string name="Name">WorldBuilder</string><ProtectedString name="Source"><![CDATA[-- WorldBuilder: builds ONE long map — the hub (bases + launch hall) and the 3200-stud throwing
 -- lane split into 8 biome zones. Each biome lives in its own module (Biome<Id>) built with the
 -- shared WorldKit; this file only orchestrates terrain, zones, markers and boundaries.
 -- Location: ServerScriptService > Server > WorldBuilder (ModuleScript)
@@ -10392,10 +11241,10 @@ end
 
 return WorldBuilder
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX38"><Properties><string name="Name">WorldHub</string><ProtectedString name="Source"><![CDATA[-- Compatibility entry point for the reference-based sanctuary lobby.
+<Item class="ModuleScript" referent="RBX42"><Properties><string name="Name">WorldHub</string><ProtectedString name="Source"><![CDATA[-- Compatibility entry point for the reference-based sanctuary lobby.
 return require(script.Parent.SanctuaryHub)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX39"><Properties><string name="Name">WorldKit</string><ProtectedString name="Source"><![CDATA[-- WorldKit: the shared blocky construction kit used by the hub and all eight biomes.
+<Item class="ModuleScript" referent="RBX43"><Properties><string name="Name">WorldKit</string><ProtectedString name="Source"><![CDATA[-- WorldKit: the shared blocky construction kit used by the hub and all eight biomes.
 -- Location: ServerScriptService > Server > WorldKit (ModuleScript)
 --
 -- CONTRACT (map brief + GameServer landing contract):
@@ -11075,7 +11924,7 @@ end
 
 return K
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX40"><Properties><string name="Name">WorldLandmarks</string><ProtectedString name="Source"><![CDATA[-- WorldLandmarks: construction kit + the hero landmarks for the hub, launch hall and all
+<Item class="ModuleScript" referent="RBX44"><Properties><string name="Name">WorldLandmarks</string><ProtectedString name="Source"><![CDATA[-- WorldLandmarks: construction kit + the hero landmarks for the hub, launch hall and all
 -- eight biomes (blocky architectural language from the map reference pack).
 -- Location: ServerScriptService > Server > WorldLandmarks (ModuleScript)
 --
@@ -11855,10 +12704,10 @@ return L
 ]]></ProtectedString></Properties></Item>
 </Item>
 </Item>
-<Item class="StarterPlayer" referent="RBX64"><Properties><string name="Name">StarterPlayer</string></Properties>
-<Item class="StarterPlayerScripts" referent="RBX42"><Properties><string name="Name">StarterPlayerScripts</string></Properties>
-<Item class="Folder" referent="RBX43"><Properties><string name="Name">Client</string></Properties>
-<Item class="ModuleScript" referent="RBX44"><Properties><string name="Name">CaughtPresentation</string><ProtectedString name="Source"><![CDATA[-- Caught card for an already confirmed catch, styled after Actions/02_Rarity_Reveal_and_Capture ("03 ADDED"):
+<Item class="StarterPlayer" referent="RBX69"><Properties><string name="Name">StarterPlayer</string></Properties>
+<Item class="StarterPlayerScripts" referent="RBX46"><Properties><string name="Name">StarterPlayerScripts</string></Properties>
+<Item class="Folder" referent="RBX47"><Properties><string name="Name">Client</string></Properties>
+<Item class="ModuleScript" referent="RBX48"><Properties><string name="Name">CaughtPresentation</string><ProtectedString name="Source"><![CDATA[-- Caught card for an already confirmed catch, styled after Actions/02_Rarity_Reveal_and_Capture ("03 ADDED"):
 -- purple card with a double gold frame and diamond crest, light rays behind the pet, the creature's name,
 -- a "CAUGHT" ribbon with laurels, an "ADDED TO PETS" plaque, then the card flies into the live Pets button.
 local RS = game:GetService("ReplicatedStorage")
@@ -12076,7 +12925,7 @@ return function(key)
 	end)
 end
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX45"><Properties><string name="Name">CinematicLook</string><ProtectedString name="Source"><![CDATA[-- CinematicLook: premium "modern renderer" finish on top of the existing lighting.
+<Item class="LocalScript" referent="RBX49"><Properties><string name="Name">CinematicLook</string><ProtectedString name="Source"><![CDATA[-- CinematicLook: premium "modern renderer" finish on top of the existing lighting.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > CinematicLook (LocalScript)
 --
 -- Ownership: Effects.lua / SanctuaryLook own Ambient, ClockTime, Fog, Brightness, ExposureCompensation,
@@ -12224,7 +13073,7 @@ RunService.Heartbeat:Connect(function(dt)
 end)
 apply("Hub")
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX46"><Properties><string name="Name">ClientMain</string><ProtectedString name="Source"><![CDATA[-- ClientMain: wires all client modules together.
+<Item class="LocalScript" referent="RBX50"><Properties><string name="Name">ClientMain</string><ProtectedString name="Source"><![CDATA[-- ClientMain: wires all client modules together.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ClientMain (LocalScript)
 
 local Players = game:GetService("Players")
@@ -12234,7 +13083,6 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local CreatureData = require(Shared.CreatureData)
 local Config = require(Shared.Config)
-local Format = require(Shared.Format)
 local Timeline = require(Shared.PresentationTimeline)
 local Variants = require(Shared.Variants)
 
@@ -12264,6 +13112,7 @@ HUD.TC = TC
 TC.OnThrowResult = HUD.ThrowFeedback
 HUD.Refresh()
 Feel.Start(TC, HUD)
+require(Client.ExpeditionPanel).Init()
 
 -- ask the server for a full data sync (retries until our save has loaded)
 task.spawn(function()
@@ -12314,100 +13163,8 @@ TC.OnLaunchFailed = function(message)
 	HUD.Notify(message, "error")
 end
 
----------------------------------------------------------------- training: buy equipment + lifting animation
-HUD.OnUpgradeGym = function()
-	local ok, msg = State.Request("UpgradeEquipment")
-	if ok then
-		local st = Config.TrainingStations[math.clamp(State.Data.EquipLevel or 1, 1, #Config.TrainingStations)]
-		Sounds.Play("Upgrade")
-		task.delay(0.15, Sounds.Play, "Rare", 1.3)
-		HUD.Notify(msg or "Gym upgraded!", "success")
-		Effects.Coins(nil, 12)
-		local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-		if root then
-			Effects.Burst(root.Position + Vector3.new(0, 2, 0), st.color, 50, 18, 1)
-			Effects.Shockwave(root.Position - Vector3.new(0, 2.5, 0), st.color, 12, 0.5)
-		end
-		HUD._shownGym = nil -- refresh the buttons
-	else
-		HUD.Notify(msg or "Can't upgrade", "error")
-	end
-end
-
--- Lifting uses Roblox's built-in "cheer" animation (both arms raise the weight overhead).
--- It plays on your own character, so other players see it too.
-local LIFT_ANIM =
-	{ [Enum.HumanoidRigType.R15] = "rbxassetid://507770677", [Enum.HumanoidRigType.R6] = "rbxassetid://129423030" }
-local liftTrack, liftHum, lastLift = nil, nil, 0
-local function playLift()
-	local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-	if not hum then
-		return
-	end
-	if hum ~= liftHum then
-		liftHum = hum
-		liftTrack = nil
-		local animator = hum:FindFirstChildOfClass("Animator") or hum
-		local anim = Instance.new("Animation")
-		anim.AnimationId = LIFT_ANIM[hum.RigType] or LIFT_ANIM[Enum.HumanoidRigType.R15]
-		local ok, track = pcall(function()
-			return animator:LoadAnimation(anim)
-		end)
-		if ok and track then
-			track.Priority = Enum.AnimationPriority.Action
-			track.Looped = true
-			liftTrack = track
-		end
-	end
-	lastLift = os.clock()
-	if liftTrack and not liftTrack.IsPlaying then
-		liftTrack:Play(0.15, 1, 1.7)
-	end
-end
-RunService.Heartbeat:Connect(function()
-	if liftTrack and liftTrack.IsPlaying and os.clock() - lastLift > 0.7 then
-		liftTrack:Stop(0.25)
-	end
-end)
-
-local lastRep = 0
-local function doRep()
-	local idx = HUD.TrainStation
-	if not idx or os.clock() - lastRep < Config.TrainCooldown then
-		return
-	end
-	lastRep = os.clock()
-	local st = Config.TrainingStations[idx]
-	playLift()
-	HUD.TrainPulse()
-	task.spawn(function()
-		local ok, msg = State.Request("Train", idx)
-		if ok then
-			Sounds.Play("Collect", 1.4 + math.random() * 0.2)
-			local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-			if root then
-				Effects.FloatingText(
-					root.Position + Vector3.new(math.random(-2, 2), 4, 0),
-					"+" .. Format.Short(st.gain) .. " 💪",
-					Color3.fromRGB(255, 150, 120),
-					0.8
-				)
-			end
-		elseif msg then
-			HUD.Notify(msg, "error")
-		end
-	end)
-end
-RunService.Heartbeat:Connect(function()
-	if HUD.TrainStation and (HUD.TrainHeld or HUD.AutoTrain) then
-		doRep()
-	end
-end)
-game:GetService("UserInputService").InputBegan:Connect(function(input, processed)
-	if not processed and input.KeyCode == Enum.KeyCode.E and HUD.TrainStation then
-		doRep()
-	end
-end)
+-- Pet missions replace the old lift controls and held-weight animation.
+HUD.SetGym(nil)
 
 ---------------------------------------------------------------- server messages
 Remotes.Notify.OnClientEvent:Connect(function(text, kind)
@@ -12548,21 +13305,7 @@ RunService.Heartbeat:Connect(function(dt)
 		barrierPulse(root.Position)
 		HUD.ShowThrowHere()
 	end
-	-- standing in YOUR OWN gym?
-	local inGym = false
-	local idx = player:GetAttribute("BaseIndex")
-	local myBase = idx and workspace:FindFirstChild("Bases") and workspace.Bases:FindFirstChild("Base" .. idx)
-	local gymPad = myBase and myBase:FindFirstChild("GymPad")
-	if gymPad then
-		inGym = ((root.Position - gymPad.Position) * Vector3.new(1, 0, 1)).Magnitude < Config.TrainRange
-	end
-	local level = inGym and math.clamp(State.Data.EquipLevel or 1, 1, #Config.TrainingStations) or nil
-	local nextSt = level and Config.TrainingStations[level + 1]
-	local canBuy = nextSt and (State.Data.Money or 0) >= nextSt.price
-	if level ~= HUD._shownGym or canBuy ~= HUD._shownCanBuy then
-		HUD._shownGym, HUD._shownCanBuy = level, canBuy
-		HUD.SetGym(level)
-	end
+	HUD.SetGym(nil)
 	-- creatures are caught automatically now, so the manual collect button stays hidden
 	HUD.SetCollectable(nil)
 	-- show a sparkly guide beam to your base while carrying creatures
@@ -12588,7 +13331,9 @@ end)
 
 -- Cinematic intro fly-over; first-throw guidance stays context driven by GameplayFeel (no welcome toast).
 task.spawn(function()
-	local ok, err = pcall(function() require(Client.Intro).Play(HUD.Gui) end)
+	local ok, err = pcall(function()
+		require(Client.Intro).Play(HUD.Gui)
+	end)
 	if not ok then
 		warn("[Intro] " .. tostring(err))
 		workspace.CurrentCamera.CameraType = Enum.CameraType.Custom
@@ -12597,7 +13342,7 @@ task.spawn(function()
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX47"><Properties><string name="Name">ClientSettings</string><ProtectedString name="Source"><![CDATA[-- ClientSettings: presentation-only player settings (never affect odds, charge, rewards).
+<Item class="ModuleScript" referent="RBX51"><Properties><string name="Name">ClientSettings</string><ProtectedString name="Source"><![CDATA[-- ClientSettings: presentation-only player settings (never affect odds, charge, rewards).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ClientSettings (ModuleScript)
 -- Values persist for the session via player attributes; defaults are safe for everyone.
 
@@ -12633,7 +13378,7 @@ end
 
 return Settings
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX48"><Properties><string name="Name">ClientState</string><ProtectedString name="Source"><![CDATA[-- ClientState: local mirror of the player's data + change signal + request helper.
+<Item class="ModuleScript" referent="RBX52"><Properties><string name="Name">ClientState</string><ProtectedString name="Source"><![CDATA[-- ClientState: local mirror of the player's data + change signal + request helper.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ClientState (ModuleScript)
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -12673,7 +13418,7 @@ end
 
 return State
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX49"><Properties><string name="Name">CreatureRenderer</string><ProtectedString name="Source"><![CDATA[-- CreatureRenderer: renders every creature on this client — base pets of all players,
+<Item class="ModuleScript" referent="RBX53"><Properties><string name="Name">CreatureRenderer</string><ProtectedString name="Source"><![CDATA[-- CreatureRenderer: renders every creature on this client — base pets of all players,
 -- creatures being carried, and freshly revealed wild creatures. Handles species entrances,
 -- capture presentation, reactions, click-to-pet, distance LOD and previews.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > CreatureRenderer (ModuleScript)
@@ -13777,7 +14522,7 @@ end
 
 return Renderer
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX50"><Properties><string name="Name">Effects</string><ProtectedString name="Source"><![CDATA[-- Effects: camera shake, flashes, shockwaves, particle bursts, light beams, floating text,
+<Item class="ModuleScript" referent="RBX54"><Properties><string name="Name">Effects</string><ProtectedString name="Source"><![CDATA[-- Effects: camera shake, flashes, shockwaves, particle bursts, light beams, floating text,
 -- flying-coin money effect, rarity banners and per-world lighting.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > Effects (ModuleScript)
 
@@ -14350,7 +15095,611 @@ end
 
 return Effects
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX51"><Properties><string name="Name">GameplayFeel</string><ProtectedString name="Source"><![CDATA[-- Quiet, state-driven feedback around the complete play loop. No extra HUD buttons.
+<Item class="ModuleScript" referent="RBX55"><Properties><string name="Name">ExpeditionPanel</string><ProtectedString name="Source"><![CDATA[-- Contextual expedition planning. The only world control is the prompt on the
+-- player's own map table; mission identity, timestamps and rewards stay server-owned.
+local Players = game:GetService("Players")
+local RS = game:GetService("ReplicatedStorage")
+local Http = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
+local Shared = RS:WaitForChild("Shared")
+local Config = require(Shared.Config)
+local Creatures = require(Shared.CreatureData)
+local Rules = require(Shared.ExpeditionConfig)
+local Format = require(Shared.Format)
+local variantModule = Shared:FindFirstChild("Variants")
+local Variants = variantModule and require(variantModule)
+local K = require(script.Parent.UIKit)
+local T = K.Theme
+local HUD = require(script.Parent.HUD)
+local State = require(script.Parent.ClientState)
+local Sounds = require(script.Parent.Sounds)
+local Panel = {}
+local player = Players.LocalPlayer
+local initialized, busy = false, false
+local selectedUid, selectedRoute
+local noticeText, noticeColor = "", T.Muted
+local lastView, serverClock, localClock = nil, 0, 0
+local anchor, prompt
+local page, notice, activeBox, idleBox, petList, routeList, petSummary, preview, action, claim
+local activeTitle, activeDetail, countdown, activeReward, activeHint, journalTitle, journalGrid
+local petSearch, petEmpty
+local introduction, journalHint
+local petHeading, missionHeading, planningLayout
+local render, renderPets, renderRoutes, updateSelection, updateClock
+
+local function worldName(id)
+	return Config.Worlds[id] and Config.Worlds[id].name or tostring(id)
+end
+
+local function duration(seconds)
+	seconds = math.max(0, math.ceil(seconds or 0))
+	return string.format("%dm %02ds", math.floor(seconds / 60), seconds % 60)
+end
+
+local function petName(pet)
+	local def = pet and Creatures.ById[pet.c]
+	if not def then
+		return "Unknown creature"
+	end
+	return (Variants and Variants.Prefix(pet.s, pet.v) or "") .. def.name
+end
+
+local function petIncome(pet)
+	return Creatures.Income(pet.c) * (Variants and Variants.Mult(pet.s, pet.v) or 1)
+end
+
+local function getView()
+	return type(State.Data.Expeditions) == "table" and State.Data.Expeditions or nil
+end
+
+local function selectedPet()
+	for _, pet in State.Data.Creatures or {} do
+		if pet.u == selectedUid and Creatures.ById[pet.c] then
+			return pet
+		end
+	end
+end
+
+local function routeById(id)
+	local view = getView()
+	for _, route in view and view.routes or {} do
+		if route.id == id then
+			return route
+		end
+	end
+end
+
+local function clockNow()
+	return serverClock + math.max(0, os.clock() - localClock)
+end
+
+local function clearRows(parent)
+	for _, child in parent:GetChildren() do
+		if child:IsA("GuiObject") then
+			child:Destroy()
+		end
+	end
+end
+
+local function label(parent, text, height, size, color, bold, order)
+	return K.label(text, UDim2.new(1, -12, 0, height), color or T.Text, {
+		TextSize = size or 16,
+		Font = bold and T.Bold or T.Font,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		RichText = false,
+		LayoutOrder = order or 0,
+		Parent = parent,
+	})
+end
+
+local function stack(parent, name, order)
+	local f = K.new("Frame", {
+		Name = name,
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, -12, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		LayoutOrder = order,
+		Parent = parent,
+	})
+	K.list(Enum.FillDirection.Vertical, 10).Parent = f
+	return f
+end
+
+local function scrollList(parent, name, height, order)
+	local f = K.new("ScrollingFrame", {
+		Name = name,
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, -12, 0, height),
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		CanvasSize = UDim2.new(),
+		ScrollBarThickness = 4,
+		ScrollBarImageColor3 = T.Violet,
+		ScrollingDirection = Enum.ScrollingDirection.Y,
+		LayoutOrder = order,
+		Parent = parent,
+	})
+	K.list(Enum.FillDirection.Vertical, 8).Parent = f
+	K.pad(3).Parent = f
+	return f
+end
+
+local function markSelected(button, chosen)
+	local border = button:FindFirstChildOfClass("UIStroke")
+	border.Color, border.Thickness = chosen and T.Gold or T.Border, chosen and 2 or 1
+end
+
+local function setNotice(text, color)
+	noticeText, noticeColor = text or "", color or T.Muted
+	if notice then
+		notice.Text, notice.TextColor3 = noticeText, noticeColor
+		notice.Visible = noticeText ~= ""
+	end
+end
+
+local function request(actionName, argument)
+	if busy then
+		return
+	end
+	busy = true
+	updateSelection()
+	updateClock()
+	local ok, message = State.Request(actionName, argument)
+	busy = false
+	setNotice(
+		message or (ok and "Expedition updated." or "Could not update the expedition. Try again."),
+		ok and T.Success or T.Danger
+	)
+	if ok then
+		Sounds.Play("Upgrade")
+		State.Request("Sync")
+	end
+	render()
+end
+
+updateSelection = function()
+	local pet, route = selectedPet(), routeById(selectedRoute)
+	local view = getView()
+	local active = view and type(view.active) == "table" and view.active
+	if pet then
+		local def = Creatures.ById[pet.c]
+		petSummary.Text = petName(pet)
+			.. "  #"
+			.. tostring(pet.u)
+			.. "\n"
+			.. def.rarity
+			.. " | "
+			.. worldName(def.world)
+		petSummary.TextColor3 = T.Rarity(def.rarity, Config)
+	else
+		petSummary.Text, petSummary.TextColor3 = "Choose a creature for the expedition.", T.Muted
+	end
+	if pet and route then
+		local matched = Creatures.ById[pet.c].world == route.world
+		local incomePart = route.incomeCoinsPerSecond or Rules.IncomeFraction
+		local multiplier = matched and (route.matchMultiplier or Rules.MatchingBiomeMultiplier) or 1
+		local coins = math.floor((route.coins + petIncome(pet) * route.duration * incomePart) * multiplier)
+		preview.Text = worldName(route.world)
+			.. " | "
+			.. duration(route.duration)
+			.. " | "
+			.. Format.Money(coins)
+			.. "\n"
+			.. (matched and "Native biome match: +25% reward." or "A pet from this biome earns a +25% reward.")
+			.. "\n"
+			.. (
+				view.relics and view.relics[route.world] and "Biome relic already recovered."
+				or "First completion recovers this biome's relic."
+			)
+		preview.TextColor3 = route.unlocked and T.Text or T.Muted
+	else
+		preview.Text, preview.TextColor3 = "Select a pet and an unlocked biome to see the duration and finds.", T.Muted
+	end
+	local enabled = State.Loaded and pet ~= nil and route ~= nil and route.unlocked == true and not active and not busy
+	K.setButton(action, busy and "Sending pet..." or "Send on expedition", T.Gold)
+	K.setEnabled(action, enabled)
+end
+
+renderPets = function()
+	local oldScroll = petList.CanvasPosition
+	clearRows(petList)
+	local query = string.lower(petSearch.Text)
+	local found = 0
+	for i, pet in State.Data.Creatures or {} do
+		local def = Creatures.ById[pet.c]
+		if
+			def
+			and (
+				query == ""
+				or string.find(
+					string.lower(petName(pet) .. " " .. def.rarity .. " " .. worldName(def.world)),
+					query,
+					1,
+					true
+				)
+			)
+		then
+			found += 1
+			local button = K.button(
+				petName(pet) .. "  #" .. tostring(pet.u) .. "\n" .. def.rarity .. " | " .. worldName(def.world),
+				T.Raised,
+				nil,
+				UDim2.new(1, -14, 0, 64),
+				{
+					Name = "Pet_" .. tostring(pet.u),
+					LayoutOrder = i,
+					Parent = petList,
+				}
+			)
+			button.Label.RichText = false
+			markSelected(button, selectedUid == pet.u)
+			K.bind(button, function()
+				selectedUid = pet.u
+				renderPets()
+				updateSelection()
+			end)
+		end
+	end
+	petEmpty.Visible = found == 0
+	petEmpty.Text = #(State.Data.Creatures or {}) == 0
+			and "Catch your first creature in the Launch Hall, then return to the map table."
+		or "No creatures match this search."
+	task.defer(function()
+		if petList.Parent then
+			petList.CanvasPosition = oldScroll
+		end
+	end)
+end
+
+renderRoutes = function()
+	local oldScroll = routeList.CanvasPosition
+	clearRows(routeList)
+	local view = getView()
+	for i, route in view and view.routes or {} do
+		local title = worldName(route.world) .. " | " .. duration(route.duration)
+		if not route.unlocked then
+			title ..= "\nUnlock this biome to explore it."
+		end
+		local button = K.button(title, T.Raised, nil, UDim2.new(1, -14, 0, 58), {
+			Name = "Route_" .. route.id,
+			LayoutOrder = i,
+			Parent = routeList,
+		})
+		button.Label.RichText = false
+		markSelected(button, selectedRoute == route.id)
+		K.setEnabled(button, route.unlocked == true)
+		K.bind(button, function()
+			selectedRoute = route.id
+			renderRoutes()
+			updateSelection()
+		end)
+	end
+	task.defer(function()
+		if routeList.Parent then
+			routeList.CanvasPosition = oldScroll
+		end
+	end)
+end
+
+updateClock = function()
+	local view = getView()
+	local active = view and type(view.active) == "table" and view.active
+	if not active then
+		if prompt then
+			prompt.ActionText = "Plan expedition"
+		end
+		return
+	end
+	local remaining = math.max(0, active.endsAt - clockNow())
+	countdown.Text = remaining > 0 and duration(remaining) .. " remaining" or "Your pet has returned"
+	countdown.TextColor3 = remaining > 0 and T.Text or T.Success
+	K.setButton(claim, busy and "Claiming finds..." or "Claim finds", T.Gold)
+	K.setEnabled(claim, remaining <= 0 and not busy)
+	if prompt then
+		prompt.ActionText = remaining <= 0 and "Claim expedition finds" or "View expedition"
+	end
+end
+
+render = function()
+	local view = getView()
+	if view ~= lastView then
+		lastView = view
+		serverClock, localClock = view and view.serverNow or os.time(), os.clock()
+	end
+	local active = view and type(view.active) == "table" and view.active
+	activeBox.Visible, idleBox.Visible = active ~= false and active ~= nil, active == false or active == nil
+	setNotice(noticeText, noticeColor)
+	if not State.Loaded or not view then
+		setNotice("Loading expedition plans...", T.Muted)
+		idleBox.Visible = false
+	else
+		if noticeText == "Loading expedition plans..." then
+			setNotice("", T.Muted)
+		end
+		if active then
+			local pet
+			for _, owned in State.Data.Creatures or {} do
+				if owned.u == active.petUid then
+					pet = owned
+					break
+				end
+			end
+			local def = Creatures.ById[active.creature]
+			activeTitle.Text = pet and petName(pet) or (def and def.name or "Your creature")
+			activeDetail.Text = worldName(active.world) .. " expedition"
+			activeReward.Text = "Finds: "
+				.. Format.Money(active.coins)
+				.. (active.matched and " | Native biome bonus included" or "")
+			activeHint.Text = "Unavailable until return is claimed. Garden income pauses while away.\n"
+				.. (
+					view.relics and view.relics[active.world] and "This biome's relic is already in your journal."
+					or "Its first return recovers a biome relic for your map table."
+				)
+		else
+			if not selectedPet() then
+				selectedUid = State.Data.Creatures[1] and State.Data.Creatures[1].u
+			end
+			if not routeById(selectedRoute) then
+				selectedRoute = nil
+				for _, route in view.routes or {} do
+					if route.unlocked then
+						selectedRoute = route.id
+						break
+					end
+				end
+			end
+			renderPets()
+			renderRoutes()
+		end
+	end
+	local collected = 0
+	clearRows(journalGrid)
+	for i, id in Rules.Order do
+		local recovered = view and view.relics and view.relics[id] == true
+		if recovered then
+			collected += 1
+		end
+		label(
+			journalGrid,
+			worldName(id) .. "\n" .. (recovered and "Recovered" or "Not found"),
+			38,
+			14,
+			recovered and T.Success or T.Muted,
+			false,
+			i
+		).Size =
+			UDim2.new(0.5, -6, 0, 38)
+	end
+	journalTitle.Text = "Biome relics  |  " .. collected .. " / " .. #Rules.Order
+	updateSelection()
+	updateClock()
+end
+
+function Panel.Open()
+	if not initialized or HUD.IsOpen("Expeditions") then
+		return
+	end
+	HUD.Open("Expeditions")
+	task.spawn(function()
+		local ok, message = State.Request("Sync")
+		if not ok then
+			setNotice(message or "Your plans could not refresh. Try the table again.", T.Danger)
+		end
+	end)
+end
+
+local function attachPrompt()
+	local bases = workspace:FindFirstChild("Bases")
+	local index = player:GetAttribute("BaseIndex") or State.Data.BaseIndex
+	local base = bases and index and bases:FindFirstChild("Base" .. tostring(index))
+	local nextAnchor = base and base:FindFirstChild("ExpeditionAnchor", true)
+	if nextAnchor == anchor then
+		return
+	end
+	if prompt then
+		prompt:Destroy()
+	end
+	anchor, prompt = nextAnchor, nil
+	if not nextAnchor or not nextAnchor:IsA("BasePart") then
+		return
+	end
+	prompt = K.new("ProximityPrompt", {
+		Name = "OwnExpeditionPrompt",
+		ActionText = "Plan expedition",
+		ObjectText = "Expedition table",
+		KeyboardKeyCode = Enum.KeyCode.E,
+		GamepadKeyCode = Enum.KeyCode.ButtonX,
+		MaxActivationDistance = Rules.TableRange,
+		HoldDuration = 0,
+		RequiresLineOfSight = false,
+		Parent = nextAnchor,
+	})
+	prompt.Triggered:Connect(function(who)
+		if who == player then
+			Panel.Open()
+		end
+	end)
+	updateClock()
+end
+
+function Panel.Init()
+	if initialized then
+		return
+	end
+	initialized = true
+	page = HUD.MakePanel("Expeditions", "Pet expeditions", "Send a pet and recover biome relics.", "Compass")
+	K.list(Enum.FillDirection.Vertical, 14).Parent = page.content
+	notice = label(page.content, "", 58, 15, T.Muted, false, 0)
+	notice.Name, notice.Visible = "ExpeditionNotice", false
+	activeBox = K.surface(page.content, "ActiveExpedition", UDim2.new(1, -12, 0, 286), nil, T.Ink)
+	activeBox.LayoutOrder = 1
+	activeTitle = K.text(activeBox, "", 16, 10, -32, 46, 20, T.Text, true)
+	activeDetail = K.text(activeBox, "", 16, 60, -32, 26, 16, T.Muted)
+	countdown = K.text(activeBox, "", 16, 92, -32, 30, 20, T.Text, true)
+	activeReward = K.text(activeBox, "", 16, 128, -32, 42, 15, T.Gold)
+	activeHint = K.text(activeBox, "", 16, 175, -32, 58, 14, T.Muted)
+	for _, l in { activeTitle, activeDetail, countdown, activeReward, activeHint } do
+		l.RichText = false
+	end
+	claim = K.button(
+		"Claim finds",
+		T.Gold,
+		nil,
+		UDim2.new(1, -32, 0, 44),
+		{ Name = "ClaimExpedition", Position = UDim2.new(0, 16, 1, -52), Parent = activeBox }
+	)
+	K.bind(claim, function()
+		local view = getView()
+		if view and type(view.active) == "table" then
+			request("ClaimExpedition", view.active.id)
+		end
+	end)
+	idleBox = stack(page.content, "ExpeditionPlanning", 2)
+	planningLayout = idleBox:FindFirstChildOfClass("UIListLayout")
+	petHeading = label(idleBox, "Choose a creature", 30, 20, T.Text, true, 0)
+	introduction = label(
+		idleBox,
+		"Pets from the mission's biome recover 25% more coins. A dispatched creature is unavailable and pauses its garden income until you claim its return.",
+		70,
+		15,
+		T.Muted,
+		false,
+		1
+	)
+	petSearch = K.search(idleBox, "Search creatures", UDim2.new(1, -12, 0, 44))
+	petSearch.Parent.LayoutOrder = 2
+	petSearch:GetPropertyChangedSignal("Text"):Connect(function()
+		renderPets()
+	end)
+	petEmpty = label(idleBox, "", 60, 15, T.Muted, false, 3)
+	petList = scrollList(idleBox, "ExpeditionPets", 204, 4)
+	petSummary = label(idleBox, "", 58, 16, T.Text, true, 5)
+	missionHeading = label(idleBox, "Choose a mission", 30, 20, T.Text, true, 6)
+	routeList = scrollList(idleBox, "ExpeditionRoutes", 194, 7)
+	preview = label(idleBox, "", 100, 15, T.Text, false, 8)
+	action = K.button(
+		"Send on expedition",
+		T.Gold,
+		nil,
+		UDim2.new(1, -12, 0, 48),
+		{ Name = "StartExpedition", LayoutOrder = 9, Parent = idleBox }
+	)
+	K.bind(action, function()
+		if selectedUid and selectedRoute then
+			request("StartExpedition", Http:JSONEncode({ route = selectedRoute, petUid = selectedUid }))
+		end
+	end)
+	local journal = stack(page.content, "RelicJournal", 3)
+	journalTitle = label(journal, "Biome relics", 30, 20, T.Text, true, 0)
+	journalHint =
+		label(journal, "First completion in each biome adds its relic to your map table.", 42, 14, T.Muted, false, 1)
+	journalGrid = K.new("Frame", {
+		Name = "BiomeRelics",
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, -12, 0, 176),
+		LayoutOrder = 2,
+		Parent = journal,
+	})
+	K.new("UIGridLayout", {
+		CellSize = UDim2.new(0.5, -6, 0, 38),
+		CellPadding = UDim2.fromOffset(8, 6),
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Parent = journalGrid,
+	})
+	page.refresh = render
+	page.layout = function()
+		local narrow = page.frame.Size.X.Offset < 540
+		local desktop = page.frame.Size.X.Offset >= 760
+		activeBox.Size = UDim2.new(1, -12, 0, narrow and 444 or 286)
+		activeTitle.Size = UDim2.new(1, -32, 0, narrow and 66 or 46)
+		activeDetail.Position = UDim2.fromOffset(16, narrow and 80 or 60)
+		activeDetail.Size = UDim2.new(1, -32, 0, narrow and 42 or 26)
+		countdown.Position = UDim2.fromOffset(16, narrow and 127 or 92)
+		activeReward.Position = UDim2.fromOffset(16, narrow and 166 or 128)
+		activeReward.Size = UDim2.new(1, -32, 0, narrow and 72 or 42)
+		activeHint.Position = UDim2.fromOffset(16, narrow and 244 or 175)
+		activeHint.Size = UDim2.new(1, -32, 0, narrow and 124 or 58)
+		if desktop then
+			-- Keep selecting and dispatching in one view; each catalogue scrolls
+			-- independently and the final choice/reward remains beside Send.
+			planningLayout.Parent = nil
+			idleBox.AutomaticSize = Enum.AutomaticSize.None
+			idleBox.Size = UDim2.new(1, -12, 0, 440)
+			introduction.Position = UDim2.fromOffset(0, 0)
+			introduction.Size = UDim2.new(1, -12, 0, 42)
+			petHeading.Position = UDim2.fromOffset(0, 50)
+			petHeading.Size = UDim2.new(0.48, -8, 0, 26)
+			missionHeading.Position = UDim2.new(0.52, 0, 0, 50)
+			missionHeading.Size = UDim2.new(0.48, -8, 0, 26)
+			petSearch.Parent.Position = UDim2.fromOffset(0, 84)
+			petSearch.Parent.Size = UDim2.new(0.48, -8, 0, 40)
+			petEmpty.Position = UDim2.fromOffset(0, 136)
+			petEmpty.Size = UDim2.new(0.48, -8, 0, 60)
+			petList.Position = UDim2.fromOffset(0, 132)
+			petList.Size = UDim2.new(0.48, -8, 0, 144)
+			routeList.Position = UDim2.new(0.52, 0, 0, 84)
+			routeList.Size = UDim2.new(0.48, -8, 0, 192)
+			petSummary.Position = UDim2.fromOffset(0, 288)
+			petSummary.Size = UDim2.new(0.48, -8, 0, 64)
+			preview.Position = UDim2.new(0.52, 0, 0, 288)
+			preview.Size = UDim2.new(0.48, -8, 0, 96)
+			action.Position = UDim2.fromOffset(0, 392)
+			action.Size = UDim2.new(1, -12, 0, 48)
+		else
+			-- The phone/tablet plan remains one readable vertical sequence.
+			planningLayout.Parent = idleBox
+			idleBox.AutomaticSize = Enum.AutomaticSize.Y
+			idleBox.Size = UDim2.new(1, -12, 0, 0)
+			petHeading.Size = UDim2.new(1, -12, 0, 30)
+			missionHeading.Size = UDim2.new(1, -12, 0, 30)
+			introduction.Size = UDim2.new(1, -12, 0, narrow and 110 or 70)
+			petSearch.Parent.Size = UDim2.new(1, -12, 0, 44)
+			petEmpty.Size = UDim2.new(1, -12, 0, 60)
+			petList.Size = UDim2.new(1, -12, 0, 204)
+			petSummary.Size = UDim2.new(1, -12, 0, 58)
+			routeList.Size = UDim2.new(1, -12, 0, 194)
+			preview.Size = UDim2.new(1, -12, 0, narrow and 154 or 100)
+			action.Size = UDim2.new(1, -12, 0, 48)
+		end
+		journalHint.Size = UDim2.new(1, -12, 0, narrow and 64 or 42)
+		journalGrid.Size = UDim2.new(1, -12, 0, narrow and 352 or 176)
+		journalGrid:FindFirstChildOfClass("UIGridLayout").CellSize = UDim2.new(narrow and 1 or 0.5, -6, 0, 38)
+	end
+	State.Changed:Connect(function(full)
+		local view = getView()
+		local viewChanged = view ~= lastView
+		if viewChanged then
+			lastView = view
+			serverClock, localClock = view and view.serverNow or os.time(), os.clock()
+		end
+		if HUD.IsOpen("Expeditions") and (viewChanged or full) then
+			render()
+		else
+			updateClock()
+		end
+	end)
+	local elapsed = 0
+	RunService.Heartbeat:Connect(function(dt)
+		elapsed += dt
+		if elapsed < 1 then
+			return
+		end
+		elapsed = 0
+		attachPrompt()
+		if prompt then
+			prompt.Enabled = State.Loaded and not HUD.AnyPanelOpen()
+		end
+		if HUD.IsOpen("Expeditions") then
+			updateClock()
+		end
+	end)
+	HUD.Rescale()
+	render()
+	attachPrompt()
+end
+
+return Panel
+]]></ProtectedString></Properties></Item>
+<Item class="ModuleScript" referent="RBX56"><Properties><string name="Name">GameplayFeel</string><ProtectedString name="Source"><![CDATA[-- Quiet, state-driven feedback around the complete play loop. No extra HUD buttons.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local RS = game:GetService("ReplicatedStorage")
@@ -14472,7 +15821,7 @@ function Feel.Money(amount, position)
 end
 return Feel
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX52"><Properties><string name="Name">HUD</string><ProtectedString name="Source"><![CDATA[-- Compact sanctuary HUD and one shared, responsive panel layer.
+<Item class="ModuleScript" referent="RBX57"><Properties><string name="Name">HUD</string><ProtectedString name="Source"><![CDATA[-- Compact sanctuary HUD and one shared, responsive panel layer.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Input = game:GetService("UserInputService")
@@ -15188,7 +16537,7 @@ end)
 task.defer(rescale)
 return HUD
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX53"><Properties><string name="Name">Intro</string><ProtectedString name="Source"><![CDATA[-- Intro: cinematic fly-over when you join. The camera sweeps down the whole lane (every zone),
+<Item class="ModuleScript" referent="RBX58"><Properties><string name="Name">Intro</string><ProtectedString name="Source"><![CDATA[-- Intro: cinematic fly-over when you join. The camera sweeps down the whole lane (every zone),
 -- past the Portal Launch Hall, and lands at your base while the title animates in.
 -- Click / tap / any key to skip.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > Intro (ModuleScript)
@@ -15359,7 +16708,7 @@ end
 
 return Intro
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX54"><Properties><string name="Name">Panels</string><ProtectedString name="Source"><![CDATA[-- Sanctuary shops, collection, index, customization and settings.
+<Item class="ModuleScript" referent="RBX59"><Properties><string name="Name">Panels</string><ProtectedString name="Source"><![CDATA[-- Sanctuary shops, collection, index, customization and settings.
 -- All spending and ownership changes use the existing authoritative server actions.
 local RS = game:GetService("ReplicatedStorage")
 local Http = game:GetService("HttpService")
@@ -15705,7 +17054,12 @@ local function renderCreatureDetail()
 			break
 		end
 	end
-	local key = entry and entry.u .. ":" .. tostring(State.IsPlaced(entry.u)) .. ":" .. tostring(armedUid) or "empty"
+	local awayUid = d.Expeditions and d.Expeditions.active and d.Expeditions.active.petUid
+	local key = entry
+			and entry.u .. ":" .. tostring(State.IsPlaced(entry.u)) .. ":" .. tostring(armedUid) .. ":" .. tostring(
+				awayUid
+			)
+		or "empty"
 	if detailKey == key then
 		return
 	end
@@ -15725,15 +17079,20 @@ local function renderCreatureDetail()
 	petView(entry.c, UDim2.fromScale(1, 1), nil, entry.v).Parent = hero
 	heading(invDetail, Variants.Prefix(entry.s, entry.v) .. def.name, 2)
 	K.label(
-		def.rarity .. " · " .. Format.Money(entryIncome) .. " / sec" .. (Variants.Mult(entry.s, entry.v) > 1 and ("  (x" .. Variants.Mult(entry.s, entry.v) .. ")") or ""),
+		def.rarity
+			.. " · "
+			.. Format.Money(entryIncome)
+			.. " / sec"
+			.. (Variants.Mult(entry.s, entry.v) > 1 and ("  (x" .. Variants.Mult(entry.s, entry.v) .. ")") or ""),
 		UDim2.new(1, -12, 0, 28),
 		color,
 		{ TextSize = 16, LayoutOrder = 3, Parent = invDetail }
 	)
 	K.label(def.desc or "", UDim2.new(1, -12, 0, 56), T.Muted, { TextSize = 14, LayoutOrder = 4, Parent = invDetail })
 	local isPlaced = State.IsPlaced(entry.u)
+	local away = awayUid == entry.u
 	local place = K.button(
-		isPlaced and "Remove from garden" or "Place in garden",
+		away and "On expedition" or isPlaced and "Remove from garden" or "Place in garden",
 		T.Gold,
 		nil,
 		UDim2.new(1, -12, 0, 46),
@@ -15744,10 +17103,10 @@ local function renderCreatureDetail()
 		request(State.IsPlaced(entry.u) and "Unplace" or "Place", entry.u, "Garden updated.")
 	end)
 	local cap = isPlaced and (#d.Creatures - #d.Placed >= d.StorageCap) or (not isPlaced and #d.Placed >= d.SlotsOpen)
-	if cap then
+	if cap and not away then
 		K.setButton(place, isPlaced and "Storage is full" or "Garden is full")
 	end
-	K.setEnabled(place, not cap)
+	K.setEnabled(place, not cap and not away)
 	local sellValue = math.floor(entryIncome * Config.SellMultiplier)
 	local sell = K.button(
 		armedUid == entry.u and "Confirm sale · " .. Format.Money(sellValue)
@@ -15757,7 +17116,11 @@ local function renderCreatureDetail()
 		UDim2.new(1, -12, 0, 46),
 		{ Name = "SellCreature", LayoutOrder = 6, Parent = invDetail }
 	)
+	K.setEnabled(sell, not away)
 	K.bind(sell, function()
+		if away then
+			return
+		end
 		if selectedUid ~= entry.u then
 			clearArm()
 			return
@@ -15787,7 +17150,8 @@ local function renderCreatureDetail()
 		end
 	end)
 	K.label(
-		armedUid == entry.u and "This permanently removes " .. def.name .. ". Select Confirm sale within 4 seconds."
+		away and "Your pet is exploring. Claim its return at the expedition table to make it available again."
+			or armedUid == entry.u and "This permanently removes " .. def.name .. ". Select Confirm sale within 4 seconds."
 			or "Selling permanently removes this creature. A second confirmation is required.",
 		UDim2.new(1, -12, 0, 60),
 		armedUid == entry.u and T.Danger or T.Muted,
@@ -15831,7 +17195,17 @@ inv.refresh = function()
 					{ Name = "Creature_" .. entry.u, LayoutOrder = i, Parent = invGrid }
 				)
 				petView(entry.c, UDim2.new(1, -8, 0, 108), nil, entry.v).Parent = b
-				K.text(b, Variants.Prefix(entry.s, entry.v) .. def.name, 10, 110, -20, 38, 15, Variants.Color(entry.s, entry.v) or T.Text, true)
+				K.text(
+					b,
+					Variants.Prefix(entry.s, entry.v) .. def.name,
+					10,
+					110,
+					-20,
+					38,
+					15,
+					Variants.Color(entry.s, entry.v) or T.Text,
+					true
+				)
 				K.text(b, def.rarity, 10, 151, -20, 18, 13, T.Rarity(def.rarity, Config))
 				K.text(
 					b,
@@ -15974,7 +17348,7 @@ end
 local worlds = HUD.MakePanel(
 	"Worlds",
 	"Explore the zones",
-	"Throw distance determines the landing zone. Training and upgrades extend your reach.",
+	"Throw distance determines the landing zone. Throw Power upgrades extend your reach.",
 	"Compass"
 )
 list(worlds.content, 10)
@@ -16002,7 +17376,7 @@ worlds.refresh = function()
 	local max = (State.Data.MaxDistance or 45) * 1.15
 	worlds.subtitle.Text = "Your best perfect throw: "
 		.. math.floor(max)
-		.. " m. Train or buy Throw Power to reach the next zone."
+		.. " m. Upgrade Throw Power to reach the next zone."
 	for id, label in pairs(worldRefs) do
 		local found, total = 0, 0
 		for _, def in ipairs(Data.ByWorld[id] or {}) do
@@ -16283,7 +17657,7 @@ function Panels.Init()
 end
 return Panels
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX55"><Properties><string name="Name">Plaque</string><ProtectedString name="Source"><![CDATA[-- Plaque: the carved rarity plaque from the reveal reference sheet (Actions/02_Rarity_Reveal_and_Capture):
+<Item class="ModuleScript" referent="RBX60"><Properties><string name="Name">Plaque</string><ProtectedString name="Source"><![CDATA[-- Plaque: the carved rarity plaque from the reveal reference sheet (Actions/02_Rarity_Reveal_and_Capture):
 -- a bevelled bar with pointed diamond ends, double gold trim, small gold diamond ornaments, serif caps,
 -- and gold laurels for the showcase tiers. Pixel sized, so it works in ScreenGuis and BillboardGuis.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > Plaque (ModuleScript)
@@ -16440,7 +17814,7 @@ end
 
 return P
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX56"><Properties><string name="Name">RevealTitle</string><ProtectedString name="Source"><![CDATA[-- RevealTitle: on-screen title for a creature reveal, styled after Actions/02_Rarity_Reveal_and_Capture.
+<Item class="ModuleScript" referent="RBX61"><Properties><string name="Name">RevealTitle</string><ProtectedString name="Source"><![CDATA[-- RevealTitle: on-screen title for a creature reveal, styled after Actions/02_Rarity_Reveal_and_Capture.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > RevealTitle (ModuleScript)
 --
 --   Common / Uncommon      nothing on screen: the carved plaque above the pet carries it (restrained tiers)
@@ -16756,7 +18130,7 @@ end
 
 return R
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX57"><Properties><string name="Name">Sounds</string><ProtectedString name="Source"><![CDATA[-- Restrained event audio. Built-in assets keep the game independent of uploaded audio.
+<Item class="ModuleScript" referent="RBX62"><Properties><string name="Name">Sounds</string><ProtectedString name="Source"><![CDATA[-- Restrained event audio. Built-in assets keep the game independent of uploaded audio.
 local SoundService = game:GetService("SoundService")
 local TweenService = game:GetService("TweenService")
 local Sounds = {}
@@ -16875,7 +18249,7 @@ function Sounds.Get(name)
 end
 return Sounds
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX58"><Properties><string name="Name">ThrowCinematic</string><ProtectedString name="Source"><![CDATA[-- ThrowCinematic: the throw cutscene (owner only). No letterbox, full screen.
+<Item class="ModuleScript" referent="RBX63"><Properties><string name="Name">ThrowCinematic</string><ProtectedString name="Source"><![CDATA[-- ThrowCinematic: the throw cutscene (owner only). No letterbox, full screen.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ThrowCinematic (ModuleScript)
 --
 -- Timeline (w = wind-up seconds from the server, longer for rarer creatures):
@@ -17342,7 +18716,7 @@ end
 
 return Cine
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX59"><Properties><string name="Name">ThrowController</string><ProtectedString name="Source"><![CDATA[-- ThrowController: charge meter input, held-portal + arm wind-up, the portal flight arc,
+<Item class="ModuleScript" referent="RBX64"><Properties><string name="Name">ThrowController</string><ProtectedString name="Source"><![CDATA[-- ThrowController: charge meter input, held-portal + arm wind-up, the portal flight arc,
 -- landing bounce, portal gate opening and creature reveal choreography (for ALL players' throws).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ThrowController (ModuleScript)
 
@@ -18315,7 +19689,7 @@ end)
 
 return TC
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX60"><Properties><string name="Name">UIIcons</string><ProtectedString name="Source"><![CDATA[-- Crisp native geometry. Every navigation icon also has a visible text label.
+<Item class="ModuleScript" referent="RBX65"><Properties><string name="Name">UIIcons</string><ProtectedString name="Source"><![CDATA[-- Crisp native geometry. Every navigation icon also has a visible text label.
 local T = require(script.Parent.UITheme)
 local Icons = {}
 function Icons.Draw(name, parent, size, color, position)
@@ -18435,7 +19809,7 @@ function Icons.Draw(name, parent, size, color, position)
 end
 return Icons
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX61"><Properties><string name="Name">UIKit</string><ProtectedString name="Source"><![CDATA[-- Native sanctuary components. No uploaded icon/font dependency.
+<Item class="ModuleScript" referent="RBX66"><Properties><string name="Name">UIKit</string><ProtectedString name="Source"><![CDATA[-- Native sanctuary components. No uploaded icon/font dependency.
 local TweenService = game:GetService("TweenService")
 local Sounds = require(script.Parent.Sounds)
 local Settings = require(script.Parent.ClientSettings)
@@ -18785,7 +20159,7 @@ end
 
 return K
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX62"><Properties><string name="Name">UITheme</string><ProtectedString name="Source"><![CDATA[-- Sanctuary UI tokens, shared by the HUD, icons and every shop.
+<Item class="ModuleScript" referent="RBX67"><Properties><string name="Name">UITheme</string><ProtectedString name="Source"><![CDATA[-- Sanctuary UI tokens, shared by the HUD, icons and every shop.
 -- Fonts: Builder Sans (Roblox's modern UI family) for text, Montserrat Black for display titles;
 -- resolved with a fallback so an older client without these enums still renders.
 local function font(name, fallback)
@@ -18825,7 +20199,7 @@ function T.Rarity(name, config)
 end
 return T
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX63"><Properties><string name="Name">WorldFx</string><ProtectedString name="Source"><![CDATA[-- WorldFx: ONE shared, staggered scheduler for environment motion on tagged map parts
+<Item class="ModuleScript" referent="RBX68"><Properties><string name="Name">WorldFx</string><ProtectedString name="Source"><![CDATA[-- WorldFx: ONE shared, staggered scheduler for environment motion on tagged map parts
 -- (no per-prop RenderStepped connections, no camera-following particles).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > WorldFx (ModuleScript)
 --

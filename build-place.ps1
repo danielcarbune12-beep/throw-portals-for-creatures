@@ -17,7 +17,7 @@ function Script-Item([System.IO.FileInfo]$f) {
     if ($name -like "*.server.lua") { $class = "Script"; $name = $name -replace "\.server\.lua$", "" }
     elseif ($name -like "*.client.lua") { $class = "LocalScript"; $name = $name -replace "\.client\.lua$", "" }
     else { $class = "ModuleScript"; $name = $name -replace "\.lua$", "" }
-    $code = [System.IO.File]::ReadAllText($f.FullName)
+    $code = [System.IO.File]::ReadAllText($f.FullName).Replace("`r`n", "`n")
     $code = $code.Replace("]]>", "]]]]><![CDATA[>")
     return "<Item class=`"$class`" referent=`"$(Next-Ref)`"><Properties><string name=`"Name`">$(Esc $name)</string><ProtectedString name=`"Source`"><![CDATA[$code]]></ProtectedString></Properties></Item>`n"
 }
