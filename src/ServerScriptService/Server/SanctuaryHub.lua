@@ -242,9 +242,9 @@ local function avenue()
 			K.pyramid(CF(x, 16.05, z), 2.4, 1.4, P.gold, M.Metal)
 			local cf = CF(x - side * 1.15, 13.6, z) * A(0, side < 0 and PI / 2 or -PI / 2, 0)
 			Art.Banner(cf, 6.4, 1.7)
-			local gem = K.block(CF(x, 19.4, z) * A(0, PI / 4, 0), V(1.3, 2.6, 1.3), P.lilac, M.Neon, false, 0.1)
+			local gem, gemCore = K.gem(CF(x, 19.6, z) * A(0, PI / 4, 0), 1.7, 3.2, P.lilac, M.Glass, 0.1)
 			K.tag(gem, "TPFC_Bob", { Amp = 0.4, Period = 5 + (z % 3), Spin = 18 })
-			K.lamp(gem, P.lilac, 14, 0.7)
+			K.lamp(gemCore, P.lilac, 14, 0.6)
 		end
 	end
 	-- Entrance gate: two tall pylon towers framing the start of the avenue.
