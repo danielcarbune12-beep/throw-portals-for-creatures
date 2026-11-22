@@ -41,7 +41,7 @@ local function part(class, size, cf, color, mat, collide, transp)
 	p.Transparency = transp or 0
 	p.TopSurface = Enum.SurfaceType.Smooth
 	p.BottomSurface = Enum.SurfaceType.Smooth
-	p.CastShadow = size.Magnitude > 6
+	p.CastShadow = math.max(size.X, size.Y, size.Z) >= 6 and size.X * size.Y * size.Z > 60
 	p.Parent = parentFolder
 	return p
 end

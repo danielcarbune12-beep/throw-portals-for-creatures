@@ -79,7 +79,8 @@ local function part(class, size, cf, color, mat, collide, transp)
 	p.TopSurface = Enum.SurfaceType.Smooth
 	p.BottomSurface = Enum.SurfaceType.Smooth
 	-- shadows only from big masses (cheap and keeps small props crisp)
-	p.CastShadow = (transp or 0) < 0.3 and size.X * size.Y * size.Z > 60
+	-- perf: only sizeable pieces cast shadows (shadow maps are re-rendered every frame the camera moves)
+	p.CastShadow = (transp or 0) < 0.3 and size.X * size.Y * size.Z > 60 and math.max(size.X, size.Y, size.Z) >= 6
 	local m = p.Material
 	if m == M.Metal then p.Reflectance = 0.14
 	elseif m == M.Glass then p.Reflectance = 0.22
