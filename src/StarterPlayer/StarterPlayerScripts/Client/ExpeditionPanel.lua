@@ -25,6 +25,23 @@ local routeTitle, sceneFrame, stats, relicLink
 local activeTitle, activeTime, activeReward, activePortrait, progressFill
 local tracker, trackerText, trackerFill
 local anchor, prompt, sceneId, petKey, activeKey
+local selectedHero, petMeta, relicHint, routeCaption, rewardCaption, scoutCaption
+local selectedHeroKey, sceneModel, activeSceneModel, activeSceneFrame
+local journeyCaption, journeyLabels, activeMapCaption
+local routeButtons = {}
+local petForButton = {}
+local refreshPortraits
+local descriptions = {
+	Forest = "Overgrown ruins and hidden woodland caches.",
+	Volcano = "Lava channels guard the basalt shrine.",
+	Frozen = "Icebound paths lead to the frozen relic.",
+	Crystal = "Explore the luminous crystal hollows.",
+	Candy = "Scout the ancient sugar-stone ruins.",
+	Space = "Follow a beacon through the moonlands.",
+	Shadow = "Find the lost shrine beyond the deadwood.",
+	Heaven = "Ascend to the gilded sanctuary.",
+}
+
 local render, updateClock, updateSelection, renderPets
 local function view()
 	return type(State.Data.Expeditions) == "table" and State.Data.Expeditions or nil
@@ -70,6 +87,28 @@ local function portrait(parent, pet, size)
 	local vp = K.viewport(m, size, false)
 	vp.Name = "PetPortrait"
 	vp.Parent = parent
+	vp.ImageTransparency = 1
+	local loading = K.label("Loading scout...", size, T.Muted, {
+		Name = "PortraitLoading",
+		TextSize = 12,
+		Parent = parent,
+	})
+	vp.Destroying:Connect(function()
+		if loading.Parent then
+			loading:Destroy()
+		end
+	end)
+	task.spawn(function()
+		pcall(function()
+			game:GetService("ContentProvider"):PreloadAsync({ m })
+		end)
+		if vp.Parent then
+			vp.ImageTransparency = 0
+			if loading.Parent then
+				loading:Destroy()
+			end
+		end
+	end)
 	return vp
 end
 local function clear(parent)
@@ -125,6 +164,22 @@ local function request(name, arg)
 	end
 	render()
 end
+refreshPortraits = function()
+	if not page.frame.Visible or not planning.Visible then
+		return
+	end
+	local left = portraits.AbsolutePosition.X - 90
+	local right = portraits.AbsolutePosition.X + portraits.AbsoluteSize.X + 90
+	for b, pet in petForButton do
+		local show = b.AbsolutePosition.X + b.AbsoluteSize.X >= left and b.AbsolutePosition.X <= right
+		local vp = b:FindFirstChild("PetPortrait")
+		if show and not vp then
+			portrait(b, pet, UDim2.fromScale(1, 1))
+		elseif not show and vp then
+			vp:Destroy()
+		end
+	end
+end
 renderPets = function()
 	local keys = {}
 	for _, p in State.Data.Creatures or {} do
@@ -134,6 +189,7 @@ renderPets = function()
 	if nextKey ~= petKey then
 		petKey = nextKey
 		clear(portraits)
+		petForButton = {}
 		local short = page.frame.Size.Y.Offset < 310
 		local size = page.frame.Size.Y.Offset < 260 and 44 or (short and 58 or 78)
 		for i, p in State.Data.Creatures or {} do
@@ -145,7 +201,7 @@ renderPets = function()
 					UDim2.fromOffset(size, size),
 					{ Name = "Pet_" .. p.u, LayoutOrder = i, Parent = portraits }
 				)
-				portrait(b, p, UDim2.fromScale(1, 1))
+				petForButton[b] = p
 				K.bind(b, function()
 					selectedUid = p.u
 					updateSelection()
@@ -153,6 +209,7 @@ renderPets = function()
 			end
 		end
 	end
+	task.defer(refreshPortraits)
 	for _, b in portraits:GetChildren() do
 		if b:IsA("TextButton") then
 			local st = b:FindFirstChildOfClass("UIStroke")
@@ -171,7 +228,7 @@ updateSelection = function()
 	petLabel.Text = d and Variants.Prefix(p.s, p.v) .. d.name or "Choose a pet"
 	bonus.Text = "Income pauses while away."
 	reward.Text = ""
-	reward.TextSize = 20
+	reward.TextSize = page.premium and 28 or 20
 	if p and d and r then
 		local matched = d.world == r.world
 		local coins = math.floor(
@@ -185,9 +242,14 @@ updateSelection = function()
 		)
 		reward.Text = Format.Money(coins) .. " coins"
 		bonus.Text = matched and "+25% biome bonus / income pauses" or "Income pauses while away."
+		bonus.TextColor3 = matched and T.Success or T.Muted
+		relicHint.Text = (view() and view().relics and view().relics[r.world]) and "Biome relic recovered"
+			or "First return recovers this biome's relic"
 	end
 	if r then
 		routeTitle.Text = worldName(r.world)
+		routeCaption.Text = descriptions[r.world] or "Explore the biome and recover its relic."
+
 		stats.Text = duration(r.duration) .. "  /  " .. (r.unlocked and "Unlocked" or "Locked biome")
 		if page.frame.Size.Y.Offset < 260 then
 			stats.Text = duration(r.duration) .. " / " .. (r.unlocked and "Income pauses while away." or "Locked biome")
@@ -198,10 +260,11 @@ updateSelection = function()
 		if sceneId ~= r.world then
 			sceneId = r.world
 			clear(sceneFrame)
-			local vp = K.viewport(Scene.Build(r.world), UDim2.fromScale(1, 1), false)
+			sceneModel = Scene.Build(r.world)
+			local vp = K.viewport(sceneModel, UDim2.fromScale(1, 1), false)
 			vp.Name = "BiomePreview"
 			vp.Parent = sceneFrame
-			vp.CurrentCamera.CFrame = CFrame.lookAt(Vector3.new(-13, 12, -18), Vector3.new(0, 1, 0))
+			vp.CurrentCamera.CFrame = CFrame.lookAt(Vector3.new(-25, 21, -29), Vector3.new(0, 1, 0))
 		end
 	end
 	local count = 0
@@ -219,6 +282,23 @@ updateSelection = function()
 		reward.Text = "Catch a pet to begin."
 		reward.TextSize = 16
 	end
+	if d then
+		petMeta.Text = d.rarity .. " / " .. worldName(d.world)
+		petMeta.TextColor3 = T.Rarity(d.rarity, Config)
+		local key = tostring(p.u) .. ":" .. tostring(p.v) .. ":" .. tostring(p.s)
+		if selectedHeroKey ~= key then
+			selectedHeroKey = key
+			clear(selectedHero)
+			portrait(selectedHero, p, UDim2.fromScale(1, 1))
+		end
+	else
+		petMeta.Text = "Catch a pet in the Launch Hall"
+		if selectedHeroKey ~= "empty" then
+			selectedHeroKey = "empty"
+			clear(selectedHero)
+			K.Icon("Pet", selectedHero, UDim2.fromScale(1, 1), T.Text)
+		end
+	end
 	renderPets()
 end
 updateClock = function()
@@ -235,6 +315,14 @@ updateClock = function()
 	end
 	local left = math.max(0, a.endsAt - clockNow())
 	local pct = math.clamp(1 - left / math.max(1, a.endsAt - a.startedAt), 0, 1)
+	Scene.SetProgress(activeSceneModel, pct)
+	local stage = left <= 0 and 3 or (pct < 0.15 and 1 or (pct < 0.75 and 2 or 3))
+	journeyCaption.Text = left <= 0 and "Expedition complete" or ({ "Departing", "Exploring", "Returning" })[stage]
+	for i, label in journeyLabels do
+		label.TextColor3 = i <= stage and T.Success or T.Muted
+		label.Font = i == stage and T.Bold or T.Font
+	end
+
 	activeTime.Text = left > 0 and duration(left) .. " remaining" or "Your pet has returned"
 	activeTime.TextColor3 = left > 0 and T.Text or T.Success
 	progressFill.Size = UDim2.fromScale(pct, 1)
@@ -243,7 +331,11 @@ updateClock = function()
 		or ("Claim " .. Format.Money(a.coins))
 	K.setButton(
 		claim,
-		busy and "Claiming..." or (inRange() and "Claim " .. Format.Money(a.coins) or "Go to table"),
+		busy and "Claiming..."
+			or (
+				left > 0 and journeyCaption.Text .. "..."
+				or (inRange() and "Claim " .. Format.Money(a.coins) or "Go to table")
+			),
 		T.Gold
 	)
 	K.setEnabled(claim, left <= 0 and not busy)
@@ -273,6 +365,12 @@ render = function()
 			activeKey = a.id
 			clear(activePortrait)
 			portrait(activePortrait, { c = a.creature, v = a.v }, UDim2.fromScale(1, 1))
+			clear(activeSceneFrame)
+			activeSceneModel = Scene.Build(a.world)
+			local vp = K.viewport(activeSceneModel, UDim2.fromScale(1, 1), false)
+			vp.Name = "ActiveBiomePreview"
+			vp.Parent = activeSceneFrame
+			vp.CurrentCamera.CFrame = CFrame.lookAt(Vector3.new(-25, 21, -29), Vector3.new(0, 1, 0))
 		end
 	else
 		if not ownedPet() then
@@ -380,6 +478,7 @@ function Panel.Init()
 			Position = UDim2.new(def[3], def[3] == 0 and 0 or -40, 0, 0),
 			Parent = right,
 		})
+		table.insert(routeButtons, b)
 		K.bind(b, function()
 			local routes = view() and view().routes or {}
 			if #routes == 0 then
@@ -406,6 +505,13 @@ function Panel.Init()
 	})
 	K.list(Enum.FillDirection.Horizontal, 8, Enum.HorizontalAlignment.Left).Parent = portraits
 	K.pad(3).Parent = portraits
+	portraits:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
+		refreshPortraits()
+	end)
+	portraits:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+		task.defer(refreshPortraits)
+	end)
+
 	petLabel = K.text(right, "", 0, 187, -4, 24, 15, T.Text, true)
 	bonus = K.text(right, "", 0, 213, -160, 22, 13, T.Muted)
 	send = K.button(
@@ -460,29 +566,81 @@ function Panel.Init()
 	hint.Size = UDim2.new(0.68, -8, 0, 38)
 	local journal =
 		HUD.MakePanel("Relics", "Biome relics", "First completion in each biome adds a relic to your table.", "Compass")
+	local back = K.button("<  Expedition", T.Raised, nil, UDim2.fromOffset(152, 36), {
+		Name = "BackToExpedition",
+		Position = UDim2.new(1, -220, 0, 18),
+		Parent = journal.frame,
+	})
+	K.bind(back, Panel.Open)
 	journal.refresh = function()
+		local bits = {}
+		for _, id in Rules.Order do
+			table.insert(bits, tostring(view() and view().relics and view().relics[id]))
+		end
+		local key = table.concat(bits, ":")
+		if journal.renderKey == key and journal.content:FindFirstChild("RelicCollection") then
+			return
+		end
+		journal.renderKey = key
 		journal.content:ClearAllChildren()
-		K.list(Enum.FillDirection.Vertical, 8).Parent = journal.content
-		local back = K.button(
-			"<  Expedition",
-			T.Raised,
-			nil,
-			UDim2.new(1, -8, 0, 40),
-			{ LayoutOrder = 0, Parent = journal.content }
+		local grid = K.new(
+			"Frame",
+			{ Name = "RelicCollection", Size = UDim2.new(1, -8, 0, 400), BackgroundTransparency = 1, Parent = journal.content }
 		)
-		K.bind(back, function()
-			Panel.Open()
-		end)
+		local layout = K.new(
+			"UIGridLayout",
+			{
+				CellSize = UDim2.new(0.25, -9, 0, 182),
+				CellPadding = UDim2.fromOffset(12, 12),
+				SortOrder = Enum.SortOrder.LayoutOrder,
+				Parent = grid,
+			}
+		)
+		local count = 0
 		for i, id in Rules.Order do
 			local found = view() and view().relics and view().relics[id]
-			local l = K.label(
-				worldName(id) .. " / " .. (found and "Recovered" or "Not found"),
-				UDim2.new(1, -8, 0, 36),
-				found and T.Success or T.Muted,
-				{ LayoutOrder = i, Parent = journal.content }
-			)
-			l.RichText = false
+			if found then
+				count += 1
+			end
+			local tint = Config.Worlds[id].groundColor:Lerp(T.Panel, 0.92)
+			local card = K.surface(grid, "Relic_" .. id, UDim2.new(), nil, tint)
+			card.LayoutOrder = i
+			Sky.Relic(id, card, UDim2.fromOffset(112, 112), UDim2.new(0.5, -56, 0, 2), found)
+			local name = K.text(card, worldName(id), 10, 112, -20, 32, 15, T.Text, true)
+			name.Name = "RelicName"
+			name.TextXAlignment = Enum.TextXAlignment.Center
+			local status =
+				K.text(card, found and "Recovered" or "Not found", 10, 150, -20, 22, 13, found and T.Success or T.Muted)
+			status.Name = "RelicStatus"
+			status.TextXAlignment = Enum.TextXAlignment.Center
 		end
+		journal.subtitle.Text = "Recovered " .. count .. " / 8  /  First return in each biome earns its relic."
+		local function resize()
+			local narrow = journal.frame.Size.X.Offset < 760
+			journal.content.Position = UDim2.fromOffset(16, narrow and 82 or 108)
+			journal.contentSize = UDim2.new(1, -32, 1, narrow and -96 or -124)
+			journal.content.Size = journal.contentSize - UDim2.fromOffset(0, journal.feedback.Visible and 40 or 0)
+			journal.subtitle.Position = UDim2.fromOffset(20, narrow and 52 or 60)
+			journal.subtitle.Size = UDim2.new(1, -40, 0, narrow and 24 or 35)
+			journal.subtitle.TextSize = narrow and 13 or 14
+			layout.CellSize = UDim2.new(narrow and 0.5 or 0.25, narrow and -6 or -9, 0, narrow and 146 or 182)
+			grid.Size = UDim2.new(1, -8, 0, narrow and 620 or 388)
+			for _, card in grid:GetChildren() do
+				if card:IsA("Frame") then
+					local id = string.sub(card.Name, 7)
+					local art = card:FindFirstChild("RelicArt_" .. id)
+					art.Size = UDim2.fromOffset(narrow and 92 or 112, narrow and 92 or 112)
+					art.Position = UDim2.new(0.5, narrow and -46 or -56, 0, 2)
+					card.RelicName.Position = UDim2.fromOffset(10, narrow and 96 or 112)
+					card.RelicName.Size = UDim2.new(1, -20, 0, narrow and 22 or 32)
+					card.RelicName.TextSize = narrow and 14 or 15
+					card.RelicStatus.Position = UDim2.fromOffset(10, narrow and 120 or 150)
+					card.RelicStatus.Size = UDim2.new(1, -20, 0, 22)
+				end
+			end
+		end
+		journal.layout = resize
+		resize()
 	end
 	tracker = K.button(
 		"",
@@ -498,14 +656,69 @@ function Panel.Init()
 	tiny.ClipsDescendants = true
 	trackerFill = K.new("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = T.Gold, Parent = tiny })
 	K.bind(tracker, Panel.Open)
+	selectedHero = K.new("Frame", { Name = "SelectedScout", BackgroundTransparency = 1, Parent = right })
+	petMeta = K.text(right, "", 0, 0, -4, 22, 13, T.Muted)
+	relicHint = K.text(right, "", 0, 0, -4, 20, 13, T.Muted)
+	routeCaption = K.text(planning, "", 0, 0, -4, 38, 14, T.Muted)
+	rewardCaption = K.text(right, "Recovered coins", 0, 0, -4, 20, 13, T.Muted)
+	scoutCaption = K.text(right, "Choose your scout", 0, 0, -4, 22, 15, T.Text, true)
+	activeSceneFrame = K.new("Frame", { Name = "JourneyMap", BackgroundTransparency = 1, Parent = activeBox })
+	activeMapCaption = K.text(activeBox, "Your scout follows the marked route.", 0, 0, -4, 30, 14, T.Muted)
+	journeyCaption = K.text(activeBox, "Departing", 0, 0, -4, 24, 16, T.Success, true)
+	journeyLabels = {}
+	for _, text in { "01  Departure", "02  Exploration", "03  Return" } do
+		local l = K.text(activeBox, text, 0, 0, -4, 38, 13, T.Muted)
+		table.insert(journeyLabels, l)
+	end
 	page.refresh = render
 	page.layout = function()
-		local root = HUD.Root.AbsoluteSize
-		local h = math.min(334, root.Y - 82)
+		local scale = HUD.Root:FindFirstChildOfClass("UIScale")
+		local root = HUD.Root.AbsoluteSize / (scale and scale.Scale or 1)
+		local premium = root.X >= 850 and root.Y >= 544
+		page.premium = premium
+		local h = math.min(premium and 462 or 334, root.Y - 82)
 		page.frame.Size = UDim2.fromOffset(math.min(1000, root.X - 24), h)
 		page.frame.AnchorPoint = Vector2.new(0.5, 1)
 		page.targetPosition = UDim2.new(0.5, 0, 1, -12)
 		page.frame.Position = page.targetPosition
+		right.Position = UDim2.fromScale(0.32, 0)
+		right.Size = UDim2.fromScale(0.68, 1)
+		routeTitle.Parent = right
+		routeTitle.Position = UDim2.fromOffset(44, 0)
+		routeTitle.Size = UDim2.new(1, -88, 0, 30)
+		routeTitle.TextSize = 20
+		routeTitle.TextXAlignment = Enum.TextXAlignment.Center
+		for i, b in routeButtons do
+			b.Parent = right
+			b.Position = UDim2.new(i == 1 and 0 or 1, i == 1 and 0 or -40, 0, 0)
+		end
+		sceneFrame.Position = UDim2.new()
+		sceneFrame.Size = UDim2.new(0.3, -12, 1, -34)
+		sceneFrame.BackgroundTransparency = 1
+		relicLink.Position = UDim2.new(0, 0, 1, -30)
+		relicLink.Size = UDim2.new(0.3, -12, 0, 30)
+		send.Size = UDim2.fromOffset(154, 44)
+		selectedHero.Visible = premium
+		petMeta.Visible = premium
+		relicHint.Visible = premium
+		routeCaption.Visible = premium
+		rewardCaption.Visible = premium
+		scoutCaption.Visible = premium
+		activeSceneFrame.Visible = premium
+		activeMapCaption.Visible = premium
+		journeyCaption.Visible = premium
+		for _, label in journeyLabels do
+			label.Visible = premium
+		end
+		activePortrait.Position = UDim2.new()
+		activePortrait.Size = UDim2.new(0.28, 0, 1, -20)
+		activeTitle.Position = UDim2.fromScale(0.32, 0)
+		activeTitle.Size = UDim2.new(0.68, -8, 0, 30)
+		claim.Position = UDim2.new(0.32, 0, 1, -48)
+		claim.Size = UDim2.new(0.68, -8, 0, 44)
+		hint.Position = UDim2.new(0.32, 0, 0, 148)
+		hint.Size = UDim2.new(0.68, -8, 0, 38)
+		track.Size = UDim2.new(0.68, -8, 0, 8)
 		local short = h < 310
 		reward.Position = UDim2.fromOffset(0, short and 58 or 63)
 		reward.Size = UDim2.new(1, -4, 0, short and 22 or 26)
@@ -551,6 +764,85 @@ function Panel.Init()
 			track.Position = UDim2.new(0.32, 0, 0, 60)
 			activeReward.Position = UDim2.new(0.32, 0, 0, 72)
 			activeReward.Size = UDim2.new(0.68, -8, 0, 18)
+		end
+		if premium then
+			right.Position = UDim2.fromScale(0.48, 0)
+			right.Size = UDim2.fromScale(0.52, 1)
+			routeTitle.Parent = planning
+			routeTitle.Position = UDim2.fromOffset(44, 2)
+			routeTitle.Size = UDim2.new(0.44, -88, 0, 34)
+			routeTitle.TextSize = 24
+			for i, b in routeButtons do
+				b.Parent = planning
+				b.Position = UDim2.new(i == 1 and 0 or 0.44, i == 1 and 0 or -40, 0, 0)
+			end
+			sceneFrame.Position = UDim2.fromOffset(0, 48)
+			sceneFrame.Size = UDim2.new(0.44, -12, 1, -136)
+			sceneFrame.BackgroundTransparency = 0
+			sceneFrame.BackgroundColor3 = Color3.fromRGB(234, 242, 237)
+			if not sceneFrame:FindFirstChildOfClass("UICorner") then
+				K.corner(10).Parent = sceneFrame
+			end
+			routeCaption.Position = UDim2.new(0, 0, 1, -82)
+			routeCaption.Size = UDim2.new(0.44, -12, 0, 34)
+			relicLink.Position = UDim2.new(0, 0, 1, -40)
+			relicLink.Size = UDim2.new(0.44, -12, 0, 40)
+			scoutCaption.Position = UDim2.fromOffset(0, 0)
+			selectedHero.Position = UDim2.fromOffset(0, 28)
+			selectedHero.Size = UDim2.fromOffset(136, 140)
+			petMeta.Position = UDim2.fromOffset(152, 28)
+			petMeta.Size = UDim2.new(1, -156, 0, 24)
+			petLabel.Position = UDim2.fromOffset(152, 58)
+			petLabel.Size = UDim2.new(1, -156, 0, 52)
+			petLabel.TextSize = 22
+			bonus.Position = UDim2.fromOffset(152, 116)
+			bonus.Size = UDim2.new(1, -156, 0, 42)
+			bonus.Visible = true
+			portraits.Position = UDim2.fromOffset(0, 180)
+			portraits.Size = UDim2.new(1, 0, 0, 84)
+			for _, b in portraits:GetChildren() do
+				if b:IsA("GuiObject") then
+					b.Size = UDim2.fromOffset(78, 78)
+				end
+			end
+			rewardCaption.Position = UDim2.fromOffset(0, 270)
+			reward.Position = UDim2.fromOffset(0, 292)
+			reward.Size = UDim2.new(0.6, 0, 0, 36)
+			reward.TextSize = 28
+			stats.Position = UDim2.new(0.6, 0, 0, 292)
+			stats.Size = UDim2.new(0.4, 0, 0, 36)
+			stats.TextSize = 15
+			relicHint.Position = UDim2.fromOffset(0, 330)
+			send.Size = UDim2.new(1, 0, 0, 48)
+			activeSceneFrame.Position = UDim2.fromOffset(0, 8)
+			activeSceneFrame.Size = UDim2.new(0.46, -12, 1, -54)
+			activeSceneFrame.BackgroundTransparency = 0
+			activeSceneFrame.BackgroundColor3 = Color3.fromRGB(234, 242, 237)
+			if not activeSceneFrame:FindFirstChildOfClass("UICorner") then
+				K.corner(10).Parent = activeSceneFrame
+			end
+			activeMapCaption.Position = UDim2.new(0, 0, 1, -38)
+			activeMapCaption.Size = UDim2.new(0.46, -12, 0, 30)
+			activeTitle.Position = UDim2.fromScale(0.5, 0)
+			activeTitle.Size = UDim2.new(0.5, -8, 0, 34)
+			activePortrait.Position = UDim2.new(0.5, 0, 0, 48)
+			activePortrait.Size = UDim2.fromOffset(132, 132)
+			journeyCaption.Position = UDim2.new(0.5, 144, 0, 48)
+			journeyCaption.Size = UDim2.new(0.5, -152, 0, 24)
+			activeTime.Position = UDim2.new(0.5, 144, 0, 80)
+			activeTime.Size = UDim2.new(0.5, -152, 0, 30)
+			activeReward.Position = UDim2.new(0.5, 144, 0, 118)
+			activeReward.Size = UDim2.new(0.5, -152, 0, 54)
+			track.Position = UDim2.new(0.5, 0, 0, 198)
+			track.Size = UDim2.new(0.5, -8, 0, 10)
+			for i, l in journeyLabels do
+				l.Position = UDim2.new(0.5 + (i - 1) / 6, 0, 0, 222)
+				l.Size = UDim2.new(1 / 6, -6, 0, 42)
+			end
+			hint.Position = UDim2.new(0.5, 0, 0, 300)
+			hint.Size = UDim2.new(0.5, -8, 0, 38)
+			claim.Position = UDim2.new(0.5, 0, 1, -48)
+			claim.Size = UDim2.new(0.5, -8, 0, 48)
 		end
 	end
 	State.Changed:Connect(function(full)

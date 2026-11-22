@@ -1,10 +1,11 @@
--- Shared Skyforge trim and approved C enamel atlas. Four primary destinations.
+-- Light sanctuary surfaces and large standalone navigation artwork.
 local T = require(script.Parent.UITheme)
 local S = {}
-S.Atlas = "rbxassetid://102541518466565"
+S.Atlas = "rbxassetid://110533210650310"
+S.RelicAtlas = "rbxassetid://111238084547615"
 task.spawn(function()
 	pcall(function()
-		game:GetService("ContentProvider"):PreloadAsync({ S.Atlas })
+		game:GetService("ContentProvider"):PreloadAsync({ S.Atlas, S.RelicAtlas })
 	end)
 end)
 local cells = { Pet = { 0, 0 }, Shop = { 1, 0 }, Compass = { 0, 1 }, Settings = { 1, 1 } }
@@ -29,32 +30,52 @@ function S.Icon(name, parent, size, position)
 	f.Parent = parent
 	return f
 end
+local relicCells = { Forest = 0, Volcano = 1, Frozen = 2, Crystal = 3, Candy = 4, Space = 5, Shadow = 6, Heaven = 7 }
+function S.Relic(id, parent, size, position, recovered)
+	local index = relicCells[id]
+	if index == nil then
+		return nil
+	end
+	local frame = Instance.new("Frame")
+	frame.Name = "RelicArt_" .. id
+	frame.BackgroundTransparency = 1
+	frame.ClipsDescendants = true
+	frame.Size = size
+	frame.Position = position
+	local image = Instance.new("ImageLabel")
+	image.Name = "RelicArtwork"
+	image.BackgroundTransparency = 1
+	image.Image = S.RelicAtlas
+	image.Size = UDim2.fromScale(4, 2)
+	image.Position = UDim2.fromScale(-(index % 4), -math.floor(index / 4))
+	image.ImageTransparency = recovered and 0 or 0.2
+	image.Parent = frame
+	frame.Parent = parent
+	return frame
+end
 function S.Trim(frame)
 	frame.BackgroundColor3 = T.Panel
-	local c = frame:FindFirstChildOfClass("UICorner")
-	if c then
-		c.CornerRadius = UDim.new(0, 4)
+	local corner = frame:FindFirstChildOfClass("UICorner")
+	if corner then
+		corner.CornerRadius = UDim.new(0, 10)
 	end
-	local s = frame:FindFirstChildOfClass("UIStroke")
-	if s then
-		s.Color = T.TrimGold
-		s.Thickness = 1
-		s.Transparency = 0.28
+	local stroke = frame:FindFirstChildOfClass("UIStroke")
+	if stroke then
+		stroke.Color = T.TrimGold
+		stroke.Thickness = 1
+		stroke.Transparency = 0.45
 	end
-	if frame:FindFirstChild("SkyforgeCorner1") then
-		return frame
-	end
-	for i, p in { { 0, 0, 45 }, { 1, 0, -45 }, { 0, 1, -45 }, { 1, 1, 45 } } do
-		local line = Instance.new("Frame")
-		line.Name = "SkyforgeCorner" .. i
-		line.Size = UDim2.fromOffset(12, 2)
-		line.AnchorPoint = Vector2.new(0.5, 0.5)
-		line.Position = UDim2.new(p[1], p[1] == 0 and 4 or -4, p[2], p[2] == 0 and 4 or -4)
-		line.Rotation = p[3]
-		line.BackgroundColor3 = T.TrimGold
-		line.BorderSizePixel = 0
-		line.Parent = frame
-	end
+	return frame
+end
+local cardColors = {
+	Pet = Color3.fromRGB(237, 246, 241),
+	Shop = Color3.fromRGB(250, 243, 230),
+	Compass = Color3.fromRGB(236, 244, 241),
+	Settings = Color3.fromRGB(240, 243, 247),
+}
+function S.Card(frame, icon)
+	S.Trim(frame)
+	frame.BackgroundColor3 = cardColors[icon] or T.Raised
 	return frame
 end
 return S

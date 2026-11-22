@@ -1,0 +1,12 @@
+Use case: game UI asset atlas. Create a wide landscape transparent PNG atlas, EXACT four columns by two rows, EIGHT standalone collectible relics. NO backplates, NO badges, NO square frames, NO text, NO background. Equal square cells, relic centered in each cell, fills central 80%, no crossing cells. Match a premium blocky Roblox fantasy UI: beautifully sculpted low-poly hard surfaces, warm pale stone and champagne gold, crisp faceted colored inlays, consistent bright studio lighting, each relic three-quarter front view. Must look desirable as collectible treasure, NOT plain rectangular pillars.
+Top row left-to-right:
+1 Forest: an emerald green faceted acorn-heart crystal cradled in two angular gold leaf wings, small warm stone plinth.
+2 Volcano: a jagged obsidian flame crown enclosing a glowing orange amber core, sturdy gold base.
+3 Frozen: an icy blue faceted snowflake crystal with silver armor-like edges and a gold clasp.
+4 Crystal: a three-pronged amethyst crystal cluster held by an intricate clean gold cradle.
+Bottom row left-to-right:
+5 Candy: a rose-quartz hexagonal confection jewel with cream stone twists and neat gold inlay, angular NOT soft or gooey.
+6 Space: a midnight-blue meteor gemstone encircled by one champagne-gold orbital ring with a small silver moon.
+7 Shadow: a sharp dark violet dragon-scale amulet with silver edges and a small violet core; readable strong silhouette.
+8 Heaven: a brilliant warm ivory star prism held between two clean geometric golden wings, small pale stone foot.
+No tiny writing, no fake labels, no sparkles or colored haze extending outside the cells, no cast floor shadow, no squishy forms. Cohesive artifact collection with distinct silhouettes, polished game production bitmap assets, true alpha transparency.
