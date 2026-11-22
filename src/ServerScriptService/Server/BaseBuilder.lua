@@ -69,10 +69,8 @@ local function buildGymEquipment(base, level)
 		end
 		part(f, Vector3.new(3, 1.4, 0.2), g * CFrame.new(0, 2.6, 3.3), Color3.fromRGB(245, 235, 210), Enum.Material.Wood, false)
 	elseif level == 2 then
-		-- Iron Barbell: rubber mat, bench, steel uprights with J-hooks, plates + collars
+		-- Iron Barbell: rubber mat, steel uprights with J-hooks, plates + collars
 		part(f, Vector3.new(9, 0.2, 7), g * CFrame.new(0, 0.1, 0), Color3.fromRGB(40, 40, 46), Enum.Material.Rubber, false)
-		part(f, Vector3.new(2.4, 0.6, 6), g * CFrame.new(0, 1.6, -2), Color3.fromRGB(200, 50, 60), Enum.Material.Fabric)
-		for _, s in ipairs({ -1, 1 }) do part(f, Vector3.new(0.4, 1.6, 0.4), g * CFrame.new(0, 0.8, -2 + s * 2.4), DARKSTEEL, Enum.Material.Metal) end
 		for _, s in ipairs({ -1, 1 }) do
 			part(f, Vector3.new(0.5, 5, 0.5), g * CFrame.new(s * 3.4, 2.5, 1.5), DARKSTEEL, Enum.Material.Metal)
 			part(f, Vector3.new(0.5, 0.3, 0.9), g * CFrame.new(s * 3.4, 4.15, 1.2), STEEL, Enum.Material.Metal, false) -- J-hook
@@ -131,9 +129,74 @@ local function buildGymEquipment(base, level)
 		pe.Texture = SPARKLE; pe.Color = ColorSequence.new(st.color); pe.Rate = 6; pe.LightEmission = 1
 		pe.Speed = NumberRange.new(0.5, 1.5); pe.Size = NumberSequence.new(0.4, 0); pe.Parent = core
 	end
+	-- WORKOUT BENCH (every level): you sit here and press the weights. Faces away from the rack.
+	local benchCF = g * CFrame.new(0, 0, -2.4)
+	local IVORY, GOLD, PURPLE = Color3.fromRGB(243, 235, 219), Color3.fromRGB(234, 196, 111), Color3.fromRGB(96, 60, 168)
+	for _, s in ipairs({ -1, 1 }) do
+		part(f, Vector3.new(0.35, 1.3, 0.35), benchCF * CFrame.new(s * 0.85, 0.65, 0.8), DARKSTEEL, Enum.Material.Metal)
+		part(f, Vector3.new(0.35, 1.3, 0.35), benchCF * CFrame.new(s * 0.85, 0.65, -0.8), DARKSTEEL, Enum.Material.Metal)
+	end
+	part(f, Vector3.new(2.3, 0.3, 2.4), benchCF * CFrame.new(0, 1.35, 0), IVORY, Enum.Material.Limestone)
+	part(f, Vector3.new(2.42, 0.1, 2.52), benchCF * CFrame.new(0, 1.22, 0), GOLD, Enum.Material.Metal, false)
+	-- padded backrest behind the sitter, tilted slightly back
+	local back = benchCF * CFrame.new(0, 2.55, 1.15) * CFrame.Angles(math.rad(-12), 0, 0)
+	part(f, Vector3.new(2.2, 2.6, 0.45), back, PURPLE, Enum.Material.Fabric)
+	part(f, Vector3.new(2.32, 0.12, 0.5), back * CFrame.new(0, 1.32, 0), GOLD, Enum.Material.Metal, false)
+	part(f, Vector3.new(0.3, 2.1, 0.3), benchCF * CFrame.new(0, 1.9, 1.35), DARKSTEEL, Enum.Material.Metal)
+	local seat = Instance.new("Seat")
+	seat.Name = "WorkoutSeat"
+	seat.Size = Vector3.new(2.1, 0.35, 2.1)
+	seat.CFrame = benchCF * CFrame.new(0, 1.65, 0)
+	seat.Color = PURPLE
+	seat.Material = Enum.Material.Fabric
+	seat.Anchored = true
+	seat.TopSurface, seat.BottomSurface = Enum.SurfaceType.Smooth, Enum.SurfaceType.Smooth
+	seat.Parent = f
+
+	BaseBuilder.SetGymSign(base, level)
+end
+
+-- Gym sign in the Portal Sanctuary style: violet board, gold frame and keystone, cream/gold lettering.
+function BaseBuilder.SetGymSign(base, level)
+	local label = base.gymLabel
+	local bb = label and label.Parent
+	if not bb then return end
+	if not bb:FindFirstChild("SanctuaryPanel") then
+		bb.Size = UDim2.fromScale(9, 3.4)
+		bb.MaxDistance = 70
+		local panel = Instance.new("Frame")
+		panel.Name = "SanctuaryPanel"
+		panel.Size = UDim2.fromScale(1, 1)
+		panel.BackgroundColor3 = Color3.new(1, 1, 1)
+		local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0.12, 0); corner.Parent = panel
+		local stroke = Instance.new("UIStroke"); stroke.Thickness = 3; stroke.Color = Color3.fromRGB(234, 196, 111); stroke.Parent = panel
+		local grad = Instance.new("UIGradient")
+		grad.Rotation = 90
+		grad.Color = ColorSequence.new(Color3.fromRGB(112, 74, 190), Color3.fromRGB(64, 40, 118))
+		grad.Parent = panel
+		local key = Instance.new("Frame")
+		key.Name = "Keystone"
+		key.AnchorPoint = Vector2.new(0.5, 0.5)
+		key.Position = UDim2.fromScale(0.5, 0)
+		key.Size = UDim2.fromScale(0.09, 0.24)
+		key.SizeConstraint = Enum.SizeConstraint.RelativeYY
+		key.Rotation = 45
+		key.BackgroundColor3 = Color3.fromRGB(234, 196, 111)
+		key.BorderSizePixel = 0
+		key.Parent = panel
+		panel.Parent = bb
+		label.Parent = panel
+		label.Size = UDim2.fromScale(0.9, 0.8)
+		label.Position = UDim2.fromScale(0.05, 0.12)
+		label.Font = Enum.Font.GothamBold
+		label.TextColor3 = Color3.fromRGB(255, 242, 205)
+		local ls = label:FindFirstChildOfClass("UIStroke")
+		if ls then ls.Color = Color3.fromRGB(40, 22, 80); ls.Thickness = 1.5; ls.Transparency = 0 end
+	end
+	local st = Config.TrainingStations[level]
 	local nextSt = Config.TrainingStations[level + 1]
-	base.gymLabel.Text = string.format("💪 GYM: %s\n<font color='#9CFFA8'>+%d Strength/lift</font>%s", st.name, st.gain,
-		nextSt and ("\n<font color='#FFD36B'>Next: " .. nextSt.name .. "</font>") or "\n<font color='#FFD36B'>MAXED!</font>")
+	label.Text = string.format("<font color='#F1CA73'><b>PERSONAL GYM</b></font>\n%s\n<font color='#C9F2D2'>+%d STRENGTH / LIFT</font>\n<font color='#CDB8FF'>%s</font>",
+		string.upper(st.name), st.gain, nextSt and ("NEXT: " .. string.upper(nextSt.name)) or "MAXED OUT")
 end
 
 ---------------------------------------------------------------- decorations
@@ -280,7 +343,6 @@ function BaseBuilder.Release(base)
 	base.decor:ClearAllChildren()
 	base.gym:ClearAllChildren()
 	buildGymEquipment(base, 1)
-	base.gymLabel.Text = "💪 GYM"
 	base.crystalLabel.Text = ""
 	base.collectLabel.Text = "$0"
 end

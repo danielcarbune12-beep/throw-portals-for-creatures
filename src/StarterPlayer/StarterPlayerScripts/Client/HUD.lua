@@ -255,13 +255,38 @@ Input.InputEnded:Connect(function(i)
 end)
 K.bind(auto, function()
 	HUD.AutoTrain = not HUD.AutoTrain
-	K.setButton(auto, HUD.AutoTrain and "Auto: on" or "Auto: off", HUD.AutoTrain and T.Success or T.Raised)
+	K.setButton(auto, HUD.AutoTrain and "AUTO: ON" or "AUTO: OFF")
+	HUD.Sanctify(auto, HUD.AutoTrain and SANCT.Gold or SANCT.Purple, HUD.AutoTrain and SANCT.PurpleDeep or SANCT.Cream)
 end)
 K.bind(gymUpgrade, function()
 	if HUD.OnUpgradeGym then
 		HUD.OnUpgradeGym()
 	end
 end)
+-- Portal Sanctuary look for the gym panel: violet board, gold frame + keystone, gold title
+do
+	train.BackgroundColor3 = Color3.new(1, 1, 1)
+	K.new("UIGradient", { Rotation = 90, Color = ColorSequence.new(SANCT.PurpleLight:Lerp(SANCT.Purple, 0.4), SANCT.PurpleDeep), Parent = train })
+	local st = train:FindFirstChildOfClass("UIStroke")
+	if st then st.Color = SANCT.Gold; st.Thickness = 2 end
+	K.new("Frame", { Name = "Keystone", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0, 0), Size = UDim2.fromOffset(12, 12),
+		Rotation = 45, BackgroundColor3 = SANCT.Gold, BorderSizePixel = 0, ZIndex = 3, Parent = train })
+	trainTitle.Font = T.Display
+	trainTitle.TextColor3 = SANCT.Gold
+	local trainHint = K.text(train, "Sit on the bench and press!", 230, 9, -244, 22, 13, SANCT.Cream)
+	trainHint.TextXAlignment = Enum.TextXAlignment.Right
+	local function sanctify(b, fill, textCol)
+		b.BackgroundColor3 = fill
+		b.Label.TextColor3 = textCol
+		b.Label.Font = T.Bold
+		local s = b:FindFirstChildOfClass("UIStroke")
+		if s then s.Color = SANCT.Gold; s.Thickness = 2 end
+	end
+	HUD.Sanctify = sanctify
+	sanctify(lift, SANCT.Gold, SANCT.PurpleDeep)
+	sanctify(auto, SANCT.Purple, SANCT.Cream)
+	sanctify(gymUpgrade, SANCT.Purple, SANCT.Cream)
+end
 function HUD.SetGym(level)
 	HUD.TrainStation = level
 	train.Visible = level ~= nil
@@ -270,13 +295,15 @@ function HUD.SetGym(level)
 		return
 	end
 	local st = Config.TrainingStations[level]
-	trainTitle.Text = st.name
-	K.setButton(lift, "Lift +" .. Format.Short(st.gain), T.Gold)
+	trainTitle.Text = string.upper(st.name)
+	K.setButton(lift, "LIFT  +" .. Format.Short(st.gain))
 	local nextSt = Config.TrainingStations[level + 1]
 	gymUpgrade.Visible = nextSt ~= nil
 	if nextSt then
-		K.setButton(gymUpgrade, "Upgrade " .. Format.Money(nextSt.price), T.Violet)
-		K.setEnabled(gymUpgrade, State.Data.Money >= nextSt.price)
+		K.setButton(gymUpgrade, "UPGRADE  " .. Format.Money(nextSt.price))
+		local can = State.Data.Money >= nextSt.price
+		K.setEnabled(gymUpgrade, can)
+		if can then HUD.Sanctify(gymUpgrade, SANCT.Purple, SANCT.Cream) end
 	end
 end
 function HUD.TrainPulse()

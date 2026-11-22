@@ -282,6 +282,12 @@ task.spawn(function()
 				st.prop:Destroy()
 				st.prop = nil
 			end
+			-- get up off the bench once you've stopped lifting for a bit
+			if st.benchSeat and os.clock() - (st.lastTrain or 0) > 2.5 then
+				local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+				if hum and hum.SeatPart == st.benchSeat then hum.Sit = false end
+				st.benchSeat = nil
+			end
 			if data and hrp and st.base then
 				local bpos = st.base.cf.Position
 				local flatD = ((hrp.Position - bpos) * Vector3.new(1, 0, 1)).Magnitude
@@ -399,16 +405,33 @@ end
 
 ---------------------------------------------------------------- training
 -- the weight appears in your hand while you lift (made on the server so everyone sees it)
+local buildLiftWeight -- defined just below
 local function liftProp(player, st, index)
 	local char = player.Character
-	local hand = char and (char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm"))
-	if not hand then return end
+	local right = char and (char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm"))
+	local left = char and (char:FindFirstChild("LeftHand") or char:FindFirstChild("Left Arm"))
+	if not right then return end
 	if st.prop and st.prop.Parent and st.propIndex == index then return end
 	if st.prop then st.prop:Destroy() end
+	local container = Instance.new("Model")
+	container.Name = "LiftProp"
+	-- one weight in each hand (seated press on the bench)
+	for _, hand in ipairs({ right, left }) do
+		if hand then
+			local m = buildLiftWeight(index, hand)
+			m.Parent = container
+		end
+	end
+	container.Parent = char
+	st.prop, st.propIndex = container, index
+end
+
+-- builds one hand-held weight for an equipment level, welded to `hand`
+function buildLiftWeight(index, hand)
 	local station = Config.TrainingStations[index]
 	local model = Instance.new("Model")
-	model.Name = "LiftProp"
-	local s = 0.8 + index * 0.18
+	model.Name = "Weight"
+	local s = (0.8 + index * 0.18) * 0.7
 	local function p(shape, size, color, mat)
 		local part = Instance.new("Part")
 		part.Shape = shape
@@ -460,8 +483,7 @@ local function liftProp(player, st, index)
 	w.Part1 = bar
 	w.C0 = CFrame.new(0, -hand.Size.Y / 2, 0) * CFrame.Angles(0, math.rad(90), 0)
 	w.Parent = bar
-	model.Parent = char
-	st.prop, st.propIndex = model, index
+	return model
 end
 
 -- PERSONAL GYM: lift in your own base's gym
@@ -476,6 +498,13 @@ function Actions.Train(player, data, st)
 	if now - (st.lastTrain or 0) < Config.TrainCooldown * 0.9 then return false, nil end
 	st.lastTrain = now
 	data.Strength += station.gain
+	-- sit down on your workout bench (you stand back up a moment after you stop lifting)
+	local hum = player.Character:FindFirstChildOfClass("Humanoid")
+	local seat = st.base.gym:FindFirstChild("WorkoutSeat")
+	if hum and seat and hum.SeatPart ~= seat and (seat.Occupant == nil or seat.Occupant == hum) then
+		seat:Sit(hum)
+	end
+	st.benchSeat = seat
 	liftProp(player, st, level)
 	return true, nil, "partial"
 end
