@@ -1,6 +1,6 @@
 DIRECT HUD ICONS
 
-Shared Team Create place 129975585465401, saved version 52.
+Shared Team Create place 129975585465401, saved version 53.
 Pets, Shop and Expeditions are directly available during gameplay, with the existing
 cutout artwork, visible labels and no artwork backplates. Settings is a small gear.
 The intermediate Menu panel and Menu button were removed.
@@ -31,3 +31,6 @@ No game coordinate workaround was added. Physical touch hardware was not tested.
 
 Files: desktop.png and phone.png show the direct gameplay navigation.
 Implementation: Client/HUD.lua. Existing screen content and gameplay logic are preserved.
+
+Final sync includes teammate commit 08fe04d (Heaven, Secret and Shadow models).
+The generated release has 79 scripts; both isolated test builds have 82.
