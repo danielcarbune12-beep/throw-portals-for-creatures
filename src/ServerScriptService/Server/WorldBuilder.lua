@@ -61,6 +61,14 @@ local function buildStart()
 	else
 		Landmarks.Hub(depth, SW, Config.HallBackZ)
 	end
+	-- the world beyond the sanctuary walls (crags, cascades, aqueduct, sky rings)
+	local outerHub = script.Parent:FindFirstChild("OuterHub")
+	if outerHub then
+		local ok, err = pcall(function() require(outerHub).Build() end)
+		K.mirror = false
+		K.SetFolder(folder)
+		if not ok then warn("[WorldBuilder] outer world failed", "Hub", err) end
+	end
 	-- spawn on the street, just behind the hall
 	local spawn = Instance.new("SpawnLocation")
 	spawn.Size = V3(12, 1, 12)
