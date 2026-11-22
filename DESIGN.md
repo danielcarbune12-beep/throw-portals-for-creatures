@@ -23,3 +23,9 @@ The four primary destinations use approved C Relic enamel artwork: silver wolf, 
 ## States and Motion
 
 Enabled, hover, selected, disabled and busy buttons share one vocabulary. UI opens over 180 ms with a small positional change; no elastic bounce. Reduced Motion removes positional/scale animation. Purchases are guarded against duplicate activation; selling confirms the specific selected creature and resets when selection changes. Search and scroll are retained during data updates.
+
+Floating toast notifications and the notification stack are removed. Routine
+success/info messages and launch reminders stay silent during gameplay. Errors
+appear only inside an open panel: a reserved footer for ordinary panels, or the
+existing expedition header. Closing the panel clears its feedback. Collection
+descriptions use inline panel text. No message box covers the player.

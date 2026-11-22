@@ -19,7 +19,7 @@ local Sounds = require(script.Parent.Sounds)
 local Panels = {}
 local function request(action, arg, message)
 	if not State.Loaded then
-		HUD.Notify("Your data is loading. Please wait.", "info")
+		HUD.Notify("Your data is loading. Please wait.", "error")
 		return false
 	end
 	local ok, msg = State.Request(action, arg)
@@ -626,9 +626,10 @@ idx.refresh = function()
 			or "Different portal needed"
 		K.text(b, odds, 10, 178, -20, 36, 13, T.Muted)
 		K.bind(b, function()
-			HUD.Notify(
+			HUD.SetPanelMessage(
+				"Index",
 				known and def.name .. ": " .. def.desc or "Land in the correct zone to discover this species.",
-				"info"
+				T.Muted
 			)
 		end)
 	end

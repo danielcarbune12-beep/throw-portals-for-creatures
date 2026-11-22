@@ -258,3 +258,17 @@ absence of screen shading/blur, semantic text contrast, button contrast and rari
 contrast. Menu-to-Shop navigation was also inspected in Studio. Six core edited
 UI modules pass Selene without errors or warnings. This pass changes presentation;
 the previous mission/navigation checks remain recorded in the HUD delivery.
+
+## No floating notification boxes (2026-11-22)
+
+Shared Team Create version 39 removes the floating notification stack, including
+repeated launch-hall and active-portal reminders. Routine HUD info/success messages
+no longer create UI or interrupt gameplay. Errors appear only in the active panel
+and clear on close. Expedition errors use its existing header; collection details
+remain inline. Capture presentation and contextual gameplay controls remain.
+
+Twelve native UI checks passed, including repeated local callback messages, inline
+error placement, clearing and layout restoration. Twenty real server messages
+also created zero popup objects. Three edited modules pass Selene without errors
+or warnings, and shared source equality was verified before saving. Restart Play
+to refresh the running scripts. No public Roblox publish was performed.
