@@ -167,6 +167,7 @@ Creature visuals are procedural, so you don't need to make or import anything. I
   generated assets, with procedural fallbacks; some pet textures still report pending-content warnings in Studio.
 
 ## Tests
+- Direct HUD navigation: Pets, Shop and Expeditions open from large on-screen icons; Settings uses the small gear. The primary icons use a left rail on desktop and a top-right row on phones. Shared Studio place `129975585465401` is saved as version 52. Verification and screenshots: `review/direct_hud/README.txt`.
 - `lune run tests/lune/roster` — offline roster/lifecycle/odds/portal checks (needs the rokit toolchain: `rokit install`).
 - `lune run tests/lune/export [ids]` then `python tests/render_preview.py out.png 8` — offline geometry contact sheet.
 - `python -I tests/verify_place.py` — exact script sets/classes, source parity and test markers for all generated .rbxlx builds.

@@ -1,4 +1,4 @@
--- Compact sanctuary HUD and one shared, responsive panel layer.
+-- Direct Pets, Shop and Expeditions navigation with a shared responsive panel layer.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Input = game:GetService("UserInputService")
@@ -46,66 +46,78 @@ Effects.OnCoinArrive = function()
 	K.pop(moneyIcon)
 end
 local side = K.new("Frame", { Name = "Navigation", BackgroundTransparency = 1, Parent = world })
-K.new("UIGridLayout", {
-	CellSize = UDim2.fromOffset(78, 62),
-	CellPadding = UDim2.fromOffset(6, 6),
+local navGrid = K.new("UIGridLayout", {
+	CellSize = UDim2.fromOffset(120, 128),
+	CellPadding = UDim2.fromOffset(8, 8),
 	FillDirection = Enum.FillDirection.Vertical,
 	SortOrder = Enum.SortOrder.LayoutOrder,
 	Parent = side,
 })
 
--- Larger cutout artwork belongs to the light surface, without dark icon plaques.
-local function sanctuaryTile(name, icon, size, parent, order, dense)
-	local b = K.button("", T.Panel, nil, size or UDim2.fromOffset(200, 212), {
+-- The artwork sits directly on the world. Only the short caption has a light surface.
+local navOrder = {}
+local settingsBtn = K.button("Settings", T.Panel, nil, UDim2.fromOffset(44, 44), {
+	Name = "SettingsShortcut",
+	Parent = world,
+})
+settingsBtn.Label.Visible = false
+settingsBtn:SetAttribute("AccessibleLabel", "Settings")
+Sky.Trim(settingsBtn)
+K.Icon("Settings", settingsBtn, UDim2.fromOffset(36, 36), T.Text, UDim2.fromOffset(4, 4))
+Sky.Trim(moneyIcon)
+
+local function directButton(name, icon, order)
+	local b = K.button(name, T.Panel, nil, UDim2.fromOffset(120, 128), {
 		Name = "Nav_" .. name,
-		LayoutOrder = order or 0,
-		Parent = parent,
+		Parent = side,
+		LayoutOrder = order,
+		BackgroundTransparency = 1,
 	})
-	Sky.Card(b, icon)
-	local art = dense and 96 or 136
-	K.Icon(icon, b, UDim2.fromOffset(art, art), T.Text, UDim2.new(0.5, -art / 2, 0, 2))
-	b.Label.Text = name
-	b.Label.Position = UDim2.new(0, 6, 1, -55)
-	b.Label.Size = UDim2.new(1, -12, 0, 26)
-	b.Label.TextColor3 = T.Text
-	b.Label.TextSize = dense and 18 or 20
-	local descriptions = {
-		Pets = "Your creatures",
-		Shop = "Gear & upgrades",
-		Expeditions = "Explore the biomes",
-		Settings = "Controls & visuals",
-	}
-	local caption = K.text(b, descriptions[name] or "", 6, 0, -12, 18, 13, T.Muted)
-	caption.Position = UDim2.new(0, 6, 1, -22)
-	caption.TextXAlignment = Enum.TextXAlignment.Center
+	b:FindFirstChildOfClass("UIStroke").Transparency = 1
+	local art = K.Icon(icon, b, UDim2.fromOffset(112, 112), T.Text, UDim2.fromOffset(4, 0))
+	art.Name = "NavigationArt"
+	b.Label.AnchorPoint = Vector2.new(0, 1)
+	b.Label.Position = UDim2.new(0, 2, 1, 0)
+	b.Label.Size = UDim2.new(1, -4, 0, 24)
+	b.Label.BackgroundColor3, b.Label.BackgroundTransparency = T.Panel, 0
+	b.Label.TextColor3, b.Label.TextSize = T.Text, 15
+	K.corner(7).Parent = b.Label
+	local focus = K.new("Frame", {
+		Name = "Focus",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		Parent = b,
+	}, { K.corner(10), K.stroke(2, T.Gold) })
+	local ring = focus:FindFirstChildOfClass("UIStroke")
+	ring.Transparency = 1
+	local function highlight(on)
+		ring.Transparency = on and 0 or 1
+	end
+	b.MouseEnter:Connect(function()
+		highlight(true)
+	end)
+	b.MouseLeave:Connect(function()
+		highlight(false)
+	end)
+	b.SelectionGained:Connect(function()
+		highlight(true)
+	end)
+	b.SelectionLost:Connect(function()
+		highlight(false)
+	end)
 	return b
 end
-HUD.SanctuaryTile = sanctuaryTile
-local navOrder = {}
-local menuBtn = K.button("Menu", T.Panel, nil, UDim2.fromOffset(100, 48), {
-	Name = "Menu",
-	Parent = world,
-	AnchorPoint = Vector2.new(0, 1),
-	Position = UDim2.new(0, 12, 1, -12),
-	Visible = false,
-})
-menuBtn.Label.Position = UDim2.fromOffset(35, 0)
-menuBtn.Label.Size = UDim2.new(1, -42, 1, 0)
-Sky.Trim(menuBtn)
-K.Icon("Menu", menuBtn, UDim2.fromOffset(20, 20), T.Text, UDim2.fromOffset(10, 14))
-Sky.Trim(moneyIcon)
-local homeBtn = K.button("Home", T.Panel, nil, UDim2.fromOffset(84, 48), {
-	Name = "QuickHome",
-	Parent = world,
-	AnchorPoint = Vector2.new(0, 1),
-	Position = UDim2.new(0, 120, 1, -12),
-	Visible = false,
-})
+
 function HUD.AddSideButton(name, icon, _a, _b, callback)
 	if HUD.SideButtons[name] then
 		return HUD.SideButtons[name]
 	end
-	local b = sanctuaryTile(name, icon, nil, side, #navOrder + 1)
+	if name == "Settings" then
+		K.bind(settingsBtn, callback)
+		HUD.SideButtons.Settings = settingsBtn
+		return settingsBtn
+	end
+	local b = directButton(name, icon, #navOrder + 1)
 	K.bind(b, callback)
 	HUD.SideButtons[name] = b
 	table.insert(navOrder, { name = name, icon = icon, callback = callback })
@@ -391,70 +403,18 @@ Input.InputBegan:Connect(function(i, processed)
 	if processed then
 		return
 	end
+	if i.KeyCode == Enum.KeyCode.ButtonY and not openPanel then
+		GuiService.SelectedObject = HUD.SideButtons.Pets
+		return
+	end
 	local keys = {
 		[Enum.KeyCode.P] = "Portals",
 		[Enum.KeyCode.U] = "Upgrades",
 		[Enum.KeyCode.I] = "Creatures",
 		[Enum.KeyCode.M] = "Worlds",
-		[Enum.KeyCode.ButtonY] = "Menu",
 	}
 	if keys[i.KeyCode] then
 		HUD.Open(keys[i.KeyCode])
-	end
-end)
-local menuPanel = HUD.MakePanel("Menu", "Your sanctuary", "Everything you need, in four places.", "Compass")
-menuPanel.refresh = function()
-	local key = tostring(#navOrder) .. ":" .. tostring(menuPanel.tileHeight)
-	if menuPanel.renderKey == key and menuPanel.content:FindFirstChild("Menu_Pets") then
-		return
-	end
-	menuPanel.renderKey = key
-	menuPanel.content:ClearAllChildren()
-	K.new("UIGridLayout", {
-		CellSize = UDim2.new(0.25, -12, 0, menuPanel.tileHeight or 212),
-		CellPadding = UDim2.fromOffset(12, 12),
-		SortOrder = Enum.SortOrder.LayoutOrder,
-		Parent = menuPanel.content,
-	})
-	for i, n in ipairs(navOrder) do
-		local b = sanctuaryTile(n.name, n.icon, nil, menuPanel.content, i, (menuPanel.tileHeight or 212) < 190)
-		b.Name = "Menu_" .. n.name
-		K.bind(b, function()
-			HUD.Close()
-			n.callback()
-		end)
-	end
-end
-menuPanel.layout = function()
-	local w = math.min(900, width - 24)
-	local h = math.min(344, height - 24)
-	menuPanel.frame.Size = UDim2.fromOffset(w, h)
-	menuPanel.content.Position = UDim2.fromOffset(16, 80)
-	menuPanel.contentSize = UDim2.new(1, -32, 1, -96)
-	menuPanel.content.Size = menuPanel.contentSize - UDim2.fromOffset(0, menuPanel.feedback.Visible and 40 or 0)
-	menuPanel.subtitle.Position = UDim2.fromOffset(20, 52)
-	menuPanel.subtitle.Size = UDim2.new(1, -92, 0, 22)
-	menuPanel.tileHeight = math.max(132, math.min(212, h - 104))
-	local grid = menuPanel.content:FindFirstChildOfClass("UIGridLayout")
-	if grid then
-		grid.CellSize = UDim2.new(w < 540 and 0.5 or 0.25, -12, 0, menuPanel.tileHeight)
-	end
-	if menuPanel.frame.Visible then
-		menuPanel.refresh()
-	end
-end
-K.bind(menuBtn, function()
-	HUD.Open("Menu")
-end)
-K.bind(homeBtn, function()
-	local n = HUD.SideButtons.Home
-	if n then
-		for _, v in navOrder do
-			if v.name == "Home" then
-				v.callback()
-				break
-			end
-		end
 	end
 end)
 function HUD.Refresh()
@@ -480,20 +440,34 @@ local function rescale()
 	local compact = Input.TouchEnabled or width < 700 or height < 580
 	HUD.Compact = compact
 
-	top.Size = UDim2.fromOffset(math.min(290, width - 144), 50)
+	local tileW, tileH = compact and 86 or 120, compact and 94 or 128
+	local navWidth = compact and (3 * tileW + 16) or tileW
+	top.Size = UDim2.fromOffset(math.min(290, compact and (width - navWidth - 36) or (width - 80)), 50)
 	top.Position = UDim2.fromOffset(12, 8)
 	for i, f in ipairs(stats) do
 		f.Visible = i == 1
 		f.Size = UDim2.fromOffset(top.Size.X.Offset, 50)
 		f.Position = UDim2.fromOffset(0, 0)
 	end
-	-- The four destinations are inside Menu on every device.
-	side.Visible = false
-	menuBtn.Visible = true
-	homeBtn.Visible = false
-	menuBtn.AnchorPoint = Vector2.zero
-	menuBtn.Position = UDim2.fromOffset(top.Size.X.Offset + 20, 8)
-	menuBtn.Size = UDim2.fromOffset(104, 50)
+	-- Primary actions remain one press away; short screens use a top-right horizontal row.
+	side.Visible = true
+	navGrid.FillDirection = compact and Enum.FillDirection.Horizontal or Enum.FillDirection.Vertical
+	navGrid.CellSize = UDim2.fromOffset(tileW, tileH)
+	side.AnchorPoint = compact and Vector2.new(1, 0) or Vector2.zero
+	side.Position = compact and UDim2.new(1, -12, 0, 8)
+		or UDim2.fromOffset(12, math.max(76, (height - (3 * tileH + 16)) / 2))
+	side.Size = UDim2.fromOffset(navWidth, compact and tileH or (3 * tileH + 16))
+	for _, entry in ipairs(navOrder) do
+		local button = HUD.SideButtons[entry.name]
+		local art = button.NavigationArt
+		local artSize = compact and 76 or 112
+		art.Size = UDim2.fromOffset(artSize, artSize)
+		art.Position = UDim2.new(0.5, -artSize / 2, 0, 0)
+		button.Label.Size = UDim2.new(1, -4, 0, compact and 22 or 24)
+		button.Label.TextSize = compact and 13 or 15
+	end
+	settingsBtn.Position = compact and UDim2.fromOffset(12, 66) or UDim2.fromOffset(top.Size.X.Offset + 20, 8)
+	income.TextTruncate = Enum.TextTruncate.AtEnd
 	throwBtn.Position = UDim2.new(1, -16, 1, Input.TouchEnabled and -138 or -16)
 	launch.Size = UDim2.fromOffset(Input.TouchEnabled and math.min(300, width - 24) or 354, 102)
 	launch.Position = Input.TouchEnabled and UDim2.new(0.5, -launch.Size.X.Offset / 2, 1, -110)

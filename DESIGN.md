@@ -14,16 +14,17 @@ Builder Sans for interface text and data, with Gotham fallbacks. Body 16, second
 
 ## Layout
 
-Compact balance/income strip and one labeled Menu button on every device. Menu has exactly four destinations: Pets, Shop, Expeditions and Settings. Collection lives under Pets; portals, upgrades, courtyard customization and biome unlocks/travel live under Shop. Settings includes return home and authorized developer tools. The throw control appears only in the launch hall. Expeditions use the approved Skyforge bottom drawer with a biome diorama carousel, owned-pet portraits, exact payout and one dispatch action. An active mission adds a small progress widget; relics are a secondary journal inside Expeditions. Other panels retain responsive catalogue/detail layouts.
+Compact balance/income strip with Pets, Shop and Expeditions directly on the gameplay HUD. These three actions use a vertical rail on desktop and a top-right horizontal row on phones and short screens. Settings uses a separate small gear. There is no intermediate navigation menu. Collection lives under Pets; portals, upgrades, courtyard customization and biome unlocks/travel live under Shop. Settings includes return home and authorized developer tools. The throw control appears only in the launch hall. Expeditions use the approved Skyforge bottom drawer with a biome diorama carousel, owned-pet portraits, exact payout and one dispatch action. An active mission adds a small progress widget; relics are a secondary journal inside Expeditions. Other panels retain responsive catalogue/detail layouts.
 
 ## Symbols
 
-The four primary destinations use large standalone cutout artwork: pale silver
-wolf, oak/jade merchant stall, parchment compass map, and silver/gold/jade cog.
-No dark icon backplates. Desktop art is 136px; compact menu art is 96px. Four
-lightly tinted destination surfaces pair each image with a visible label and
-short description. Ordinary panels use quiet rounded stone edges; decorative
-angled corner marks are removed. Small utility symbols remain native geometry.
+The three primary destinations use large standalone cutout artwork: pale silver
+wolf, oak/jade merchant stall and parchment compass map. Their artwork has no
+backplate; each has a short dark label on a small white caption. Desktop art is
+112px and compact art is 76px before HUD scaling. A silver/gold/jade cog opens
+Settings from a separate 44px control. Focus uses a gold outline. Ordinary panels
+use quiet rounded stone edges; decorative angled corner marks are removed.
+Small utility symbols remain native geometry.
 
 Expeditions use an expanded desktop map/scout composition. Eight native biome
 vignettes have distinct landmarks, terrain and marked routes. The active map
