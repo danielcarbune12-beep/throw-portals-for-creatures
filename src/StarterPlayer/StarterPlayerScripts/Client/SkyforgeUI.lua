@@ -1,8 +1,46 @@
 -- Light sanctuary surfaces and large standalone navigation artwork.
 local T = require(script.Parent.UITheme)
 local S = {}
-S.Atlas = "rbxassetid://110533210650310"
-S.RelicAtlas = "rbxassetid://111238084547615"
+local pendingImages = {}
+local imagePoll
+function S.WatchImage(image, fallback)
+	local function refresh()
+		fallback.Visible = not image.IsLoaded
+	end
+	image:GetPropertyChangedSignal("IsLoaded"):Connect(refresh)
+	refresh()
+	if image.IsLoaded then
+		return
+	end
+	pendingImages[image] = fallback
+	if imagePoll then
+		return
+	end
+	local elapsed = 0
+	-- Texture delivery doesn't consistently emit IsLoaded changes. One shared
+	-- poll handles pending images and disconnects when they are ready or gone.
+	imagePoll = game:GetService("RunService").Heartbeat:Connect(function(dt)
+		elapsed += dt
+		if elapsed < 0.1 then
+			return
+		end
+		elapsed = 0
+		for pending, native in pendingImages do
+			if not pending.Parent then
+				pendingImages[pending] = nil
+			elseif pending.IsLoaded then
+				native.Visible = false
+				pendingImages[pending] = nil
+			end
+		end
+		if next(pendingImages) == nil then
+			imagePoll:Disconnect()
+			imagePoll = nil
+		end
+	end)
+end
+S.Atlas = "rbxassetid://100535854756412"
+S.RelicAtlas = "rbxassetid://86608000374572"
 -- The atlases are uploaded images. If Roblox can't deliver one (still in moderation, rejected,
 -- or offline), callers fall back to native vector art instead of showing empty buttons.
 S.AtlasOK = nil -- nil = still loading, true = delivered, false = failed
@@ -18,7 +56,9 @@ function S.WhenAtlasFails(fn)
 end
 task.spawn(function()
 	pcall(function()
-		game:GetService("ContentProvider"):PreloadAsync({ S.Atlas, S.RelicAtlas }, function(id, status)
+		local navImage, relicImage = Instance.new("ImageLabel"), Instance.new("ImageLabel")
+		navImage.Image, relicImage.Image = S.Atlas, S.RelicAtlas
+		game:GetService("ContentProvider"):PreloadAsync({ navImage, relicImage }, function(id, status)
 			if id == S.RelicAtlas then
 				S.RelicOK = status == Enum.AssetFetchStatus.Success
 				if not S.RelicOK then
@@ -39,12 +79,16 @@ task.spawn(function()
 				table.clear(failedCallbacks)
 			end
 		end)
+		navImage:Destroy()
+		relicImage:Destroy()
 	end)
 end)
 local cells = { Pet = { 0, 0 }, Shop = { 1, 0 }, Compass = { 0, 1 }, Settings = { 1, 1 } }
 function S.Icon(name, parent, size, position)
 	local cell = cells[name]
-	if not cell or S.AtlasOK == false then
+	-- A failed preload can recover after delivery/access changes. Keep a real
+	-- ImageLabel alive so UIIcons can switch from native art when it loads.
+	if not cell then
 		return nil
 	end
 	local f = Instance.new("Frame")
@@ -94,7 +138,6 @@ function S.Relic(id, parent, size, position, recovered)
 		if not frame.Parent then
 			return
 		end
-		image:Destroy()
 		local tile = Instance.new("Frame")
 		tile.Name = "RelicFallback"
 		tile.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -119,12 +162,10 @@ function S.Relic(id, parent, size, position, recovered)
 		letter.TextTransparency = recovered and 0 or 0.35
 		letter.Parent = tile
 		tile.Parent = frame
+		return tile
 	end
-	if S.RelicOK == false then
-		fallback()
-	elseif S.RelicOK == nil then
-		table.insert(relicFailed, fallback)
-	end
+	-- Keep the real image alive and retire the placeholder only after it renders.
+	S.WatchImage(image, fallback())
 	return frame
 end
 function S.Trim(frame)

@@ -1,0 +1,36 @@
+{
+  "nativeRegressionChecks": 96,
+  "desktop": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"menus\":{\"Creatures\":true,\"Expeditions\":true,\"Shop\":true},\"open\":{\"Creatures\":false,\"Expeditions\":false,\"Shop\":false},\"icons\":[{\"name\":\"Pets\",\"loaded\":true,\"fallback\":false,\"labels\":false,\"size\":56},{\"name\":\"Shop\",\"loaded\":true,\"fallback\":false,\"labels\":false,\"size\":56},{\"name\":\"Expeditions\",\"loaded\":true,\"fallback\":false,\"labels\":false,\"size\":56}]}"
+      }
+    ],
+    "isError": false
+  },
+  "phone": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"icons\":{\"1\":{\"name\":\"Pets\",\"loaded\":true,\"fallback\":false,\"size\":44,\"labels\":false},\"3\":{\"name\":\"Expeditions\",\"loaded\":true,\"fallback\":false,\"size\":44,\"labels\":false},\"2\":{\"name\":\"Shop\",\"loaded\":true,\"fallback\":false,\"size\":44,\"labels\":false}},\"open\":{\"Creatures\":false,\"Expeditions\":false,\"Shop\":false}}"
+      }
+    ],
+    "isError": false
+  },
+  "assets": {
+    "navigation": {
+      "id": 100535854756412,
+      "previous": 110533210650310,
+      "moderation": "Approved",
+      "universeUseGranted": 10778324663
+    },
+    "relics": {
+      "id": 86608000374572,
+      "previous": 111238084547615,
+      "moderation": "Approved",
+      "universeUseGranted": 10778324663
+    }
+  },
+  "studioVersion": 79
+}
