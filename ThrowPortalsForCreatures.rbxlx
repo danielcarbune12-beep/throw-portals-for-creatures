@@ -17476,8 +17476,8 @@ Remotes.PortalOpened.OnClientEvent:Connect(function(info)
 			TC.StopFollow(true)
 		elseif (rc.order >= 3 or special) and not Settings.ReducedMotion then
 			-- a GOOD pet (or a Big/Huge/Titan/Gold/gem one): zoom in and watch it through entrance + capture
-			local catchDur = (Renderer.CatchConfig[def.rarity] or Renderer.CatchConfig.Common).dur
-			TC.StartCloseup(info.id, def, info.pos, (Config.CatchDelay[def.rarity] or 3) + catchDur + 0.5, Variants.Scale(vsize))
+			local catchDur = Timeline.CaptureFor(def.rarity) -- capture timings live in PresentationTimeline
+			TC.StartCloseup(info.id, def, info.pos, Timeline.CatchDelay(def.rarity) + catchDur + 0.5, Variants.Scale(vsize))
 		elseif camFollow and camFollow.id == info.id then
 			camFollow.pos = info.pos
 			camFollow.untilT = os.clock() + Timeline.FollowHoldAfterOpen(def.rarity)
