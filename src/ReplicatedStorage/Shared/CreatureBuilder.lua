@@ -1291,23 +1291,40 @@ function Builder.Build(creatureId: string, sizeMult: number?)
 	root.Parent = model
 	model.PrimaryPart = root
 
-	local rig = {
-		model = model, root = root, def = def, vd = vd, profile = prof, size = s,
-		pal = { p = vd._p, s = vd._s, a = vd._a },
-		all = {}, eyes = {}, pupils = {}, ears = {}, wings = {}, tail = {}, feet = {}, arms = {},
-		halos = {}, bobbers = {}, emitters = {}, mouths = {}, chains = {}, groups = {}, legKind = "none",
-		style = STYLE,
-	}
+	local function newRig()
+		return {
+			model = model, root = root, def = def, vd = vd, profile = prof, size = s,
+			pal = { p = vd._p, s = vd._s, a = vd._a },
+			all = {}, eyes = {}, pupils = {}, ears = {}, wings = {}, tail = {}, feet = {}, arms = {},
+			halos = {}, bobbers = {}, emitters = {}, mouths = {}, chains = {}, groups = {}, legKind = "none",
+			style = STYLE,
+		}
+	end
+	local rig = newRig()
 	local Models = require(script.Parent.SpeciesModels)
-	local tmpl = (not Models[def.id]) and meshTemplate(def.id)
+	local built = false
 	if Models[def.id] then
-		-- hand-authored, reference-faithful model (highest priority; no particle compensation)
-		Models[def.id](H, rig, vd, s)
-	elseif tmpl then
-		buildFromMeshes(rig, tmpl, MeshManifest[def.id], s)
-		addEffects(rig, vd, rig.bodyRadius, s, prof)
-	else
-		buildBody(rig, vd, s, prof)
+		-- hand-authored, reference-faithful model (highest priority; no particle compensation).
+		-- If it ever errors, fall back to the mesh/procedural build instead of spawning a broken pet.
+		local ok, err = pcall(Models[def.id], H, rig, vd, s)
+		if ok then
+			built = true
+		else
+			warn("[CreatureBuilder] SpeciesModels." .. def.id .. " failed, using fallback: " .. tostring(err))
+			for _, ch in ipairs(model:GetChildren()) do
+				if ch ~= root then ch:Destroy() end
+			end
+			rig = newRig()
+		end
+	end
+	if not built then
+		local tmpl = meshTemplate(def.id)
+		if tmpl then
+			buildFromMeshes(rig, tmpl, MeshManifest[def.id], s)
+			addEffects(rig, vd, rig.bodyRadius, s, prof)
+		else
+			buildBody(rig, vd, s, prof)
+		end
 	end
 	model:SetAttribute("CreatureId", def.id)
 	model:SetAttribute("Rarity", def.rarity)

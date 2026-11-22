@@ -153,4 +153,17 @@ function M.PrismLion(H, rig, vd, s)
 	gem(tipPv.part, CF(), 2.1, 1.1, purple, cyan)
 end
 
+-- world packs built from the owner's character sheets (see each file for construction notes)
+-- (a pack that fails to load only costs its species their hand-built look, never the whole roster)
+for _, pack in ipairs({ "SpeciesModelsVolcano", "SpeciesModelsCandy", "SpeciesModelsCrystal" }) do
+	local ok, models = pcall(require, script.Parent[pack])
+	if ok and type(models) == "table" then
+		for id, fn in pairs(models) do
+			M[id] = fn
+		end
+	else
+		warn("[SpeciesModels] " .. pack .. " failed to load: " .. tostring(models))
+	end
+end
+
 return M

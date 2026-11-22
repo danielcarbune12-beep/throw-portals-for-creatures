@@ -160,7 +160,8 @@ P.Infernadrake = {
 	capture = { hold = true, keys = { { 1, { wingFold = 1, tailCurl = 1, glow = 1 } } } },
 }
 P.SolarSerpent = {
-	build = "solarSerpent", gait = "slither", breath = { 3, 0.01 }, hover = 2.4,
+	-- hover 0.15: the hand-built model rests on its coils (character sheet), the neck holds it upright
+	build = "solarSerpent", gait = "slither", breath = { 3, 0.01 }, hover = 0.15,
 	q = { legs = "none", body = Vector3.new(0.75, 0.7, 1.0), neckLen = 1.1, head = 0.85 },
 	over = { tail = "none" }, wingK = 0.75, wingTr = 0.25, wingCol = C("#FFE9A0"), haloY = 1.6,
 	sig = { dur = 3.0, keys = { { 0.3, { chainCurl = 1 } }, { 0.7, { chainCurl = 1, glow = 1 } } } },
