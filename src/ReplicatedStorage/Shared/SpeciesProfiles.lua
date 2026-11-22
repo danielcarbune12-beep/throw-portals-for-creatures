@@ -672,7 +672,8 @@ P.EternityOwl = {
 	capture = { hold = true, keys = { { 1, { wingFold = 1, spread = 1 } } } },
 }
 P.Genesis = {
-	build = "genesis", gait = "slither", breath = { 3.8, 0.01 }, hover = 2.6,
+	-- quad on the ground: the hand-built model is a four-legged dragon (character sheet)
+	build = "genesis", gait = "quad", breath = { 3.8, 0.01 },
 	q = { legs = "none", body = Vector3.new(0.8, 0.75, 1.0), neckLen = 1.2, neckSegs = 2, head = 0.9 },
 	over = { tail = "none" }, wingK = 1.0, haloY = 1.5, ringR = 1.8,
 	sig = { dur = 3.2, keys = { { 0.3, { headPitch = 0.5 } }, { 0.7, { headPitch = 0.5, glow = 1 } } }, fx = { { 0.3, "seed" } } },
