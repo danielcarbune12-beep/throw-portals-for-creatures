@@ -1,0 +1,151 @@
+IRONFANG — VISUAL APPROVAL AND BUILD BRIEF
+Status: proposed art direction, awaiting the owner's visual approval.
+These are modeling/pose references, not completed models or animation clips.
+The live roster and shared Studio place have not been changed by this study.
+
+REFERENCE ORDER
+1. 01_Rarity_Family.png defines the anatomy, materials and rarity progression.
+2. 02_Motion_Keyposes.png defines the pose language.
+3. This document defines motion timing, contacts and implementation constraints.
+The corrected Depart panel faces RIGHT into the portal; Return faces LEFT out.
+The pose sheet is not a sprite atlas or a complete sequence of animation frames.
+
+PURPOSE
+Calibrate one wolf family before extending the visual language across the roster.
+Retain distinct species identities when translating the style to rabbits, birds,
+stags, golems and dragons. Ironfang is a proposed study family, not a rename of
+every existing creature. Game code uses "Mythical"; the art sheet says "Mythic".
+
+ANATOMY THAT STAYS CONSISTENT
+- Stern jade slit eyes, squared projecting muzzle, pointed ears and cheek planes.
+- Wedge chest, cuboid ribcage, narrower waist, defined neck and solid haunches.
+- Four articulated legs, large beveled paws, two toe seams, segmented tail.
+- Rigid faceted surfaces. Chest, belly and muzzle do not inflate or squash.
+- Clear joints and space between limbs; armor follows the supporting body part.
+- Readable silhouette at follow-camera distance and in the pet picker.
+
+RARITY PROGRESSION
+Common / Scout: clean stone/steel planes, modest brass collar, eyes as the only
+light accent. Simple construction and restrained detail, with a strong silhouette.
+Epic / Sentinel: forged steel, layered shoulders/shins, three dorsal plates,
+small jade inlays, gold fasteners and segmented tail protection.
+Legendary / Sovereign: pale ivory/silver, refined gold edges, three-prong crest,
+sculpted chest gem and deliberate layered armor. Face/ears remain unobstructed.
+Mythical / Ascendant: pinnacle of this sample family; five-prong crest, jade core,
+two rigid swept-back crystal fins, layered foreleg armor and a blade-like tail.
+At most three small floating gold fragments behind the shoulders.
+Do not derive rarity differences only from recoloring or uniform scaling.
+
+MATERIAL STARTING POINTS
+Pale stone/silver: #CBC8C0; dark forged steel: #5E6267; gold: #C6A05B;
+jade inlay: #3A9D77; bright ivory: #F3E9D1; deeper trim: #3D4948.
+These are authoring swatches. Judge them in the real game lighting.
+Keep emissive areas small; the geometry must remain legible with all VFX disabled.
+
+SCALE AND RIG
+Treat the pictures as silhouette references, not engineering measurements.
+Use the existing Config rarity scale once; do not multiply rarity size twice.
+Fit the body, crest, fins and tail against current pad spacing and follow gaps.
+Draft Common dimensions to refine: torso about 2.6 studs long, chest 1.35 wide,
+standing shoulder height about 1.8, paws about 0.46 wide by 0.60 long.
+Adjust these after comparing the silhouette and actual slot spacing.
+
+Use the existing CreatureBuilder/SpeciesProfiles/CreatureAnimator rig contract.
+A suitable conceptual hierarchy is root > body > neck > head > jaw/ears;
+body/pelvis > upper leg > lower leg > paw for FL/FR/RL/RR; body > tail segments.
+Map this to actual existing rig fields rather than introducing incompatible names.
+Armor is rigidly attached to the body segment it protects. The display rig uses
+a stable root and controlled joints; it must not depend on ragdoll simulation.
+Model root placement and visual bounds must work in both world and ViewportFrames.
+
+MOTION RULES
+Drive locomotion phase from distance traveled to avoid foot sliding. Cycle times
+below are authoring references at a nominal speed, not changes to follow speed.
+A planted paw stays fixed relative to the ground during its stance interval.
+Absorb weight through joint angles; never scale the torso into a soft shape.
+All angles below are starting limits to refine in the isolated preview.
+
+IDLE — 3.2 second loop
+0.00: four paws planted, neutral head, tail still.
+0.00-1.60: tiny neck/chest lift through joints (under 1% of body height).
+1.60-3.20: return to neutral. No torso scaling.
+One slow head scan up to 5 degrees; occasional 3-degree ear adjustment.
+Common is alert; Epic is watchful; Legendary is proud; Mythical is composed.
+
+WALK — nominal 0.80 second cycle
+Four-beat sequence: left hind, left fore, right hind, right fore, spaced through
+the cycle. Each paw spends roughly 65% in stance and 35% in swing.
+Shoulder/hip swing starts near +/-20 degrees; knee lift clears the ground.
+Torso pitch stays within 2 degrees; tail counters heading by about 5 degrees.
+Scale stride with body size and synchronize it to actual traveled distance.
+
+RUN — nominal 0.50 second gallop cycle
+0.00-0.12: hind-leg drive; neck extends by joint angle.
+0.12-0.22: short suspension; forelegs reach forward, body shape remains fixed.
+0.22-0.36: forepaw contacts and elbows absorb load; hind legs recover underneath.
+0.36-0.50: hind paws plant for the next drive.
+Keep suspension short. Torso pitch within about 3 degrees. No stretching.
+
+TURN — 0.35 second blend for a 45-90 degree heading adjustment
+0.00-0.08: head leads by up to 15 degrees.
+0.08-0.28: body follows, inside stride shortens, outside stride widens.
+0.28-0.35: settle head/body alignment; tail counters by up to 20 degrees.
+Do not rotate the whole planted model like a sliding toy.
+
+STOP — 0.22 second deceleration plus 0.18 second settle
+Shorten the final stride and plant forepaws before collecting the hind stance.
+Lower the body slightly by bending joints, then recover the proud neutral pose.
+Do not bounce, deform paws, or continue stepping after root velocity stops.
+
+LEAP AND LAND — about 0.70 second action, adjusted to the actual path
+0.00-0.12: anticipation through hind-knee bend; body shape unchanged.
+0.12-0.20: push-off with hind-leg extension.
+0.20-0.43: airborne arc; forelegs tuck, tail stabilizes.
+0.43-0.55: forelegs prepare to reach the ground.
+0.55-0.62: front contact, elbows bend.
+0.62-0.70: hind contact and settle.
+Use actual ground height. Front contact precedes hind contact; no floor penetration.
+
+PORTAL CAPTURE — about 0.70 second visual reaction
+0.00-0.18: head turns toward the portal.
+0.18-0.50: controlled root lift/pull with forelegs collected.
+0.50-0.70: short whole-model fade into the portal.
+The visual must follow the existing authoritative capture result; it does not
+create or award a creature independently. Never stretch the wolf into a ribbon.
+
+EXPEDITION DEPART — about 1.30 seconds
+0.00-0.35: two purposeful approach steps.
+0.35-0.55: brief glance toward the player, then refocus on the portal.
+0.55-0.95: leap INTO the portal, head and forepaws first.
+0.95-1.10: body and hind legs cross the portal plane.
+1.10-1.30: tail passes and the visual fades.
+The accepted server trip owns availability and timing. If needed, use a temporary
+local visual clone for the departure after the authoritative pet leaves the base.
+
+EXPEDITION RETURN — about 1.60 seconds
+0.00-0.25: portal cue, restrained light.
+0.25-0.65: head/forelegs emerge, then body and hindquarters.
+0.65-0.85: front/hind landing contacts.
+0.85-1.15: stabilize and look toward the player.
+1.15-1.60: confident proud stance, then transition to idle.
+Existing server claim logic awards the payout once. This animation is presentation.
+
+VFX AND ACCESSIBILITY
+Common: no particle aura. Epic: small inlays. Legendary: restrained crest/chest
+glow. Mythical: small controlled fragments and crystal accents.
+The character must look complete with VFX disabled. Honor Reduced Motion,
+Reduced Flashes and Low VFX; use a short fade/settle instead of a cinematic leap
+when motion is reduced. Do not add floating notification boxes.
+
+BUILD SEQUENCE AFTER VISUAL APPROVAL
+1. Inspect the existing creature builder, anatomy, profiles, animator and preview.
+2. Build the Common neutral silhouette in an isolated preview area.
+3. Compare front, side and three-quarter views with 01_Rarity_Family.png.
+4. Lock head/body/paws/tail before adding the other three armor tiers.
+5. Build each rarity with separate rigid attachments and shared joint hierarchy.
+6. Add idle, walk and run; verify paw contacts before portal actions.
+7. Add turn, stop, leap, land, capture, depart and return.
+8. Inspect all tiers in world, pet picker, follow formation and a full courtyard.
+9. Check reduced-motion/low-VFX and current performance budgets.
+10. Integrate through existing IDs/rig fields only after the preview matches.
+Keep existing odds, income, saves, ownership, Treasury and mission rules intact.

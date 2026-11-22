@@ -1,0 +1,14 @@
+Use case: stylized-concept. Roblox creature animation key-pose reference sheet.
+Image 1 is the character design reference. Use ONLY the EPIC IRONFANG SENTINEL (second column) consistently in every frame: same pale angular wolf head, jade eyes, dark steel cuboid body, gold shoulder plates, emerald chest jewel, three dorsal plates, chunky paws, segmented armored tail. NO crown, no crystal wings, no Mythic floating fragments. Four-legged animal, not humanoid.
+Create one high-resolution white studio animation pose sheet, two rows of four equally sized panels, eight full-body key poses. Title "IRONFANG SENTINEL". Subtitle "Rigid-body motion study". Each panel has just one exact short label and one readable animal pose; no long text, no frame borders, faint baseline and light ground-contact shadow. Retain the SAME anatomy, materials and proportions in all poses. Crisp blocky low-poly hard geometry, articulated joints, no soft bending or squash-and-stretch, no fur strands. Full paws, ears and tails visible; no creature overlaps another panel. Perspective consistency, large legible figures. Main travel direction toward viewer-left.
+Top row:
+"Idle": grounded confident alert stance, four paws planted, slight head turn; chest remains rigid.
+"Walk": clear quadruped step with near front paw reaching forward and opposite hind advancing, other feet support the weight; no airborne hopping.
+"Run": dynamic low forward diagonal stride with a short suspension, front/rear legs articulating, level angular torso and stabilized segmented tail.
+"Turn": planted inside paw, outside paws taking a wider arc, head leads body by 15 degrees, segmented tail counters the turn. Show a little more back/shoulder to explain the pivot.
+Bottom row:
+"Leap": hind-leg propulsion into an airborne arc, forelegs folding beneath rigid chest, tail straightening for balance; no torso stretching.
+"Land": forepaws contacting first, elbow and knee joints bent to absorb weight, rear paws about to settle, chest shape unchanged.
+"Depart": purposeful step/leap into a small clean pale-stone arch with a violet portal opening at the panel edge. Wolf looks forward, halfway approaching the portal; keep anatomy visible.
+"Return": same wolf emerging from the matching portal, forepaws grounded, rear legs coming through, head lifted in a proud alert posture. This is a confident return, not a cute happy dance.
+Reference specificity: do not make the wolf smaller/cuter, no round bloated body, no oversized eyes, no floppy paws. No gold crown or armor changes between poses. Keep it like a producible Roblox block-built guardian. No weapons, no scenery except the two small portal arches, no glowing fog, no watermark. This is a concept key-pose study, not a sprite sheet and not a claim that the game animations already exist.

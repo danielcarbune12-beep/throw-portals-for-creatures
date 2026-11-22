@@ -1,0 +1,33 @@
+IRONFANG REFERENCE IMPLEMENTATION PROMPT
+
+This is a proposed style study. Obtain the owner's visual approval of the two
+reference sheets before modifying the current creature roster.
+
+Read 03_Modeling_And_Motion_Spec.txt and VIEW both PNG files before building.
+The reference hierarchy is: anatomy/materials from 01_Rarity_Family.png;
+pose language from 02_Motion_Keyposes.png; timing/contact rules from the spec.
+The Depart panel enters the portal to the right; Return exits toward the left.
+
+After approval, first build one Common Ironfang in an isolated preview. Match
+the squared muzzle, wedge chest, cuboid limbs, paw size, tail and stern eyes.
+Do not substitute a rounded generic animal or hide an incorrect body with armor.
+Compare front, side and three-quarter views before extending the family.
+
+Keep the same face/body identity for Epic, Legendary and Mythical. Improve
+silhouette, armor construction and material craftsmanship at each tier. Give
+Legendary and Mythical the strongest visual finish. Model body segments first,
+then attach rigid armor to the correct segments. The pictures are not dimensioned
+engineering drawings; use current pad spacing, follow formation and visual bounds.
+
+Use the actual existing creature rig/animation contract. Existing save IDs,
+rarity odds, Treasury, income, equipped-pet buffs and expedition authority remain
+compatible. Use the current Config rarity scale once, not twice. The engine
+rarity key is Mythical even though the picture label says Mythic.
+
+Implement idle, walk, run, turn, stop, leap, land, capture, depart and return from
+the timing brief. Ground contact and rigid anatomy matter more than extra VFX.
+Check a neutral stance, moving follow formation, pet picker and full courtyard.
+Honor Reduced Motion, Reduced Flashes and Low VFX. No floating message boxes.
+
+Keep the other species distinct when applying the approved visual language later.
+The wolf family is a calibration sample, not a replacement for every species.
