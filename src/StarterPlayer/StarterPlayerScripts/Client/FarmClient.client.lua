@@ -258,6 +258,11 @@ FarmFx.OnClientEvent:Connect(function(kind, d)
 		local big = d.mutation == "Rainbow" or d.mutation == "Giant"
 		burst(d.pos, (d.mutation or ""):upper() .. " " .. (d.crop or "") .. " sprouted!", MUT[d.mutation] or GOLD, big and 60 or 42, big and 3 or 2.2)
 		play(big and "Rare" or "Upgrade", big and 1 or 0.7)
+	elseif kind == "almanac" then
+		burst(d.pos or headPos(), "NEW IN YOUR ALMANAC: " .. (d.name or ""):upper(), Color3.fromRGB(190, 255, 200), 50, 2.8)
+		task.delay(0.5, burst, (d.pos or headPos()) - Vector3.new(0, 1.6, 0),
+			tostring(d.count) .. " / " .. tostring(d.total) .. "  ·  +" .. tostring(d.bonus) .. "% crop value forever", WHITE, 30, 2.8)
+		play("Upgrade")
 	elseif kind == "weather" then
 		burst(headPos(), (d.name or "Weather"):upper() .. "!", Color3.fromRGB(170, 220, 255), 66, 3.2)
 		task.delay(0.5, burst, headPos() - Vector3.new(0, 1.6, 0), (d.desc or "") .. "  ·  " .. math.floor((d.duration or 0) / 60) .. " min", WHITE, 30, 3.2)

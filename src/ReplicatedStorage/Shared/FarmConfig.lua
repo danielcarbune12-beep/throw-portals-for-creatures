@@ -59,6 +59,12 @@ for _, m in ipairs(Farm.Mutations) do
 	Farm.MutationById[m.id] = m
 end
 
+-- Crop Almanac: every crop x mutation you harvest (6 x 5 = 30) is recorded on the board in your
+-- lodge. Each discovery permanently adds AlmanacBonus to all produce value and food value.
+Farm.AlmanacColumns = { "", "Watered", "Golden", "Giant", "Rainbow" } -- "" = no mutation
+Farm.AlmanacBonus = 0.02
+Farm.AlmanacXp = 20 -- Farmer XP per discovery, times the crop's tier
+
 -- Harvests go to your Pantry: feed them to your pets (Feeding Trough, E) or sell them (R).
 Farm.PantryCap = 300 -- past this, extra produce is sold automatically
 Farm.FeedXpPerCropXp = 4 -- pet XP per food = crop.xp * this * mutation mult

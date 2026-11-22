@@ -76,6 +76,7 @@ Every courtyard has a farm, all of it physical and driven by proximity prompts (
 - **Pet levels:** food gives pet XP, always to your lowest-level placed pet first. Each pet level adds +6% to that pet's income (max level 100). Levels show on the pets' name tags in the courtyard.
 - **Well Fed:** feeding 5+ food at once gives your courtyard +20% income for 30 minutes.
 - **Weather (server-wide, every 12-18 min):** **Rain** (4 min: crops grow 50% faster, lots of Watered crops), **Golden Hour** (Golden x4 when you plant), **Starfall** (Giant x4), and the rare **Rainbow Aurora** (Rainbow x8). Each has its own sky and particles. Admins can start one: admin command `weather` with `Rain`, `GoldenHour`, `Starfall` or `Aurora`.
+- **Crop Almanac:** the board in your lodge records every crop x mutation you have harvested (6 x 5 = 30). Each new one permanently adds +2% to all produce value and food value, plus Farmer XP.
 - **Market Demand:** every 20 minutes one crop sells for x2 (shown on the Farm Stand).
 - **Sale value bonuses:** +5% per Farmer Level and +1.5% per pet placed in your courtyard.
 - **Farmer Level:** XP from harvests, catches, bounties and daily gifts. Levels unlock new seeds (Lv 2, 4, 6, 9, 12).

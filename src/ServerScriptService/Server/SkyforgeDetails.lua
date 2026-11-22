@@ -73,10 +73,11 @@ function Details.Build(model, cf)
 	end
 	-- gable-front pediment: violet panel with a gold diamond, facing the courtyard
 	local fz = lz - LG.d / 2 - 1.05
-	part("LodgeBanner", V(3.0, 4.4, 0.14), CF(lx, top - 2.6, fz + 0.6), P.roof, M.Fabric)
+	-- kept short so the Crop Almanac board on the back wall stays visible through the open front
+	part("LodgeBanner", V(3.0, 2.2, 0.14), CF(lx, top - 1.5, fz + 0.6), P.roof, M.Fabric)
 	part("BannerTrim", V(3.2, 0.2, 0.18), CF(lx, top - 0.35, fz + 0.6), P.gold, M.Metal)
-	part("BannerCrest", V(0.95, 0.95, 0.12), CF(lx, top - 2.3, fz + 0.5) * A(0, 0, math.pi / 4), P.gold, M.Metal)
-	part("BannerCrestInset", V(0.5, 0.5, 0.1), CF(lx, top - 2.3, fz + 0.42) * A(0, 0, math.pi / 4), P.roof)
+	part("BannerCrest", V(0.8, 0.8, 0.12), CF(lx, top - 1.5, fz + 0.5) * A(0, 0, math.pi / 4), P.gold, M.Metal)
+	part("BannerCrestInset", V(0.42, 0.42, 0.1), CF(lx, top - 1.5, fz + 0.42) * A(0, 0, math.pi / 4), P.roof)
 	-- warm lantern hanging under the roof
 	local lantern = part("LodgeLantern", V(0.9, 1.2, 0.9), CF(lx, top - 1.8, lz), C3(255, 214, 150), M.Neon)
 	local glow = Instance.new("PointLight")

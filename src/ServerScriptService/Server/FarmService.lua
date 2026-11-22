@@ -73,6 +73,7 @@ local function ensure(data)
 	f.Pantry = type(f.Pantry) == "table" and f.Pantry or {} -- ["Crop|Mutation"] = count
 	f.Fed = tonumber(f.Fed) or 0
 	f.FedUntil = tonumber(f.FedUntil) or 0
+	f.Almanac = type(f.Almanac) == "table" and f.Almanac or {} -- ["Crop|Mutation"] = true
 	data.Bounties = type(data.Bounties) == "table" and data.Bounties or {}
 	data.Daily = type(data.Daily) == "table" and data.Daily or { last = 0, streak = 0 }
 	return f
@@ -291,7 +292,19 @@ local function itemValue(data, crop, m)
 	local f = data.Farm
 	local pets = #(data.Placed or {})
 	local market = (crop.id == demand.crop) and Farm.DemandMult or 1
-	return math.floor(crop.sell * soil(data) * (1 + Farm.LevelBonus * (f.Level - 1)) * (1 + Farm.PetBonus * pets) * mutMult(m) * market)
+	return math.floor(crop.sell * soil(data) * (1 + Farm.LevelBonus * (f.Level - 1)) * (1 + Farm.PetBonus * pets) * mutMult(m) * market * FarmService.AlmanacMult(data))
+end
+
+-- Crop Almanac: discoveries so far and the permanent value/food bonus they give
+function FarmService.AlmanacCount(data)
+	local n = 0
+	for _ in pairs(data.Farm and data.Farm.Almanac or {}) do
+		n += 1
+	end
+	return n
+end
+function FarmService.AlmanacMult(data)
+	return 1 + Farm.AlmanacBonus * FarmService.AlmanacCount(data)
 end
 
 -- Well Fed: courtyard-wide income buff after a proper feeding (GameServer.incomePerSec uses this)
@@ -303,8 +316,8 @@ function FarmService.IncomeBuff(data)
 	return 1
 end
 -- pet XP from one produce item
-local function itemFood(crop, m)
-	return crop.xp * Farm.FeedXpPerCropXp * mutMult(m)
+local function itemFood(data, crop, m)
+	return crop.xp * Farm.FeedXpPerCropXp * mutMult(m) * FarmService.AlmanacMult(data)
 end
 local function splitKey(key)
 	local c, m = string.match(key, "^([^|]+)|?(.*)$")
@@ -353,6 +366,20 @@ local function harvest(player, data, base, i, auto)
 	f.Plots[key] = nil
 	f.Harvests += 1
 	addXp(player, data, crop.xp)
+	-- Crop Almanac: first time this crop x mutation is harvested
+	local ak = crop.id .. "|" .. (m or "")
+	if not f.Almanac[ak] then
+		f.Almanac[ak] = true
+		addXp(player, data, Farm.AlmanacXp * crop.order)
+		local n = FarmService.AlmanacCount(data)
+		task.delay(1.1, fx, player, "almanac", {
+			pos = pos + V(0, 2, 0),
+			name = (m and (m .. " ") or "") .. crop.name,
+			count = n,
+			total = #Farm.Crops * #Farm.AlmanacColumns,
+			bonus = math.floor(Farm.AlmanacBonus * n * 100 + 0.5),
+		})
+	end
 	bountyEvent(player, data, "harvest", 1, { crop = crop.id })
 	if not auto or (m and m ~= "Watered") then
 		fx(player, "harvest", { pos = pos, tag = m, crop = crop.name, auto = auto, sold = sold > 0 and sold or nil })
@@ -743,6 +770,50 @@ local function buildBase(base)
 		FarmService.OnSell(base, player)
 	end)
 	farm.feedPrompt, farm.sellPrompt = feed, sell
+	-- Crop Almanac: a 6 x 5 grid board on the lodge's back wall, facing the courtyard
+	local LG = Style.lodge
+	-- sits low on the back wall, under the shortened gable banner (SkyforgeDetails)
+	local acf = L(LG.x, LG.deck + 4.6, LG.z + LG.d / 2 - 2.0)
+	local board2 = K.block(acf, V(16, 3.8, 0.3), Style.darkWood, M.WoodPlanks)
+	board2.Name = "AlmanacBoard"
+	K.block(acf * CF(0, 2.05, 0), V(16.4, 0.3, 0.4), gold, M.Metal)
+	K.block(acf * CF(0, -2.05, 0), V(16.4, 0.3, 0.4), gold, M.Metal)
+	local ag = Instance.new("SurfaceGui")
+	ag.Face = Enum.NormalId.Front
+	ag.CanvasSize = Vector2.new(1480, 352) -- same ratio as the 16 x 3.8 board
+	ag.LightInfluence = 0.15
+	ag.Parent = board2
+	local at = Instance.new("TextLabel")
+	at.Size, at.Position, at.BackgroundTransparency = UDim2.new(1, -20, 0, 44), UDim2.new(0, 10, 0, 4), 1
+	at.Font, at.TextScaled, at.RichText, at.TextColor3 = Enum.Font.GothamBlack, true, true, C(255, 236, 190)
+	at.Parent = ag
+	farm.almanacTitle = at
+	farm.almanacCells = {}
+	for col, mut in ipairs(Farm.AlmanacColumns) do
+		local h = Instance.new("TextLabel")
+		h.Size, h.Position, h.BackgroundTransparency = UDim2.fromOffset(236, 24), UDim2.fromOffset(254 + (col - 1) * 244, 52), 1
+		h.Font, h.TextScaled, h.Text = Enum.Font.GothamBold, true, mut == "" and "Normal" or mut
+		h.TextColor3 = mut ~= "" and Farm.MutationById[mut].color or C(230, 222, 206)
+		h.Parent = ag
+	end
+	for row, crop in ipairs(Farm.Crops) do
+		local y = 80 + (row - 1) * 44
+		local n = Instance.new("TextLabel")
+		n.Size, n.Position, n.BackgroundTransparency = UDim2.fromOffset(230, 38), UDim2.fromOffset(12, y), 1
+		n.Font, n.TextScaled, n.TextXAlignment, n.Text = Enum.Font.GothamBold, true, Enum.TextXAlignment.Left, crop.name
+		n.TextColor3 = C(236, 228, 210)
+		n.Parent = ag
+		for col, mut in ipairs(Farm.AlmanacColumns) do
+			local cell = Instance.new("Frame")
+			cell.Size, cell.Position = UDim2.fromOffset(232, 36), UDim2.fromOffset(256 + (col - 1) * 244, y + 1)
+			cell.BorderSizePixel = 0
+			cell.Parent = ag
+			local corner = Instance.new("UICorner")
+			corner.CornerRadius = UDim.new(0, 8)
+			corner.Parent = cell
+			farm.almanacCells[crop.id .. "|" .. mut] = cell
+		end
+	end
 end
 
 -- placed pets of a player (their creature entries)
@@ -782,6 +853,12 @@ local function refreshBase(base)
 			farm.standLabel.Text = ""
 			farm.chestLabel.Text = ""
 			farm.troughLabel.Text = ""
+			farm.almanacShown = nil
+			farm.almanacTitle.Text = ""
+			for _, cell in pairs(farm.almanacCells) do
+				cell.BackgroundColor3 = C(60, 46, 40)
+				cell.BackgroundTransparency = 0.2
+			end
 			for _, h in ipairs(farm.heap) do
 				h.Transparency = 1
 			end
@@ -797,6 +874,7 @@ local function refreshBase(base)
 			e.stage = -1
 		end
 		farm.boardKey = nil
+		farm.almanacShown = nil
 	end
 	local f = ensure(data)
 	local now = os.time()
@@ -932,6 +1010,24 @@ local function refreshBase(base)
 	farm.feedPrompt.ObjectText = "Pantry"
 	farm.sellPrompt.ActionText = n > 0 and "Sell produce" or "Nothing to sell"
 	farm.sellPrompt.ObjectText = n > 0 and Format.Money(value) or ""
+	-- almanac board (rewrite only when the count changes)
+	local found = FarmService.AlmanacCount(data)
+	if farm.almanacShown ~= found then
+		farm.almanacShown = found
+		local total = #Farm.Crops * #Farm.AlmanacColumns
+		farm.almanacTitle.Text = "CROP ALMANAC  " .. found .. " / " .. total
+			.. '  <font color="#9CFFA8">+' .. math.floor(Farm.AlmanacBonus * found * 100 + 0.5) .. "% crop value</font>"
+		for key, cell in pairs(farm.almanacCells) do
+			local _, mut = string.match(key, "^([^|]+)|(.*)$")
+			if f.Almanac[key] then
+				cell.BackgroundColor3 = mut ~= "" and Farm.MutationById[mut].color or C(120, 190, 110)
+				cell.BackgroundTransparency = 0
+			else
+				cell.BackgroundColor3 = C(60, 46, 40)
+				cell.BackgroundTransparency = 0.2
+			end
+		end
+	end
 	local fill = math.clamp(n / 60, 0, 1)
 	for k, h in ipairs(farm.heap) do
 		local show = n >= (k - 1) * 4 + 1
@@ -1138,7 +1234,7 @@ function FarmService.OnFeed(base, player)
 	for key, count in pairs(f.Pantry) do
 		local crop, m = splitKey(key)
 		if crop then
-			table.insert(items, { key = key, food = itemFood(crop, m), count = count })
+			table.insert(items, { key = key, food = itemFood(data, crop, m), count = count })
 		else
 			f.Pantry[key] = nil
 		end
