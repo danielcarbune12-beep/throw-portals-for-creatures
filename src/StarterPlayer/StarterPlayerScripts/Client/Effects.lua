@@ -140,11 +140,11 @@ function Effects.FloatingText(pos: Vector3, text: string, color: Color3?, size: 
 	local t = Instance.new("TextLabel")
 	t.Size = UDim2.fromScale(1, 1)
 	t.BackgroundTransparency = 1
-	t.Font = Enum.Font.FredokaOne
+	t.Font = require(script.Parent.UITheme).Display
 	t.TextScaled = true
 	t.Text = text
 	t.TextColor3 = color or Color3.new(1, 1, 1)
-	local st = Instance.new("UIStroke"); st.Thickness = 3; st.Color = Color3.fromRGB(30, 20, 40); st.Parent = t
+	local st = Instance.new("UIStroke"); st.Thickness = 2; st.Transparency = 0.25; st.Color = Color3.fromRGB(10, 8, 18); st.Parent = t
 	local sc = Instance.new("UIScale"); sc.Scale = 0.2; sc.Parent = t
 	t.Parent = bb
 	tween(sc, 0.35, { Scale = size or 1 }, Enum.EasingStyle.Back)
@@ -198,27 +198,10 @@ function Effects.Coins(worldPos: Vector3?, count: number?)
 end
 
 ---------------------------------------------------------------- rarity banner
-local revealCaption
+-- Tiered cinematic title (caption -> gold card -> full-screen moment for Legendary+), see RevealTitle.
 function Effects.RarityBanner(def, chanceText)
-	if revealCaption then revealCaption:Destroy() end
-	local T=require(script.Parent.UITheme)
-	local holder=Instance.new("Frame") holder.Name="RevealCaption" holder.AnchorPoint=Vector2.new(.5,1)
-	holder.Position=UDim2.new(.5,0,1,-24) holder.Size=UDim2.new(.88,0,0,66) holder.BackgroundColor3=T.Panel holder.BackgroundTransparency=.05 holder.BorderSizePixel=0 holder.ZIndex=45 holder.Parent=gui
-	revealCaption=holder
-	local limit=Instance.new("UISizeConstraint") limit.MaxSize=Vector2.new(400,66) limit.Parent=holder
-	local corner=Instance.new("UICorner") corner.CornerRadius=UDim.new(0,8) corner.Parent=holder
-	local border=Instance.new("UIStroke") border.Color=T.Border border.Thickness=1 border.Parent=holder
-	local function label(text,y,height,size,color,bold)
-		local l=Instance.new("TextLabel") l.BackgroundTransparency=1 l.Size=UDim2.new(1,-32,0,height) l.Position=UDim2.fromOffset(16,y) l.Font=bold and T.Bold or T.Font l.TextSize=size l.TextColor3=color l.TextXAlignment=Enum.TextXAlignment.Left l.TextWrapped=true l.Text=text l.ZIndex=46 l.Parent=holder return l
-	end
-	local title=label(def.name,8,27,20,T.Text,true)
-	local detail=label(def.rarity..(chanceText and (" · "..chanceText) or ""),36,21,14,T.Rarity(def.rarity,Config),false)
-	task.delay(1.9,function()
-		if not holder.Parent then return end
-		if Settings.ReducedMotion then holder:Destroy() return end
-		tween(holder,.18,{BackgroundTransparency=1}) tween(border,.18,{Transparency=1}) tween(title,.18,{TextTransparency=1}) tween(detail,.18,{TextTransparency=1})
-		task.delay(.2,function() holder:Destroy() end)
-	end)
+	local ok, err = pcall(function() require(script.Parent.RevealTitle).Show(def, chanceText) end)
+	if not ok then warn("[RevealTitle] " .. tostring(err)) end
 end
 
 ---------------------------------------------------------------- lighting per world

@@ -11,6 +11,19 @@ local Config = require(ReplicatedStorage.Shared.Config)
 local K = require(script.Parent.UIKit)
 local Effects = require(script.Parent.Effects)
 local Sounds = require(script.Parent.Sounds)
+local T = require(script.Parent.UITheme)
+local Reveal = require(script.Parent.RevealTitle)
+local TweenService = game:GetService("TweenService")
+
+local function tw(o, t, props, style, dir)
+	local x = TweenService:Create(o, TweenInfo.new(t, style or Enum.EasingStyle.Quart, dir or Enum.EasingDirection.Out), props)
+	x:Play()
+	return x
+end
+local function fnt(name, fallback)
+	local ok, f = pcall(function() return Enum.Font[name] end)
+	return (ok and f) or fallback
+end
 
 local Intro = {}
 local player = Players.LocalPlayer
@@ -51,31 +64,72 @@ function Intro.Play(hud)
 		key(hrp.Position - hrp.CFrame.LookVector * 14 + Vector3.new(0, 7, 0), hrp.Position + Vector3.new(0, 2, 0))
 	end
 
-	-- UI: black fade, title, skip hint
+	-- UI: black fade, trailer-style title card, skip hint
 	local gui = K.new("ScreenGui", { Name = "Intro", IgnoreGuiInset = true, ResetOnSpawn = false, DisplayOrder = 50, Parent = player.PlayerGui })
-	local black = K.new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0), BorderSizePixel = 0, Parent = gui })
-	local title = K.new("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.36), Size = UDim2.fromScale(0.8, 0.22), BackgroundTransparency = 1, Parent = gui })
-	local titleScale = K.new("UIScale", { Scale = 0, Parent = title })
-	local line1 = K.label("THROW PORTALS", UDim2.fromScale(1, 0.55), Color3.new(1, 1, 1), { Parent = title })
-	K.new("UIGradient", { Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 140, 220)), ColorSequenceKeypoint.new(0.5, Color3.fromRGB(170, 120, 255)),
-		ColorSequenceKeypoint.new(1, Color3.fromRGB(110, 220, 255)) }), Parent = line1 })
-	line1:FindFirstChildOfClass("UIStroke").Thickness = 5
-	local line2 = K.label("FOR CREATURES", UDim2.fromScale(1, 0.4), Color3.fromRGB(255, 230, 120), { Position = UDim2.fromScale(0, 0.58), Parent = title })
-	local sub = K.label("Throw  •  Catch  •  Collect", UDim2.fromScale(0.5, 0.05), Color3.new(1, 1, 1),
-		{ AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.fromScale(0.5, 0.5), Parent = gui, TextTransparency = 1 })
-	local skip = K.label("Click to skip ⏭", UDim2.fromOffset(240, 34), Color3.fromRGB(230, 230, 230),
-		{ AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -20, 1, -20), Parent = gui })
+	local black = K.new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0), Parent = gui })
+	local title = K.new("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.4), Size = UDim2.new(0.92, 0, 0, 230), BackgroundTransparency = 1, Parent = gui })
+	K.new("UISizeConstraint", { MaxSize = Vector2.new(1100, 230), Parent = title })
+	local titleScale = K.new("UIScale", { Scale = 1.12, Parent = title })
+	local INK = Color3.fromRGB(10, 8, 18)
+	local labels = {}
+	local function line(text, font, color, y, h, maxPx, stroke)
+		local l = K.new("TextLabel", { Text = text, Font = font, TextColor3 = color, TextScaled = true, BackgroundTransparency = 1, TextTransparency = 1,
+			AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, y), Size = UDim2.new(1, 0, 0, h), Parent = title })
+		K.new("UITextSizeConstraint", { MaxTextSize = maxPx, Parent = l })
+		K.new("UIStroke", { Color = INK, Thickness = stroke, Transparency = 1, Parent = l })
+		table.insert(labels, l)
+		return l
+	end
+	local eyebrow = line(Reveal.Track("Welcome to"), fnt("MontserratBold", Enum.Font.GothamBold), T.Gold, 0.08, 16, 16, 1.2)
+	local line1 = line("THROW PORTALS", fnt("MontserratBlack", Enum.Font.GothamBlack), Color3.new(1, 1, 1), 0.42, 104, 104, 3.5)
+	local line2 = line(Reveal.Track("For creatures"), fnt("MontserratBold", Enum.Font.GothamBold), T.Gold, 0.72, 26, 26, 1.5)
+	local sub = line(Reveal.Track("Throw   ·   catch   ·   collect"), fnt("MontserratMedium", Enum.Font.GothamMedium), T.Muted, 0.95, 14, 14, 1)
+	local shine = K.new("UIGradient", { Rotation = 12, Offset = Vector2.new(-1, 0), Parent = line1,
+		Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.new(1, 1, 1)), ColorSequenceKeypoint.new(0.42, Color3.new(1, 1, 1)),
+			ColorSequenceKeypoint.new(0.5, T.Gold), ColorSequenceKeypoint.new(0.58, Color3.new(1, 1, 1)), ColorSequenceKeypoint.new(1, Color3.new(1, 1, 1)) }) })
+	local ruleBars = {}
+	for side = -1, 1, 2 do
+		local r = K.new("Frame", { AnchorPoint = Vector2.new(side < 0 and 1 or 0, 0.5), Position = UDim2.new(0.5, side * 110, 0.08, 0), Size = UDim2.new(0, 0, 0, 1),
+			BackgroundColor3 = T.Gold, Parent = title })
+		K.new("UIGradient", { Transparency = NumberSequence.new(side < 0 and 1 or 0, side < 0 and 0 or 1), Parent = r })
+		table.insert(ruleBars, r)
+	end
+	local skip = K.new("TextLabel", { Text = Reveal.Track("Click to skip"), Font = fnt("MontserratMedium", Enum.Font.GothamMedium), TextSize = 12,
+		TextColor3 = T.Muted, TextTransparency = 0.35, BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, 1),
+		Position = UDim2.new(1, -28, 1, -26), Size = UDim2.fromOffset(220, 16), TextXAlignment = Enum.TextXAlignment.Right, Parent = gui })
+	local function showLine(l, t)
+		tw(l, t, { TextTransparency = 0 })
+		tw(l:FindFirstChildOfClass("UIStroke"), t, { Transparency = 0.3 })
+	end
+	local titleShown = true
+	local function hideTitle(t)
+		if not titleShown then return end
+		titleShown = false
+		for _, l in ipairs(labels) do
+			tw(l, t, { TextTransparency = 1 })
+			tw(l:FindFirstChildOfClass("UIStroke"), t, { Transparency = 1 })
+		end
+		for _, r in ipairs(ruleBars) do tw(r, t, { BackgroundTransparency = 1 }) end
+		tw(titleScale, t, { Scale = 0.96 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+	end
 
 	if hud then hud.Enabled = false end
 	Effects.Letterbox(true)
 	camera.CameraType = Enum.CameraType.Scriptable
 	camera.CFrame = CFrame.lookAt(pts[1], looks[1])
-	K.tween(black, 1.2, { BackgroundTransparency = 1 })
+	tw(black, 1.4, { BackgroundTransparency = 1 }, Enum.EasingStyle.Sine)
 	task.delay(0.6, function()
-		K.tween(titleScale, 0.8, { Scale = 1 }, Enum.EasingStyle.Back)
+		showLine(line1, 0.9)
+		tw(titleScale, 1.6, { Scale = 1 }, Enum.EasingStyle.Quint)
+		tw(shine, 1.4, { Offset = Vector2.new(1, 0) }, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
 		Sounds.Play("Rare", 0.9)
 	end)
-	task.delay(1.6, function() K.tween(sub, 0.6, { TextTransparency = 0 }) end)
+	task.delay(1.0, function()
+		showLine(eyebrow, 0.6)
+		for _, r in ipairs(ruleBars) do tw(r, 0.9, { Size = UDim2.new(0.18, 0, 0, 1) }, Enum.EasingStyle.Quint) end
+	end)
+	task.delay(1.3, function() showLine(line2, 0.7) end)
+	task.delay(1.9, function() showLine(sub, 0.7) end)
 
 	local skipped = false
 	local conn = UserInputService.InputBegan:Connect(function(input)
@@ -97,10 +151,7 @@ function Intro.Play(hud)
 		local pos = catmull(at(pts, i - 1), at(pts, i), at(pts, i + 1), at(pts, i + 2), f)
 		local look = catmull(at(looks, i - 1), at(looks, i), at(looks, i + 1), at(looks, i + 2), f)
 		camera.CFrame = CFrame.lookAt(pos, look)
-		if k > 0.62 and titleScale.Scale > 0.99 then
-			K.tween(titleScale, 0.6, { Scale = 0 }, Enum.EasingStyle.Back, Enum.EasingDirection.In)
-			K.tween(sub, 0.4, { TextTransparency = 1 })
-		end
+		if k > 0.62 then hideTitle(0.7) end
 		RunService.RenderStepped:Wait()
 	end
 	conn:Disconnect()
@@ -109,9 +160,8 @@ function Intro.Play(hud)
 	Effects.Letterbox(false)
 	camera.CameraType = Enum.CameraType.Custom
 	if hud then hud.Enabled = true end
-	K.tween(titleScale, 0.3, { Scale = 0 })
-	K.tween(sub, 0.3, { TextTransparency = 1 })
-	K.tween(skip, 0.3, { TextTransparency = 1 })
+	hideTitle(0.3)
+	tw(skip, 0.3, { TextTransparency = 1 })
 	Effects.Flash(Color3.new(1, 1, 1), 0.6, 0.35)
 	Sounds.Play("Whoosh", 1.2)
 	task.delay(0.6, function() gui:Destroy() end)
