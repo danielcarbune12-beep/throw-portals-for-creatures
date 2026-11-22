@@ -6045,6 +6045,9 @@ function BaseBuilder.Release(base)
 		{ Decor = {}, FloorTheme = "Meadow", EquipLevel = 1, Upgrades = { Training = 0, BaseSlots = 0 } }
 	)
 	base.collectLabel.Text = "$0"
+	if base.setFill then
+		base.setFill(0)
+	end
 end
 
 -- Refresh owned decorations, floor theme, earned relics and pet slot markers.
@@ -9233,10 +9236,11 @@ task.spawn(function()
 				if #st.carry > 0 and flatD < Config.BaseRadius then
 					depositCarry(player, data, st)
 				end
+				-- the treasury basin fills the pad's centre, so you collect by walking up to it
 				local pad = st.base.collect.Position
 				if
 					data.Uncollected >= 1
-					and ((hrp.Position - pad) * Vector3.new(1, 0, 1)).Magnitude < 5.5
+					and ((hrp.Position - pad) * Vector3.new(1, 0, 1)).Magnitude < 7
 					and math.abs(hrp.Position.Y - pad.Y) < 8
 				then
 					local amt = math.floor(data.Uncollected)
@@ -9244,6 +9248,9 @@ task.spawn(function()
 					data.TotalEarned += amt
 					data.Uncollected -= amt
 					st.base.collectLabel.Text = "$0"
+					if st.base.setFill then
+						st.base.setFill(0)
+					end
 					MoneyFxRE:FireClient(player, amt, pad)
 					sync(player, true)
 					updateAttributes(player, data)
@@ -9262,6 +9269,10 @@ task.spawn(function()
 				data.Uncollected += incomePerSec(data)
 				if st.base then
 					st.base.collectLabel.Text = Format.Money(data.Uncollected)
+					-- the treasury hoard looks full after about a minute of income
+					if st.base.setFill then
+						st.base.setFill(data.Uncollected / math.max(1, incomePerSec(data) * 60))
+					end
 					st.base.incomeLabel.Text = "+"
 						.. Format.Money(incomePerSec(data))
 						.. "/s  •  "
@@ -10571,9 +10582,10 @@ function Base.Build(index)
 	end
 	b("ShrineCrest", V(0.83, 0.83, 0.20) * S, LS(0, 8.75, -0.88) * A(0, 0, PI / 4), P.gold, M.Metal)
 	-- floating crystal above the keystone (bobs gently)
-	local gem = b("ShrineCrystal", V(1.0, 1.6, 1.0) * S, LS(0, 10.4, 0) * A(0, PI / 4, 0), P.portal, M.Neon)
+	local gem, gemCore = K.gem(LS(0, 10.4, 0) * A(0, PI / 4, 0), 1.3 * S, 2.4 * S, P.portal, M.Glass, 0.15)
+	gem.Name = "ShrineCrystal"
 	K.tag(gem, "TPFC_Bob", { Amp = 0.35, Period = 4.5, Spin = 12 })
-	K.lamp(gem, P.portal, 16, 0.9)
+	K.lamp(gemCore, P.portal, 16, 0.7)
 	shrine.Parent = model
 	K.SetFolder(model)
 	-- floats above the (taller) shrine crystal
@@ -10602,14 +10614,84 @@ function Base.Build(index)
 		slots[i] = L(x, 1.1, z)
 	end
 	K.SetFolder(model)
-	b("CollectFoundation", V(9.6, 0.45, 9.6), L(-19, 1.2, -21), P.stone, M.Limestone)
-	b("CollectFrame", V(8.8, 0.13, 8.8), L(-19, 1.45, -21), P.gold, M.Metal)
-	local collect = b("CollectPad", V(8.1, 0.16, 8.1), L(-19, 1.53, -21), P.mint, M.SmoothPlastic)
-	for _, sd in { -1, 1 } do
-		b("CollectChevron", V(0.13, 0.035, 2.8), L(-19 + sd * 0.8, 1.64, -21) * A(0, sd * PI / 4, 0), P.light)
+	-- Treasury: where the courtyard's income piles up. A gold-rimmed stone basin on an octagonal
+	-- plinth; a hoard of coins rises in it as money accumulates and the floating crystal above glows
+	-- brighter. Walking up to it collects (server: GameServer, within Config.CollectRange of the pad).
+	-- "CollectPad" keeps its exact position (-19, 1.53, -21) for the garden audits.
+	local TX, TZ = -19, -21
+	local tpos = function(y)
+		return L(TX, y, TZ).Position
 	end
-	local collectLabel = label(collect, "$0", UDim2.fromScale(5, 1.2), V(0, 3.0, 0), P.text, 28)
-	label(collect, "Collect", UDim2.fromScale(4, 0.65), V(0, 1.9, 0), P.text, 23)
+	K.SetFolder(model)
+	b("CollectFoundation", V(10.4, 0.45, 10.4), L(TX, 1.2, TZ) * A(0, PI / 8, 0), P.stone, M.Limestone)
+	b("CollectFoundationOct", V(10.4, 0.45, 10.4), L(TX, 1.2, TZ) * A(0, PI / 8 + PI / 4, 0), P.stone, M.Limestone)
+	local collect = b("CollectPad", V(8.6, 0.16, 8.6), L(TX, 1.53, TZ) * A(0, PI / 8, 0), P.pale, M.Limestone)
+	b("CollectPadOct", V(8.6, 0.16, 8.6), L(TX, 1.53, TZ) * A(0, PI / 8 + PI / 4, 0), P.pale, M.Limestone)
+	K.vcyl(tpos(1.6), 0.05, 7.6, P.gold, M.Metal)
+	K.vcyl(tpos(1.62), 0.05, 7.0, P.light, M.Limestone)
+	-- four short gold-capped posts framing the basin
+	for i = 0, 3 do
+		local a = i / 4 * PI * 2 + PI / 4
+		local pcf = L(TX + math.cos(a) * 3.55, 1.6, TZ + math.sin(a) * 3.55)
+		b("TreasuryPost", V(0.8, 2.4, 0.8), pcf * CF(0, 1.2, 0), P.pale, M.Limestone)
+		b("TreasuryPostCap", V(1.05, 0.25, 1.05), pcf * CF(0, 2.5, 0), P.gold, M.Metal)
+		b("TreasuryPostGem", V(0.4, 0.4, 0.4), pcf * CF(0, 2.85, 0) * A(PI / 4, 0, PI / 4), P.portal, M.Neon)
+	end
+	-- basin: stem, bowl, gold rim, dark lining
+	K.vcyl(tpos(1.6), 0.5, 3.4, P.stone, M.Limestone)
+	K.vcyl(tpos(2.1), 1.5, 2.2, P.pale, M.Limestone)
+	K.vcyl(tpos(3.6), 0.5, 3.6, P.pale, M.Limestone)
+	K.vcyl(tpos(4.1), 1.2, 5.4, P.stone, M.Limestone)
+	K.vcyl(tpos(5.25), 0.3, 5.9, P.gold, M.Metal)
+	K.vcyl(tpos(5.2), 0.12, 4.6, P.joint, M.Slate)
+	-- the hoard: a gold coin mound that rises with stored income (see setFill)
+	local hoard = K.vcyl(tpos(4.3), 0.2, 4.5, P.goldLight, M.Metal)
+	hoard.Name = "TreasuryHoard"
+	local mound = K.ellipsoid(L(TX, 4.3, TZ), V(3.6, 1.2, 3.6), P.goldLight, M.Metal)
+	mound.Name = "TreasuryMound"
+	-- floating crystal + orbiting coin ring above the basin
+	local crystal, crystalCore = K.gem(L(TX, 8.6, TZ) * A(0, PI / 4, 0), 1.5, 2.6, P.portal, M.Glass, 0.45)
+	crystal.Name = "TreasuryCrystal"
+	K.tag(crystal, "TPFC_Bob", { Amp = 0.3, Period = 4, Spin = 20 })
+	local crystalLight = K.lamp(crystalCore, P.portal, 14, 0.2)
+	local ring = Instance.new("Model")
+	ring.Name = "TreasuryCoinRing"
+	K.SetFolder(ring)
+	for i = 0, 7 do
+		local a = i / 8 * PI * 2
+		local coin = K.cyl(L(TX + math.cos(a) * 2.6, 7.2, TZ + math.sin(a) * 2.6) * A(0, -a, 0), 0.14, 0.95, P.goldLight, M.Metal)
+		coin.Name = "OrbitCoin"
+	end
+	ring.Parent = model
+	K.tag(ring, "TPFC_Spin", { Rate = 35 })
+	K.SetFolder(model)
+	local fill = 0
+	local function setFill(f)
+		f = math.clamp(f, 0, 1)
+		if math.abs(f - fill) < 0.01 and f > 0 then
+			return
+		end
+		fill = f
+		-- hoard surface rises from inside the bowl (4.3) to a heap above the rim (5.9)
+		local top = 4.3 + 1.6 * f
+		hoard.Size = V(top - 4.2, 4.5, 4.5)
+		hoard.CFrame = L(TX, 4.2 + (top - 4.2) / 2, TZ) * A(0, 0, PI / 2)
+		mound.Size = V(3.6 * (0.6 + 0.4 * f), 0.4 + 1.4 * f, 3.6 * (0.6 + 0.4 * f))
+		mound.CFrame = L(TX, top, TZ)
+		mound.Transparency = f < 0.05 and 1 or 0
+		hoard.Transparency = f < 0.02 and 1 or 0
+		for _, p in crystal:GetChildren() do
+			if p:IsA("BasePart") then
+				p.Transparency = 0.45 - 0.35 * f
+			end
+		end
+		-- kept soft so the violet light doesn't wash the pale stone pink
+		crystalLight.Brightness = 0.2 + 0.8 * f
+		crystalLight.Range = 9 + 6 * f
+	end
+	setFill(0)
+	local collectLabel = label(collect, "$0", UDim2.fromScale(5, 1.2), V(0, 11.2, 0), P.text, 28)
+	label(collect, "Treasury", UDim2.fromScale(4, 0.65), V(0, 10.0, 0), P.goldLight, 23)
 	-- Rear-left lodge: the courtyard's landmark. An open timber hall on a stone plinth, three bays
 	-- wide, with stone half-walls at the back and sides and a broad violet tiled roof (tiles in Details).
 	local LG = P.lodge
@@ -10734,6 +10816,7 @@ function Base.Build(index)
 		slotFolder = slotFolder,
 		collect = collect,
 		collectLabel = collectLabel,
+		setFill = setFill, -- 0..1: how full the treasury looks (GameServer drives it from Uncollected)
 		incomeLabel = income,
 		crystalLabel = crystalLabel,
 		signLabels = { sl, sl2 },
@@ -11219,9 +11302,9 @@ local function avenue()
 			K.pyramid(CF(x, 16.05, z), 2.4, 1.4, P.gold, M.Metal)
 			local cf = CF(x - side * 1.15, 13.6, z) * A(0, side < 0 and PI / 2 or -PI / 2, 0)
 			Art.Banner(cf, 6.4, 1.7)
-			local gem = K.block(CF(x, 19.4, z) * A(0, PI / 4, 0), V(1.3, 2.6, 1.3), P.lilac, M.Neon, false, 0.1)
+			local gem, gemCore = K.gem(CF(x, 19.6, z) * A(0, PI / 4, 0), 1.7, 3.2, P.lilac, M.Glass, 0.1)
 			K.tag(gem, "TPFC_Bob", { Amp = 0.4, Period = 5 + (z % 3), Spin = 18 })
-			K.lamp(gem, P.lilac, 14, 0.7)
+			K.lamp(gemCore, P.lilac, 14, 0.6)
 		end
 	end
 	-- Entrance gate: two tall pylon towers framing the start of the avenue.
@@ -11929,6 +12012,24 @@ function K.pyramid(cf, w, h, color, mat, d)
 		local dd = (i % 2 == 0) and d or w
 		K.wedge(cf * ANG(0, i * PI / 2, 0) * CF(0, h / 2, -dd / 4), V3(ww, h, dd / 2), color, mat)
 	end
+end
+-- faceted gem (bi-pyramid, widest at cf) as one Model so WorldFx can bob/spin it as a piece.
+-- Returns the model and a part to hang a light on.
+function K.gem(cf, w, h, color, mat, transp)
+	local prev = out
+	local m = Instance.new("Model")
+	m.Name = "Gem"
+	out = m
+	K.pyramid(cf, w, h * 0.62, color, mat)
+	K.pyramid(cf * ANG(PI, 0, 0), w, h * 0.38, K.dark(color, 0.18), mat)
+	out = prev
+	local parts = m:GetChildren()
+	for _, p in ipairs(parts) do
+		p.Transparency = transp or 0
+		p.CastShadow = false
+	end
+	m.Parent = prev
+	return m, parts[1]
 end
 -- gable roof along cf Z: two wedges back to back (w = span across X, h = rise, len = along Z)
 function K.gable(cf, w, h, len, color, mat)
@@ -14265,10 +14366,10 @@ local function slotCF(base, i)
 	return CFrame.new(pos) * CFrame.Angles(0, yaw, 0)
 end
 
--- base-local obstacle zones (fountain, cottage, pond, collect pad, gym) — see BaseBuilder
+-- base-local obstacle zones (portal shrine, lodge, relic pavilion, treasury, expedition table) — see SanctuaryBase
 local OBSTACLES = {
-	{ circle = Vector2.new(0, 0), r = 8 },
-	{ rect = Vector2.new(-20, 24), half = Vector2.new(8.5, 6.5) },
+	{ circle = Vector2.new(0, 0), r = 10.5 },
+	{ rect = Vector2.new(-18, 23.2), half = Vector2.new(14.2, 10.4) },
 	{ circle = Vector2.new(21, 23), r = 8.5 },
 	{ circle = Vector2.new(-19, -21), r = 6.5 },
 	{ rect = Vector2.new(19, -19), half = Vector2.new(8.5, 8.5) },
@@ -16363,7 +16464,7 @@ function Feel.Start(TC, HUD)
 			firstCatchHint = true
 			task.delay(4, function()
 				if not HUD.AnyPanelOpen() then
-					HUD.Notify("Your garden earns coins. Step on its green pad to collect them.", "info")
+					HUD.Notify("Your garden earns coins. Walk up to its treasury to collect them.", "info")
 				end
 			end)
 		end
