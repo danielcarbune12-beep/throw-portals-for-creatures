@@ -59,9 +59,11 @@ local function inRange()
 	return anchor and root and (root.Position - anchor.Position).Magnitude <= Rules.TableRange
 end
 local function message(text, color)
-	notice.Text = text or ""
-	notice.TextColor3 = color or T.Muted
-	notice.Visible = notice.Text ~= ""
+	local hasText = text ~= nil and text ~= ""
+	notice.Text = hasText and text or "Pet expedition"
+	notice.TextColor3 = hasText and (color or T.Muted) or T.Text
+	notice.TextSize = hasText and 14 or 20
+	notice.Visible = true
 end
 local function portrait(parent, pet, size)
 	local m = Renderer.BuildPreview(pet.c, pet.v)
@@ -343,9 +345,8 @@ function Panel.Init()
 	page.content.Size = UDim2.new(1, -28, 1, -58)
 	page.content.AutomaticCanvasSize = Enum.AutomaticSize.None
 	page.content.ScrollingEnabled = false
-	notice = K.text(page.frame, "", 14, -32, -28, 28, 14, T.Muted)
-	notice.Name = "ExpeditionNotice"
-	notice.Visible = false
+	notice = page.title
+	page.inlineMessage = message
 	planning = K.new(
 		"Frame",
 		{ Name = "ExpeditionPlanning", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Parent = page.content }
@@ -437,7 +438,7 @@ function Panel.Init()
 	activeReward = K.text(activeBox, "", 0, 108, -8, 30, 16, T.Gold)
 	activeReward.Position = UDim2.new(0.32, 0, 0, 108)
 	activeReward.Size = UDim2.new(0.68, -8, 0, 30)
-	local track = K.surface(activeBox, "ReturnProgress", UDim2.new(0.68, -8, 0, 8), UDim2.new(0.32, 0, 0, 88), T.Ink)
+	local track = K.surface(activeBox, "ReturnProgress", UDim2.new(0.68, -8, 0, 8), UDim2.new(0.32, 0, 0, 88), T.Inset)
 	track.ClipsDescendants = true
 	progressFill =
 		K.new("Frame", { Name = "Fill", Size = UDim2.fromScale(0, 1), BackgroundColor3 = T.Gold, Parent = track })
@@ -493,7 +494,7 @@ function Panel.Init()
 	Sky.Trim(tracker)
 	K.Icon("Compass", tracker, UDim2.fromOffset(48, 48), T.Text, UDim2.fromOffset(4, 2))
 	trackerText = K.text(tracker, "", 58, 5, -66, 30, 14, T.Text, true)
-	local tiny = K.surface(tracker, "Progress", UDim2.new(1, -70, 0, 5), UDim2.fromOffset(58, 43), T.Ink)
+	local tiny = K.surface(tracker, "Progress", UDim2.new(1, -70, 0, 5), UDim2.fromOffset(58, 43), T.Inset)
 	tiny.ClipsDescendants = true
 	trackerFill = K.new("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = T.Gold, Parent = tiny })
 	K.bind(tracker, Panel.Open)

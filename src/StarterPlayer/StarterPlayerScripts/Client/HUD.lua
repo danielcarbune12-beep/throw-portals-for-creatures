@@ -12,7 +12,6 @@ local Sky = require(script.Parent.SkyforgeUI)
 local State = require(script.Parent.ClientState)
 local Settings = require(script.Parent.ClientSettings)
 local Effects = require(script.Parent.Effects)
-local Sounds = require(script.Parent.Sounds)
 local HUD = { Panels = {}, SideButtons = {}, InZone = false, TrainHeld = false, AutoTrain = false }
 local player = Players.LocalPlayer
 local gui = K.new("ScreenGui", {
@@ -121,7 +120,7 @@ local bar = K.new("Frame", {
 	Name = "ChargeTrack",
 	Size = UDim2.new(1, -32, 0, 8),
 	Position = UDim2.fromOffset(16, 79),
-	BackgroundColor3 = T.Ink,
+	BackgroundColor3 = T.Inset,
 	Parent = launch,
 }, { K.corner(4) })
 K.new("Frame", {
@@ -199,52 +198,32 @@ function HUD.SetCarry(n)
 	carry.Text = "Bring " .. n .. " creatures home to your garden."
 end
 
-local notices = K.new("Frame", {
-	Name = "Notices",
-	AnchorPoint = Vector2.new(0.5, 0),
-	Position = UDim2.new(0.5, 0, 0, 78),
-	Size = UDim2.fromOffset(420, 280),
-	BackgroundTransparency = 1,
-	ZIndex = 40,
-	Parent = root,
-}, { K.list(Enum.FillDirection.Vertical, 6) })
-local lastNotice, lastNoticeTime
-function HUD.Notify(text, kind)
-	if text == lastNotice and os.clock() - (lastNoticeTime or 0) < 1 then
+-- No floating notifications. Errors belong to the active panel only.
+local openPanel, previousFocus
+function HUD.SetPanelMessage(name, text, color)
+	local p = HUD.Panels[name]
+	if not p then
 		return
 	end
-	lastNotice, lastNoticeTime = text, os.clock()
-	local col = kind == "error" and T.Danger or kind == "success" and T.Success or T.Cyan
-	if kind == "error" then
-		Sounds.Play("Error")
+	if p.inlineMessage then
+		p.inlineMessage(text, color)
+		return
 	end
-	local f = K.surface(notices, "Toast", UDim2.new(1, 0, 0, 58), nil, T.Panel)
-	K.Icon(kind == "error" and "Close" or "Check", f, UDim2.fromOffset(20, 20), col, UDim2.fromOffset(14, 19))
-	K.text(f, text, 47, 7, -60, 44, 15, T.Text)
-	task.delay(4, function()
-		if f.Parent then
-			f:Destroy()
-		end
-	end)
-	local list = {}
-	for _, v in notices:GetChildren() do
-		if v:IsA("Frame") then
-			table.insert(list, v)
-		end
-	end
-	if #list > 3 then
-		list[1]:Destroy()
+	p.feedback.Text = text or ""
+	p.feedback.TextColor3 = color or T.Danger
+	p.feedback.Visible = p.feedback.Text ~= ""
+	p.content.Size = p.contentSize - UDim2.fromOffset(0, p.feedback.Visible and 40 or 0)
+	if p.layout then
+		p.layout()
 	end
 end
-function HUD.ShowThrowHere(_title, sub)
-	HUD.Notify(
-		sub
-			or (
-				HUD.InZone and "Hold F or the charge button, then release to throw."
-				or "Enter the Launch Hall at the end of the avenue."
-			),
-		"info"
-	)
+function HUD.Notify(text, kind)
+	if openPanel and kind == "error" then
+		HUD.SetPanelMessage(openPanel.name, text, T.Danger)
+	end
+end
+function HUD.ShowThrowHere(_title, _sub)
+	-- Compatibility for launch-zone callbacks; gameplay uses contextual controls.
 end
 function HUD.SetInZone(value)
 	HUD.InZone = value
@@ -260,7 +239,7 @@ local dim = K.new("TextButton", {
 	Text = "",
 	AutoButtonColor = false,
 	BackgroundColor3 = T.Ink,
-	BackgroundTransparency = 0.22,
+	BackgroundTransparency = 1,
 	Size = UDim2.fromScale(1, 1),
 	Visible = false,
 	ZIndex = 20,
@@ -270,8 +249,6 @@ local layer = K.new(
 	"Frame",
 	{ Name = "Panels", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = 21, Parent = root }
 )
-local openPanel, previousFocus
-local blur = K.new("BlurEffect", { Name = "SanctuaryMenuBlur", Size = 0, Parent = game:GetService("Lighting") })
 local width, height = 1280, 720
 function HUD.MakePanel(name, title, subtitle, icon)
 	local frame = K.surface(layer, name, UDim2.fromOffset(1000, 620), UDim2.fromScale(0.5, 0.5), T.Panel)
@@ -301,8 +278,21 @@ function HUD.MakePanel(name, title, subtitle, icon)
 		ScrollingDirection = Enum.ScrollingDirection.Y,
 		Parent = frame,
 	})
-	local p =
-		{ name = name, frame = frame, content = content, close = close, title = titleLabel, subtitle = subtitleLabel }
+	local feedback = K.text(frame, "", 20, 0, -40, 32, 14, T.Danger)
+	feedback.Name = "InlineFeedback"
+	feedback.Position = UDim2.new(0, 20, 1, -46)
+	feedback.Visible = false
+	feedback.RichText = false
+	local p = {
+		name = name,
+		frame = frame,
+		content = content,
+		close = close,
+		title = titleLabel,
+		subtitle = subtitleLabel,
+		feedback = feedback,
+		contentSize = content.Size,
+	}
 	HUD.Panels[name] = p
 	K.bind(close, function()
 		HUD.Close()
@@ -336,13 +326,14 @@ function HUD.Open(name)
 	else
 		previousFocus = GuiService.SelectedObject
 	end
+	HUD.SetPanelMessage(p.name, "")
 	openPanel = p
 	if HUD.TC then
 		HUD.TC.InputBlocked = true
 	end
 	HUD.TrainHeld = false
 	world.Visible = p.contextual == true
-	dim.BackgroundTransparency = p.contextual and 0.94 or 0.4
+	dim.BackgroundTransparency = 1
 	dim.Visible = true
 	p.frame.Visible = true
 	if p.refresh then
@@ -364,7 +355,6 @@ function HUD.Open(name)
 	local target = p.targetPosition or UDim2.fromScale(0.5, 0.5)
 	p.frame.Position = target + UDim2.fromOffset(0, Settings.ReducedMotion and 0 or 8)
 	K.tween(p.frame, 0.18, { Position = target })
-	K.tween(blur, 0.18, { Size = (Settings.ReducedMotion or p.contextual) and 0 or 4 })
 	if Input.GamepadEnabled then
 		GuiService.SelectedObject = p.close
 	end
@@ -378,13 +368,13 @@ function HUD.Close()
 	if HUD.TC then
 		HUD.TC.InputBlocked = false
 	end
+	HUD.SetPanelMessage(old.name, "")
 	old.frame.Visible = false
 	dim.Visible = false
 	world.Visible = true
 	if old.onClose then
 		old.onClose()
 	end
-	K.tween(blur, 0.15, { Size = 0 })
 	if previousFocus and previousFocus.Parent and Input.GamepadEnabled then
 		GuiService.SelectedObject = previousFocus
 	else
@@ -495,8 +485,6 @@ local function rescale()
 	launch.Size = UDim2.fromOffset(Input.TouchEnabled and math.min(300, width - 24) or 354, 102)
 	launch.Position = Input.TouchEnabled and UDim2.new(0.5, -launch.Size.X.Offset / 2, 1, -110)
 		or UDim2.new(1, -370, 1, -182)
-	notices.Size = UDim2.fromOffset(math.min(420, width - 24), 240)
-	notices.Position = UDim2.new(0.5, 0, 0, compact and 126 or 78)
 	for _, p in pairs(HUD.Panels) do
 		p.frame.Size = UDim2.fromOffset(math.min(1060, width - 24), math.min(680, height - 24))
 		p.compact = p.frame.Size.X.Offset < 760
@@ -509,11 +497,6 @@ local function rescale()
 end
 HUD.Rescale = rescale
 gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(rescale)
-Settings.Changed.Event:Connect(function(key)
-	if key == "ReducedMotion" and Settings.ReducedMotion then
-		blur.Size = 0
-	end
-end)
 State.Changed:Connect(function(full)
 	HUD.Refresh()
 	if openPanel and openPanel.refresh then

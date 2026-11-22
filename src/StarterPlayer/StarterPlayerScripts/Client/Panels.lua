@@ -19,7 +19,7 @@ local Sounds = require(script.Parent.Sounds)
 local Panels = {}
 local function request(action, arg, message)
 	if not State.Loaded then
-		HUD.Notify("Your data is loading. Please wait.", "info")
+		HUD.Notify("Your data is loading. Please wait.", "error")
 		return false
 	end
 	local ok, msg = State.Request(action, arg)
@@ -169,7 +169,7 @@ local function refreshPortalDetail()
 	K.pad(4).Parent = portalDetail
 	list(portalDetail, 8)
 	local def = Config.Portals[selectedPortal]
-	local preview = K.surface(portalDetail, "Hero", UDim2.new(1, -12, 0, 178), nil, T.Ink)
+	local preview = K.surface(portalDetail, "Hero", UDim2.new(1, -12, 0, 178), nil, T.Inset)
 	preview.LayoutOrder = 1
 	local vp = K.viewport(Portal.BuildGate(selectedPortal, 4), UDim2.fromScale(1, 1), false)
 	vp.Parent = preview
@@ -362,9 +362,9 @@ local function renderCreatureDetail()
 		return
 	end
 	local def = Data.ById[entry.c]
-	local color = Variants.Color(entry.s, entry.v) or T.Rarity(def.rarity, Config)
+	local color = T.Legible(Variants.Color(entry.s, entry.v) or T.Rarity(def.rarity, Config))
 	local entryIncome = Data.Income(entry.c) * Variants.Mult(entry.s, entry.v)
-	local hero = K.surface(invDetail, "CreaturePreview", UDim2.new(1, -12, 0, 180), nil, T.Ink)
+	local hero = K.surface(invDetail, "CreaturePreview", UDim2.new(1, -12, 0, 180), nil, T.Inset)
 	hero.LayoutOrder = 1
 	petView(entry.c, UDim2.fromScale(1, 1), nil, entry.v).Parent = hero
 	heading(invDetail, Variants.Prefix(entry.s, entry.v) .. def.name, 2)
@@ -493,7 +493,7 @@ inv.refresh = function()
 					-20,
 					38,
 					15,
-					Variants.Color(entry.s, entry.v) or T.Text,
+					T.Legible(Variants.Color(entry.s, entry.v) or T.Text),
 					true
 				)
 				K.text(b, def.rarity, 10, 151, -20, 18, 13, T.Rarity(def.rarity, Config))
@@ -626,9 +626,10 @@ idx.refresh = function()
 			or "Different portal needed"
 		K.text(b, odds, 10, 178, -20, 36, 13, T.Muted)
 		K.bind(b, function()
-			HUD.Notify(
+			HUD.SetPanelMessage(
+				"Index",
 				known and def.name .. ": " .. def.desc or "Land in the correct zone to discover this species.",
-				"info"
+				T.Muted
 			)
 		end)
 	end

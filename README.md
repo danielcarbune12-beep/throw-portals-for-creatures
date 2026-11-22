@@ -242,3 +242,33 @@ The compact portrait and action fit the small phone; Studio returned to its
 default viewport. Seven scoped files pass Selene with no errors or warnings.
 Physical device/gamepad and live DataStore rejoin are not covered by this pass.
 The public Roblox game was not published. See `review/skyforge-hud-navigation.md`.
+
+## Light interface correction (2026-11-22)
+
+Shared Team Create version 37 changes the HUD, menu, shops and expedition panels
+to solid white/light stone with dark text and subtle gold trim. The full-screen
+click target is fully transparent and the menu blur is removed; opening a menu
+does not shade or blur the surrounding game world. The four C enamel icons and
+navigation structure remain. Rarity/variant labels are adjusted for contrast on
+white, and button labels choose dark or white lettering by measured contrast.
+The intro retains its original cinematic gold independently of the light UI.
+
+Native visual review passed 34 checks across panel brightness, four destinations,
+absence of screen shading/blur, semantic text contrast, button contrast and rarity
+contrast. Menu-to-Shop navigation was also inspected in Studio. Six core edited
+UI modules pass Selene without errors or warnings. This pass changes presentation;
+the previous mission/navigation checks remain recorded in the HUD delivery.
+
+## No floating notification boxes (2026-11-22)
+
+Shared Team Create version 39 removes the floating notification stack, including
+repeated launch-hall and active-portal reminders. Routine HUD info/success messages
+no longer create UI or interrupt gameplay. Errors appear only in the active panel
+and clear on close. Expedition errors use its existing header; collection details
+remain inline. Capture presentation and contextual gameplay controls remain.
+
+Twelve native UI checks passed, including repeated local callback messages, inline
+error placement, clearing and layout restoration. Twenty real server messages
+also created zero popup objects. Three edited modules pass Selene without errors
+or warnings, and shared source equality was verified before saving. Restart Play
+to refresh the running scripts. No public Roblox publish was performed.

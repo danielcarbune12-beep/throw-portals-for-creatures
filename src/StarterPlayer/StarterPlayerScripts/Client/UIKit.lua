@@ -207,7 +207,7 @@ function K.pop(o, amount)
 	K.tween(s, 0.16, { Scale = 1 })
 end
 function K.search(parent, placeholder, size, pos)
-	local f = K.surface(parent, "Search", size, pos, T.Ink)
+	local f = K.surface(parent, "Search", size, pos, T.Inset)
 	K.Icon("Search", f, UDim2.fromOffset(19, 19), T.Muted, UDim2.fromOffset(12, 13))
 	local box = K.new("TextBox", {
 		Name = "Input",
