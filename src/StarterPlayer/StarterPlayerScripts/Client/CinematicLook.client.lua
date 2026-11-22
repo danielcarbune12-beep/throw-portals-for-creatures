@@ -20,15 +20,15 @@ local camera = workspace.CurrentCamera
 
 -- per-zone finishing: split-tone tint, extra contrast/saturation, sun latitude, highlight glow
 local GRADE = {
-	Hub     = { tint = Color3.fromRGB(255, 248, 238), contrast = 0.06, sat = 0, lat = 34, glow = 0.18 },
-	Forest  = { tint = Color3.fromRGB(255, 250, 236), contrast = 0.08, sat = 0, lat = 38, glow = 0.18 },
-	Volcano = { tint = Color3.fromRGB(255, 236, 222), contrast = 0.12, sat = 0, lat = 24, glow = 0.30 },
-	Frozen  = { tint = Color3.fromRGB(240, 248, 255), contrast = 0.07, sat = 0, lat = 52, glow = 0.20 },
-	Crystal = { tint = Color3.fromRGB(246, 238, 255), contrast = 0.10, sat = 0, lat = 30, glow = 0.32 },
-	Candy   = { tint = Color3.fromRGB(255, 246, 250), contrast = 0.05, sat = 0, lat = 40, glow = 0.16 },
-	Space   = { tint = Color3.fromRGB(238, 238, 255), contrast = 0.12, sat = 0, lat = 20, glow = 0.34 },
-	Shadow  = { tint = Color3.fromRGB(248, 236, 252), contrast = 0.11, sat = 0, lat = 28, glow = 0.28 },
-	Heaven  = { tint = Color3.fromRGB(255, 250, 240), contrast = 0.05, sat = 0, lat = 46, glow = 0.20 },
+	Hub     = { tint = Color3.fromRGB(255, 248, 238), contrast = 0.06, sat = 0.06, lat = 34, glow = 0.18 },
+	Forest  = { tint = Color3.fromRGB(255, 250, 236), contrast = 0.08, sat = 0.06, lat = 38, glow = 0.18 },
+	Volcano = { tint = Color3.fromRGB(255, 236, 222), contrast = 0.12, sat = 0.06, lat = 24, glow = 0.30 },
+	Frozen  = { tint = Color3.fromRGB(240, 248, 255), contrast = 0.07, sat = 0.06, lat = 52, glow = 0.20 },
+	Crystal = { tint = Color3.fromRGB(246, 238, 255), contrast = 0.10, sat = 0.06, lat = 30, glow = 0.32 },
+	Candy   = { tint = Color3.fromRGB(255, 246, 250), contrast = 0.05, sat = 0.06, lat = 40, glow = 0.16 },
+	Space   = { tint = Color3.fromRGB(238, 238, 255), contrast = 0.12, sat = 0.06, lat = 20, glow = 0.34 },
+	Shadow  = { tint = Color3.fromRGB(248, 236, 252), contrast = 0.11, sat = 0.06, lat = 28, glow = 0.28 },
+	Heaven  = { tint = Color3.fromRGB(255, 250, 240), contrast = 0.05, sat = 0.06, lat = 46, glow = 0.20 },
 }
 
 local function quality()
@@ -55,15 +55,15 @@ pcall(function() Lighting.ShadowSoftness = 0.18 end)
 -- Built-in smoke texture, no uploads. A box emitter follows a point ahead of the camera at ground level;
 -- sheets are large, very faint and slow so they read as fog layers, never as smoke puffs over the pet.
 local MIST = {
-	Hub     = { color = Color3.fromRGB(226, 228, 244), rate = 9 },
-	Forest  = { color = Color3.fromRGB(222, 238, 226), rate = 12 },
-	Volcano = { color = Color3.fromRGB(150, 120, 112), rate = 15 },
-	Frozen  = { color = Color3.fromRGB(232, 242, 255), rate = 18 },
-	Crystal = { color = Color3.fromRGB(206, 186, 240), rate = 12 },
-	Candy   = { color = Color3.fromRGB(255, 226, 242), rate = 12 },
+	Hub     = { color = Color3.fromRGB(226, 228, 244), rate = 6 },
+	Forest  = { color = Color3.fromRGB(222, 238, 226), rate = 8 },
+	Volcano = { color = Color3.fromRGB(150, 120, 112), rate = 10 },
+	Frozen  = { color = Color3.fromRGB(232, 242, 255), rate = 12 },
+	Crystal = { color = Color3.fromRGB(206, 186, 240), rate = 8 },
+	Candy   = { color = Color3.fromRGB(255, 226, 242), rate = 8 },
 	Space   = { color = Color3.fromRGB(120, 110, 180), rate = 0 },
-	Shadow  = { color = Color3.fromRGB(120, 100, 150), rate = 21 },
-	Heaven  = { color = Color3.fromRGB(255, 250, 236), rate = 21 },
+	Shadow  = { color = Color3.fromRGB(120, 100, 150), rate = 14 },
+	Heaven  = { color = Color3.fromRGB(255, 250, 236), rate = 14 },
 }
 local mistPart = Instance.new("Part")
 mistPart.Name = "TPFC_GroundMist"
@@ -76,8 +76,8 @@ mist.Shape = Enum.ParticleEmitterShape.Box
 mist.ShapeStyle = Enum.ParticleEmitterShapeStyle.Volume
 mist.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 16), NumberSequenceKeypoint.new(1, 30) })
 mist.Transparency = NumberSequence.new({
-	NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.3, 0.74),
-	NumberSequenceKeypoint.new(0.7, 0.78), NumberSequenceKeypoint.new(1, 1),
+	NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.3, 0.82),
+	NumberSequenceKeypoint.new(0.7, 0.85), NumberSequenceKeypoint.new(1, 1),
 })
 mist.Lifetime = NumberRange.new(10, 15)
 mist.Speed = NumberRange.new(0.3, 1)
@@ -110,6 +110,7 @@ RunService.Heartbeat:Connect(function(dt)
 		mistY = groundY(p.X, p.Z, cf.Position.Y)
 	end
 	mistPart.CFrame = CFrame.new(p.X, mistY + 2, p.Z)
+	mist.Enabled = not workspace:GetAttribute("TPFC_IntroPlaying")
 end)
 
 ---------------------------------------------------------------- zone tracking (camera position, 2 Hz)

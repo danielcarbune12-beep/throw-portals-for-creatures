@@ -535,14 +535,14 @@ local HUB_LOOK = require(ReplicatedStorage.Shared.SanctuaryLook)
 
 -- per-zone grade + fog: calmer saturation, real aerial depth (low Offset = fog hugs the horizon)
 local LOOK = {
-	Forest  = { exposure = 0.05, sat = 0.05, contrast = 0.1,  bloom = 0.7, rays = 0.16, density = 0.6, haze = 2.6, offset = 0.0, glare = 0.35 },
-	Volcano = { exposure = 0.0,  sat = 0.1,  contrast = 0.16, bloom = 1.0, rays = 0.18, density = 0.62, haze = 3.0, offset = 0.0, glare = 0.25 },
-	Frozen  = { exposure = 0.12, sat = 0.0,  contrast = 0.08, bloom = 0.8, rays = 0.18, density = 0.62, haze = 2.8, offset = 0.02, glare = 0.4 },
-	Crystal = { exposure = 0.1,  sat = 0.1,  contrast = 0.14, bloom = 1.2, rays = 0.06, density = 0.58, haze = 2.2, offset = 0.02, glare = 0.2 },
-	Candy   = { exposure = 0.1,  sat = 0.1,  contrast = 0.06, bloom = 0.9, rays = 0.12, density = 0.55, haze = 2.2, offset = 0.03, glare = 0.3 },
-	Space   = { exposure = 0.05, sat = 0.1,  contrast = 0.18, bloom = 1.4, rays = 0.0,  density = 0.3, haze = 1.0, offset = 0.0,  glare = 0.0 },
-	Shadow  = { exposure = -0.1, sat = -0.05, contrast = 0.22, bloom = 1.1, rays = 0.0, density = 0.64, haze = 3.2, offset = 0.0,  glare = 0.0 },
-	Heaven  = { exposure = 0.18, sat = 0.04, contrast = 0.05, bloom = 1.1, rays = 0.28, density = 0.58, haze = 2.8, offset = 0.04, glare = 0.5 },
+	Forest  = { exposure = 0.1,  sat = 0.2,  contrast = 0.14, bloom = 0.7, rays = 0.16, density = 0.45, haze = 1.2, offset = 0.02, glare = 0.35 },
+	Volcano = { exposure = 0.05, sat = 0.22, contrast = 0.18, bloom = 1.0, rays = 0.18, density = 0.5,  haze = 1.6, offset = 0.0,  glare = 0.25 },
+	Frozen  = { exposure = 0.0,  sat = 0.1,  contrast = 0.12, bloom = 0.6, rays = 0.18, density = 0.48, haze = 1.4, offset = 0.02, glare = 0.4 },
+	Crystal = { exposure = 0.12, sat = 0.25, contrast = 0.16, bloom = 1.2, rays = 0.06, density = 0.45, haze = 1.0, offset = 0.02, glare = 0.2 },
+	Candy   = { exposure = -0.2, sat = 0.25, contrast = 0.1,  bloom = 0.5, rays = 0.12, density = 0.42, haze = 1.0, offset = 0.03, glare = 0.3 },
+	Space   = { exposure = 0.08, sat = 0.2,  contrast = 0.2,  bloom = 1.4, rays = 0.0,  density = 0.25, haze = 0.5, offset = 0.0,  glare = 0.0 },
+	Shadow  = { exposure = 0.0,  sat = 0.12, contrast = 0.2,  bloom = 1.1, rays = 0.0,  density = 0.5,  haze = 1.6, offset = 0.0,  glare = 0.0 },
+	Heaven  = { exposure = 0.0,  sat = 0.12, contrast = 0.08, bloom = 0.7, rays = 0.28, density = 0.45, haze = 1.4, offset = 0.04, glare = 0.5 },
 }
 
 function Effects.UpdateWorld(pos: Vector3)
@@ -560,7 +560,7 @@ function Effects.UpdateWorld(pos: Vector3)
 	-- per-zone grade (brother's LOOK) on the map-tuned sun/fog from Config; the hub keeps SanctuaryLook
 	local look = (not inHub) and (LOOK[id] or LOOK.Forest) or nil
 	tween(Lighting, 1.5, { Ambient = W.ambient, OutdoorAmbient = W.ambient, ClockTime = W.clock, FogColor = W.fog, Brightness = inHub and 2.15 or 2.4, ExposureCompensation = inHub and -.05 or look.exposure })
-	if cc then tween(cc, 1.5, { TintColor = W.tint, Saturation = inHub and 0.04 or look.sat, Contrast = inHub and 0.08 or look.contrast }) end
+	if cc then tween(cc, 1.5, { TintColor = W.tint, Saturation = inHub and 0.14 or look.sat, Contrast = inHub and 0.08 or look.contrast }) end
 	if atmo then tween(atmo, 1.5, { Color = W.atmo, Decay = W.fog, Haze = inHub and HUB_LOOK.haze or look.haze, Glare = inHub and HUB_LOOK.glare or look.glare, Offset = inHub and HUB_LOOK.offset or look.offset, Density = inHub and HUB_LOOK.density or look.density }) end
 	if bloom then tween(bloom, 1.0, { Intensity = inHub and HUB_LOOK.bloom or look.bloom }) end
 	if rays then tween(rays, 1.5, { Intensity = inHub and 0.12 or look.rays }) end

@@ -18,6 +18,8 @@ local Sounds = require(Client.Sounds)
 local Renderer = require(Client.CreatureRenderer)
 local TC = require(Client.ThrowController)
 local HUD = require(Client.HUD)
+-- cover the screen immediately (black + title) so nothing half-loaded shows; the fly-over starts once the map has replicated
+pcall(function() require(Client.Intro).Cover(HUD.Gui) end)
 local Feel = require(Client.GameplayFeel)
 local Panels = require(Client.Panels)
 
@@ -264,5 +266,8 @@ task.spawn(function()
 		workspace.CurrentCamera.CameraType = Enum.CameraType.Custom
 		HUD.Gui.Enabled = true
 		Effects.Letterbox(false)
+		local cover = player.PlayerGui:FindFirstChild("Intro")
+		if cover then cover:Destroy() end
+		workspace:SetAttribute("TPFC_IntroPlaying", nil)
 	end
 end)

@@ -72,6 +72,9 @@ function WorldFx.Start()
 	local envAccumulator = 0
 	local acc = 0
 	RunService.Heartbeat:Connect(function(dt)
+		if workspace:GetAttribute("TPFC_IntroPlaying") then
+			return -- the intro fly-over owns the frame budget
+		end
 		acc += dt
 		if acc < 0.05 then
 			return

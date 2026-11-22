@@ -5704,7 +5704,7 @@ return V
 ]]></ProtectedString></Properties></Item>
 </Item>
 </Item>
-<Item class="ServerScriptService" referent="RBX45"><Properties><string name="Name">ServerScriptService</string></Properties>
+<Item class="ServerScriptService" referent="RBX46"><Properties><string name="Name">ServerScriptService</string></Properties>
 <Item class="Folder" referent="RBX21"><Properties><string name="Name">Server</string></Properties>
 <Item class="ModuleScript" referent="RBX22"><Properties><string name="Name">BaseBuilder</string><ProtectedString name="Source"><![CDATA[-- BaseBuilder: builds eight Skyforge courtyards and owned decorations.
 -- Location: ServerScriptService > Server > BaseBuilder (ModuleScript)
@@ -9788,7 +9788,370 @@ Actions.Sync = function(player)
 	return true
 end
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX34"><Properties><string name="Name">PetMeshLoader</string><ProtectedString name="Source"><![CDATA[-- PetMeshLoader: builds ReplicatedStorage.PetMeshes/<CreatureId>/<role> MeshPart templates from the
+<Item class="ModuleScript" referent="RBX34"><Properties><string name="Name">OuterForest</string><ProtectedString name="Source"><![CDATA[-- OuterForest: the world OUTSIDE the Forest lane, from the outer-world design canvas (sheet "01 Forest").
+-- The lane module (BiomeForest) owns |X| < ~130; this owns |X| >= 130 out to the skyline.
+-- Authored in design coordinates with K.mirror = true (design -X = screen-left from the hall camera).
+--  LEFT  (wild):  terraced overgrown cliff + root spills + high-ledge waterfall into a gorge pool,
+--                 a cliff-top giant tree, broadleaf clusters on rolling hills, the hero tree on the horizon.
+--  RIGHT (ruins): ivy ruin walls, broken arch row, cut-stone terraces, an aqueduct across the valley
+--                 (one span broken), a stone watchtower on a ridge, a few orchard trees.
+--  FAR:           four blue-green ranges, each layer paler (fog does the rest); big soft cumulus.
+-- Kept cheap on purpose: big simple masses, ~1k parts; far trees are 6-part blobs, not rosettes.
+-- Location: ServerScriptService > Server > OuterForest (ModuleScript), called by WorldBuilder.
+
+local K = require(script.Parent.WorldKit)
+local V3, CF, ANG, PI, M, C = K.V3, K.CF, K.ANG, K.PI, K.M, K.C
+
+local O = {}
+
+local LEAF = { C(78, 143, 53), C(110, 170, 62), C(140, 198, 63), C(96, 156, 54) }
+local BARK, BARK_D = C(138, 90, 52), C(104, 68, 40)
+local STONE, STONE_D, MOSS = C(207, 198, 168), C(160, 150, 124), C(94, 138, 58)
+local CLIFF = C(132, 126, 104)
+local IVY = C(84, 140, 58)
+local GOLD, BANNER, ROOF = C(229, 181, 74), C(181, 40, 46), C(150, 82, 56)
+local WATER, FOAM = C(104, 212, 214), C(225, 250, 248)
+
+-- terrain is not mirrored by WorldKit: do it here
+local function mx(x) return K.mirror and -x or x end
+
+---------------------------------------------------------------- ground + hills
+local hills = {}
+local function hill(x, z, r, top)
+	local cy = top - r
+	table.insert(hills, { x, z, r, cy })
+	K.terrain:FillBall(V3(mx(x), cy, z), r, M.LeafyGrass)
+end
+local function hillY(x, z)
+	local y = 0
+	for _, h in ipairs(hills) do
+		local d2 = (x - h[1]) ^ 2 + (z - h[2]) ^ 2
+		if d2 < h[3] * h[3] then y = math.max(y, h[4] + math.sqrt(h[3] * h[3] - d2)) end
+	end
+	return y
+end
+
+---------------------------------------------------------------- pieces
+-- far/mid broadleaf: trunk + 5 lumpy canopy ellipsoids (reads as the reference's rounded crowns at range)
+local function blobTree(pos, s)
+	local col = K.pick(LEAF)
+	K.block(CF(pos + V3(0, 9 * s, 0)) * ANG(0, K.r(0, PI), K.r(-0.06, 0.06)), V3(3.4, 20, 3.4) * s, BARK, M.Wood)
+	local c = pos + V3(0, 22 * s, 0)
+	K.ellipsoid(CF(c), V3(30, 17, 30) * s, K.dark(col, 0.12), M.SmoothPlastic)
+	for i = 0, 2 do
+		local a = i / 3 * PI * 2 + K.r(0, 1)
+		K.ellipsoid(CF(c + V3(math.cos(a) * 9, K.r(2, 5), math.sin(a) * 9) * s), V3(18, 12, 18) * s * K.r(0.85, 1.15), col, M.SmoothPlastic)
+	end
+	local top = K.ellipsoid(CF(c + V3(-1, 8, -1) * s), V3(16, 9, 16) * s, K.light(col, 0.16), M.SmoothPlastic)
+	if K.chance(0.4) then K.tag(top, "TPFC_Sway", { Amp = 0.01, Period = K.r(6, 9) }) end
+end
+
+-- faceted mountain peak (K.cone) sunk below ground so the base never shows
+local function peak(x, z, R, H, col)
+	-- SmoothPlastic: Slate's texture greys the teal out at range
+	K.cone(V3(x, -30, z), R, H + 30, 6, col, K.dark(col, 0.07), M.SmoothPlastic)
+end
+
+-- one range layer: n peaks spread along Z, x jittered, all the same tint
+local function range(x, x2, z1, z2, n, R, H, col)
+	for i = 0, n - 1 do
+		local z = z1 + (z2 - z1) * (i + K.r(0.2, 0.8)) / n
+		peak(K.r(x, x2), z, K.r(R[1], R[2]), K.r(H[1], H[2]), col)
+	end
+end
+
+local function cloud(pos, s)
+	-- flat warm base + a heap of round lobes on top (a cumulus, not a disc)
+	local core = K.ellipsoid(CF(pos), V3(150, 40, 100) * s, C(244, 240, 236), M.SmoothPlastic, 0.12)
+	for i = 0, 6 do
+		local a = i / 7 * PI * 2
+		local off = V3(math.cos(a) * K.r(20, 55), K.r(12, 34), math.sin(a) * K.r(10, 30)) * s
+		local d = K.r(50, 78) * s
+		K.ellipsoid(CF(pos + off), V3(d, d * 0.85, d), C(255, 255, 255), M.SmoothPlastic, 0.12)
+	end
+	core.CastShadow = false
+	K.tag(core, "TPFC_Bob", { Amp = 3, Period = K.r(18, 26), Spin = 0 })
+end
+
+---------------------------------------------------------------- LEFT: wild
+local function leftCliff(z1, z2)
+	-- three stepped tiers climbing away from the lane; a gorge notch at z 84..108 for the waterfall
+	local tiers = { { 134, 150, 18, 24 }, { 150, 168, 32, 42 }, { 168, 192, 50, 64 } }
+	local z = z1
+	while z < z2 do
+		local len = math.min(K.r(22, 30), z2 - z)
+		local zc = z + len / 2
+		local gorge = zc > 80 and zc < 112
+		for ti, t in ipairs(tiers) do
+			if not (gorge and ti < 3) then
+				local h = K.r(t[3], t[4])
+				local w = t[2] - t[1]
+				local col = CLIFF:Lerp(K.dark(CLIFF, 0.2), K.r(0, 1))
+				K.block(CF(-(t[1] + t[2]) / 2, h / 2 - 2, zc), V3(w, h + 4, len + 0.3), col, M.Limestone)
+				K.block(CF(-(t[1] + t[2]) / 2 - 0.4, h + 0.5, zc), V3(w + 0.8, 1, len + 0.5), MOSS:Lerp(K.light(MOSS, 0.15), K.r(0, 1)), M.SmoothPlastic)
+				-- moss drips down the lane-facing face
+				for _ = 1, K.ri(0, 2) do
+					local dh = K.r(3, h * 0.45)
+					K.block(CF(-t[1] + 0.2, h - dh / 2 + 0.3, K.r(z + 2, z + len - 2)), V3(0.6, dh, K.r(2, 4)), MOSS, M.SmoothPlastic)
+				end
+				-- leaf blobs on the shelves
+				if K.chance(0.55) then K.rosette(V3(-K.r(t[1] + 3, t[2] - 3), h + 2.5, K.r(z + 3, z + len - 3)), K.r(1.6, 2.4), K.pick(LEAF), true) end
+			end
+		end
+		z += len
+	end
+end
+
+local function waterfall()
+	-- ledge lip on tier 3, fall down the gorge, pool at the bottom
+	local top = 58
+	K.block(CF(-172, top + 1, 96), V3(10, 2, 26), STONE_D, M.Limestone)
+	K.block(CF(-172, top + 2.2, 96), V3(10.4, 0.6, 26.4), MOSS, M.SmoothPlastic)
+	K.water(CF(-178, top + 1.6, 96), V3(10, 0.5, 14), WATER, 0.2)
+	K.waterfall(V3(-166.5, top + 1.5, 96), top + 1.5, 14, -PI / 2, C(150, 228, 226), FOAM)
+	local pool = K.water(CF(-150, 0.35, 96), V3(32, 0.5, 26), WATER, 0.22)
+	K.tag(pool, "TPFC_Glint", { Period = 11 })
+	for i = 1, 8 do
+		local zz = (i % 2 == 0) and 82.5 or 109.5
+		K.bevel(CF(-K.r(136, 164), 0.7, zz + K.r(-1, 1)) * ANG(0, K.r(0, PI), 0), V3(K.r(3, 5), 1.8, K.r(3, 5)), STONE, M.Limestone, MOSS, false)
+	end
+	-- gorge walls so the notch reads as cut rock, not a gap
+	for _, zz in ipairs({ 82, 110 }) do
+		K.block(CF(-151, 14, zz), V3(34, 32, 3), K.dark(CLIFF, 0.15), M.Limestone)
+	end
+end
+
+local function rootSpills()
+	for _, z in ipairs({ 18, 52, 128, 146 }) do
+		local p0 = V3(-186, 60, z)
+		local _, mid = K.limb(p0, V3(-166, 66, z + K.r(-4, 4)), V3(-146, K.r(20, 26), z + K.r(-6, 6)), 6, 2.2, 6, K.chance(0.5) and BARK or BARK_D, M.Wood)
+		K.limb(mid, mid + V3(4, -2, 5), V3(-138, K.r(2, 8), z + K.r(4, 9)), 2.4, 1, 3, BARK_D, M.Wood)
+	end
+	K.bigTree(V3(-184, 60, 34), 2.4, LEAF, BARK, V3(0.25, 0, 0))
+	K.bigTree(V3(-182, 58, 138), 2.0, LEAF, BARK, V3(0.2, 0, -0.1))
+end
+
+local function leftForest(z1, z2)
+	-- every hill stays inside z 0..250 (the ground plate + edge slope) so no sphere underside shows
+	hill(-235, 80, 80, 30)
+	hill(-300, 130, 110, 48)
+	hill(-380, 120, 130, 64)
+	hill(-470, 110, 140, 80)
+	for _ = 1, 26 do
+		local x, z = -K.r(205, 470), K.r(z1 - 10, z2 + 10)
+		blobTree(V3(x, hillY(x, z) - 1, z), K.r(1.1, 1.7))
+	end
+end
+
+local function heroTree()
+	-- far enough ahead to clear the lane canopy from the hub camera; it stands on its own hill that
+	-- rises out of the haze (stepped terrain cylinders, widest at the bottom, so no underside shows)
+	local base = V3(-470, 30, 540) -- top of the stepped hill below
+	for i = 0, 7 do
+		K.terrain:FillCylinder(CF(mx(base.X), -195 + i * 30, base.Z), 30, 270 - i * 20, M.LeafyGrass)
+	end
+	for i = 1, 6 do
+		local a = i / 6 * PI * 2 + 0.4
+		local r = K.r(95, 120)
+		blobTree(V3(base.X + math.cos(a) * r, base.Y - 2, base.Z + math.sin(a) * r), K.r(1.6, 2.2))
+	end
+	-- trunk: tapered limb with flaring roots
+	local top = base + V3(14, 205, -6)
+	K.limb(base + V3(0, 20, 0), base + V3(-10, 110, 0), top, 46, 26, 8, BARK, M.Wood)
+	for i = 0, 5 do
+		local a = i / 6 * PI * 2 + 0.3
+		local d = V3(math.cos(a), 0, math.sin(a))
+		K.limb(base + V3(0, 46, 0), base + d * 40 + V3(0, 26, 0), base + d * 82 + V3(0, 22, 0), 22, 9, 3, BARK_D, M.Wood)
+	end
+	-- great limbs + layered crown above the fog
+	for i = 0, 5 do
+		local a = i / 6 * PI * 2
+		local d = V3(math.cos(a), 0, math.sin(a))
+		local tip = K.limb(top - V3(0, 10, 0), top + d * 40 + V3(0, 30, 0), top + d * 95 + V3(0, K.r(40, 70), 0), 18, 7, 4, BARK, M.Wood)
+		K.ellipsoid(CF(tip + V3(0, 14, 0)), V3(110, 62, 110) * K.r(0.85, 1.15), K.pick(LEAF), M.SmoothPlastic)
+	end
+	K.ellipsoid(CF(top + V3(0, 70, 0)), V3(230, 110, 210), K.dark(LEAF[1], 0.08), M.SmoothPlastic)
+	K.ellipsoid(CF(top + V3(-10, 112, 6)), V3(170, 80, 160), LEAF[2], M.SmoothPlastic)
+	local crown = K.ellipsoid(CF(top + V3(-16, 140, 0)), V3(100, 46, 96), K.light(LEAF[3], 0.12), M.SmoothPlastic)
+	K.tag(crown, "TPFC_Sway", { Amp = 0.004, Period = 14 })
+end
+
+---------------------------------------------------------------- RIGHT: ruins
+local function ivyStrips(x, za, zb, h)
+	for _ = 1, math.floor((zb - za) / 5) do
+		local len = K.r(4, h * 0.7)
+		K.block(CF(x, h - len / 2, K.r(za + 1, zb - 1)), V3(0.5, len, K.r(1.2, 2.6)), IVY:Lerp(MOSS, K.r(0, 1)), M.SmoothPlastic)
+	end
+end
+
+local function ruinWalls()
+	-- long wall with a stepped, broken top (design +X = screen-right)
+	local z = 4
+	while z < 76 do
+		local len = K.r(6, 9)
+		local h = 30 - math.abs(z - 34) * K.r(0.35, 0.5) + K.r(-3, 2)
+		h = math.max(8, h)
+		K.block(CF(140, h / 2, z + len / 2), V3(5, h, len - 0.2), STONE:Lerp(STONE_D, K.r(0, 0.6)), M.Brick)
+		K.block(CF(140, h + 0.4, z + len / 2), V3(5.6, 0.8, len), K.light(STONE, 0.05), M.Limestone)
+		ivyStrips(137.3, z, z + len, h)
+		z += len
+	end
+	-- lower second wall behind, fallen blocks at its foot
+	for zz = 34, 92, 9 do
+		local h = K.r(10, 18)
+		K.block(CF(152, h / 2, zz), V3(4, h, 8.6), STONE_D, M.Brick)
+	end
+	for _ = 1, 6 do
+		K.bevel(CF(K.r(134, 148), 1, K.r(6, 88)) * ANG(K.r(-0.2, 0.2), K.r(0, PI), K.r(-0.2, 0.2)), V3(K.r(3, 5), 2.4, K.r(3, 5)), STONE, M.Limestone, MOSS, false)
+	end
+end
+
+local function archRow()
+	for i, z in ipairs({ 100, 120, 140 }) do
+		local h = (i == 2) and 30 or 24
+		K.arch(CF(146, 0, z) * ANG(0, PI / 2, 0), 12, h, 4, STONE, M.Limestone, GOLD, M.Metal, 7)
+		ivyStrips(143.2, z - 2, z + 2, h)
+	end
+	-- lintel joining the first two, broken off over the third
+	K.block(CF(146, 40, 110), V3(4.4, 2.4, 24), STONE_D, M.Limestone)
+end
+
+local function rightTerraces(z1, z2)
+	-- kept low so the aqueduct behind (X 248) still reads above them from the lane camera
+	local tiers = { { 160, 176, 10, 14 }, { 176, 194, 20, 26 } }
+	local z = z1
+	while z < z2 do
+		local len = math.min(K.r(24, 34), z2 - z)
+		for _, t in ipairs(tiers) do
+			local h = K.r(t[3], t[4])
+			K.block(CF((t[1] + t[2]) / 2, h / 2 - 2, z + len / 2), V3(t[2] - t[1], h + 4, len - 0.4), STONE_D:Lerp(STONE, K.r(0, 0.5)), M.Limestone)
+			K.block(CF((t[1] + t[2]) / 2 - 0.4, h + 0.4, z + len / 2), V3(t[2] - t[1] + 0.8, 0.8, len), MOSS, M.SmoothPlastic)
+			-- cut-block joint lines on the lane face
+			for y = 6, h - 3, 6 do K.block(CF(t[1] - 0.05, y, z + len / 2), V3(0.3, 0.3, len - 0.6), K.dark(STONE_D, 0.18), M.Limestone) end
+		end
+		z += len
+	end
+end
+
+local function aqueduct(z1, z2)
+	local x, step = 248, 20
+	local i = 0
+	for z = z1, z2, step do
+		i += 1
+		local broken = (i == 6)
+		if not broken then
+			K.arch(CF(x, 0, z) * ANG(0, PI / 2, 0), 14, 34, 8, STONE, M.Limestone, nil, nil, 7)
+			-- upper tier: short piers carrying the channel
+			for k = -1, 1, 2 do K.block(CF(x, 52, z + k * 5), V3(6, 12, 3), STONE_D, M.Limestone) end
+		else
+			-- broken span: just a stump and a rubble pile
+			K.block(CF(x, 9, z), V3(7, 18, 7), STONE_D, M.Limestone)
+			for _ = 1, 5 do K.bevel(CF(x + K.r(-8, 8), 1.4, z + K.r(-8, 8)) * ANG(K.r(-0.3, 0.3), K.r(0, PI), 0), V3(K.r(4, 7), 3, K.r(4, 7)), STONE, M.Limestone, MOSS, false) end
+		end
+	end
+	-- channel deck in two pieces either side of the break, with jagged ends
+	local zb = z1 + step * 5
+	for _, seg in ipairs({ { z1 - 8, zb - 12 }, { zb + 12, z2 + 8 } }) do
+		local len, zc = seg[2] - seg[1], (seg[1] + seg[2]) / 2
+		K.block(CF(x, 59.5, zc), V3(10, 3, len), STONE, M.Limestone)
+		for k = -1, 1, 2 do K.block(CF(x + k * 4.3, 62, zc), V3(1.4, 2, len), STONE_D, M.Limestone) end
+		K.water(CF(x, 61.2, zc), V3(6.4, 0.4, len - 1), WATER, 0.25)
+		ivyStrips(x - 5.3, seg[1], seg[2], 58)
+	end
+end
+
+local function watchtower()
+	hill(330, 140, 100, 40)
+	local x, z = 276, 140
+	local y = hillY(x, z) - 2
+	local base = V3(x, y, z)
+	K.block(CF(base + V3(0, 4, 0)), V3(32, 8, 32), STONE_D, M.Limestone)
+	K.block(CF(base + V3(0, 58, 0)), V3(22, 100, 22), STONE, M.Limestone)
+	for yy = 20, 100, 20 do K.block(CF(base + V3(0, yy, 0)), V3(22.6, 1.2, 22.6), K.dark(STONE, 0.14), M.Limestone) end
+	for _, yy in ipairs({ 44, 74 }) do K.block(CF(base + V3(-11.1, yy, 0)), V3(0.4, 7, 3), C(40, 34, 30), M.SmoothPlastic) end
+	-- parapet with crenellations
+	K.block(CF(base + V3(0, 109, 0)), V3(27, 3, 27), STONE_D, M.Limestone)
+	for _, c in ipairs({ { -1, -1 }, { 1, -1 }, { -1, 1 }, { 1, 1 }, { 0, -1 }, { 0, 1 }, { -1, 0 }, { 1, 0 } }) do
+		K.block(CF(base + V3(c[1] * 11.5, 112.5, c[2] * 11.5)), V3(4, 4, 4), STONE, M.Limestone)
+	end
+	K.pyramid(CF(base + V3(0, 113, 0)), 20, 22, ROOF, M.WoodPlanks)
+	K.block(CF(base + V3(0, 138, 0)), V3(0.8, 6, 0.8), GOLD, M.Metal)
+	-- red banner on the lane-facing side
+	local b = K.block(CF(base + V3(-11.6, 84, 0)), V3(0.5, 30, 9), BANNER, M.Fabric)
+	K.tag(b, "TPFC_Sway", { Amp = 0.02, Period = 6 })
+	K.block(CF(base + V3(-11.7, 99.5, 0)), V3(0.6, 1, 10), GOLD, M.Metal)
+	local lamp = K.block(CF(base + V3(-11.4, 107, 0)), V3(1.2, 2, 2), C(255, 210, 140), M.Neon)
+	K.lamp(lamp, C(255, 200, 130), 30, 0.8)
+end
+
+local function orchard()
+	for _ = 1, 7 do
+		local x, z = K.r(285, 420), K.r(10, 120)
+		blobTree(V3(x, hillY(x, z) - 1, z), K.r(0.9, 1.3))
+	end
+end
+
+---------------------------------------------------------------- build
+function O.Build(b)
+	local parentFolder = K.Folder()
+	local f = Instance.new("Folder")
+	f.Name = "Outer"
+	f.Parent = parentFolder
+	K.SetFolder(f)
+	K.Seed(2001)
+	K.mirror = true
+	hills = {}
+	local z1, z2 = b[1], b[2]
+	local zEnd = z2 + 10 -- outer scenery overlaps the volcano blend a little
+
+	-- ground beyond the lane valley (the zone fill stops at |X| 130); surface renders at y ~ 0.
+	-- 40 thick so hill undersides above y -42 are buried; past the zone it slopes down into the haze
+	-- instead of ending in a cut edge.
+	local T = K.terrain
+	T:SetMaterialColor(M.LeafyGrass, C(92, 146, 62))
+	for s = -1, 1, 2 do
+		T:FillBlock(CF(s * 575, -22, (z1 + zEnd) / 2), V3(890, 40, zEnd - z1), M.LeafyGrass)
+	end
+
+	leftCliff(z1 - 6, zEnd)
+	waterfall()
+	rootSpills()
+	leftForest(z1, zEnd)
+	watchtower() -- (its ridge hill must exist before the carve below)
+	-- carve every hill below the plate's underside, then add the edge slope (top y -2 at zEnd down to
+	-- y -42 eighty studs later; a wedge is tallest at its local +Z, so it is turned to face back)
+	for s = -1, 1, 2 do
+		T:FillBlock(CF(s * 575, -152, (z1 + 340) / 2), V3(890, 220, 340 - z1), M.Air)
+		T:FillWedge(CF(s * 575, -22, zEnd + 40) * ANG(0, PI, 0), V3(890, 40, 80), M.LeafyGrass)
+	end
+	heroTree()
+
+	ruinWalls()
+	archRow()
+	rightTerraces(z1 - 6, zEnd)
+	aqueduct(z1 + 20, z2 + 40)
+	orchard()
+
+	-- far ranges: four layers, each paler and further (left and right never mirror)
+	range(560, 760, 380, 700, 4, { 90, 130 }, { 200, 260 }, C(94, 140, 136))
+	range(-880, -1120, 300, 900, 6, { 150, 210 }, { 300, 420 }, C(127, 168, 162))
+	range(1100, 1500, 450, 1050, 5, { 220, 300 }, { 400, 560 }, C(169, 200, 192))
+	range(-1450, -1800, 450, 1150, 5, { 260, 340 }, { 550, 700 }, C(195, 218, 210))
+
+	-- big soft cumulus, pushed out to the sides and the horizon
+	cloud(V3(-420, 300, 380), 1.4)
+	cloud(V3(-760, 360, 760), 1.8)
+	cloud(V3(380, 330, 520), 1.5)
+	cloud(V3(820, 400, 900), 2.0)
+	cloud(V3(-120, 420, 1100), 1.6)
+
+	K.mirror = false
+	K.SetFolder(parentFolder)
+end
+
+return O
+]]></ProtectedString></Properties></Item>
+<Item class="ModuleScript" referent="RBX35"><Properties><string name="Name">PetMeshLoader</string><ProtectedString name="Source"><![CDATA[-- PetMeshLoader: builds ReplicatedStorage.PetMeshes/<CreatureId>/<role> MeshPart templates from the
 -- asset ids in PetMeshManifest, so the client CreatureBuilder can use sculpted meshes.
 -- Location: ServerScriptService > Server > PetMeshLoader (ModuleScript)
 -- If a mesh can't be created (offline, permissions), that species simply keeps the procedural model.
@@ -9845,7 +10208,7 @@ end
 
 return Loader
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX35"><Properties><string name="Name">SanctuaryArchitecture</string><ProtectedString name="Source"><![CDATA[-- Original block/wedge architecture matching Maps/00_Portal_Sanctuary_Hub.png.
+<Item class="ModuleScript" referent="RBX36"><Properties><string name="Name">SanctuaryArchitecture</string><ProtectedString name="Source"><![CDATA[-- Original block/wedge architecture matching Maps/00_Portal_Sanctuary_Hub.png.
 -- Shared by the public sanctuary and the eight gardens. All decoration is non-queryable.
 local K = require(script.Parent.WorldKit)
 local Art = {}
@@ -10030,7 +10393,7 @@ function Art.Planter(cf, length, pink)
 end
 return Art
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX36"><Properties><string name="Name">SanctuaryBase</string><ProtectedString name="Source"><![CDATA[-- Skyforge Courtyard, matching the owner's approved concept2. Original plot,
+<Item class="ModuleScript" referent="RBX37"><Properties><string name="Name">SanctuaryBase</string><ProtectedString name="Source"><![CDATA[-- Skyforge Courtyard, matching the owner's approved concept2. Original plot,
 -- collection and pet-slot anchors stay compatible with saved player gardens.
 local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
 local K = require(script.Parent.WorldKit)
@@ -10132,55 +10495,88 @@ function Base.Build(index)
 	route(V(-10, 1.025, 19), V(10, 1.025, 19))
 	route(V(-10, 1.025, 19), V(-20, 1.025, 16), 3.8)
 	-- The central shrine is a small architectural portal, not a water fountain.
+	-- Scaled 1.5x around the floor so it holds the courtyard's centre like the concept's gate does
+	-- (pedestal radius 9.6 stays inside the slot ring's inner edge at 12.5).
 	local shrine = Instance.new("Model")
 	shrine.Name = "PortalShrine"
 	K.SetFolder(shrine)
-	local pedestal = K.vcyl(L(0, 1.0, 0).Position, 0.45, 12.8, P.stone, M.Limestone, true)
+	local S = 1.5
+	local function LS(x, y, z)
+		return L(x * S, 1 + (y - 1) * S, z * S)
+	end
+	local function VS(x, y, z)
+		return V(x * S, 1 + (y - 1) * S, z * S)
+	end
+	local pedestal = K.vcyl(L(0, 1.0, 0).Position, 0.45, 12.8 * S, P.stone, M.Limestone, true)
 	pedestal.Name = "ShrineFoundation"
-	K.vcyl(L(0, 1.45, 0).Position, 0.32, 11.5, P.pale, M.Limestone, true)
-	K.vcyl(L(0, 1.77, 0).Position, 0.10, 10.8, P.slate, M.Slate)
+	K.vcyl(L(0, 1.45, 0).Position, 0.32, 11.5 * S, P.pale, M.Limestone, true)
+	K.vcyl(L(0, 1.77, 0).Position, 0.10, 10.8 * S, P.slate, M.Slate)
+	-- gold ring + two steps up to the gate (front and back)
+	K.vcyl(L(0, 1.86, 0).Position, 0.06, 9.2 * S, P.gold, M.Metal)
+	K.vcyl(L(0, 1.88, 0).Position, 0.07, 8.6 * S, P.slate, M.Slate)
 	for _, sd in { -1, 1 } do
-		b("ShrineFoot", V(2.45, 0.48, 2.8), L(sd * 3.5, 2.0, 0), P.stone, M.Limestone)
+		b("ShrineFoot", V(2.45, 0.48, 2.8) * S, LS(sd * 3.5, 2.0, 0), P.stone, M.Limestone)
 		for i = 0, 2 do
 			b(
 				"ShrineAshlar",
-				V(1.25, 1.42, 1.65),
-				L(sd * 3.5, 2.9 + i * 1.45, 0),
+				V(1.25, 1.42, 1.65) * S,
+				LS(sd * 3.5, 2.9 + i * 1.45, 0),
 				i % 2 == 0 and P.pale or P.light,
 				M.Limestone
 			)
 		end
-		b("ShrineGoldCollar", V(1.48, 0.18, 1.85), L(sd * 3.5, 6.75, 0), P.gold, M.Metal)
+		b("ShrineGoldCollar", V(1.48, 0.18, 1.85) * S, LS(sd * 3.5, 6.75, 0), P.gold, M.Metal)
+		-- violet banner on each pier, facing the entrance
+		b("ShrinePierBanner", V(0.9, 2.6, 0.08) * S, LS(sd * 3.5, 4.4, -0.88), P.roof, M.Fabric)
+		b("ShrinePierBannerTrim", V(0.95, 0.12, 0.1) * S, LS(sd * 3.5, 5.75, -0.9), P.gold, M.Metal)
+		b("ShrinePierGem", V(0.42, 0.42, 0.08) * S, LS(sd * 3.5, 4.5, -0.95) * A(0, 0, PI / 4), P.goldLight, M.Metal)
 	end
 	for i = 0, 4 do
 		local a, z = i / 5 * PI, (i + 1) / 5 * PI
 		beam(
 			"ShrineVoussoir",
-			V(math.cos(a) * 3.5, 6.1 + math.sin(a) * 2.6, 0),
-			V(math.cos(z) * 3.5, 6.1 + math.sin(z) * 2.6, 0),
-			0.95,
-			1.65,
+			VS(math.cos(a) * 3.5, 6.1 + math.sin(a) * 2.6, 0),
+			VS(math.cos(z) * 3.5, 6.1 + math.sin(z) * 2.6, 0),
+			0.95 * S,
+			1.65 * S,
 			i % 2 == 0 and P.pale or P.light,
 			M.Limestone
 		)
+		-- thin gold inner trim along the arch
+		beam(
+			"ShrineArchTrim",
+			VS(math.cos(a) * 2.95, 6.1 + math.sin(a) * 2.05, -0.86),
+			VS(math.cos(z) * 2.95, 6.1 + math.sin(z) * 2.05, -0.86),
+			0.18 * S,
+			0.1,
+			P.gold,
+			M.Metal
+		)
 	end
-	local portal = K.cyl(L(0, 5.2, 0) * A(0, PI / 2, 0), 0.10, 5.8, P.portal, M.Neon, false, 0.14)
+	local portal = K.cyl(LS(0, 5.2, 0) * A(0, PI / 2, 0), 0.10, 5.8 * S, P.portal, M.Neon, false, 0.14)
 	portal.Name = "SkyforgeAperture"
-	K.cyl(L(0, 5.2, -0.065) * A(0, PI / 2, 0), 0.035, 4.6, P.portalDark, M.Neon, false, 0.2)
+	K.cyl(LS(0, 5.2, -0.065) * A(0, PI / 2, 0), 0.035, 4.6 * S, P.portalDark, M.Neon, false, 0.2)
+	local swirl = K.cyl(LS(0, 5.2, -0.11) * A(0, PI / 2, 0), 0.03, 2.4 * S, P.portal:Lerp(P.light, 0.35), M.Neon, false, 0.25)
+	K.tag(swirl, "TPFC_Pulse", { Period = 3.5, Base = 0.35, Peak = 0.05 })
 	for i = 0, 5 do
 		local a = i / 6 * PI * 2
 		b(
 			"PortalRune",
-			V(0.16, 0.7, 0.08),
-			L(math.cos(a) * 1.95, 5.2 + math.sin(a) * 1.95, -0.10) * A(0, 0, a),
+			V(0.16, 0.7, 0.08) * S,
+			LS(math.cos(a) * 1.95, 5.2 + math.sin(a) * 1.95, -0.10) * A(0, 0, a),
 			P.light,
 			M.Neon
 		)
 	end
-	b("ShrineCrest", V(0.83, 0.83, 0.20), L(0, 8.75, -0.88) * A(0, 0, PI / 4), P.gold, M.Metal)
+	b("ShrineCrest", V(0.83, 0.83, 0.20) * S, LS(0, 8.75, -0.88) * A(0, 0, PI / 4), P.gold, M.Metal)
+	-- floating crystal above the keystone (bobs gently)
+	local gem = b("ShrineCrystal", V(1.0, 1.6, 1.0) * S, LS(0, 10.4, 0) * A(0, PI / 4, 0), P.portal, M.Neon)
+	K.tag(gem, "TPFC_Bob", { Amp = 0.35, Period = 4.5, Spin = 12 })
+	K.lamp(gem, P.portal, 16, 0.9)
 	shrine.Parent = model
 	K.SetFolder(model)
-	local anchor = b("IncomeCrystal", V(0.1, 0.1, 0.1), L(0, 7, 0), P.portal)
+	-- floats above the (taller) shrine crystal
+	local anchor = b("IncomeCrystal", V(0.1, 0.1, 0.1), L(0, 15.5, 0), P.portal)
 	anchor.Transparency = 1
 	local crystalLabel = label(anchor, "", UDim2.fromScale(8, 1.1), V(0, 1.7, 0), P.text, 32)
 	local slots, slotFolder = {}, Instance.new("Folder")
@@ -10213,33 +10609,56 @@ function Base.Build(index)
 	end
 	local collectLabel = label(collect, "$0", UDim2.fromScale(5, 1.2), V(0, 3.0, 0), P.text, 28)
 	label(collect, "Collect", UDim2.fromScale(4, 0.65), V(0, 1.9, 0), P.text, 23)
-	-- Rear-left lodge: an open timber hall on stone footings, with a broad tiled roof.
-	b("LodgeFoundation", V(17, 0.48, 12.8), L(-20, 1.2, 24), P.stone, M.Limestone, true)
-	for i = 0, 7 do
+	-- Rear-left lodge: the courtyard's landmark. An open timber hall on a stone plinth, three bays
+	-- wide, with stone half-walls at the back and sides and a broad violet tiled roof (tiles in Details).
+	local LG = P.lodge
+	local lx, lz, lw, ld = LG.x, LG.z, LG.w, LG.d
+	local top = LG.deck + LG.postH
+	b("LodgeFoundation", V(lw + 1.2, 0.9, ld + 1.2), L(lx, 1.05, lz), P.stone, M.Limestone, true)
+	b("LodgePlinthCap", V(lw + 1.5, 0.22, ld + 1.5), L(lx, 1.55, lz), P.pale, M.Limestone)
+	local boards = math.floor(lw / 1.96)
+	for i = 0, boards - 1 do
 		b(
 			"LodgeDeckBoard",
-			V(1.95, 0.17, 11.5),
-			L(-26.85 + i * 1.96, 1.52, 24),
+			V(1.95, 0.17, ld - 1),
+			L(lx - lw / 2 + 1 + i * 1.96, LG.deck - 0.02, lz),
 			i % 2 == 0 and P.timber or P.wood,
 			M.WoodPlanks
 		)
 	end
-	b("LodgeStep", V(6.0, 0.18, 1.4), L(-20, 1.11, 16.8), P.pale, M.Limestone)
-	for _, x in { -27, -13 } do
-		for _, z in { 19, 29 } do
-			b("LodgeStoneFoot", V(1.8, 0.75, 1.8), L(x, 1.8, z), P.pale, M.Limestone)
-			b("LodgeTimberPost", V(0.85, 6.4, 0.85), L(x, 5.25, z), P.timber, M.Wood, true)
-			b("PostBrassShoe", V(0.98, 0.16, 0.98), L(x, 2.15, z), P.gold, M.Metal)
+	for i = 0, 2 do
+		b("LodgeStep", V(9 - i * 1.2, 0.3, 1.2), L(lx, 1.1 + i * 0.3, lz - ld / 2 - 2.2 + i * 1.0), P.pale, M.Limestone)
+	end
+	local px = { lx - lw / 2 + 1.2, lx - lw / 6, lx + lw / 6, lx + lw / 2 - 1.2 }
+	local pz = { lz - ld / 2 + 1.2, lz + ld / 2 - 1.2 }
+	for _, x in px do
+		for _, z in pz do
+			b("LodgeStoneFoot", V(2.0, 1.0, 2.0), L(x, LG.deck + 0.5, z), P.pale, M.Limestone)
+			b("LodgeTimberPost", V(1.1, LG.postH - 1, 1.1), L(x, LG.deck + 1 + (LG.postH - 1) / 2, z), P.timber, M.Wood, true)
+			b("PostBrassShoe", V(1.25, 0.2, 1.25), L(x, LG.deck + 1.1, z), P.gold, M.Metal)
 		end
-		b("LodgeSideRafter", V(0.85, 0.8, 11.5), L(x, 8.1, 24), P.wood, M.Wood)
+		b("LodgeTieBeam", V(1.0, 1.0, ld - 1.2), L(x, top - 0.4, lz), P.wood, M.Wood)
 	end
-	for _, z in { 19, 29 } do
-		b("LodgeCrossRafter", V(15.7, 0.9, 0.8), L(-20, 8.2, z), P.wood, M.Wood)
+	for _, z in pz do
+		b("LodgeCrossRafter", V(lw - 1.2, 1.1, 1.0), L(lx, top - 0.3, z), P.wood, M.Wood)
 	end
-	for i = 0, 4 do
-		b("LodgeRearPanel", V(2.6, 5.7, 0.35), L(-25.4 + i * 2.7, 4.7, 29.35), P.timber, M.WoodPlanks)
+	-- stone half-walls: full back wall, rear half of each side; timber panels above at the back
+	b("LodgeBackWall", V(lw - 2.4, 3.2, 1.2), L(lx, LG.deck + 1.6, lz + ld / 2 - 1.2), P.pale, M.Limestone, true)
+	b("LodgeBackWallCap", V(lw - 2.0, 0.3, 1.5), L(lx, LG.deck + 3.35, lz + ld / 2 - 1.2), P.light, M.Limestone)
+	for _, sd in { -1, 1 } do
+		b("LodgeSideWall", V(1.2, 3.2, ld / 2), L(lx + sd * (lw / 2 - 1.2), LG.deck + 1.6, lz + ld / 4), P.pale, M.Limestone, true)
 	end
-	Art.Gable(L(-20, 8.8, 24), 19.7, 3.3, 15.7, P.roof)
+	local panels = math.floor((lw - 2.4) / 2.75)
+	for i = 0, panels - 1 do
+		b(
+			"LodgeRearPanel",
+			V(2.65, LG.postH - 4.6, 0.4),
+			L(lx - (panels - 1) * 1.375 + i * 2.75, LG.deck + 3.5 + (LG.postH - 4.6) / 2, lz + ld / 2 - 1.0),
+			i % 2 == 0 and P.timber or P.darkWood,
+			M.WoodPlanks
+		)
+	end
+	Art.Gable(L(lx, top, lz), lw + 2.4, LG.rise, ld + 2, P.roof)
 	-- Rear-right floating relic pavilion sits on the original pond exclusion area.
 	b("RelicRockBase", V(11.4, 1.9, 10.4), L(21, 1.95, 23) * A(0, 0.10, 0), P.stone, M.Slate, true)
 	b("RelicRockTier", V(9.6, 1.1, 9.0), L(21, 3.0, 23) * A(0, -0.10, 0), P.pale, M.Limestone)
@@ -10331,7 +10750,7 @@ end
 
 return Base
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX37"><Properties><string name="Name">SanctuaryDetails</string><ProtectedString name="Source"><![CDATA[-- Deliberate close-up detail for the lobby. Decorative only; all gameplay paths stay clear.
+<Item class="ModuleScript" referent="RBX38"><Properties><string name="Name">SanctuaryDetails</string><ProtectedString name="Source"><![CDATA[-- Deliberate close-up detail for the lobby. Decorative only; all gameplay paths stay clear.
 local P = require(script.Parent.SanctuaryArchitecture).Palette
 local Details = {}
 local V, CF, A = Vector3.new, CFrame.new, CFrame.Angles
@@ -10555,7 +10974,7 @@ function Details.Build(start)
 end
 return Details
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX38"><Properties><string name="Name">SanctuaryHub</string><ProtectedString name="Source"><![CDATA[-- Portal Sanctuary: a composed, walkable lobby, built from the supplied hub reference.
+<Item class="ModuleScript" referent="RBX39"><Properties><string name="Name">SanctuaryHub</string><ProtectedString name="Source"><![CDATA[-- Portal Sanctuary: a composed, walkable lobby, built from the supplied hub reference.
 -- Plot centers, throw zone, collision barrier and lane direction retain their existing contracts.
 local RS = game:GetService("ReplicatedStorage")
 local Config = require(RS.Shared.Config)
@@ -10760,6 +11179,66 @@ local function avenue()
 	for _, z in ipairs({ -62, -198, -350 }) do
 		Art.Crest(CF(0, 0.35, z) * A(-PI / 2, 0, 0), 6)
 	end
+	-- Ceremonial runner: a soft lilac stone band with gold edging breaks up the bare paving and
+	-- leads the eye to the hall.
+	local runner, runnerEdge = C(205, 196, 218), C(150, 128, 184)
+	K.block(CF(0, 0.235, -252), V(12, 0.05, 396), runner, M.Limestone)
+	for _, side in ipairs({ -1, 1 }) do
+		K.block(CF(side * 6.25, 0.25, -252), V(0.5, 0.06, 396), P.gold, M.Metal)
+		K.block(CF(side * 5.2, 0.25, -252), V(0.22, 0.06, 396), runnerEdge, M.SmoothPlastic)
+	end
+	-- star medallions between each pair of courtyards (and one at the gate)
+	for _, z in ipairs({ -84, -160, -236, -312, -388 }) do
+		K.block(CF(0, 0.27, z) * A(0, PI / 4, 0), V(10.5, 0.05, 10.5), P.ivory, M.Limestone)
+		for i = 0, 3 do
+			local a = i / 4 * PI * 2 + PI / 4
+			K.block(CF(math.sin(a) * 3.7, 0.3, z + math.cos(a) * 3.7) * A(0, a, 0), V(10.6, 0.05, 0.36), P.gold, M.Metal)
+		end
+		K.block(CF(0, 0.31, z) * A(0, PI / 4, 0), V(4.2, 0.05, 4.2), P.violet, M.SmoothPlastic)
+		local core = K.block(CF(0, 0.33, z) * A(0, PI / 4, 0), V(1.8, 0.05, 1.8), P.lilac, M.Neon, false, 0.2)
+		K.tag(core, "TPFC_Pulse", { Period = 6, Base = 0.35, Peak = 0.05 })
+		-- four gold rays from the centre
+		for i = 0, 3 do
+			local a = i / 4 * PI * 2
+			K.block(CF(math.sin(a) * 4.2, 0.31, z + math.cos(a) * 4.2) * A(0, a, 0), V(0.3, 0.05, 3.2), P.goldLight, M.Metal)
+		end
+	end
+	-- Crystal pylons line the avenue between the courtyards: violet banner, gold collars, a floating
+	-- lilac crystal. Tall enough to give the long walk a rhythm without blocking the bases.
+	for _, side in ipairs({ -1, 1 }) do
+		for _, z in ipairs({ -100, -176, -252, -328, -404 }) do
+			local x = side * 24.2
+			K.block(CF(x, 0.8, z), V(3.6, 1.6, 3.6), P.stone, M.Limestone, true)
+			K.block(CF(x, 1.75, z), V(3.0, 0.3, 3.0), P.gold, M.Metal)
+			K.block(CF(x, 8.6, z), V(2.2, 13.4, 2.2), P.ivory, M.Limestone, true)
+			for _, y in ipairs({ 5.5, 15.2 }) do
+				K.block(CF(x, y, z), V(2.6, 0.35, 2.6), P.gold, M.Metal)
+			end
+			K.block(CF(x, 15.7, z), V(3.0, 0.7, 3.0), P.light, M.Limestone)
+			K.pyramid(CF(x, 16.05, z), 2.4, 1.4, P.gold, M.Metal)
+			local cf = CF(x - side * 1.15, 13.6, z) * A(0, side < 0 and PI / 2 or -PI / 2, 0)
+			Art.Banner(cf, 6.4, 1.7)
+			local gem = K.block(CF(x, 19.4, z) * A(0, PI / 4, 0), V(1.3, 2.6, 1.3), P.lilac, M.Neon, false, 0.1)
+			K.tag(gem, "TPFC_Bob", { Amp = 0.4, Period = 5 + (z % 3), Spin = 18 })
+			K.lamp(gem, P.lilac, 14, 0.7)
+		end
+	end
+	-- Entrance gate: two tall pylon towers framing the start of the avenue.
+	for _, side in ipairs({ -1, 1 }) do
+		local x, z = side * 25.5, -444
+		K.block(CF(x, 1.2, z), V(7.5, 2.4, 7.5), P.stone, M.Limestone, true)
+		K.block(CF(x, 13, z), V(5.2, 22, 5.2), P.ivory, M.Limestone, true)
+		for _, y in ipairs({ 2.6, 12, 23.8 }) do
+			K.block(CF(x, y, z), V(5.8, 0.5, 5.8), P.gold, M.Metal)
+		end
+		K.block(CF(x, 24.6, z), V(6.6, 1.2, 6.6), P.light, M.Limestone)
+		K.pyramid(CF(x, 25.2, z), 6.2, 5.4, P.roof, M.SmoothPlastic)
+		K.block(CF(x, 31.2, z), V(0.6, 1.8, 0.6), P.gold, M.Metal)
+		Art.Banner(CF(x - side * 2.75, 21.5, z) * A(0, side < 0 and PI / 2 or -PI / 2, 0), 12, 3.2)
+		Art.Banner(CF(x, 21.5, z + 2.75), 12, 3.2)
+		Art.Crystal(CF(x, 32, z), 1.6, 5.5, P.lilac)
+		Art.Lantern(CF(side * 20.5, 0.2, z + 5), 1.3, true)
+	end
 end
 local function perimeter()
 	K.Seed(46021)
@@ -10768,18 +11247,23 @@ local function perimeter()
 			local z = -49 - i * 36
 			local h = 25 + (i * 13 % 23)
 			local x = side * 110
-			K.block(CF(x, h / 2 - 2, z) * A(0.03, side * 0.13, side * -0.08), V(15, h, 39), C(105, 99, 116), M.Slate)
+			-- Lilac-grey stone like the reference (the old dark slate read as navy under the hub light),
+			-- with a grass crown so the walls belong to the gardens.
+			local rot = A(0.03, side * 0.13, side * -0.08)
+			K.block(CF(x, h / 2 - 2, z) * rot, V(15, h, 39), C(150, 140, 168), M.Limestone)
+			K.block(CF(x, h - 1.6, z) * rot, V(13.4, 0.9, 37), P.grass, M.Grass)
+			K.block(CF(x - side * 6.9, h - 2.6, z) * rot, V(0.5, 2.2, 30), P.grass, M.Grass)
 			K.wedge(
 				CF(x - side * 4, h * 0.50, z + 5) * A(0, side * PI / 2, 0),
 				V(24, h * 0.65, 13),
-				C(133, 121, 137),
+				C(170, 160, 184),
 				M.Slate
 			)
 			-- Broken sloped peaks and shallow front facets avoid a flat castle-wall silhouette.
 			K.corner(
 				CF(x + side * 0.8, h + 0.5, z - 7) * A(0, side * PI / 2, 0),
 				V(14, 9 + i % 4, 24),
-				C(125, 115, 133),
+				C(160, 150, 176),
 				M.Slate
 			)
 			Art.Diamond(
@@ -10787,7 +11271,7 @@ local function perimeter()
 				h * 0.66,
 				13,
 				0.18,
-				C(126, 117, 134),
+				C(156, 146, 172),
 				M.Slate
 			)
 			K.block(CF(x - side * 5.5, 2.2, z), V(3.2, 3.5, 37), P.ivory, M.Limestone)
@@ -10800,10 +11284,15 @@ local function perimeter()
 				K.tree(V(side * 100, 1, z - 14), 1.12, i % 4 == 0 and P.pink or P.leaf, nil, true)
 			end
 		end
+		-- Two real cascades per side (stepped glass sheets + foam), falling into round pools.
 		for _, z in ipairs({ -124, -278 }) do
-			K.block(CF(side * 101.8, 12, z), V(0.12, 22, 7.3), C(114, 211, 225), M.Glass, false, 0.30)
-			K.block(CF(side * 102.2, 23.2, z), V(4, 1.2, 10), P.stone, M.Limestone)
-			K.vcyl(V(side * 100, 0.2, z), 0.2, 11, P.water, M.SmoothPlastic)
+			K.block(CF(side * 102.6, 24, z), V(6, 1.4, 12), P.stone, M.Limestone)
+			K.block(CF(side * 102.6, 24.8, z), V(6.4, 0.3, 12.4), P.gold, M.Metal)
+			K.waterfall(V(side * 100.2, 23.4, z), 23, 8, side > 0 and PI / 2 or -PI / 2, C(150, 222, 236), C(236, 250, 255))
+			-- small enough to sit in the gap between two courtyards
+			K.vcyl(V(side * 99.8, 0.05, z), 0.5, 10, P.ivory, M.Limestone)
+			local pool = K.vcyl(V(side * 99.8, 0.2, z), 0.4, 8.6, P.water, M.Glass, false, 0.25)
+			K.tag(pool, "TPFC_Glint", { Period = 9 })
 		end
 		task.wait()
 	end
@@ -10868,13 +11357,14 @@ function Hub.Build(folder, textLabel)
 end
 return Hub
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX39"><Properties><string name="Name">SkyforgeDetails</string><ProtectedString name="Source"><![CDATA[-- Small-scale craft for the approved Skyforge courtyard. No extra prompts or
+<Item class="ModuleScript" referent="RBX40"><Properties><string name="Name">SkyforgeDetails</string><ProtectedString name="Source"><![CDATA[-- Small-scale craft for the approved Skyforge courtyard. No extra prompts or
 -- physics obstacles are created here; the expedition table owns interaction.
 local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
 local P = require(script.Parent.SkyforgeStyle)
 local Details = {}
 local V, CF, A = Vector3.new, CFrame.new, CFrame.Angles
 local M = Enum.Material
+local C3 = Color3.fromRGB
 
 local function factory(root, cf)
 	return function(name, size, frame, color, material, shape)
@@ -10897,44 +11387,59 @@ function Details.Build(model, cf)
 	local function beam(name, from, to, width, depth, color, material)
 		return part(name, V(width, depth, (to - from).Magnitude), CFrame.lookAt((from + to) / 2, to), color, material)
 	end
-	-- Four rows of individually laid roof courses, split into six staggered tiles.
-	local roofSlope = math.atan(3.3 / 9.85)
+	-- Individually laid roof courses over the lodge gable (geometry from P.lodge), staggered tones.
+	local LG = P.lodge
+	local lx, lz = LG.x, LG.z
+	local top = LG.deck + LG.postH
+	local hs = (LG.w + 2.4) / 2 -- half span to the eave
+	local len = LG.d + 2 -- ridge length
+	local roofSlope = math.atan(LG.rise / hs)
+	local courses = math.ceil(hs / 2.4)
+	local tiles = math.ceil(len / 2.4)
 	for _, side in { -1, 1 } do
-		for course = 0, 3 do
-			local x = 1.2 + course * 2.4
-			local y = 8.8 + 3.3 * (1 - x / 9.85) + 0.10
-			for tile = 0, 5 do
+		for course = 0, courses - 1 do
+			local x = math.min(1.2 + course * 2.4, hs - 1.0)
+			local y = top + LG.rise * (1 - x / hs) + 0.10
+			for tile = 0, tiles - 1 do
 				part(
 					"VioletRoofTile",
-					V(2.48, 0.13, 2.38),
-					CF(-20 + side * x, y, 18 + tile * 2.4) * A(0, 0, -side * roofSlope),
+					V(2.48, 0.14, 2.38),
+					CF(lx + side * x, y, lz - len / 2 + 1.2 + tile * (len - 2.4) / math.max(1, tiles - 1)) * A(0, 0, -side * roofSlope),
 					(course + tile) % 3 == 0 and P.roofLight or P.roof
 				)
 			end
 		end
-		part("GoldEave", V(0.22, 0.25, 15.8), CF(-20 + side * 9.85, 8.87, 24), P.gold, M.Metal)
-		for _, z in { 16.1, 31.9 } do
-			beam("GableGoldEdge", V(-20, 12.25, z), V(-20 + side * 9.85, 8.87, z), 0.24, 0.25, P.gold, M.Metal)
+		part("GoldEave", V(0.3, 0.3, len + 0.2), CF(lx + side * hs, top + 0.07, lz), P.gold, M.Metal)
+		for _, z in { lz - len / 2 + 0.1, lz + len / 2 - 0.1 } do
+			beam("GableGoldEdge", V(lx, top + LG.rise + 0.05, z), V(lx + side * hs, top + 0.07, z), 0.3, 0.3, P.gold, M.Metal)
 		end
-		for _, z in { 19, 29 } do
+		for _, z in { lz - LG.d / 2 + 1.2, lz + LG.d / 2 - 1.2 } do
 			beam(
 				"TimberKneeBrace",
-				V(-20 + side * 6.8, 6.1, z),
-				V(-20 + side * 4.8, 8.2, z),
-				0.40,
-				0.42,
+				V(lx + side * (LG.w / 2 - 1.2), top - 3.2, z),
+				V(lx + side * (LG.w / 2 - 3.4), top - 0.9, z),
+				0.5,
+				0.5,
 				P.wood,
 				M.Wood
 			)
 		end
 	end
-	part("GoldRidge", V(0.60, 0.40, 16.2), CF(-20, 12.35, 24), P.gold, M.Metal)
+	part("GoldRidge", V(0.7, 0.5, len + 0.4), CF(lx, top + LG.rise + 0.15, lz), P.gold, M.Metal)
 	for _, side in { -1, 1 } do
-		part("RidgeEnd", V(0.65, 1.45, 0.70), CF(-20, 12.9, 24 + side * 7.9) * A(side * 0.36, 0, 0), P.gold, M.Metal)
+		-- upswept ridge ends, like the concept's carved finials
+		part("RidgeEnd", V(0.75, 2.2, 0.8), CF(lx, top + LG.rise + 0.9, lz + side * (len / 2 - 0.2)) * A(side * 0.45, 0, 0), P.gold, M.Metal)
 	end
-	part("LodgeBanner", V(2.3, 3.3, 0.12), CF(-20, 5.3, 29.05), P.roof, M.Fabric)
-	part("BannerCrest", V(0.73, 0.73, 0.10), CF(-20, 5.65, 28.95) * A(0, 0, math.pi / 4), P.gold, M.Metal)
-	part("BannerCrestInset", V(0.40, 0.40, 0.08), CF(-20, 5.65, 28.87) * A(0, 0, math.pi / 4), P.roof)
+	-- gable-front pediment: violet panel with a gold diamond, facing the courtyard
+	local fz = lz - LG.d / 2 - 1.05
+	part("LodgeBanner", V(3.0, 4.4, 0.14), CF(lx, top - 2.6, fz + 0.6), P.roof, M.Fabric)
+	part("BannerTrim", V(3.2, 0.2, 0.18), CF(lx, top - 0.35, fz + 0.6), P.gold, M.Metal)
+	part("BannerCrest", V(0.95, 0.95, 0.12), CF(lx, top - 2.3, fz + 0.5) * A(0, 0, math.pi / 4), P.gold, M.Metal)
+	part("BannerCrestInset", V(0.5, 0.5, 0.1), CF(lx, top - 2.3, fz + 0.42) * A(0, 0, math.pi / 4), P.roof)
+	-- warm lantern hanging under the roof
+	local lantern = part("LodgeLantern", V(0.9, 1.2, 0.9), CF(lx, top - 1.8, lz), C3(255, 214, 150), M.Neon)
+	local glow = Instance.new("PointLight")
+	glow.Color, glow.Range, glow.Brightness, glow.Parent = C3(255, 205, 140), 18, 0.9, lantern
 	-- Slab joints and cut corners are broad enough to read from the game camera.
 	for i = 0, 4 do
 		local z = -29.8 + i * 4.4
@@ -10943,13 +11448,34 @@ function Details.Build(model, cf)
 	for _, x in { -3.0, 3.0 } do
 		part("ThresholdInlay", V(0.16, 0.022, 2.7), CF(x, 1.093, -31), P.gold, M.Metal)
 	end
-	-- Back-corner trees are rooted inside the old lodge/relic obstacle volumes.
-	for _, point in { V(-25.5, 0, 29), V(26.5, 0, 26.2) } do
-		part("TimberTreeTrunk", V(0.88, 7.2, 0.88), CF(point.X, 4.6, point.Z), P.timber, M.Wood)
-		part("TreeBough", V(2.2, 0.55, 0.55), CF(point.X + 0.5, 7.0, point.Z) * A(0, 0, 0.35), P.wood, M.Wood)
-		part("BlockCanopy", V(4.8, 3.4, 4.7), CF(point.X, 10.0, point.Z), P.leaf)
-		part("BlockCanopy", V(3.7, 2.9, 3.9), CF(point.X + 2.1, 10.9, point.Z - 0.8), P.leafLight)
-		part("BlockCanopy", V(3.4, 2.5, 3.5), CF(point.X - 1.6, 11.4, point.Z + 0.2), P.leaf)
+	-- The concept's back edge: grey rock outcrops with grass caps and blocky trees behind the fence
+	-- (local z > 33, on the foundation rim), so the courtyard reads as an enclosed garden.
+	local rng = Random.new(cf.Position.Z * 7 + cf.Position.X)
+	local function rock(x, z, s)
+		local n = rng:NextInteger(2, 3)
+		for i = 1, n do
+			local w, h, d = rng:NextNumber(2.6, 4.2) * s, rng:NextNumber(2.2, 4.4) * s, rng:NextNumber(2.4, 3.8) * s
+			local ox, oz = rng:NextNumber(-1.6, 1.6) * s, rng:NextNumber(-1, 1) * s
+			local col = i == 1 and P.rock or P.rockLight
+			local yaw, tilt = rng:NextNumber(-0.5, 0.5), rng:NextNumber(-0.08, 0.08)
+			part("RockOutcrop", V(w, h, d), CF(x + ox, 0.6 + h / 2, z + oz) * A(tilt, yaw, -tilt), col, M.Slate)
+			if i == 1 then
+				part("RockGrassCap", V(w * 0.82, 0.35, d * 0.82), CF(x + ox, 0.6 + h + 0.12, z + oz) * A(0, yaw, 0), P.grass, M.Grass)
+			end
+		end
+	end
+	local function blockTree(x, z, s)
+		part("TimberTreeTrunk", V(0.9, 6.4, 0.9) * s, CF(x, 1 + 3.2 * s, z), P.timber, M.Wood)
+		part("TreeBough", V(2.2, 0.55, 0.55) * s, CF(x + 0.5 * s, 1 + 5.2 * s, z) * A(0, 0, 0.35), P.wood, M.Wood)
+		part("BlockCanopy", V(4.8, 3.4, 4.7) * s, CF(x, 1 + 8.0 * s, z), P.leaf)
+		part("BlockCanopy", V(3.7, 2.9, 3.9) * s, CF(x + 2.1 * s, 1 + 8.9 * s, z - 0.8 * s), P.leafLight)
+		part("BlockCanopy", V(3.4, 2.5, 3.5) * s, CF(x - 1.6 * s, 1 + 9.4 * s, z + 0.2 * s), P.leaf)
+	end
+	for _, r in { { -28, 34.2, 1.2 }, { -9, 34.4, 1.0 }, { 8, 34.2, 1.15 }, { 26, 34.4, 1.3 }, { -34.3, 24, 0.9 }, { 34.3, 14, 0.9 } } do
+		rock(r[1], r[2], r[3])
+	end
+	for _, t in { { -20, 34.6, 1.25 }, { 0, 34.8, 1.1 }, { 15, 34.6, 1.3 }, { 31, 33.8, 1.0 }, { -33.8, 30, 1.0 } } do
+		blockTree(t[1], t[2], t[3])
 	end
 	-- Physical map props. These stay low so they never obscure the expedition UI.
 	part("ExpeditionMap", V(7.1, 0.06, 4.5), CF(19, 3.33, -19), P.paper)
@@ -11022,11 +11548,11 @@ end
 
 return Details
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX40"><Properties><string name="Name">SkyforgeStyle</string><ProtectedString name="Source"><![CDATA[-- Approved Skyforge concept: pale stone, dark timber, violet tiled roofs and
+<Item class="ModuleScript" referent="RBX41"><Properties><string name="Name">SkyforgeStyle</string><ProtectedString name="Source"><![CDATA[-- Approved Skyforge concept: pale stone, dark timber, violet tiled roofs and
 -- small warm brass accents. Colors stay readable under the sanctuary lighting.
 local C = Color3.fromRGB
 return {
-	grass = C(108, 161, 76),
+	grass = C(118, 174, 72),
 	stone = C(165, 158, 153),
 	pale = C(226, 220, 207),
 	light = C(243, 236, 219),
@@ -11046,9 +11572,14 @@ return {
 	mint = C(102, 171, 116),
 	paper = C(213, 203, 171),
 	text = C(244, 238, 225),
+	rock = C(150, 142, 162),
+	rockLight = C(176, 168, 188),
+	-- rear-left timber lodge, shared by SanctuaryBase (frame) and SkyforgeDetails (roof tiles).
+	-- Local base space: x across (+X = viewer-right from the entrance), z toward the back.
+	lodge = { x = -18, z = 24, w = 26, d = 17, deck = 1.6, postH = 9, rise = 5.6 },
 }
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX41"><Properties><string name="Name">WorldBuilder</string><ProtectedString name="Source"><![CDATA[-- WorldBuilder: builds ONE long map — the hub (bases + launch hall) and the 3200-stud throwing
+<Item class="ModuleScript" referent="RBX42"><Properties><string name="Name">WorldBuilder</string><ProtectedString name="Source"><![CDATA[-- WorldBuilder: builds ONE long map — the hub (bases + launch hall) and the 3200-stud throwing
 -- lane split into 8 biome zones. Each biome lives in its own module (Biome<Id>) built with the
 -- shared WorldKit; this file only orchestrates terrain, zones, markers and boundaries.
 -- Location: ServerScriptService > Server > WorldBuilder (ModuleScript)
@@ -11158,6 +11689,14 @@ local function buildZone(map, id)
 		local ok, err = pcall(mod.Build, b, m.Z, { Config = Config, textLabel = textLabel, World = Wd })
 		K.mirror = false
 		if not ok then warn("[WorldBuilder] biome failed", id, err) end
+		-- the world beyond the lane (|X| >= 130 to the skyline), one Outer<Id> module per biome
+		local outer = script.Parent:FindFirstChild("Outer" .. id)
+		if outer then
+			local ok2, err2 = pcall(function() require(outer).Build(b, m.Z) end)
+			K.mirror = false
+			K.SetFolder(folder)
+			if not ok2 then warn("[WorldBuilder] outer world failed", id, err2) end
+		end
 	else
 		Landmarks.SetFolder(folder)
 		Landmarks.SetTerrain(Terrain)
@@ -11241,10 +11780,10 @@ end
 
 return WorldBuilder
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX42"><Properties><string name="Name">WorldHub</string><ProtectedString name="Source"><![CDATA[-- Compatibility entry point for the reference-based sanctuary lobby.
+<Item class="ModuleScript" referent="RBX43"><Properties><string name="Name">WorldHub</string><ProtectedString name="Source"><![CDATA[-- Compatibility entry point for the reference-based sanctuary lobby.
 return require(script.Parent.SanctuaryHub)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX43"><Properties><string name="Name">WorldKit</string><ProtectedString name="Source"><![CDATA[-- WorldKit: the shared blocky construction kit used by the hub and all eight biomes.
+<Item class="ModuleScript" referent="RBX44"><Properties><string name="Name">WorldKit</string><ProtectedString name="Source"><![CDATA[-- WorldKit: the shared blocky construction kit used by the hub and all eight biomes.
 -- Location: ServerScriptService > Server > WorldKit (ModuleScript)
 --
 -- CONTRACT (map brief + GameServer landing contract):
@@ -11924,7 +12463,7 @@ end
 
 return K
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX44"><Properties><string name="Name">WorldLandmarks</string><ProtectedString name="Source"><![CDATA[-- WorldLandmarks: construction kit + the hero landmarks for the hub, launch hall and all
+<Item class="ModuleScript" referent="RBX45"><Properties><string name="Name">WorldLandmarks</string><ProtectedString name="Source"><![CDATA[-- WorldLandmarks: construction kit + the hero landmarks for the hub, launch hall and all
 -- eight biomes (blocky architectural language from the map reference pack).
 -- Location: ServerScriptService > Server > WorldLandmarks (ModuleScript)
 --
@@ -12704,10 +13243,10 @@ return L
 ]]></ProtectedString></Properties></Item>
 </Item>
 </Item>
-<Item class="StarterPlayer" referent="RBX69"><Properties><string name="Name">StarterPlayer</string></Properties>
-<Item class="StarterPlayerScripts" referent="RBX46"><Properties><string name="Name">StarterPlayerScripts</string></Properties>
-<Item class="Folder" referent="RBX47"><Properties><string name="Name">Client</string></Properties>
-<Item class="ModuleScript" referent="RBX48"><Properties><string name="Name">CaughtPresentation</string><ProtectedString name="Source"><![CDATA[-- Caught card for an already confirmed catch, styled after Actions/02_Rarity_Reveal_and_Capture ("03 ADDED"):
+<Item class="StarterPlayer" referent="RBX70"><Properties><string name="Name">StarterPlayer</string></Properties>
+<Item class="StarterPlayerScripts" referent="RBX47"><Properties><string name="Name">StarterPlayerScripts</string></Properties>
+<Item class="Folder" referent="RBX48"><Properties><string name="Name">Client</string></Properties>
+<Item class="ModuleScript" referent="RBX49"><Properties><string name="Name">CaughtPresentation</string><ProtectedString name="Source"><![CDATA[-- Caught card for an already confirmed catch, styled after Actions/02_Rarity_Reveal_and_Capture ("03 ADDED"):
 -- purple card with a double gold frame and diamond crest, light rays behind the pet, the creature's name,
 -- a "CAUGHT" ribbon with laurels, an "ADDED TO PETS" plaque, then the card flies into the live Pets button.
 local RS = game:GetService("ReplicatedStorage")
@@ -12925,7 +13464,7 @@ return function(key)
 	end)
 end
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX49"><Properties><string name="Name">CinematicLook</string><ProtectedString name="Source"><![CDATA[-- CinematicLook: premium "modern renderer" finish on top of the existing lighting.
+<Item class="LocalScript" referent="RBX50"><Properties><string name="Name">CinematicLook</string><ProtectedString name="Source"><![CDATA[-- CinematicLook: premium "modern renderer" finish on top of the existing lighting.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > CinematicLook (LocalScript)
 --
 -- Ownership: Effects.lua / SanctuaryLook own Ambient, ClockTime, Fog, Brightness, ExposureCompensation,
@@ -12947,15 +13486,15 @@ local camera = workspace.CurrentCamera
 
 -- per-zone finishing: split-tone tint, extra contrast/saturation, sun latitude, highlight glow
 local GRADE = {
-	Hub     = { tint = Color3.fromRGB(255, 248, 238), contrast = 0.06, sat = 0, lat = 34, glow = 0.18 },
-	Forest  = { tint = Color3.fromRGB(255, 250, 236), contrast = 0.08, sat = 0, lat = 38, glow = 0.18 },
-	Volcano = { tint = Color3.fromRGB(255, 236, 222), contrast = 0.12, sat = 0, lat = 24, glow = 0.30 },
-	Frozen  = { tint = Color3.fromRGB(240, 248, 255), contrast = 0.07, sat = 0, lat = 52, glow = 0.20 },
-	Crystal = { tint = Color3.fromRGB(246, 238, 255), contrast = 0.10, sat = 0, lat = 30, glow = 0.32 },
-	Candy   = { tint = Color3.fromRGB(255, 246, 250), contrast = 0.05, sat = 0, lat = 40, glow = 0.16 },
-	Space   = { tint = Color3.fromRGB(238, 238, 255), contrast = 0.12, sat = 0, lat = 20, glow = 0.34 },
-	Shadow  = { tint = Color3.fromRGB(248, 236, 252), contrast = 0.11, sat = 0, lat = 28, glow = 0.28 },
-	Heaven  = { tint = Color3.fromRGB(255, 250, 240), contrast = 0.05, sat = 0, lat = 46, glow = 0.20 },
+	Hub     = { tint = Color3.fromRGB(255, 248, 238), contrast = 0.06, sat = 0.06, lat = 34, glow = 0.18 },
+	Forest  = { tint = Color3.fromRGB(255, 250, 236), contrast = 0.08, sat = 0.06, lat = 38, glow = 0.18 },
+	Volcano = { tint = Color3.fromRGB(255, 236, 222), contrast = 0.12, sat = 0.06, lat = 24, glow = 0.30 },
+	Frozen  = { tint = Color3.fromRGB(240, 248, 255), contrast = 0.07, sat = 0.06, lat = 52, glow = 0.20 },
+	Crystal = { tint = Color3.fromRGB(246, 238, 255), contrast = 0.10, sat = 0.06, lat = 30, glow = 0.32 },
+	Candy   = { tint = Color3.fromRGB(255, 246, 250), contrast = 0.05, sat = 0.06, lat = 40, glow = 0.16 },
+	Space   = { tint = Color3.fromRGB(238, 238, 255), contrast = 0.12, sat = 0.06, lat = 20, glow = 0.34 },
+	Shadow  = { tint = Color3.fromRGB(248, 236, 252), contrast = 0.11, sat = 0.06, lat = 28, glow = 0.28 },
+	Heaven  = { tint = Color3.fromRGB(255, 250, 240), contrast = 0.05, sat = 0.06, lat = 46, glow = 0.20 },
 }
 
 local function quality()
@@ -12982,15 +13521,15 @@ pcall(function() Lighting.ShadowSoftness = 0.18 end)
 -- Built-in smoke texture, no uploads. A box emitter follows a point ahead of the camera at ground level;
 -- sheets are large, very faint and slow so they read as fog layers, never as smoke puffs over the pet.
 local MIST = {
-	Hub     = { color = Color3.fromRGB(226, 228, 244), rate = 9 },
-	Forest  = { color = Color3.fromRGB(222, 238, 226), rate = 12 },
-	Volcano = { color = Color3.fromRGB(150, 120, 112), rate = 15 },
-	Frozen  = { color = Color3.fromRGB(232, 242, 255), rate = 18 },
-	Crystal = { color = Color3.fromRGB(206, 186, 240), rate = 12 },
-	Candy   = { color = Color3.fromRGB(255, 226, 242), rate = 12 },
+	Hub     = { color = Color3.fromRGB(226, 228, 244), rate = 6 },
+	Forest  = { color = Color3.fromRGB(222, 238, 226), rate = 8 },
+	Volcano = { color = Color3.fromRGB(150, 120, 112), rate = 10 },
+	Frozen  = { color = Color3.fromRGB(232, 242, 255), rate = 12 },
+	Crystal = { color = Color3.fromRGB(206, 186, 240), rate = 8 },
+	Candy   = { color = Color3.fromRGB(255, 226, 242), rate = 8 },
 	Space   = { color = Color3.fromRGB(120, 110, 180), rate = 0 },
-	Shadow  = { color = Color3.fromRGB(120, 100, 150), rate = 21 },
-	Heaven  = { color = Color3.fromRGB(255, 250, 236), rate = 21 },
+	Shadow  = { color = Color3.fromRGB(120, 100, 150), rate = 14 },
+	Heaven  = { color = Color3.fromRGB(255, 250, 236), rate = 14 },
 }
 local mistPart = Instance.new("Part")
 mistPart.Name = "TPFC_GroundMist"
@@ -13003,8 +13542,8 @@ mist.Shape = Enum.ParticleEmitterShape.Box
 mist.ShapeStyle = Enum.ParticleEmitterShapeStyle.Volume
 mist.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 16), NumberSequenceKeypoint.new(1, 30) })
 mist.Transparency = NumberSequence.new({
-	NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.3, 0.74),
-	NumberSequenceKeypoint.new(0.7, 0.78), NumberSequenceKeypoint.new(1, 1),
+	NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.3, 0.82),
+	NumberSequenceKeypoint.new(0.7, 0.85), NumberSequenceKeypoint.new(1, 1),
 })
 mist.Lifetime = NumberRange.new(10, 15)
 mist.Speed = NumberRange.new(0.3, 1)
@@ -13037,6 +13576,7 @@ RunService.Heartbeat:Connect(function(dt)
 		mistY = groundY(p.X, p.Z, cf.Position.Y)
 	end
 	mistPart.CFrame = CFrame.new(p.X, mistY + 2, p.Z)
+	mist.Enabled = not workspace:GetAttribute("TPFC_IntroPlaying")
 end)
 
 ---------------------------------------------------------------- zone tracking (camera position, 2 Hz)
@@ -13073,7 +13613,7 @@ RunService.Heartbeat:Connect(function(dt)
 end)
 apply("Hub")
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX50"><Properties><string name="Name">ClientMain</string><ProtectedString name="Source"><![CDATA[-- ClientMain: wires all client modules together.
+<Item class="LocalScript" referent="RBX51"><Properties><string name="Name">ClientMain</string><ProtectedString name="Source"><![CDATA[-- ClientMain: wires all client modules together.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ClientMain (LocalScript)
 
 local Players = game:GetService("Players")
@@ -13093,6 +13633,8 @@ local Sounds = require(Client.Sounds)
 local Renderer = require(Client.CreatureRenderer)
 local TC = require(Client.ThrowController)
 local HUD = require(Client.HUD)
+-- cover the screen immediately (black + title) so nothing half-loaded shows; the fly-over starts once the map has replicated
+pcall(function() require(Client.Intro).Cover(HUD.Gui) end)
 local Feel = require(Client.GameplayFeel)
 local Panels = require(Client.Panels)
 
@@ -13339,10 +13881,13 @@ task.spawn(function()
 		workspace.CurrentCamera.CameraType = Enum.CameraType.Custom
 		HUD.Gui.Enabled = true
 		Effects.Letterbox(false)
+		local cover = player.PlayerGui:FindFirstChild("Intro")
+		if cover then cover:Destroy() end
+		workspace:SetAttribute("TPFC_IntroPlaying", nil)
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX51"><Properties><string name="Name">ClientSettings</string><ProtectedString name="Source"><![CDATA[-- ClientSettings: presentation-only player settings (never affect odds, charge, rewards).
+<Item class="ModuleScript" referent="RBX52"><Properties><string name="Name">ClientSettings</string><ProtectedString name="Source"><![CDATA[-- ClientSettings: presentation-only player settings (never affect odds, charge, rewards).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ClientSettings (ModuleScript)
 -- Values persist for the session via player attributes; defaults are safe for everyone.
 
@@ -13378,7 +13923,7 @@ end
 
 return Settings
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX52"><Properties><string name="Name">ClientState</string><ProtectedString name="Source"><![CDATA[-- ClientState: local mirror of the player's data + change signal + request helper.
+<Item class="ModuleScript" referent="RBX53"><Properties><string name="Name">ClientState</string><ProtectedString name="Source"><![CDATA[-- ClientState: local mirror of the player's data + change signal + request helper.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ClientState (ModuleScript)
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -13418,7 +13963,7 @@ end
 
 return State
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX53"><Properties><string name="Name">CreatureRenderer</string><ProtectedString name="Source"><![CDATA[-- CreatureRenderer: renders every creature on this client — base pets of all players,
+<Item class="ModuleScript" referent="RBX54"><Properties><string name="Name">CreatureRenderer</string><ProtectedString name="Source"><![CDATA[-- CreatureRenderer: renders every creature on this client — base pets of all players,
 -- creatures being carried, and freshly revealed wild creatures. Handles species entrances,
 -- capture presentation, reactions, click-to-pet, distance LOD and previews.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > CreatureRenderer (ModuleScript)
@@ -14522,7 +15067,7 @@ end
 
 return Renderer
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX54"><Properties><string name="Name">Effects</string><ProtectedString name="Source"><![CDATA[-- Effects: camera shake, flashes, shockwaves, particle bursts, light beams, floating text,
+<Item class="ModuleScript" referent="RBX55"><Properties><string name="Name">Effects</string><ProtectedString name="Source"><![CDATA[-- Effects: camera shake, flashes, shockwaves, particle bursts, light beams, floating text,
 -- flying-coin money effect, rarity banners and per-world lighting.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > Effects (ModuleScript)
 
@@ -15059,14 +15604,14 @@ local HUB_LOOK = require(ReplicatedStorage.Shared.SanctuaryLook)
 
 -- per-zone grade + fog: calmer saturation, real aerial depth (low Offset = fog hugs the horizon)
 local LOOK = {
-	Forest  = { exposure = 0.05, sat = 0.05, contrast = 0.1,  bloom = 0.7, rays = 0.16, density = 0.6, haze = 2.6, offset = 0.0, glare = 0.35 },
-	Volcano = { exposure = 0.0,  sat = 0.1,  contrast = 0.16, bloom = 1.0, rays = 0.18, density = 0.62, haze = 3.0, offset = 0.0, glare = 0.25 },
-	Frozen  = { exposure = 0.12, sat = 0.0,  contrast = 0.08, bloom = 0.8, rays = 0.18, density = 0.62, haze = 2.8, offset = 0.02, glare = 0.4 },
-	Crystal = { exposure = 0.1,  sat = 0.1,  contrast = 0.14, bloom = 1.2, rays = 0.06, density = 0.58, haze = 2.2, offset = 0.02, glare = 0.2 },
-	Candy   = { exposure = 0.1,  sat = 0.1,  contrast = 0.06, bloom = 0.9, rays = 0.12, density = 0.55, haze = 2.2, offset = 0.03, glare = 0.3 },
-	Space   = { exposure = 0.05, sat = 0.1,  contrast = 0.18, bloom = 1.4, rays = 0.0,  density = 0.3, haze = 1.0, offset = 0.0,  glare = 0.0 },
-	Shadow  = { exposure = -0.1, sat = -0.05, contrast = 0.22, bloom = 1.1, rays = 0.0, density = 0.64, haze = 3.2, offset = 0.0,  glare = 0.0 },
-	Heaven  = { exposure = 0.18, sat = 0.04, contrast = 0.05, bloom = 1.1, rays = 0.28, density = 0.58, haze = 2.8, offset = 0.04, glare = 0.5 },
+	Forest  = { exposure = 0.1,  sat = 0.2,  contrast = 0.14, bloom = 0.7, rays = 0.16, density = 0.45, haze = 1.2, offset = 0.02, glare = 0.35 },
+	Volcano = { exposure = 0.05, sat = 0.22, contrast = 0.18, bloom = 1.0, rays = 0.18, density = 0.5,  haze = 1.6, offset = 0.0,  glare = 0.25 },
+	Frozen  = { exposure = 0.0,  sat = 0.1,  contrast = 0.12, bloom = 0.6, rays = 0.18, density = 0.48, haze = 1.4, offset = 0.02, glare = 0.4 },
+	Crystal = { exposure = 0.12, sat = 0.25, contrast = 0.16, bloom = 1.2, rays = 0.06, density = 0.45, haze = 1.0, offset = 0.02, glare = 0.2 },
+	Candy   = { exposure = -0.2, sat = 0.25, contrast = 0.1,  bloom = 0.5, rays = 0.12, density = 0.42, haze = 1.0, offset = 0.03, glare = 0.3 },
+	Space   = { exposure = 0.08, sat = 0.2,  contrast = 0.2,  bloom = 1.4, rays = 0.0,  density = 0.25, haze = 0.5, offset = 0.0,  glare = 0.0 },
+	Shadow  = { exposure = 0.0,  sat = 0.12, contrast = 0.2,  bloom = 1.1, rays = 0.0,  density = 0.5,  haze = 1.6, offset = 0.0,  glare = 0.0 },
+	Heaven  = { exposure = 0.0,  sat = 0.12, contrast = 0.08, bloom = 0.7, rays = 0.28, density = 0.45, haze = 1.4, offset = 0.04, glare = 0.5 },
 }
 
 function Effects.UpdateWorld(pos: Vector3)
@@ -15084,7 +15629,7 @@ function Effects.UpdateWorld(pos: Vector3)
 	-- per-zone grade (brother's LOOK) on the map-tuned sun/fog from Config; the hub keeps SanctuaryLook
 	local look = (not inHub) and (LOOK[id] or LOOK.Forest) or nil
 	tween(Lighting, 1.5, { Ambient = W.ambient, OutdoorAmbient = W.ambient, ClockTime = W.clock, FogColor = W.fog, Brightness = inHub and 2.15 or 2.4, ExposureCompensation = inHub and -.05 or look.exposure })
-	if cc then tween(cc, 1.5, { TintColor = W.tint, Saturation = inHub and 0.04 or look.sat, Contrast = inHub and 0.08 or look.contrast }) end
+	if cc then tween(cc, 1.5, { TintColor = W.tint, Saturation = inHub and 0.14 or look.sat, Contrast = inHub and 0.08 or look.contrast }) end
 	if atmo then tween(atmo, 1.5, { Color = W.atmo, Decay = W.fog, Haze = inHub and HUB_LOOK.haze or look.haze, Glare = inHub and HUB_LOOK.glare or look.glare, Offset = inHub and HUB_LOOK.offset or look.offset, Density = inHub and HUB_LOOK.density or look.density }) end
 	if bloom then tween(bloom, 1.0, { Intensity = inHub and HUB_LOOK.bloom or look.bloom }) end
 	if rays then tween(rays, 1.5, { Intensity = inHub and 0.12 or look.rays }) end
@@ -15095,7 +15640,7 @@ end
 
 return Effects
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX55"><Properties><string name="Name">ExpeditionPanel</string><ProtectedString name="Source"><![CDATA[-- Contextual expedition planning. The only world control is the prompt on the
+<Item class="ModuleScript" referent="RBX56"><Properties><string name="Name">ExpeditionPanel</string><ProtectedString name="Source"><![CDATA[-- Contextual expedition planning. The only world control is the prompt on the
 -- player's own map table; mission identity, timestamps and rewards stay server-owned.
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
@@ -15699,7 +16244,7 @@ end
 
 return Panel
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX56"><Properties><string name="Name">GameplayFeel</string><ProtectedString name="Source"><![CDATA[-- Quiet, state-driven feedback around the complete play loop. No extra HUD buttons.
+<Item class="ModuleScript" referent="RBX57"><Properties><string name="Name">GameplayFeel</string><ProtectedString name="Source"><![CDATA[-- Quiet, state-driven feedback around the complete play loop. No extra HUD buttons.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local RS = game:GetService("ReplicatedStorage")
@@ -15821,7 +16366,7 @@ function Feel.Money(amount, position)
 end
 return Feel
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX57"><Properties><string name="Name">HUD</string><ProtectedString name="Source"><![CDATA[-- Compact sanctuary HUD and one shared, responsive panel layer.
+<Item class="ModuleScript" referent="RBX58"><Properties><string name="Name">HUD</string><ProtectedString name="Source"><![CDATA[-- Compact sanctuary HUD and one shared, responsive panel layer.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Input = game:GetService("UserInputService")
@@ -16537,22 +17082,27 @@ end)
 task.defer(rescale)
 return HUD
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX58"><Properties><string name="Name">Intro</string><ProtectedString name="Source"><![CDATA[-- Intro: cinematic fly-over when you join. The camera sweeps down the whole lane (every zone),
+<Item class="ModuleScript" referent="RBX59"><Properties><string name="Name">Intro</string><ProtectedString name="Source"><![CDATA[-- Intro: cinematic fly-over when you join. The camera sweeps down the whole lane (every zone),
 -- past the Portal Launch Hall, and lands at your base while the title animates in.
 -- Click / tap / any key to skip.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > Intro (ModuleScript)
+--
+-- Two stages so it never lags or starts late:
+--   Intro.Cover(hud)  runs the moment the client starts: black screen + title, HUD hidden.
+--                     The player never sees half-loaded gameplay behind it.
+--   Intro.Play(hud)   waits (behind the cover) until the server-built map has finished replicating,
+--                     then fades the cover and flies the camera, so the flight isn't fighting
+--                     thousands of parts still streaming in.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Config = require(ReplicatedStorage.Shared.Config)
+local TweenService = game:GetService("TweenService")
 local K = require(script.Parent.UIKit)
 local Effects = require(script.Parent.Effects)
 local Sounds = require(script.Parent.Sounds)
 local T = require(script.Parent.UITheme)
 local Reveal = require(script.Parent.RevealTitle)
-local TweenService = game:GetService("TweenService")
 
 local function tw(o, t, props, style, dir)
 	local x = TweenService:Create(o, TweenInfo.new(t, style or Enum.EasingStyle.Quart, dir or Enum.EasingDirection.Out), props)
@@ -16574,37 +17124,14 @@ local function catmull(p0, p1, p2, p3, t)
 end
 local function smooth(k) return k * k * (3 - 2 * k) end
 
-function Intro.Play(hud)
-	-- wait for the world and our base to exist
-	local t0 = os.clock()
-	while not workspace:FindFirstChild("Map") and os.clock() - t0 < 30 do task.wait(0.2) end
-	local idx
-	repeat idx = player:GetAttribute("BaseIndex"); task.wait(0.2) until (idx and idx > 0) or os.clock() - t0 > 30
-	local base = workspace:FindFirstChild("Bases") and workspace.Bases:FindFirstChild("Base" .. tostring(idx))
-	local char = player.Character or player.CharacterAdded:Wait()
-	char:WaitForChild("HumanoidRootPart", 10)
-	task.wait(0.5)
+local ui -- built by Intro.Cover
+local skipped = false
+local skipConn
 
-	-- camera path: positions + where it looks
-	local pts, looks = {}, {}
-	local function key(pos, look) table.insert(pts, pos); table.insert(looks, look) end
-	key(Vector3.new(0, 170, 3050), Vector3.new(0, 20, 2500))   -- high above Heaven
-	key(Vector3.new(50, 110, 2050), Vector3.new(0, 10, 1500))  -- Shadow / Space
-	key(Vector3.new(-40, 70, 1150), Vector3.new(0, 5, 700))    -- Candy / Crystal
-	key(Vector3.new(30, 40, 380), Vector3.new(0, 5, 60))       -- Frozen / Volcano
-	key(Vector3.new(0, 22, 45), Vector3.new(0, 10, -30))       -- the Launch Hall's open front
-	if base then
-		local c = base.Center.CFrame
-		key((c * CFrame.new(0, 26, -55)).Position, c.Position + Vector3.new(0, 4, 0)) -- swing over to your base
-	end
-	-- end just behind your character, where the normal camera will take over
-	local hrp = char:FindFirstChild("HumanoidRootPart")
-	if hrp then
-		key(hrp.Position - hrp.CFrame.LookVector * 14 + Vector3.new(0, 7, 0), hrp.Position + Vector3.new(0, 2, 0))
-	end
-
-	-- UI: black fade, trailer-style title card, skip hint
-	local gui = K.new("ScreenGui", { Name = "Intro", IgnoreGuiInset = true, ResetOnSpawn = false, DisplayOrder = 50, Parent = player.PlayerGui })
+function Intro.Cover(hud)
+	if ui then return ui end
+	if hud then hud.Enabled = false end
+	local gui = K.new("ScreenGui", { Name = "Intro", IgnoreGuiInset = true, ResetOnSpawn = false, DisplayOrder = 50, Parent = player:WaitForChild("PlayerGui") })
 	local black = K.new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0), Parent = gui })
 	local title = K.new("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.4), Size = UDim2.new(0.92, 0, 0, 230), BackgroundTransparency = 1, Parent = gui })
 	K.new("UISizeConstraint", { MaxSize = Vector2.new(1100, 230), Parent = title })
@@ -16636,6 +17163,9 @@ function Intro.Play(hud)
 	local skip = K.new("TextLabel", { Text = Reveal.Track("Click to skip"), Font = fnt("MontserratMedium", Enum.Font.GothamMedium), TextSize = 12,
 		TextColor3 = T.Muted, TextTransparency = 0.35, BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, 1),
 		Position = UDim2.new(1, -28, 1, -26), Size = UDim2.fromOffset(220, 16), TextXAlignment = Enum.TextXAlignment.Right, Parent = gui })
+	local loading = K.new("TextLabel", { Text = Reveal.Track("Loading the world"), Font = fnt("MontserratMedium", Enum.Font.GothamMedium), TextSize = 12,
+		TextColor3 = T.Muted, TextTransparency = 1, BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -60), Size = UDim2.fromOffset(300, 16), Parent = gui })
 	local function showLine(l, t)
 		tw(l, t, { TextTransparency = 0 })
 		tw(l:FindFirstChildOfClass("UIStroke"), t, { Transparency = 0.3 })
@@ -16651,49 +17181,109 @@ function Intro.Play(hud)
 		for _, r in ipairs(ruleBars) do tw(r, t, { BackgroundTransparency = 1 }) end
 		tw(titleScale, t, { Scale = 0.96 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 	end
+	ui = { gui = gui, black = black, skip = skip, loading = loading, hideTitle = hideTitle, waiting = true }
 
-	if hud then hud.Enabled = false end
-	Effects.Letterbox(true)
-	camera.CameraType = Enum.CameraType.Scriptable
-	camera.CFrame = CFrame.lookAt(pts[1], looks[1])
-	tw(black, 1.4, { BackgroundTransparency = 1 }, Enum.EasingStyle.Sine)
-	task.delay(0.6, function()
+	-- the title animates in on black straight away, while the world loads
+	task.delay(0.2, function()
 		showLine(line1, 0.9)
 		tw(titleScale, 1.6, { Scale = 1 }, Enum.EasingStyle.Quint)
 		tw(shine, 1.4, { Offset = Vector2.new(1, 0) }, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
 		Sounds.Play("Rare", 0.9)
 	end)
-	task.delay(1.0, function()
+	task.delay(0.6, function()
 		showLine(eyebrow, 0.6)
 		for _, r in ipairs(ruleBars) do tw(r, 0.9, { Size = UDim2.new(0.18, 0, 0, 1) }, Enum.EasingStyle.Quint) end
 	end)
-	task.delay(1.3, function() showLine(line2, 0.7) end)
-	task.delay(1.9, function() showLine(sub, 0.7) end)
-
-	local skipped = false
-	local conn = UserInputService.InputBegan:Connect(function(input)
+	task.delay(0.9, function() showLine(line2, 0.7) end)
+	task.delay(1.4, function() showLine(sub, 0.7) end)
+	task.delay(2.6, function()
+		if ui and ui.waiting then tw(loading, 0.6, { TextTransparency = 0.3 }) end
+	end)
+	skipConn = UserInputService.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.Keyboard then
 			skipped = true
 		end
 	end)
+	return ui
+end
 
-	local DURATION = 11
-	local start = os.clock()
-	local segs = #pts - 1
-	while not skipped do
-		local k = (os.clock() - start) / DURATION
-		if k >= 1 then break end
-		local e = smooth(k) * segs
-		local i = math.min(math.floor(e) + 1, segs)
-		local f = e - (i - 1)
-		local function at(list, j) return list[math.clamp(j, 1, #list)] end
-		local pos = catmull(at(pts, i - 1), at(pts, i), at(pts, i + 1), at(pts, i + 2), f)
-		local look = catmull(at(looks, i - 1), at(looks, i), at(looks, i + 1), at(looks, i + 2), f)
-		camera.CFrame = CFrame.lookAt(pos, look)
-		if k > 0.62 then hideTitle(0.7) end
-		RunService.RenderStepped:Wait()
+-- returns once the map exists and nothing new has replicated for a short moment (or a hard cap passes)
+local function waitForWorld(capSeconds)
+	local t0 = os.clock()
+	local lastAdd = os.clock()
+	local conn = workspace.DescendantAdded:Connect(function() lastAdd = os.clock() end)
+	while os.clock() - t0 < capSeconds do
+		if game:IsLoaded() and workspace:FindFirstChild("Map") and os.clock() - lastAdd > 0.9 then break end
+		task.wait(0.2)
 	end
 	conn:Disconnect()
+end
+
+function Intro.Play(hud)
+	local u = Intro.Cover(hud)
+	-- wait behind the cover for the world, our base and our character
+	waitForWorld(25)
+	local t0 = os.clock()
+	local idx = player:GetAttribute("BaseIndex")
+	while not (idx and idx > 0) and os.clock() - t0 < 10 do
+		task.wait(0.2)
+		idx = player:GetAttribute("BaseIndex")
+	end
+	local base = workspace:FindFirstChild("Bases") and workspace.Bases:FindFirstChild("Base" .. tostring(idx))
+	local char = player.Character or player.CharacterAdded:Wait()
+	char:WaitForChild("HumanoidRootPart", 10)
+	u.waiting = false
+	tw(u.loading, 0.3, { TextTransparency = 1 })
+
+	-- camera path: positions + where it looks
+	local pts, looks = {}, {}
+	local function key(pos, look) table.insert(pts, pos); table.insert(looks, look) end
+	key(Vector3.new(0, 150, 3050), Vector3.new(0, 20, 2500))   -- high above Heaven
+	key(Vector3.new(50, 100, 2050), Vector3.new(0, 10, 1500))  -- Shadow / Space
+	key(Vector3.new(-40, 65, 1150), Vector3.new(0, 5, 700))    -- Candy / Crystal
+	key(Vector3.new(30, 40, 380), Vector3.new(0, 5, 60))       -- Frozen / Volcano
+	key(Vector3.new(0, 22, 45), Vector3.new(0, 10, -30))       -- the Launch Hall's open front
+	if base and base:FindFirstChild("Center") then
+		local c = base.Center.CFrame
+		key((c * CFrame.new(0, 26, -55)).Position, c.Position + Vector3.new(0, 4, 0)) -- swing over to your base
+	end
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	if hrp then
+		key(hrp.Position - hrp.CFrame.LookVector * 14 + Vector3.new(0, 7, 0), hrp.Position + Vector3.new(0, 2, 0))
+	end
+
+	local gui, black, skip, hideTitle = u.gui, u.black, u.skip, u.hideTitle
+	if hud then hud.Enabled = false end
+	local finished = false
+	if not skipped then
+		workspace:SetAttribute("TPFC_IntroPlaying", true)
+		Effects.Letterbox(true)
+		camera.CameraType = Enum.CameraType.Scriptable
+		camera.CFrame = CFrame.lookAt(pts[1], looks[1])
+		-- let the first frames of the fly-over render before revealing it
+		RunService.RenderStepped:Wait()
+		RunService.RenderStepped:Wait()
+		tw(black, 1.2, { BackgroundTransparency = 1 }, Enum.EasingStyle.Sine)
+
+		local DURATION = 9
+		local start = os.clock()
+		local segs = #pts - 1
+		local function at(list, j) return list[math.clamp(j, 1, #list)] end
+		while not skipped do
+			local k = (os.clock() - start) / DURATION
+			if k >= 1 then finished = true break end
+			local e = smooth(k) * segs
+			local i = math.min(math.floor(e) + 1, segs)
+			local f = e - (i - 1)
+			local pos = catmull(at(pts, i - 1), at(pts, i), at(pts, i + 1), at(pts, i + 2), f)
+			local look = catmull(at(looks, i - 1), at(looks, i), at(looks, i + 1), at(looks, i + 2), f)
+			camera.CFrame = CFrame.lookAt(pos, look)
+			if k > 0.45 then hideTitle(0.7) end
+			RunService.RenderStepped:Wait()
+		end
+	end
+	if skipConn then skipConn:Disconnect() end
+	workspace:SetAttribute("TPFC_IntroPlaying", nil)
 
 	-- hand the camera back to the player
 	Effects.Letterbox(false)
@@ -16701,14 +17291,16 @@ function Intro.Play(hud)
 	if hud then hud.Enabled = true end
 	hideTitle(0.3)
 	tw(skip, 0.3, { TextTransparency = 1 })
-	Effects.Flash(Color3.new(1, 1, 1), 0.6, 0.35)
+	tw(black, 0.4, { BackgroundTransparency = 1 })
+	if finished then Effects.Flash(Color3.new(1, 1, 1), 0.6, 0.35) end
 	Sounds.Play("Whoosh", 1.2)
 	task.delay(0.6, function() gui:Destroy() end)
+	ui = nil
 end
 
 return Intro
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX59"><Properties><string name="Name">Panels</string><ProtectedString name="Source"><![CDATA[-- Sanctuary shops, collection, index, customization and settings.
+<Item class="ModuleScript" referent="RBX60"><Properties><string name="Name">Panels</string><ProtectedString name="Source"><![CDATA[-- Sanctuary shops, collection, index, customization and settings.
 -- All spending and ownership changes use the existing authoritative server actions.
 local RS = game:GetService("ReplicatedStorage")
 local Http = game:GetService("HttpService")
@@ -17657,7 +18249,7 @@ function Panels.Init()
 end
 return Panels
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX60"><Properties><string name="Name">Plaque</string><ProtectedString name="Source"><![CDATA[-- Plaque: the carved rarity plaque from the reveal reference sheet (Actions/02_Rarity_Reveal_and_Capture):
+<Item class="ModuleScript" referent="RBX61"><Properties><string name="Name">Plaque</string><ProtectedString name="Source"><![CDATA[-- Plaque: the carved rarity plaque from the reveal reference sheet (Actions/02_Rarity_Reveal_and_Capture):
 -- a bevelled bar with pointed diamond ends, double gold trim, small gold diamond ornaments, serif caps,
 -- and gold laurels for the showcase tiers. Pixel sized, so it works in ScreenGuis and BillboardGuis.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > Plaque (ModuleScript)
@@ -17814,7 +18406,7 @@ end
 
 return P
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX61"><Properties><string name="Name">RevealTitle</string><ProtectedString name="Source"><![CDATA[-- RevealTitle: on-screen title for a creature reveal, styled after Actions/02_Rarity_Reveal_and_Capture.
+<Item class="ModuleScript" referent="RBX62"><Properties><string name="Name">RevealTitle</string><ProtectedString name="Source"><![CDATA[-- RevealTitle: on-screen title for a creature reveal, styled after Actions/02_Rarity_Reveal_and_Capture.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > RevealTitle (ModuleScript)
 --
 --   Common / Uncommon      nothing on screen: the carved plaque above the pet carries it (restrained tiers)
@@ -18130,7 +18722,7 @@ end
 
 return R
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX62"><Properties><string name="Name">Sounds</string><ProtectedString name="Source"><![CDATA[-- Restrained event audio. Built-in assets keep the game independent of uploaded audio.
+<Item class="ModuleScript" referent="RBX63"><Properties><string name="Name">Sounds</string><ProtectedString name="Source"><![CDATA[-- Restrained event audio. Built-in assets keep the game independent of uploaded audio.
 local SoundService = game:GetService("SoundService")
 local TweenService = game:GetService("TweenService")
 local Sounds = {}
@@ -18249,7 +18841,7 @@ function Sounds.Get(name)
 end
 return Sounds
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX63"><Properties><string name="Name">ThrowCinematic</string><ProtectedString name="Source"><![CDATA[-- ThrowCinematic: the throw cutscene (owner only). No letterbox, full screen.
+<Item class="ModuleScript" referent="RBX64"><Properties><string name="Name">ThrowCinematic</string><ProtectedString name="Source"><![CDATA[-- ThrowCinematic: the throw cutscene (owner only). No letterbox, full screen.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ThrowCinematic (ModuleScript)
 --
 -- Timeline (w = wind-up seconds from the server, longer for rarer creatures):
@@ -18716,7 +19308,7 @@ end
 
 return Cine
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX64"><Properties><string name="Name">ThrowController</string><ProtectedString name="Source"><![CDATA[-- ThrowController: charge meter input, held-portal + arm wind-up, the portal flight arc,
+<Item class="ModuleScript" referent="RBX65"><Properties><string name="Name">ThrowController</string><ProtectedString name="Source"><![CDATA[-- ThrowController: charge meter input, held-portal + arm wind-up, the portal flight arc,
 -- landing bounce, portal gate opening and creature reveal choreography (for ALL players' throws).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ThrowController (ModuleScript)
 
@@ -19689,7 +20281,7 @@ end)
 
 return TC
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX65"><Properties><string name="Name">UIIcons</string><ProtectedString name="Source"><![CDATA[-- Crisp native geometry. Every navigation icon also has a visible text label.
+<Item class="ModuleScript" referent="RBX66"><Properties><string name="Name">UIIcons</string><ProtectedString name="Source"><![CDATA[-- Crisp native geometry. Every navigation icon also has a visible text label.
 local T = require(script.Parent.UITheme)
 local Icons = {}
 function Icons.Draw(name, parent, size, color, position)
@@ -19809,7 +20401,7 @@ function Icons.Draw(name, parent, size, color, position)
 end
 return Icons
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX66"><Properties><string name="Name">UIKit</string><ProtectedString name="Source"><![CDATA[-- Native sanctuary components. No uploaded icon/font dependency.
+<Item class="ModuleScript" referent="RBX67"><Properties><string name="Name">UIKit</string><ProtectedString name="Source"><![CDATA[-- Native sanctuary components. No uploaded icon/font dependency.
 local TweenService = game:GetService("TweenService")
 local Sounds = require(script.Parent.Sounds)
 local Settings = require(script.Parent.ClientSettings)
@@ -20159,7 +20751,7 @@ end
 
 return K
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX67"><Properties><string name="Name">UITheme</string><ProtectedString name="Source"><![CDATA[-- Sanctuary UI tokens, shared by the HUD, icons and every shop.
+<Item class="ModuleScript" referent="RBX68"><Properties><string name="Name">UITheme</string><ProtectedString name="Source"><![CDATA[-- Sanctuary UI tokens, shared by the HUD, icons and every shop.
 -- Fonts: Builder Sans (Roblox's modern UI family) for text, Montserrat Black for display titles;
 -- resolved with a fallback so an older client without these enums still renders.
 local function font(name, fallback)
@@ -20199,7 +20791,7 @@ function T.Rarity(name, config)
 end
 return T
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX68"><Properties><string name="Name">WorldFx</string><ProtectedString name="Source"><![CDATA[-- WorldFx: ONE shared, staggered scheduler for environment motion on tagged map parts
+<Item class="ModuleScript" referent="RBX69"><Properties><string name="Name">WorldFx</string><ProtectedString name="Source"><![CDATA[-- WorldFx: ONE shared, staggered scheduler for environment motion on tagged map parts
 -- (no per-prop RenderStepped connections, no camera-following particles).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > WorldFx (ModuleScript)
 --
@@ -20273,6 +20865,9 @@ function WorldFx.Start()
 	local envAccumulator = 0
 	local acc = 0
 	RunService.Heartbeat:Connect(function(dt)
+		if workspace:GetAttribute("TPFC_IntroPlaying") then
+			return -- the intro fly-over owns the frame budget
+		end
 		acc += dt
 		if acc < 0.05 then
 			return
