@@ -19,6 +19,7 @@ local Renderer = require(script.Parent.CreatureRenderer)
 local Settings = require(script.Parent.ClientSettings)
 local Builder = require(Shared.CreatureBuilder)
 local Timeline = require(Shared.PresentationTimeline)
+local Cine = require(script.Parent.ThrowCinematic)
 
 local TC = {}
 TC.Charging = false
@@ -428,7 +429,7 @@ function TC.StartAim(hrp)
 	if hrp then
 		hrp.CFrame = CFrame.lookAt(hrp.Position, hrp.Position + Vector3.new(0, 0, 1)) -- face down the lane
 	end
-	Effects.Letterbox(true)
+	-- (no letterbox bars: the screen stays full size while throwing)
 end
 
 -- Release: the throw itself now happens at the END of the throw cutscene (TC.PlayThrowCutscene),
@@ -461,179 +462,21 @@ function TC.EndAim()
 end
 
 ---------------------------------------------------------------- THROW CUTSCENE
--- When the server confirms your launch it also tells us how rare the creature inside is (tier 1-8)
--- and how long the wind-up lasts. The cutscene:
---   A  (first half)   the portal appears in your hand and grows; you raise it up (camera in front)
---   B  (power-up)     the camera circles you while the portal charges, effects scale with rarity
---   C  (last 0.3 s)   camera whips over your shoulder, overhand throw, the ball leaves your hand
--- Rarer = crazier:  Rare sparkles | Epic lightning + shake | Legendary golden pillar + flash |
---                   Mythical sky darkens + energy rings | Secret glitch cuts | Divine heaven beam
-local Lighting = game:GetService("Lighting")
-local RAISE_ANIM = {
-	[Enum.HumanoidRigType.R15] = "rbxassetid://507770677", -- Roblox's built-in cheer: both arms up
-	[Enum.HumanoidRigType.R6] = "rbxassetid://129423030",
-}
-local raiseTrack, raiseHum = nil, nil
-local function raiseAnim()
-	local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-	if not hum then
-		return nil
-	end
-	if hum ~= raiseHum then
-		raiseHum, raiseTrack = hum, nil
-		local animator = hum:FindFirstChildOfClass("Animator") or hum
-		local anim = Instance.new("Animation")
-		anim.AnimationId = RAISE_ANIM[hum.RigType] or RAISE_ANIM[Enum.HumanoidRigType.R15]
-		local ok, track = pcall(function()
-			return animator:LoadAnimation(anim)
-		end)
-		if ok and track then
-			track.Priority = Enum.AnimationPriority.Action
-			track.Looped = false
-			raiseTrack = track
-		end
-	end
-	return raiseTrack
-end
-
-local cutsceneConn = nil
+-- When the server confirms your launch it also sends how rare the creature inside is (tier 1-8)
+-- and the wind-up length. ThrowCinematic plays the cutscene (body, portal forming in your hand,
+-- rune circle, rarity effects, release); the camera shots come from ThrowCinematic.Camera below.
 function TC.PlayThrowCutscene(info, windup, tier, color)
-	if cutsceneConn then
-		cutsceneConn:Disconnect()
-		cutsceneConn = nil
-	end
-	color = color or Color3.fromRGB(200, 200, 210)
-	tier = tier or 1
-	local w = math.max(windup, 0.4)
-	local calm = Settings.ReducedMotion
-	local t0 = os.clock()
 	if aimCam then
-		aimCam.cutscene = { t0 = t0, w = w, tier = tier }
+		aimCam.cutscene = { t0 = os.clock(), w = math.max(windup, 0.6), tier = tier or 1 }
 	end
-	-- the portal appears in your hand
-	local handOrb, handRefs = PortalBuilder.BuildOrb(info.portal, 0.45)
-	handOrb.Parent = Effects.Folder
-	if handRefs.light and tier >= 3 then
-		handRefs.light.Color = color
-	end
-	local hcf0 = handCFrame()
-	if hcf0 then
-		Effects.Burst(hcf0.Position, PortalBuilder.ColorSeq(info.portal), 18, 8, 0.6)
-	end
-	Sounds.Play("Open", 1.3)
-	local raise = raiseAnim()
-	if raise then
-		raise:Play(0.15, 1, 1)
-	end
-	local phaseB, phaseC, released = false, false, false
-	local fxTimer, ringTimer = 0, 0
-	local savedExposure = nil
-	local function finish()
-		if cutsceneConn then
-			cutsceneConn:Disconnect()
-			cutsceneConn = nil
-		end
-		if handOrb then
-			handOrb:Destroy()
-			handOrb = nil
-		end
-		if raise and raise.IsPlaying then
-			raise:Stop(0.1)
-		end
-		if savedExposure then
-			Effects.Tween(Lighting, 0.6, { ExposureCompensation = savedExposure })
-			savedExposure = nil
-		end
-	end
-	cutsceneConn = RunService.RenderStepped:Connect(function(dt)
-		local t = os.clock() - t0
-		local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-		if not root then
-			finish()
-			return
-		end
-		local hcf = handCFrame()
-		local handPos = hcf and hcf.Position or (root.Position + Vector3.new(0, 3, 0))
-		-- the portal in your hand grows, then pulses harder as it charges
-		if handOrb and hcf then
-			local grow = math.min(1, t / 0.4)
-			local pulse = 1 + math.sin(t * (8 + tier * 2)) * 0.06 * tier / 4
-			handOrb:PivotTo(hcf * CFrame.new(0, -1.1, 0))
-			handOrb:ScaleTo(math.max(0.05, (1 - (1 - grow) ^ 3) * pulse * (1 + 0.25 * math.min(1, t / w))))
-			PortalBuilder.Spin(handRefs, t * (2 + tier))
-			if handRefs.light then
-				handRefs.light.Range = 8 + tier * 2 + t * 4
-			end
-		end
-		-- B: power-up (escalates with rarity)
-		if not phaseB and t >= w * 0.45 then
-			phaseB = true
-			Sounds.Play("Upgrade", 0.7 + tier * 0.1)
-			if tier >= 5 then
-				Effects.LightBeam(root.Position - Vector3.new(0, 3, 0), tier == 8 and Color3.fromRGB(255, 250, 225) or color, 120, w)
-				if not calm then
-					Effects.Flash(tier == 7 and Color3.new(0, 0, 0) or color, 0.5, 0.35)
-				end
-				Effects.Shockwave(root.Position - Vector3.new(0, 2.8, 0), color, 14 + tier * 2, 0.6)
-			end
-			if tier >= 6 and not calm then
-				savedExposure = Lighting.ExposureCompensation
-				Effects.Tween(Lighting, 0.4, { ExposureCompensation = savedExposure - 1 })
-			end
-			if tier == 8 then
-				Sounds.Play("Rare", 0.75)
-			end
-		end
-		if phaseB and not phaseC then
-			fxTimer -= dt
-			ringTimer -= dt
-			if fxTimer <= 0 then
-				fxTimer = 0.12
-				if tier >= 3 then
-					Effects.Burst(handPos, color, 3 + tier * 2, 6, 0.5)
-				end
-				if tier >= 4 then
-					local off = Vector3.new(math.random(-30, 30), math.random(-10, 30), math.random(-30, 30)) / 10
-					Effects.Burst(handPos + off, color, 10, 20, 0.45)
-					if not calm then
-						Effects.Shake(0.12 * tier / 4, 0.15)
-					end
-				end
-				if tier == 7 and not calm and math.random() < 0.3 then
-					Effects.Flash(Color3.new(0, 0, 0), 0.06, 0.75)
-					Effects.Burst(handPos, ColorSequence.new(Color3.fromRGB(0, 255, 200), Color3.fromRGB(255, 0, 170)), 12, 18, 0.5)
-				end
-			end
-			if tier >= 6 and ringTimer <= 0 then
-				ringTimer = 0.36
-				Effects.Shockwave(root.Position - Vector3.new(0, 2.8, 0), color, 8 + tier, 0.4)
-			end
-		end
-		-- C: whip over the shoulder and throw
-		if not phaseC and t >= w - 0.3 then
-			phaseC = true
-			if raise and raise.IsPlaying then
-				raise:Stop(0.08)
-			end
-			playThrowAnim()
-			Sounds.Play("Throw", 1 + tier * 0.03)
-		end
-		-- the ball leaves your hand (the flight starts at exactly this moment)
-		if not released and t >= w then
-			released = true
-			Effects.Burst(handPos, PortalBuilder.ColorSeq(info.portal), 30, 18, 0.8)
-			if tier >= 3 then
-				Effects.Burst(handPos, color, 20 + tier * 6, 22, 0.8)
-			end
-			if not calm then
-				Effects.Shake(0.3 + tier * 0.12, 0.25)
-				if tier >= 5 then
-					Effects.Flash(color, 0.35, 0.3)
-				end
-			end
-			finish()
-		end
-	end)
+	Cine.Play({
+		portal = info.portal,
+		tier = tier or 1,
+		color = color,
+		w = math.max(windup, 0.6),
+		calm = Settings.ReducedMotion,
+		getHand = handCFrame,
+	})
 end
 function TC.IsFollowing()
 	return camFollow ~= nil or camReturn ~= nil
@@ -684,28 +527,7 @@ RunService:BindToRenderStep("TPFC_FollowCam", Enum.RenderPriority.Camera.Value, 
 		end
 		if aimCam.cutscene then
 			-- THROW CUTSCENE camera (character faces +Z: front is +Z, right side is -X)
-			local cs = aimCam.cutscene
-			local t = os.clock() - cs.t0
-			local R = root.Position
-			local desired, fov, sharp
-			if t < cs.w - 0.3 then
-				local kk = math.clamp(t / math.max(0.1, cs.w - 0.3), 0, 1)
-				local ang = -0.45 + kk * (1.2 + cs.tier * 0.12) -- orbit from the front; rarer = wider swing
-				local r = 7.5 - kk * 1.8
-				local h = 2.2 + kk * 1.4
-				local center = R + Vector3.new(-0.8, 0, 0)
-				desired = CFrame.lookAt(center + Vector3.new(math.sin(ang) * r, h, math.cos(ang) * r), R + Vector3.new(-0.6, 2.6 + kk, 0))
-				fov = 58 - kk * (4 + cs.tier * 1.5)
-				sharp = 7
-				if cs.tier == 7 and not Settings.ReducedMotion then
-					desired = desired * CFrame.new(math.random(-6, 6) / 10, math.random(-6, 6) / 10, 0) -- glitch jitter
-					sharp = 30
-				end
-			else
-				desired = CFrame.lookAt(R + Vector3.new(-2.8, 2.4, -7.5), R + Vector3.new(0, 3.5, 45))
-				fov = aimCam.saved.fov + 6
-				sharp = 14
-			end
+			local desired, fov, sharp = Cine.Camera(aimCam.cutscene, root.Position, aimCam.saved.fov)
 			aimCam.cf = aimCam.cf:Lerp(desired, 1 - math.exp(-sharp * dt))
 			camera.CameraType = Enum.CameraType.Scriptable
 			camera.CFrame = aimCam.cf
@@ -721,7 +543,7 @@ RunService:BindToRenderStep("TPFC_FollowCam", Enum.RenderPriority.Camera.Value, 
 		aimCam.cf = aimCam.cf:Lerp(desired, 1 - math.exp(-9 * dt))
 		camera.CameraType = Enum.CameraType.Scriptable
 		camera.CFrame = aimCam.cf
-		local fovTarget = aimCam.saved.fov - 16 * power + push * 10
+		local fovTarget = aimCam.saved.fov - 4 * power + push * 3 -- no big squeeze: the view stays wide
 		camera.FieldOfView += (fovTarget - camera.FieldOfView) * (1 - math.exp(-10 * dt))
 		return
 	end
@@ -790,6 +612,7 @@ RunService:BindToRenderStep("TPFC_FollowCam", Enum.RenderPriority.Camera.Value, 
 	camera.CFrame = camFollow.cf
 end)
 local function watchCharacter(char)
+	Cine.Cancel() -- never leave a cutscene (or an anchored root) running across a respawn
 	if aimCam then
 		local a = aimCam
 		aimCam = nil
@@ -822,7 +645,7 @@ function TC.StartCloseup(id, def, pos, duration)
 	camFollow.height = 4 * size
 	camFollow.radius = (7 + rc.order * 0.8) * size
 	camFollow.untilT = os.clock() + duration
-	Effects.Letterbox(true)
+	-- (no letterbox bars: keep the full screen during the close-up too)
 	Effects.Tween(camera, 0.7, { FieldOfView = 48 }, Enum.EasingStyle.Quad)
 	if Effects.DOF then
 		Effects.DOF.InFocusRadius = 12
