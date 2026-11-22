@@ -529,10 +529,11 @@ RunService:BindToRenderStep("TPFC_FollowCam", Enum.RenderPriority.Camera.Value, 
 		if aimCam.cutscene then
 			-- THROW CUTSCENE camera (character faces +Z: front is +Z, right side is -X)
 			local desired, fov, sharp = Cine.Camera(aimCam.cutscene, root.Position, aimCam.saved.fov)
-			aimCam.cf = aimCam.cf:Lerp(desired, 1 - math.exp(-sharp * dt))
+			local cut = sharp >= 1000 -- hard cut between shots: jump straight there
+			aimCam.cf = cut and desired or aimCam.cf:Lerp(desired, 1 - math.exp(-sharp * dt))
 			camera.CameraType = Enum.CameraType.Scriptable
 			camera.CFrame = aimCam.cf
-			camera.FieldOfView += (fov - camera.FieldOfView) * (1 - math.exp(-8 * dt))
+			camera.FieldOfView = cut and fov or camera.FieldOfView + (fov - camera.FieldOfView) * (1 - math.exp(-10 * dt))
 			return
 		end
 		local released = aimCam.released and (os.clock() - aimCam.released) or nil

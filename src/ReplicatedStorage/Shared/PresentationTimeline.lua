@@ -27,10 +27,11 @@ T.CameraTimeout = 14       -- hard cap on any follow-camera claim
 -- THROW CUTSCENE: time between PortalThrown and the ball leaving the hand (you raise the portal,
 -- it powers up, you throw). The rarer the creature inside, the longer and crazier it gets.
 -- The server delays the portal opening by the same amount, so the reveal stays in sync.
-T.Windup = { Common = 0.9, Uncommon = 1.0, Rare = 1.25, Epic = 1.5, Legendary = 1.9, Mythical = 2.1, Secret = 2.1, Divine = 2.5 }
+-- (ThrowCinematic: Common/Uncommon = 2 shots, Rare/Epic = 3 shots, Legendary+ = 4 shots)
+T.Windup = { Common = 1.4, Uncommon = 1.5, Rare = 1.9, Epic = 2.3, Legendary = 2.9, Mythical = 3.3, Secret = 3.3, Divine = 3.8 }
 
 function T.WindupFor(rarity: string?): number
-	return (rarity and T.Windup[rarity]) or 0.9
+	return (rarity and T.Windup[rarity]) or 1.4
 end
 
 function T.CatchDelay(rarity: string): number
