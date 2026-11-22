@@ -313,6 +313,7 @@ local OBSTACLES = {
 	{ rect = Vector2.new(-29, -13), half = Vector2.new(2.4, 4.4) },
 	{ circle = Vector2.new(-9.5, -28), r = 4.6 },
 	{ circle = Vector2.new(7, -29.5), r = 3 },
+	{ rect = Vector2.new(6, 24.5), half = Vector2.new(4.4, 2.6) }, -- feeding trough
 }
 local function blocked(lx, lz)
 	for _, o in ipairs(OBSTACLES) do

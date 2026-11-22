@@ -42,11 +42,36 @@ Farm.SpiritPrice = 250000
 Farm.SpiritLevel = 5
 Farm.SpiritMaxCyclesPerTick = 24 -- catch-up cap per bed when you log back in
 
--- yield bonuses
-Farm.LevelBonus = 0.05 -- +5% yield per Farmer Level above 1
-Farm.PetBonus = 0.015 -- +1.5% yield per pet placed in your courtyard (they tend the garden)
-Farm.Golden = { chance = 0.08, mult = 3 }
-Farm.Giant = { chance = 0.015, mult = 10 }
+-- yield bonuses (sale value of produce)
+Farm.LevelBonus = 0.05 -- +5% per Farmer Level above 1
+Farm.PetBonus = 0.015 -- +1.5% per pet placed in your courtyard (they tend the garden)
+
+-- Mutations: rolled when you PLANT, so you can watch a lucky one grow. Checked rarest first.
+-- mult scales both the sale value and the food value. Watered gets likelier with each Sprinkler.
+Farm.Mutations = {
+	{ id = "Rainbow", chance = 0.003, mult = 40, color = C(255, 120, 210) },
+	{ id = "Giant", chance = 0.015, mult = 10, color = C(255, 190, 80), scale = 1.55 },
+	{ id = "Golden", chance = 0.08, mult = 3, color = C(255, 205, 70) },
+	{ id = "Watered", chance = 0, perSprinkler = 0.05, mult = 1.5, color = C(110, 190, 240) },
+}
+Farm.MutationById = {}
+for _, m in ipairs(Farm.Mutations) do
+	Farm.MutationById[m.id] = m
+end
+
+-- Harvests go to your Pantry: feed them to your pets (Feeding Trough, E) or sell them (R).
+Farm.PantryCap = 300 -- past this, extra produce is sold automatically
+Farm.FeedXpPerCropXp = 4 -- pet XP per food = crop.xp * this * mutation mult
+
+-- Pet levels: each level adds income to that pet. Food always goes to your lowest-level pet first.
+Farm.PetLevelIncome = 0.06 -- +6% income per pet level above 1
+Farm.PetMaxLevel = 100
+function Farm.PetXpToNext(level)
+	return math.floor(30 * level ^ 1.6)
+end
+function Farm.PetMult(level)
+	return 1 + Farm.PetLevelIncome * (math.clamp(level or 1, 1, Farm.PetMaxLevel) - 1)
+end
 
 -- Farmer Level: XP from harvests and catches
 function Farm.XpToNext(level)

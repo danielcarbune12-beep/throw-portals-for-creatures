@@ -87,6 +87,12 @@ local GOLD = Color3.fromRGB(255, 214, 110)
 local GREEN = Color3.fromRGB(170, 255, 170)
 local VIOLET = Color3.fromRGB(214, 170, 255)
 local WHITE = Color3.fromRGB(250, 246, 236)
+local MUT = {
+	Rainbow = Color3.fromRGB(255, 140, 220),
+	Giant = Color3.fromRGB(255, 190, 80),
+	Golden = Color3.fromRGB(255, 210, 80),
+	Watered = Color3.fromRGB(130, 200, 255),
+}
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local FarmFx = Remotes:WaitForChild("FarmFx", 30)
@@ -96,20 +102,47 @@ end
 FarmFx.OnClientEvent:Connect(function(kind, d)
 	d = d or {}
 	if kind == "harvest" then
-		local money = "+" .. Format.Money(d.amount or 0)
-		if d.tag == "GIANT" then
-			burst(d.pos, "GIANT " .. (d.crop or "harvest"):upper() .. "!  " .. money, GOLD, 64, 2.6)
+		-- produce goes to the Pantry; mutations are the big moments
+		local name = (d.tag and (d.tag .. " ") or "") .. (d.crop or "crop")
+		if d.sold then
+			burst(d.pos, "Pantry full: sold " .. name .. " +" .. Format.Money(d.sold), GREEN, 34, 2)
+			play("Money")
+		elseif d.tag == "Rainbow" then
+			burst(d.pos, "RAINBOW " .. (d.crop or ""):upper() .. "!", MUT.Rainbow, 72, 3)
 			play("Rare")
-		elseif d.tag == "GOLDEN" then
-			burst(d.pos, "GOLDEN " .. (d.crop or "harvest") .. "!  " .. money, GOLD, 52, 2.2)
-			play("Rare", 0.7)
+		elseif d.tag == "Giant" then
+			burst(d.pos, "GIANT " .. (d.crop or ""):upper() .. "!", MUT.Giant, 62, 2.6)
+			play("Rare", 0.8)
+		elseif d.tag == "Golden" then
+			burst(d.pos, "+1 Golden " .. (d.crop or ""), MUT.Golden, 46, 2.2)
+			play("Rare", 0.6)
 		else
-			burst(d.pos, money, GREEN, 40)
+			burst(d.pos, "+1 " .. name, d.tag and MUT[d.tag] or GREEN, 36)
 			play("Money")
 		end
 		if d.auto and d.tag then
-			burst(d.pos + Vector3.new(0, -1.5, 0), "found by your Harvest Spirit", VIOLET, 26, 2.2)
+			burst(d.pos + Vector3.new(0, -1.5, 0), "harvested by your Harvest Spirit", VIOLET, 26, 2.2)
 		end
+	elseif kind == "mutation" then
+		-- rolled at planting: a lucky bed you can now watch grow
+		local big = d.mutation == "Rainbow" or d.mutation == "Giant"
+		burst(d.pos, (d.mutation or ""):upper() .. " " .. (d.crop or "") .. " sprouted!", MUT[d.mutation] or GOLD, big and 60 or 42, big and 3 or 2.2)
+		play(big and "Rare" or "Upgrade", big and 1 or 0.7)
+	elseif kind == "fed" then
+		burst(d.pos, "Fed " .. tostring(d.count) .. " food to your pets", GREEN, 40, 2.2)
+		if (d.ups or 0) > 0 then
+			local line = tostring(d.ups) .. (d.ups == 1 and " level up!" or " level ups!")
+			if d.star then
+				line ..= "  " .. d.star .. " is Lv " .. tostring(d.level)
+			end
+			task.delay(0.45, burst, d.pos - Vector3.new(0, 1.6, 0), line, GOLD, 46, 2.6)
+			play("Rare", 0.8)
+		else
+			play("Upgrade")
+		end
+	elseif kind == "sold" then
+		burst(d.pos, "Sold " .. tostring(d.count) .. " produce  +" .. Format.Money(d.amount or 0), GOLD, 46, 2.2)
+		play("Money")
 	elseif kind == "plant" then
 		burst(d.pos, "Planted", WHITE, 30, 1.1)
 		play("Click")

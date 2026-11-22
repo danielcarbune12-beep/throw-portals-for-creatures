@@ -19,6 +19,8 @@ local WorldBuilder = require(script.Parent.WorldBuilder)
 local BaseBuilder = require(script.Parent.BaseBuilder)
 local Expeditions = require(script.Parent.ExpeditionService)
 Expeditions.Init()
+-- courtyard farm (crops, pantry, pet feeding/levels, bounties, daily gift); started below with Init
+local FarmService = require(script.Parent.FarmService)
 
 ---------------------------------------------------------------- remotes
 local Remotes = Instance.new("Folder")
@@ -106,7 +108,8 @@ local function incomePerSec(data)
 	for _, uid in ipairs(data.Placed) do
 		local c = findCreature(data, uid)
 		if c and not Expeditions.IsAway(data, uid) then
-			total += CreatureData.Income(c.c) * Variants.Mult(c.s, c.v)
+			-- fed pets level up: +6% income per pet level (FarmConfig.PetLevelIncome)
+			total += CreatureData.Income(c.c) * Variants.Mult(c.s, c.v) * FarmService.PetMult(c)
 		end
 	end
 	local _, incomeBuff = equippedBuffs(data)
@@ -194,7 +197,6 @@ local function notify(player, text, kind)
 end
 
 -- courtyard farm, Farmer Level, bounties and daily gift (in-world, see FarmService)
-local FarmService = require(script.Parent.FarmService)
 FarmService.Init(BaseBuilder, { income = incomePerSec, sync = sync })
 
 local function setCarry(player)

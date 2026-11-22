@@ -2,7 +2,10 @@
 -- Location: ServerScriptService > Server > FarmService (ModuleScript), started by GameServer.
 --
 --  * Six planter beds per courtyard (3 free, 3 bought). Crops grow on os.time(), so they keep growing
---    while you are offline. Harvest = money + Farmer XP, with Golden (x3) and Giant (x10) harvests.
+--    while you are offline. A mutation (Watered / Golden / Giant / Rainbow) is rolled when you plant
+--    and shows on the plant while it grows. Harvest = produce into the Pantry + Farmer XP.
+--  * Feeding Trough: feed the Pantry to your courtyard pets (pet XP -> pet levels -> +6% income per
+--    level, see PetMult) or sell it. Mutations multiply both the food and the sale value.
 --  * Farm Stand: pick your seed, buy beds, buy Sprinklers (faster growth), hire the Harvest Spirit
 --    (auto-harvests into the Treasury and resows, also offline: the 24/7 farm).
 --  * Farmer Level: XP from harvests and catches; levels unlock crops and add yield.
@@ -47,7 +50,8 @@ end
 local STAND = V(-29, 0, -13) -- clear of bed 1 (z > -8.7) and the Treasury plinth (x > -26.3)
 local BOARD = V(-9.5, 0, -28)
 local CHEST = V(7, 0, -29.5)
-FarmService.Layout = { plots = PLOTS, stand = STAND, board = BOARD, chest = CHEST }
+local TROUGH = V(6, 0, 24.5) -- between the lodge and the relic pavilion, behind the slot ring
+FarmService.Layout = { plots = PLOTS, stand = STAND, board = BOARD, chest = CHEST, trough = TROUGH }
 
 ---------------------------------------------------------------- data
 local function ensure(data)
@@ -61,6 +65,8 @@ local function ensure(data)
 	f.Sprinkler = math.clamp(tonumber(f.Sprinkler) or 0, 0, #Farm.SprinklerPrices)
 	f.Spirit = f.Spirit == true
 	f.Harvests = tonumber(f.Harvests) or 0
+	f.Pantry = type(f.Pantry) == "table" and f.Pantry or {} -- ["Crop|Mutation"] = count
+	f.Fed = tonumber(f.Fed) or 0
 	data.Bounties = type(data.Bounties) == "table" and data.Bounties or {}
 	data.Daily = type(data.Daily) == "table" and data.Daily or { last = 0, streak = 0 }
 	return f
@@ -143,7 +149,7 @@ end
 
 local function newBounty(data, avoid)
 	local base = bountyBase(data)
-	local kinds = { "harvest", "catch", "collect", "throw", "crop", "zone" }
+	local kinds = { "harvest", "catch", "collect", "throw", "crop", "zone", "feed" }
 	local zones = {}
 	for _, id in ipairs(Config.WorldOrder) do
 		if data.UnlockedWorlds[id] and id ~= "Forest" then
@@ -181,6 +187,9 @@ local function newBounty(data, avoid)
 				b.zone = zones[rng:NextInteger(1, #zones)]
 				b.n = 1
 				b.money = base * 1.5
+			elseif k == "feed" then
+				b.n = rng:NextInteger(6, 20)
+				b.money = base * b.n / 8
 			end
 			b.money = math.floor(b.money)
 			b.xp = 10 + math.floor(b.money / math.max(1, base) * 12)
@@ -216,6 +225,8 @@ local function bountyText(b)
 		return "Harvest " .. b.n .. " " .. cropName
 	elseif b.k == "zone" then
 		return "Land a portal in " .. (w and w.name or b.zone)
+	elseif b.k == "feed" then
+		return "Feed your pets " .. b.n .. " food"
 	end
 	return "?"
 end
@@ -248,23 +259,53 @@ local function bountyEvent(player, data, kind, amount, info)
 end
 
 ---------------------------------------------------------------- harvest / plant
-local function rollYield(player, data, crop)
-	local f = data.Farm
-	local pets = #(data.Placed or {})
-	local amt = crop.sell * soil(data) * (1 + Farm.LevelBonus * (f.Level - 1)) * (1 + Farm.PetBonus * pets)
-	local tag
+-- mutation rolled at planting time (rarest first); Watered gets likelier with Sprinklers
+local function rollMutation(data)
 	local r = rng:NextNumber()
-	if r < Farm.Giant.chance then
-		amt *= Farm.Giant.mult
-		tag = "GIANT"
-	elseif r < Farm.Giant.chance + Farm.Golden.chance then
-		amt *= Farm.Golden.mult
-		tag = "GOLDEN"
+	for _, m in ipairs(Farm.Mutations) do
+		local chance = m.chance + (m.perSprinkler or 0) * data.Farm.Sprinkler
+		if r < chance then
+			return m.id
+		end
+		r -= chance
 	end
-	return math.floor(amt), tag
+	return nil
+end
+local function mutMult(m)
+	local def = m and Farm.MutationById[m]
+	return def and def.mult or 1
 end
 
--- harvest bed i; auto = by the Harvest Spirit (pays into the Treasury, no coin flight)
+-- sale value of one produce item, at the player's current soil/level/pets
+local function itemValue(data, crop, m)
+	local f = data.Farm
+	local pets = #(data.Placed or {})
+	return math.floor(crop.sell * soil(data) * (1 + Farm.LevelBonus * (f.Level - 1)) * (1 + Farm.PetBonus * pets) * mutMult(m))
+end
+-- pet XP from one produce item
+local function itemFood(crop, m)
+	return crop.xp * Farm.FeedXpPerCropXp * mutMult(m)
+end
+local function splitKey(key)
+	local c, m = string.match(key, "^([^|]+)|?(.*)$")
+	return Farm.ById[c], (m ~= "" and m or nil)
+end
+local function pantryCount(f)
+	local n = 0
+	for _, count in pairs(f.Pantry) do
+		n += count
+	end
+	return n
+end
+FarmService.ItemValue, FarmService.SplitKey = itemValue, splitKey
+
+-- pet level income multiplier (GameServer.incomePerSec uses this per placed pet)
+function FarmService.PetMult(c)
+	return Farm.PetMult(c and c.l)
+end
+
+-- harvest bed i into the Pantry; auto = by the Harvest Spirit. A full Pantry sells the extra
+-- (into the Treasury for the Spirit, straight to the wallet by hand).
 local function harvest(player, data, base, i, auto)
 	local f = data.Farm
 	local key = tostring(i)
@@ -274,27 +315,32 @@ local function harvest(player, data, base, i, auto)
 		f.Plots[key] = nil
 		return 0
 	end
-	local amt, tag = rollYield(player, data, crop)
-	if auto then
-		data.Uncollected += amt
+	local m = plot.m
+	local pos = base.cf:PointToWorldSpace(PLOTS[i] + V(0, 3, 0))
+	local sold = 0
+	if pantryCount(f) >= Farm.PantryCap then
+		sold = itemValue(data, crop, m)
+		if auto then
+			data.Uncollected += sold
+		else
+			data.Money += sold
+			data.TotalEarned = (data.TotalEarned or 0) + sold
+		end
 	else
-		data.Money += amt
-		data.TotalEarned = (data.TotalEarned or 0) + amt
+		local pk = crop.id .. "|" .. (m or "")
+		f.Pantry[pk] = (f.Pantry[pk] or 0) + 1
 	end
 	f.Plots[key] = nil
 	f.Harvests += 1
 	addXp(player, data, crop.xp)
 	bountyEvent(player, data, "harvest", 1, { crop = crop.id })
-	local pos = base.cf:PointToWorldSpace(PLOTS[i] + V(0, 3, 0))
-	if not auto then
-		fx(player, "harvest", { amount = amt, pos = pos, tag = tag, crop = crop.name })
-		if MoneyFxRE then
-			MoneyFxRE:FireClient(player, amt, pos)
-		end
-	elseif tag then
-		fx(player, "harvest", { amount = amt, pos = pos, tag = tag, crop = crop.name, auto = true })
+	if not auto or (m and m ~= "Watered") then
+		fx(player, "harvest", { pos = pos, tag = m, crop = crop.name, auto = auto, sold = sold > 0 and sold or nil })
 	end
-	return amt
+	if sold > 0 and not auto and MoneyFxRE then
+		MoneyFxRE:FireClient(player, sold, pos)
+	end
+	return 1
 end
 
 local function plant(player, data, i, cropId, at)
@@ -308,8 +354,9 @@ local function plant(player, data, i, cropId, at)
 		return false, "Need " .. Format.Money(cost) .. " for " .. crop.name .. " seeds"
 	end
 	data.Money -= cost
-	f.Plots[tostring(i)] = { c = crop.id, t = at or os.time() }
-	return true
+	local m = rollMutation(data)
+	f.Plots[tostring(i)] = { c = crop.id, t = at or os.time(), m = m }
+	return true, nil, m
 end
 
 local function plotState(data, i)
@@ -323,7 +370,7 @@ local function plotState(data, i)
 		return "empty"
 	end
 	local left = plot.t + growTime(data, crop) - os.time()
-	return left <= 0 and "ready" or "growing", crop, left
+	return left <= 0 and "ready" or "growing", crop, left, plot.m
 end
 
 -- Harvest Spirit: harvest everything ready and resow, chaining planting times so the farm keeps
@@ -368,24 +415,41 @@ local function runSpirit(player, data, base)
 end
 
 ---------------------------------------------------------------- visuals
-local function plantVisual(entry, crop, stage, plotCF)
+local function plantVisual(entry, crop, stage, plotCF, m)
 	entry.plants:ClearAllChildren()
 	if stage == 0 or not crop then
 		return
 	end
 	K.SetFolder(entry.plants)
 	K.mirror = false
-	local s = (stage == 1 and 0.4 or stage == 2 and 0.72 or 1) * crop.size
+	local mdef = m and Farm.MutationById[m]
+	local s = (stage == 1 and 0.4 or stage == 2 and 0.72 or 1) * crop.size * (mdef and mdef.scale or 1)
 	local ripe = stage == 3
-	local fruit = ripe and crop.fruit or crop.leaf:Lerp(crop.fruit, 0.25)
-	for _, off in ipairs({ V(-1.7, 0, -1.35), V(1.7, 0, -1.35), V(-1.7, 0, 1.35), V(1.7, 0, 1.35) }) do
+	local baseFruit = ripe and crop.fruit or crop.leaf:Lerp(crop.fruit, 0.25)
+	-- mutations show from the growing stage on, so a lucky bed is visible while it grows
+	local function spotFruit(idx)
+		if not mdef or stage < 2 then
+			return baseFruit, M.SmoothPlastic
+		elseif m == "Rainbow" then
+			return Color3.fromHSV(((idx - 1) / 4 + os.clock() % 1 * 0.1) % 1, 0.55, 1), M.Neon
+		elseif m == "Golden" then
+			return C(255, 200, 70), M.Metal
+		elseif m == "Giant" then
+			return baseFruit:Lerp(C(255, 190, 80), 0.25), M.SmoothPlastic
+		elseif m == "Watered" then
+			return baseFruit:Lerp(C(120, 200, 255), 0.35), M.Glass
+		end
+		return baseFruit, M.SmoothPlastic
+	end
+	for idx, off in ipairs({ V(-1.7, 0, -1.35), V(1.7, 0, -1.35), V(-1.7, 0, 1.35), V(1.7, 0, 1.35) }) do
+		local fruit, fmat = spotFruit(idx)
 		local b = plotCF * CF(off + V(0, 2.08, 0)) * A(0, rng:NextNumber(0, PI), 0)
 		if crop.shape == "wheat" then
 			for k = -1, 1 do
 				local h = 2.6 * s
 				K.block(b * CF(k * 0.35, h / 2, 0) * A(0, 0, k * 0.12), V(0.16, h, 0.16), crop.stem, M.SmoothPlastic)
 				if stage >= 2 then
-					K.ellipsoid(b * CF(k * 0.35 + k * 0.15 * s, h + 0.25 * s, 0) * A(0, 0, k * 0.12), V(0.4, 1.1, 0.4) * s, fruit, M.SmoothPlastic)
+					K.ellipsoid(b * CF(k * 0.35 + k * 0.15 * s, h + 0.25 * s, 0) * A(0, 0, k * 0.12), V(0.4, 1.1, 0.4) * s, fruit, fmat)
 				end
 			end
 		elseif crop.shape == "melon" or crop.shape == "pumpkin" then
@@ -393,7 +457,7 @@ local function plantVisual(entry, crop, stage, plotCF)
 			K.wedge(b * CF(-0.7 * s, 0.15, 0) * A(0, -PI / 2, 0), V(1.2, 0.3, 1.4) * s, crop.leaf, M.SmoothPlastic)
 			if stage >= 2 then
 				local w = crop.shape == "pumpkin" and V(1.5, 1.0, 1.5) or V(1.5, 1.05, 1.2)
-				K.ellipsoid(b * CF(0, 0.5 * s, 0), w * s, fruit, M.SmoothPlastic)
+				K.ellipsoid(b * CF(0, 0.5 * s, 0), w * s, fruit, fmat)
 				if ripe then
 					if crop.shape == "pumpkin" then
 						K.ellipsoid(b * CF(0, 0.5 * s, 0), V(0.9, 1.05, 1.55) * s, K.dark(fruit, 0.12), M.SmoothPlastic)
@@ -415,7 +479,7 @@ local function plantVisual(entry, crop, stage, plotCF)
 			if stage >= 2 then
 				for p = 0, 5 do
 					local a = p / 6 * PI * 2
-					K.ellipsoid(b * CF(math.cos(a) * 0.45 * s, 0.45 * s, math.sin(a) * 0.45 * s) * A(0, -a, 0.6), V(0.9, 0.16, 0.45) * s, fruit, M.SmoothPlastic)
+					K.ellipsoid(b * CF(math.cos(a) * 0.45 * s, 0.45 * s, math.sin(a) * 0.45 * s) * A(0, -a, 0.6), V(0.9, 0.16, 0.45) * s, fruit, fmat)
 				end
 				if ripe then
 					K.ellipsoid(b * CF(0, 0.5 * s, 0), V(0.45, 0.45, 0.45) * s, C(255, 236, 160), M.Neon)
@@ -431,13 +495,14 @@ local function plantVisual(entry, crop, stage, plotCF)
 			if stage >= 2 then
 				for p = 0, 3 do
 					local a = p / 4 * PI * 2 + 0.4
-					K.ellipsoid(b * CF(math.cos(a) * 0.35 * s, h + 0.1, math.sin(a) * 0.35 * s), V(0.5, 0.5, 0.5) * s, fruit, M.SmoothPlastic)
+					K.ellipsoid(b * CF(math.cos(a) * 0.35 * s, h + 0.1, math.sin(a) * 0.35 * s), V(0.5, 0.5, 0.5) * s, fruit, fmat)
 				end
 			end
 		end
 	end
 	if ripe then
-		local gem = K.gem(plotCF * CF(0, 6.2, 0), 0.7, 1.3, C(255, 214, 120), M.Neon, 0.1)
+		local big = mdef and m ~= "Watered"
+		local gem = K.gem(plotCF * CF(0, big and 7.2 or 6.2, 0), big and 1.1 or 0.7, big and 2.0 or 1.3, mdef and mdef.color or C(255, 214, 120), M.Neon, 0.1)
 		gem.Name = "RipeMarker"
 		K.tag(gem, "TPFC_Bob", { Amp = 0.35, Period = 2.2, Spin = 60 })
 	end
@@ -623,6 +688,56 @@ local function buildBase(base)
 		FarmService.OnChest(base, player)
 	end)
 	farm.chestPrompt = cp
+	-- Feeding Trough: Pantry produce becomes pet food (E) or money (R). Long side faces the shrine.
+	local tcf = L(TROUGH.X, 0, TROUGH.Z)
+	K.block(tcf * CF(0, 1.3, 0), V(7.8, 0.6, 3.8), Style.stone, M.Limestone, true)
+	local trough = K.block(tcf * CF(0, 2.35, 0), V(6.8, 1.5, 2.8), woodD, M.WoodPlanks, true)
+	trough.Name = "FeedingTrough"
+	K.block(tcf * CF(0, 3.05, 0), V(6.0, 0.12, 2.0), C(70, 50, 36), M.Wood)
+	for _, x in ipairs({ -3.1, 3.1 }) do
+		K.block(tcf * CF(x, 2.4, 0), V(0.3, 1.7, 3.0), gold, M.Metal)
+	end
+	for _, x in ipairs({ -3.6, 3.6 }) do
+		K.block(tcf * CF(x, 4.4, 1.2), V(0.4, 5.2, 0.4), woodD, M.Wood)
+	end
+	K.block(tcf * CF(0, 7.0, 1.2), V(8.0, 0.4, 0.5), wood, M.Wood)
+	local plaque = K.block(tcf * CF(0, 6.1, 1.2), V(4.6, 1.2, 0.2), Style.roof, M.SmoothPlastic)
+	farm.troughLabel = billboard(plaque, V(0, 2.6, 0), UDim2.fromOffset(210, 66), 30)
+	-- the food heap grows with the Pantry
+	farm.heap = {}
+	for k, x in ipairs({ -1.8, 0, 1.8 }) do
+		local h = K.ellipsoid(tcf * CF(x, 3.1, 0), V(1.8, 0.6, 1.6), ({ C(150, 110, 230), C(242, 202, 90), C(120, 200, 150) })[k], M.SmoothPlastic)
+		h.Name = "FoodHeap"
+		farm.heap[k] = h
+	end
+	local feed = prompt(trough, Enum.KeyCode.E, Enum.KeyCode.ButtonX, V(-1.6, 0.9, -1.6))
+	feed.MaxActivationDistance = 6
+	feed:SetAttribute("BaseIndex", base.index)
+	feed.Triggered:Connect(function(player)
+		FarmService.OnFeed(base, player)
+	end)
+	local sell = prompt(trough, Enum.KeyCode.R, Enum.KeyCode.ButtonY, V(1.6, 0.9, -1.6))
+	sell.MaxActivationDistance = 6
+	sell:SetAttribute("BaseIndex", base.index)
+	sell.Triggered:Connect(function(player)
+		FarmService.OnSell(base, player)
+	end)
+	farm.feedPrompt, farm.sellPrompt = feed, sell
+end
+
+-- placed pets of a player (their creature entries)
+local function placedPets(data)
+	local byUid = {}
+	for _, c in ipairs(data.Creatures or {}) do
+		byUid[c.u] = c
+	end
+	local list = {}
+	for _, uid in ipairs(data.Placed or {}) do
+		if byUid[uid] then
+			table.insert(list, byUid[uid])
+		end
+	end
+	return list
 end
 
 ---------------------------------------------------------------- per-tick refresh of one courtyard
@@ -646,6 +761,10 @@ local function refreshBase(base)
 			end
 			farm.standLabel.Text = ""
 			farm.chestLabel.Text = ""
+			farm.troughLabel.Text = ""
+			for _, h in ipairs(farm.heap) do
+				h.Transparency = 1
+			end
 			for _, card in ipairs(farm.cards) do
 				card.Text.Text, card.Reward.Text = "", ""
 			end
@@ -662,7 +781,9 @@ local function refreshBase(base)
 	local f = ensure(data)
 	local now = os.time()
 	for i, e in ipairs(farm.plots) do
-		local state, crop, left = plotState(data, i)
+		local state, crop, left, m = plotState(data, i)
+		local mdef = m and Farm.MutationById[m]
+		local mName = mdef and ('<font color="#' .. mdef.color:ToHex() .. '">' .. m .. "</font> ") or ""
 		local stage = 0
 		if state == "locked" then
 			e.label.Text = '<font color="#DCD4C8">Locked bed</font>\n<font size="16">buy at the Farm Stand</font>'
@@ -678,18 +799,19 @@ local function refreshBase(base)
 			local grow = growTime(data, crop)
 			local p = 1 - left / grow
 			stage = state == "ready" and 3 or (p >= 0.4 and 2 or 1)
-			e.soil.Color = SOIL_WET
+			e.soil.Color = m == "Watered" and C(60, 62, 70) or SOIL_WET
 			if state == "ready" then
-				e.label.Text = '<font color="#FFD678">' .. crop.name .. " ready!</font>"
-				e.prompt.ActionText, e.prompt.ObjectText = "Harvest", crop.name
+				e.label.Text = mName .. '<font color="#FFD678">' .. crop.name .. " ready!</font>"
+				e.prompt.ActionText, e.prompt.ObjectText = "Harvest", (m and (m .. " ") or "") .. crop.name
 			else
-				e.label.Text = crop.name .. "  " .. math.floor(p * 100) .. "%\n" .. '<font color="#DCD4C8">' .. fmtTime(left) .. "</font>"
+				e.label.Text = mName .. crop.name .. "  " .. math.floor(p * 100) .. "%\n" .. '<font color="#DCD4C8">' .. fmtTime(left) .. "</font>"
 				e.prompt.ActionText, e.prompt.ObjectText = "Growing", fmtTime(left)
 			end
 		end
-		if stage ~= e.stage or (crop and crop.id) ~= e.crop then
-			e.stage, e.crop = stage, crop and crop.id
-			plantVisual(e, crop, stage, e.cf)
+		local visKey = (crop and crop.id or "") .. (m or "")
+		if stage ~= e.stage or visKey ~= e.crop then
+			e.stage, e.crop = stage, visKey
+			plantVisual(e, crop, stage, e.cf, m)
 		end
 	end
 	-- stand
@@ -753,6 +875,35 @@ local function refreshBase(base)
 		farm.chestPrompt.ActionText = "Daily gift"
 		farm.chestGlow.Transparency = 1
 	end
+	-- trough: pantry, its worth, and how your pets are doing
+	local n, value = 0, 0
+	for key, count in pairs(f.Pantry) do
+		local crop, mm = splitKey(key)
+		if crop then
+			n += count
+			value += itemValue(data, crop, mm) * count
+		end
+	end
+	local pets = placedPets(data)
+	local sum, best = 0, 1
+	for _, c in ipairs(pets) do
+		sum += c.l or 1
+		best = math.max(best, c.l or 1)
+	end
+	local avg = #pets > 0 and sum / #pets or 1
+	farm.troughLabel.Text = '<font color="#FFD678">PANTRY ' .. n .. " / " .. Farm.PantryCap .. "</font>\n"
+		.. "Worth " .. Format.Money(value) .. "\n"
+		.. '<font color="#DCD4C8">' .. #pets .. " pets  ·  avg Lv " .. string.format("%.1f", avg) .. "  ·  best Lv " .. best .. "</font>"
+	farm.feedPrompt.ActionText = n > 0 and ("Feed pets (" .. n .. " food)") or "Feed pets"
+	farm.feedPrompt.ObjectText = "Pantry"
+	farm.sellPrompt.ActionText = n > 0 and "Sell produce" or "Nothing to sell"
+	farm.sellPrompt.ObjectText = n > 0 and Format.Money(value) or ""
+	local fill = math.clamp(n / 60, 0, 1)
+	for k, h in ipairs(farm.heap) do
+		local show = n >= (k - 1) * 4 + 1
+		h.Transparency = show and 0 or 1
+		h.Size = V(1.8, 0.4 + 0.9 * fill, 1.6)
+	end
 end
 
 ---------------------------------------------------------------- prompt handlers
@@ -783,13 +934,20 @@ function FarmService.OnPlot(base, i, player)
 		-- one press re-sows with your selected seed (if you can afford it)
 		local seed = Farm.ById[data.Farm.Seed]
 		if seed and unlocked(data, seed) and data.Money >= seedCost(data, seed) then
-			plant(player, data, i, seed.id)
+			local _, _, m = plant(player, data, i, seed.id)
+			if m then
+				task.delay(0.9, fx, player, "mutation", { pos = pos, mutation = m, crop = seed.name })
+			end
 		end
 		syncMoney(player)
 	else
-		local ok, msg = plant(player, data, i, data.Farm.Seed)
+		local ok, msg, m = plant(player, data, i, data.Farm.Seed)
 		if ok then
-			fx(player, "plant", { pos = pos })
+			if m then
+				fx(player, "mutation", { pos = pos, mutation = m, crop = Farm.ById[data.Farm.Seed].name })
+			else
+				fx(player, "plant", { pos = pos })
+			end
 			syncMoney(player)
 		else
 			say(player, msg, pos)
@@ -923,6 +1081,109 @@ function FarmService.OnChest(base, player)
 	fx(player, "daily", { pos = pos, amount = amt, day = day, streak = d.streak })
 	if MoneyFxRE then
 		MoneyFxRE:FireClient(player, amt, pos)
+	end
+	syncMoney(player)
+	refreshBase(base)
+end
+
+-- Feed the whole Pantry to your courtyard pets: richest food first, always to the lowest-level pet,
+-- so the team levels evenly. Pet levels raise each pet's income (Farm.PetMult).
+function FarmService.OnFeed(base, player)
+	local data = ownerData(base, player)
+	if not data then
+		return
+	end
+	local f = data.Farm
+	local pos = base.cf:PointToWorldSpace(TROUGH + V(0, 5, 0))
+	local pets = placedPets(data)
+	if #pets == 0 then
+		say(player, "Place pets in your courtyard to feed them", pos)
+		return
+	end
+	local items = {}
+	for key, count in pairs(f.Pantry) do
+		local crop, m = splitKey(key)
+		if crop then
+			table.insert(items, { key = key, food = itemFood(crop, m), count = count })
+		else
+			f.Pantry[key] = nil
+		end
+	end
+	if #items == 0 then
+		say(player, "The Pantry is empty: harvest some crops first", pos)
+		return
+	end
+	table.sort(items, function(a, b)
+		return a.food > b.food
+	end)
+	local fed, ups, star = 0, 0, nil
+	for _, it in ipairs(items) do
+		for _ = 1, it.count do
+			local pet
+			for _, c in ipairs(pets) do
+				if (c.l or 1) < Farm.PetMaxLevel and (not pet or (c.l or 1) < (pet.l or 1)) then
+					pet = c
+				end
+			end
+			if not pet then
+				break
+			end
+			pet.l = pet.l or 1
+			pet.e = (pet.e or 0) + it.food
+			while pet.l < Farm.PetMaxLevel and pet.e >= Farm.PetXpToNext(pet.l) do
+				pet.e -= Farm.PetXpToNext(pet.l)
+				pet.l += 1
+				ups += 1
+				if not star or pet.l > (star.l or 1) then
+					star = pet
+				end
+			end
+			f.Pantry[it.key] -= 1
+			if f.Pantry[it.key] <= 0 then
+				f.Pantry[it.key] = nil
+			end
+			fed += 1
+		end
+	end
+	if fed == 0 then
+		say(player, "Your pets are all max level!", pos)
+		return
+	end
+	f.Fed += fed
+	bountyEvent(player, data, "feed", fed)
+	local def = star and CreatureData.ById[star.c]
+	fx(player, "fed", { pos = pos, count = fed, ups = ups, star = def and def.name, level = star and star.l })
+	if hooks and hooks.sync then
+		hooks.sync(player, false) -- full sync: income per second changed
+	end
+	refreshBase(base)
+end
+
+function FarmService.OnSell(base, player)
+	local data = ownerData(base, player)
+	if not data then
+		return
+	end
+	local f = data.Farm
+	local pos = base.cf:PointToWorldSpace(TROUGH + V(0, 5, 0))
+	local total, n = 0, 0
+	for key, count in pairs(f.Pantry) do
+		local crop, m = splitKey(key)
+		if crop then
+			total += itemValue(data, crop, m) * count
+			n += count
+		end
+	end
+	if n == 0 then
+		say(player, "Nothing to sell yet", pos)
+		return
+	end
+	f.Pantry = {}
+	data.Money += total
+	data.TotalEarned = (data.TotalEarned or 0) + total
+	fx(player, "sold", { pos = pos, amount = total, count = n })
+	if MoneyFxRE then
+		MoneyFxRE:FireClient(player, total, pos)
 	end
 	syncMoney(player)
 	refreshBase(base)

@@ -71,9 +71,12 @@ Every courtyard has a farm, all of it physical and driven by proximity prompts (
 - **Planter beds:** 3 free, 3 more to buy ($800 / $8K / $80K). Press E on an empty bed to plant your selected seed; press E on a ripe bed to harvest. It replants automatically if you can afford the seed.
 - **Crops grow in real time, even while you're offline:** Moonberry 45 s, Sunwheat 3 min, Starmelon 15 min, Portal Pumpkin 1 h, Crystal Bloom 4 h, Void Lotus 12 h. Longer crops pay more per second, so plant a long one before logging off.
 - **Soil quality:** seed prices and harvests are multiplied by the income multiplier of your best unlocked world, so farming stays relevant all game.
-- **Yield bonuses:** +5% per Farmer Level, +1.5% per pet placed in your courtyard, 8% chance of a **Golden** harvest (x3) and 1.5% chance of a **Giant** one (x10).
+- **Mutations** are rolled when you plant, so you watch a lucky bed grow: **Watered** (x1.5, +5% chance per Sprinkler level), **Golden** (x3, 8%), **Giant** (x10, 1.5%, a much bigger plant) and **Rainbow** (x40, 0.3%, glowing rainbow fruit).
+- **Pantry:** harvests go to your Pantry (300 max; past that the extra is sold automatically). At the **Feeding Trough** press **E to feed your pets** or **R to sell** the produce. Mutations multiply both the food and the sale value.
+- **Pet levels:** food gives pet XP, always to your lowest-level placed pet first. Each pet level adds +6% to that pet's income (max level 100).
+- **Sale value bonuses:** +5% per Farmer Level and +1.5% per pet placed in your courtyard.
 - **Farmer Level:** XP from harvests, catches, bounties and daily gifts. Levels unlock new seeds (Lv 2, 4, 6, 9, 12).
-- **Farm Stand:** E change seed · R buy a bed · T Sprinkler (-8% grow time per level, 5 levels) · G hire the **Harvest Spirit** (Lv 5, $250K). The Spirit sows empty beds, harvests ripe ones into your Treasury and resows, also while you're offline (up to 24 h of catch-up).
+- **Farm Stand:** E change seed · R buy a bed · T Sprinkler (-8% grow time per level, 5 levels) · G hire the **Harvest Spirit** (Lv 5, $250K). The Spirit sows empty beds, harvests ripe ones into your Pantry and resows, also while you're offline (up to 24 h of catch-up). When the Pantry is full, its extra harvests are sold into your Treasury.
 - **Bounty Board:** three rotating jobs (harvest, catch, collect, throw, harvest a specific crop, land in a world) with money and XP rewards. Press E at the board to claim the finished ones.
 - **Daily Gift chest:** once every 20 h. The streak grows the gift (x1 to x8 on day 7) and breaks after 48 h.
 
