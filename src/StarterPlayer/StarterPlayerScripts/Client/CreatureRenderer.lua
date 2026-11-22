@@ -18,6 +18,7 @@ local Builder = require(Shared.CreatureBuilder)
 local Animator = require(Shared.CreatureAnimator)
 local Timeline = require(Shared.PresentationTimeline)
 local Format = require(Shared.Format)
+local Variants = require(Shared.Variants)
 local Effects = require(script.Parent.Effects)
 local Sounds = require(script.Parent.Sounds)
 local Settings = require(script.Parent.ClientSettings)
@@ -66,8 +67,8 @@ local function tag(entry, text, color, maxDist, offsetY)
 	return bb
 end
 
-local function heightFor(def)
-	local s = Config.Rarities[def.rarity].size * def.scale
+local function heightFor(def, size)
+	local s = Config.Rarities[def.rarity].size * def.scale * Variants.Scale(size)
 	if def.body == "golem" then
 		return 5.4 * s
 	end
@@ -87,14 +88,17 @@ local function onFx(kind, anim)
 	pcall(Effects.Motif, kind, pos, rig.root.CFrame.LookVector, rig.pal.a, math.clamp(rig.size, 0.8, 2))
 end
 
-local function spawnEntry(creatureId, cf, kind, popTime)
-	local model, rig = Builder.Build(creatureId)
+local function spawnEntry(creatureId, cf, kind, popTime, size, material)
+	local model, rig = Builder.Build(creatureId, Variants.Scale(size))
+	Variants.Apply(model, material) -- Gold / Emerald / Ruby / Diamond look
 	model:PivotTo(cf)
 	model.Parent = folder
 	local anim = Animator.new(rig, cf)
 	anim.onFx = onFx
 	local entry = {
 		id = creatureId,
+		size = size,
+		material = material,
 		model = model,
 		rig = rig,
 		anim = anim,
@@ -228,26 +232,30 @@ local function refreshBase(plr)
 	-- multiset diff: keep creatures that are still placed, add new ones, remove the rest
 	local pool = {}
 	for _, e in ipairs(existing) do
-		pool[e.id] = pool[e.id] or {}
-		table.insert(pool[e.id], e)
+		local k = e.key or e.id
+		pool[k] = pool[k] or {}
+		table.insert(pool[k], e)
 	end
 	local result = {}
-	for i, cid in ipairs(list) do
-		local cand = pool[cid] and table.remove(pool[cid])
+	for i, key in ipairs(list) do
+		-- entries are "CreatureId" or "CreatureId|Size|Material" (Big/Huge/Titan, Gold/Emerald/Ruby/Diamond)
+		local cid, vsize, vmat = Variants.Parse(key)
+		local cand = pool[key] and table.remove(pool[key])
 		if not cand and CreatureData.ById[cid] then
 			local cf = slotCF(base, i)
-			cand = spawnEntry(cid, cf, "base", 0.7)
+			cand = spawnEntry(cid, cf, "base", 0.7, vsize, vmat)
+			cand.key = key
 			local def = CreatureData.ById[cid]
-			local rc = Config.Rarities[def.rarity].color
+			local rc = Variants.Color(vsize, vmat) or Config.Rarities[def.rarity].color
 			tag(
 				cand,
-				def.name
+				Variants.Prefix(vsize, vmat) .. def.name
 					.. "\n<font size='18' color='#9CFFA8'>"
-					.. Format.Money(CreatureData.Income(cid))
+					.. Format.Money(CreatureData.Income(cid) * Variants.Mult(vsize, vmat))
 					.. "/s</font>",
 				rc,
-				40,
-				heightFor(def)
+				40 * Variants.Scale(vsize),
+				heightFor(def, vsize)
 			)
 			-- click / tap to pet (presentation only; never changes income or ownership)
 			cand.rig.body.CanQuery = true
@@ -500,7 +508,7 @@ local function stepEntrance(e, dt)
 end
 
 -- The creature appears inside the open portal (at `pos`) and comes out toward the thrower (-Z).
-function Renderer.SpawnWild(throwId, creatureId, pos, ownerId, chanceText)
+function Renderer.SpawnWild(throwId, creatureId, pos, ownerId, chanceText, vsize, vmat)
 	if wild[throwId] then
 		return wild[throwId]
 	end -- duplicate event: never two models per throw
@@ -509,7 +517,7 @@ function Renderer.SpawnWild(throwId, creatureId, pos, ownerId, chanceText)
 		return nil
 	end
 	local cf = CFrame.lookAt(pos + Vector3.new(0, 0, 1.5), pos + Vector3.new(0, 0, -10))
-	local e = spawnEntry(creatureId, cf, "wild", 0)
+	local e = spawnEntry(creatureId, cf, "wild", 0, vsize, vmat)
 	local prof = e.rig.profile
 	local enter = prof.enter or {}
 	local kind = enter.kind or MOVE_ENTRANCE[def.move] or "walk"
@@ -535,15 +543,16 @@ function Renderer.SpawnWild(throwId, creatureId, pos, ownerId, chanceText)
 	local rc = Config.Rarities[def.rarity].color
 	local owner = Players:GetPlayerByUserId(ownerId)
 	local mine = ownerId == player.UserId
-	local labelText = mine and def.name
+	local vname = Variants.Prefix(vsize, vmat) .. def.name
+	local labelText = mine and vname
 		or string.format(
 			"%s\n<font size='16'>%s · %s · %s</font>",
-			def.name,
+			vname,
 			def.rarity,
 			chanceText or "",
 			owner and owner.DisplayName or "?"
 		)
-	tag(e, labelText, def.rarity == "Secret" and Color3.fromRGB(147, 217, 235) or rc, 160, heightFor(def) + 0.5)
+	tag(e, labelText, Variants.Color(vsize, vmat) or (def.rarity == "Secret" and Color3.fromRGB(147, 217, 235) or rc), 160, heightFor(def, vsize) + 0.5)
 	if mine then
 		-- Corner marks frame the automatic catch without covering the creature in a filled disk.
 		local center = pos + Vector3.new(0, 0.12, -9)
@@ -947,8 +956,9 @@ function Renderer.Start()
 end
 
 -- Builds a static (non-animated) creature for UI ViewportFrames, in its bind pose.
-function Renderer.BuildPreview(creatureId)
+function Renderer.BuildPreview(creatureId, material)
 	local model, rig = Builder.Build(creatureId)
+	Variants.Apply(model, material)
 	for _, e in ipairs(rig.emitters) do
 		e.Enabled = false
 	end

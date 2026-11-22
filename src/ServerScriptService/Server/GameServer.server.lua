@@ -11,6 +11,8 @@ local Config = require(Shared.Config)
 local CreatureData = require(Shared.CreatureData)
 local Format = require(Shared.Format)
 local Odds = require(Shared.Odds)
+local Variants = require(Shared.Variants)
+local variantRng = Random.new()
 local Timeline = require(Shared.PresentationTimeline)
 local DataService = require(script.Parent.DataService)
 local WorldBuilder = require(script.Parent.WorldBuilder)
@@ -61,7 +63,7 @@ local function incomePerSec(data)
 	local total = 0
 	for _, uid in ipairs(data.Placed) do
 		local c = findCreature(data, uid)
-		if c then total += CreatureData.Income(c.c) end
+		if c then total += CreatureData.Income(c.c) * Variants.Mult(c.s, c.v) end
 	end
 	return total * trainingMult(data)
 end
@@ -77,7 +79,7 @@ local function updateAttributes(player, data)
 	local ids = {}
 	for _, uid in ipairs(data.Placed) do
 		local c = findCreature(data, uid)
-		if c then table.insert(ids, c.c) end
+		if c then table.insert(ids, Variants.Key(c.c, c.s, c.v)) end
 	end
 	player:SetAttribute("BaseCreatures", HttpService:JSONEncode(ids))
 	local ls = player:FindFirstChild("leaderstats")
@@ -212,12 +214,18 @@ ThrowRE.OnServerEvent:Connect(function(player, power, dir)
 	nextThrowId += 1
 	local id = nextThrowId
 	local creatureId, chance = Odds.Roll(data.EquippedPortal, worldId, realDist)
-	if st.forceNext and CreatureData.ById[st.forceNext] then -- admin: force the next creature
-		creatureId = st.forceNext
-		chance = Odds.Table(data.EquippedPortal, worldId, realDist)[creatureId] or 0.0001
+	-- pet variant: size (Big/Huge/Titan) and material (Gold/Emerald/Ruby/Diamond), rolled independently
+	local petSize, petMaterial = Variants.Roll(variantRng)
+	if st.forceNext then -- admin: force the next creature (optionally "Id|Size|Material")
+		local fid, fs, fm = Variants.Parse(st.forceNext)
+		if CreatureData.ById[fid] then
+			creatureId = fid
+			chance = Odds.Table(data.EquippedPortal, worldId, realDist)[creatureId] or 0.0001
+			if fs or fm then petSize, petMaterial = fs, fm end
+		end
 		st.forceNext = nil
 	end
-	Pending[id] = { owner = player, creature = creatureId, pos = landing, opened = false, world = worldId }
+	Pending[id] = { owner = player, creature = creatureId, pos = landing, opened = false, world = worldId, size = petSize, variant = petMaterial }
 	-- throw cutscene length (rarer creature = longer, crazier wind-up); the opening waits for it
 	local rolledRarity = CreatureData.ById[creatureId].rarity
 	local windup = Timeline.WindupFor(rolledRarity)
@@ -232,10 +240,14 @@ ThrowRE.OnServerEvent:Connect(function(player, power, dir)
 		if not p then return end
 		p.opened = true
 		local def = CreatureData.ById[creatureId]
-		PortalOpenedRE:FireAllClients({ id = id, owner = player.UserId, creature = creatureId, pos = landing, portal = data.EquippedPortal, chance = chance })
+		PortalOpenedRE:FireAllClients({ id = id, owner = player.UserId, creature = creatureId, pos = landing, portal = data.EquippedPortal, chance = chance, size = petSize, variant = petMaterial })
 		if Config.Rarities[def.rarity].order >= 5 then
 			for _, other in ipairs(Players:GetPlayers()) do
-				notify(other, player.DisplayName .. " found a " .. def.rarity:upper() .. " " .. def.name .. " (" .. Odds.OneIn(chance) .. ")!", def.rarity)
+				notify(other, player.DisplayName .. " found a " .. def.rarity:upper() .. " " .. Variants.Prefix(petSize, petMaterial) .. def.name .. " (" .. Odds.OneIn(chance) .. ")!", def.rarity)
+			end
+		elseif petSize == "Titan" or petMaterial == "Diamond" or petMaterial == "Ruby" then
+			for _, other in ipairs(Players:GetPlayers()) do
+				notify(other, player.DisplayName .. " found a " .. Variants.Prefix(petSize, petMaterial):upper() .. def.name .. "!", "Legendary")
 			end
 		end
 		-- caught automatically once its entrance animation has played
@@ -258,9 +270,10 @@ end)
 local function depositCarry(player, data, st, silent)
 	if #st.carry == 0 then return end
 	local newOnes = {}
-	for _, cid in ipairs(st.carry) do
+	for _, key in ipairs(st.carry) do
+		local cid, vs, vm = Variants.Parse(key)
 		local uid = DataService.NewUid(data)
-		table.insert(data.Creatures, { u = uid, c = cid })
+		table.insert(data.Creatures, { u = uid, c = cid, s = vs, v = vm })
 		if #data.Placed < slotsOpen(data) then table.insert(data.Placed, uid) end
 		if not data.Discovered[cid] then
 			data.Discovered[cid] = true
@@ -268,7 +281,7 @@ local function depositCarry(player, data, st, silent)
 			data.Money += bonus
 			if not silent then notify(player, "NEW to your index: " .. CreatureData.ById[cid].name .. "!  +" .. Format.Money(bonus), "discover") end
 		end
-		table.insert(newOnes, cid)
+		table.insert(newOnes, key)
 	end
 	st.carry = {}
 	setCarry(player)
@@ -342,7 +355,7 @@ function Actions.Collect(player, data, st, throwId)
 	if freeSpace(player, data) <= 0 then return false, "Storage full! Sell creatures or upgrade storage." end
 	Pending[throwId] = nil
 	CreatureGoneRE:FireAllClients(throwId, "collected", player.UserId)
-	table.insert(st.carry, p.creature)
+	table.insert(st.carry, Variants.Key(p.creature, p.size, p.variant))
 	depositCarry(player, data, st)
 	return true
 end
@@ -556,18 +569,20 @@ function AdminCmds.allportals(player, data, st)
 	for id in pairs(Config.Portals) do data.OwnedPortals[id] = true end
 	return true, "All portals unlocked"
 end
-function AdminCmds.give(player, data, st, id)
-	if not CreatureData.ById[id] then return false, "Unknown creature" end
+function AdminCmds.give(player, data, st, key)
+	local id, gs, gm = Variants.Parse(tostring(key))
+	if not CreatureData.ById[id] then return false, "Unknown creature (use Id or Id|Size|Material)" end
 	local uid = DataService.NewUid(data)
-	table.insert(data.Creatures, { u = uid, c = id })
+	table.insert(data.Creatures, { u = uid, c = id, s = gs, v = gm })
 	data.Discovered[id] = true
 	if #data.Placed < slotsOpen(data) then table.insert(data.Placed, uid) end
-	return true, "Gave " .. CreatureData.ById[id].name
+	return true, "Gave " .. Variants.Prefix(gs, gm) .. CreatureData.ById[id].name
 end
 function AdminCmds.forcenext(player, data, st, id)
-	if not CreatureData.ById[id] then return false, "Unknown creature id" end
-	st.forceNext = id
-	return true, "Your next throw will be " .. CreatureData.ById[id].name
+	local fid, fs, fm = Variants.Parse(tostring(id))
+	if not CreatureData.ById[fid] then return false, "Unknown creature id (use Id or Id|Size|Material)" end
+	st.forceNext = tostring(id)
+	return true, "Your next throw will be " .. Variants.Prefix(fs, fm) .. CreatureData.ById[fid].name
 end
 function AdminCmds.discoverall(player, data, st)
 	for _, c in ipairs(CreatureData.List) do data.Discovered[c.id] = true end
@@ -625,7 +640,7 @@ end
 function Actions.Sell(player, data, st, uid)
 	local c, i = findCreature(data, uid)
 	if not c then return false, "Not found" end
-	local price = math.floor(CreatureData.Income(c.c) * Config.SellMultiplier)
+	local price = math.floor(CreatureData.Income(c.c) * Variants.Mult(c.s, c.v) * Config.SellMultiplier)
 	table.remove(data.Creatures, i)
 	local pi = table.find(data.Placed, uid)
 	if pi then table.remove(data.Placed, pi) end
@@ -635,7 +650,7 @@ end
 
 function Actions.EquipBest(player, data, st)
 	local list = table.clone(data.Creatures)
-	table.sort(list, function(a, b) return CreatureData.Income(a.c) > CreatureData.Income(b.c) end)
+	table.sort(list, function(a, b) return CreatureData.Income(a.c) * Variants.Mult(a.s, a.v) > CreatureData.Income(b.c) * Variants.Mult(b.s, b.v) end)
 	local n = math.min(#list, slotsOpen(data))
 	if #list - n > storageCap(data) then return false, "Storage full" end
 	data.Placed = {}

@@ -12,6 +12,7 @@ local Config = require(Shared.Config)
 local CreatureData = require(Shared.CreatureData)
 local PortalBuilder = require(Shared.PortalBuilder)
 local Odds = require(Shared.Odds)
+local Variants = require(Shared.Variants)
 local State = require(script.Parent.ClientState)
 local Effects = require(script.Parent.Effects)
 local Sounds = require(script.Parent.Sounds)
@@ -634,9 +635,9 @@ if player.Character then
 end
 
 -- start a cinematic zoom on a good creature you just found
-function TC.StartCloseup(id, def, pos, duration)
+function TC.StartCloseup(id, def, pos, duration, sizeScale)
 	local rc = Config.Rarities[def.rarity]
-	local size = rc.size * (def.scale or 1)
+	local size = rc.size * (def.scale or 1) * (sizeScale or 1)
 	if not camFollow then claimCamera(id, pos, duration) end
 	camFollow.id = id
 	camFollow.pos = pos
@@ -905,15 +906,41 @@ Remotes.PortalOpened.OnClientEvent:Connect(function(info)
 		Effects.Burst(center, rc.color, 10 + rc.order * 5, 10 + rc.order * 2, 0.8)
 	end
 	Sounds.PlayAt("Spawn", center, 1.2 - rc.order * 0.05)
-	Renderer.SpawnWild(info.id, info.creature, info.pos, info.owner, chanceText)
+	local vsize, vmat = info.size, info.variant
+	Renderer.SpawnWild(info.id, info.creature, info.pos, info.owner, chanceText, vsize, vmat)
+	-- Big / Huge / Titan and Gold / Emerald / Ruby / Diamond get their own big callout
+	local special = vsize or vmat
+	if special and (mine or near) then
+		local vcol = Variants.Color(vsize, vmat) or rc.color
+		local scale = Variants.Scale(vsize)
+		task.delay(0.35, function()
+			Effects.FloatingText(center + Vector3.new(0, 4 * scale + 3, 0), string.upper(Variants.Prefix(vsize, vmat)) .. "!", vcol, 1.3 + scale * 0.25)
+			Effects.Burst(center + Vector3.new(0, 2 * scale, 0), vcol, 30 + scale * 20, 18, 0.9)
+			if vmat then
+				Effects.Burst(center + Vector3.new(0, 2 * scale, 0), ColorSequence.new(vcol, Color3.new(1, 1, 1)), 40, 26, 0.6)
+			end
+			if mine and not Settings.ReducedMotion then
+				if vsize == "Titan" then
+					Effects.Shake(1.2, 0.6)
+					Effects.Shockwave(info.pos, vcol, 30, 0.9)
+				elseif vsize == "Huge" or vmat == "Diamond" or vmat == "Ruby" then
+					Effects.Shake(0.6, 0.35)
+					Effects.Shockwave(info.pos, vcol, 18, 0.7)
+				end
+			end
+			if mine then
+				Sounds.Play("Rare", vsize == "Titan" and 0.8 or 1.15)
+			end
+		end)
+	end
 	if mine then
 		-- Rarity caption and world label already show the odds; avoid a third floating label.
 		if TC.InputBlocked or TC.SystemMenuOpen then
 			TC.StopFollow(true)
-		elseif rc.order >= 3 and not Settings.ReducedMotion then
-			-- a GOOD pet: zoom in on it and keep watching through its entrance and capture
+		elseif (rc.order >= 3 or special) and not Settings.ReducedMotion then
+			-- a GOOD pet (or a Big/Huge/Titan/Gold/gem one): zoom in and watch it through entrance + capture
 			local catchDur = (Renderer.CatchConfig[def.rarity] or Renderer.CatchConfig.Common).dur
-			TC.StartCloseup(info.id, def, info.pos, (Config.CatchDelay[def.rarity] or 3) + catchDur + 0.5)
+			TC.StartCloseup(info.id, def, info.pos, (Config.CatchDelay[def.rarity] or 3) + catchDur + 0.5, Variants.Scale(vsize))
 		elseif camFollow and camFollow.id == info.id then
 			camFollow.pos = info.pos
 			camFollow.untilT = os.clock() + Timeline.FollowHoldAfterOpen(def.rarity)

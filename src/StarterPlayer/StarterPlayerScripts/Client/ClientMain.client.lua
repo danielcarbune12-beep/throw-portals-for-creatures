@@ -10,6 +10,7 @@ local CreatureData = require(Shared.CreatureData)
 local Config = require(Shared.Config)
 local Format = require(Shared.Format)
 local Timeline = require(Shared.PresentationTimeline)
+local Variants = require(Shared.Variants)
 
 local Client = script.Parent
 local State = require(Client.ClientState)
@@ -233,14 +234,16 @@ Renderer.CaptureFinished.Event:Connect(function(_throwId, ownerId, creatureId)
 	for i, pc in ipairs(pendingCards) do
 		if pc.id == creatureId then
 			table.remove(pendingCards, i)
-			enqueueCard(creatureId)
+			enqueueCard(pc.key or creatureId)
 			return
 		end
 	end
 	table.insert(recentCaptures, { id = creatureId, t = os.clock() })
 end)
 Remotes.Deposit.OnClientEvent:Connect(function(ids)
-	for _, id in ipairs(ids) do
+	for _, key in ipairs(ids) do
+		-- "CreatureId" or "CreatureId|Size|Material": the card shows the full variant name
+		local id = Variants.Parse(key)
 		if CreatureData.ById[id] then
 			local matched = false
 			for i, rc in ipairs(recentCaptures) do
@@ -251,10 +254,11 @@ Remotes.Deposit.OnClientEvent:Connect(function(ids)
 				end
 			end
 			if matched then
-				enqueueCard(id)
+				enqueueCard(key)
 			else
 				table.insert(pendingCards, {
 					id = id,
+					key = key,
 					deadline = os.clock() + Timeline.CardFallback + Timeline.CaptureFor(CreatureData.ById[id].rarity),
 				})
 			end
@@ -265,7 +269,8 @@ RunService.Heartbeat:Connect(function()
 	local now = os.clock()
 	for i = #pendingCards, 1, -1 do
 		if now > pendingCards[i].deadline then
-			enqueueCard(table.remove(pendingCards, i).id)
+			local pc = table.remove(pendingCards, i)
+			enqueueCard(pc.key or pc.id)
 		end
 	end
 end)

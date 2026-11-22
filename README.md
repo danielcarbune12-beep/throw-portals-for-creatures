@@ -70,6 +70,24 @@ powershell -ExecutionPolicy Bypass -File .\build-place.ps1
 - Every base has its own gym. Stand in it and hold **💪 LIFT**, press **E**, or turn on **AUTO**. Your character lifts the weight, and each lift gives Strength.
 - Press **⬆ UPGRADE** to buy better equipment with money: Wooden → Iron ($750) → Golden ($15K) → Crystal ($300K) → Cosmic ($6M). Each level gives more Strength per lift.
 
+## Pet variants (sizes and materials)
+Every catch also rolls a size and a material, independently of the creature. They stack, for example "Huge Diamond Mossbun" earns 6 × 12 = 72× its normal income. Tune them in `src/ReplicatedStorage/Shared/Variants.lua`.
+
+| Size | Chance | Income | Look |
+|---|---|---|---|
+| Big | 1 in 10 | ×2 | 1.5× bigger |
+| Huge | 1 in 50 | ×6 | 2.3× bigger |
+| Titan | 1 in 400 | ×25 | 3.6× bigger |
+
+| Material | Chance | Income | Look |
+|---|---|---|---|
+| Gold | 1 in 12 | ×2 | shiny gold metal |
+| Emerald | 1 in 50 | ×4 | green gem, sparkles + glow |
+| Ruby | 1 in 120 | ×7 | red gem, sparkles + glow |
+| Diamond | 1 in 300 | ×12 | clear ice-blue gem, sparkles + glow |
+
+In the admin panel, Give Creature and Force Next Throw accept `Id|Size|Material`, for example `Mossbun|Titan|Diamond`.
+
 ## Admin panel
 - The 🛠 button shows for the game owner, for group rank 254+, for anyone in Studio, and for UserIds in `Config.AdminIds`.
 - It can: add money and strength, set throw level, max all upgrades, unlock all portals, complete the index, give any creature, **force your next throw to be a specific creature**, set walk speed, teleport to any zone, and reset your data.

@@ -8,6 +8,7 @@ local Data = require(RS.Shared.CreatureData)
 local Portal = require(RS.Shared.PortalBuilder)
 local Format = require(RS.Shared.Format)
 local Odds = require(RS.Shared.Odds)
+local Variants = require(RS.Shared.Variants)
 local K = require(script.Parent.UIKit)
 local T = K.Theme
 local HUD = require(script.Parent.HUD)
@@ -65,11 +66,12 @@ local function empty(parent, title, hint)
 	return f
 end
 local previewCache = {}
-local function petView(id, size, silhouette)
-	if not previewCache[id] then
-		previewCache[id] = (Renderer.BuildPreview(id))
+local function petView(id, size, silhouette, material)
+	local cacheKey = material and (id .. "|" .. material) or id
+	if not previewCache[cacheKey] then
+		previewCache[cacheKey] = (Renderer.BuildPreview(id, material))
 	end
-	return K.viewport(previewCache[id]:Clone(), size, false, silhouette)
+	return K.viewport(previewCache[cacheKey]:Clone(), size, false, silhouette)
 end
 local function bindGrid(container, minWidth, cellHeight)
 	local g = K.new(
@@ -355,13 +357,14 @@ local function renderCreatureDetail()
 		return
 	end
 	local def = Data.ById[entry.c]
-	local color = T.Rarity(def.rarity, Config)
+	local color = Variants.Color(entry.s, entry.v) or T.Rarity(def.rarity, Config)
+	local entryIncome = Data.Income(entry.c) * Variants.Mult(entry.s, entry.v)
 	local hero = K.surface(invDetail, "CreaturePreview", UDim2.new(1, -12, 0, 180), nil, T.Ink)
 	hero.LayoutOrder = 1
-	petView(entry.c, UDim2.fromScale(1, 1)).Parent = hero
-	heading(invDetail, def.name, 2)
+	petView(entry.c, UDim2.fromScale(1, 1), nil, entry.v).Parent = hero
+	heading(invDetail, Variants.Prefix(entry.s, entry.v) .. def.name, 2)
 	K.label(
-		def.rarity .. " · " .. Format.Money(Data.Income(entry.c)) .. " / sec",
+		def.rarity .. " · " .. Format.Money(entryIncome) .. " / sec" .. (Variants.Mult(entry.s, entry.v) > 1 and ("  (x" .. Variants.Mult(entry.s, entry.v) .. ")") or ""),
 		UDim2.new(1, -12, 0, 28),
 		color,
 		{ TextSize = 16, LayoutOrder = 3, Parent = invDetail }
@@ -384,7 +387,7 @@ local function renderCreatureDetail()
 		K.setButton(place, isPlaced and "Storage is full" or "Garden is full")
 	end
 	K.setEnabled(place, not cap)
-	local sellValue = math.floor(Data.Income(entry.c) * Config.SellMultiplier)
+	local sellValue = math.floor(entryIncome * Config.SellMultiplier)
 	local sell = K.button(
 		armedUid == entry.u and "Confirm sale · " .. Format.Money(sellValue)
 			or "Sell creature · " .. Format.Money(sellValue),
@@ -452,7 +455,7 @@ inv.refresh = function()
 		bindGrid(invGrid, 140, 192)
 		local items = table.clone(d.Creatures)
 		table.sort(items, function(a, b)
-			return Data.Income(a.c) > Data.Income(b.c)
+			return Data.Income(a.c) * Variants.Mult(a.s, a.v) > Data.Income(b.c) * Variants.Mult(b.s, b.v)
 		end)
 		local count = 0
 		for i, entry in ipairs(items) do
@@ -466,8 +469,8 @@ inv.refresh = function()
 					nil,
 					{ Name = "Creature_" .. entry.u, LayoutOrder = i, Parent = invGrid }
 				)
-				petView(entry.c, UDim2.new(1, -8, 0, 108)).Parent = b
-				K.text(b, def.name, 10, 110, -20, 38, 15, T.Text, true)
+				petView(entry.c, UDim2.new(1, -8, 0, 108), nil, entry.v).Parent = b
+				K.text(b, Variants.Prefix(entry.s, entry.v) .. def.name, 10, 110, -20, 38, 15, Variants.Color(entry.s, entry.v) or T.Text, true)
 				K.text(b, def.rarity, 10, 151, -20, 18, 13, T.Rarity(def.rarity, Config))
 				K.text(
 					b,
