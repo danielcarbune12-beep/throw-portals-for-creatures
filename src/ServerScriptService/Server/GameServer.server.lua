@@ -11,6 +11,7 @@ local Config = require(Shared.Config)
 local CreatureData = require(Shared.CreatureData)
 local Format = require(Shared.Format)
 local Odds = require(Shared.Odds)
+local Timeline = require(Shared.PresentationTimeline)
 local DataService = require(script.Parent.DataService)
 local WorldBuilder = require(script.Parent.WorldBuilder)
 local BaseBuilder = require(script.Parent.BaseBuilder)
@@ -217,12 +218,16 @@ ThrowRE.OnServerEvent:Connect(function(player, power, dir)
 		st.forceNext = nil
 	end
 	Pending[id] = { owner = player, creature = creatureId, pos = landing, opened = false, world = worldId }
+	-- throw cutscene length (rarer creature = longer, crazier wind-up); the opening waits for it
+	local rolledRarity = CreatureData.ById[creatureId].rarity
+	local windup = Timeline.WindupFor(rolledRarity)
 
 	PortalThrownRE:FireAllClients({
 		id = id, owner = player.UserId, portal = data.EquippedPortal,
 		from = origin + Vector3.new(0, 1.5, 2), to = landing, t = flight, perfect = perfect, dist = realDist, zone = worldId,
+		rarity = rolledRarity, windup = windup,
 	})
-	task.delay(flight + 0.9, function()
+	task.delay(windup + flight + 0.9, function()
 		local p = Pending[id]
 		if not p then return end
 		p.opened = true
@@ -241,7 +246,7 @@ ThrowRE.OnServerEvent:Connect(function(player, power, dir)
 			end
 		end)
 	end)
-	task.delay(flight + Config.PendingLifetime, function()
+	task.delay(windup + flight + Config.PendingLifetime, function()
 		if Pending[id] then
 			Pending[id] = nil
 			CreatureGoneRE:FireAllClients(id, "expired")

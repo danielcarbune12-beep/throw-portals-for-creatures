@@ -24,6 +24,14 @@ T.GateClose = 0.35
 T.Card = { enter = 0.35, hold = 1.3, travel = 0.45, gap = 0.25 }
 T.CardFallback = 3.0       -- if the capture visual never reports, show the card anyway
 T.CameraTimeout = 14       -- hard cap on any follow-camera claim
+-- THROW CUTSCENE: time between PortalThrown and the ball leaving the hand (you raise the portal,
+-- it powers up, you throw). The rarer the creature inside, the longer and crazier it gets.
+-- The server delays the portal opening by the same amount, so the reveal stays in sync.
+T.Windup = { Common = 0.9, Uncommon = 1.0, Rare = 1.25, Epic = 1.5, Legendary = 1.9, Mythical = 2.1, Secret = 2.1, Divine = 2.5 }
+
+function T.WindupFor(rarity: string?): number
+	return (rarity and T.Windup[rarity]) or 0.9
+end
 
 function T.CatchDelay(rarity: string): number
 	return Config.CatchDelay[rarity] or 3

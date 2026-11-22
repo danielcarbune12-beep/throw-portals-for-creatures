@@ -3514,6 +3514,14 @@ T.GateClose = 0.35
 T.Card = { enter = 0.35, hold = 1.3, travel = 0.45, gap = 0.25 }
 T.CardFallback = 3.0       -- if the capture visual never reports, show the card anyway
 T.CameraTimeout = 14       -- hard cap on any follow-camera claim
+-- THROW CUTSCENE: time between PortalThrown and the ball leaving the hand (you raise the portal,
+-- it powers up, you throw). The rarer the creature inside, the longer and crazier it gets.
+-- The server delays the portal opening by the same amount, so the reveal stays in sync.
+T.Windup = { Common = 0.9, Uncommon = 1.0, Rare = 1.25, Epic = 1.5, Legendary = 1.9, Mythical = 2.1, Secret = 2.1, Divine = 2.5 }
+
+function T.WindupFor(rarity: string?): number
+	return (rarity and T.Windup[rarity]) or 0.9
+end
 
 function T.CatchDelay(rarity: string): number
 	return Config.CatchDelay[rarity] or 3
@@ -8324,6 +8332,7 @@ local Config = require(Shared.Config)
 local CreatureData = require(Shared.CreatureData)
 local Format = require(Shared.Format)
 local Odds = require(Shared.Odds)
+local Timeline = require(Shared.PresentationTimeline)
 local DataService = require(script.Parent.DataService)
 local WorldBuilder = require(script.Parent.WorldBuilder)
 local BaseBuilder = require(script.Parent.BaseBuilder)
@@ -8530,12 +8539,16 @@ ThrowRE.OnServerEvent:Connect(function(player, power, dir)
 		st.forceNext = nil
 	end
 	Pending[id] = { owner = player, creature = creatureId, pos = landing, opened = false, world = worldId }
+	-- throw cutscene length (rarer creature = longer, crazier wind-up); the opening waits for it
+	local rolledRarity = CreatureData.ById[creatureId].rarity
+	local windup = Timeline.WindupFor(rolledRarity)
 
 	PortalThrownRE:FireAllClients({
 		id = id, owner = player.UserId, portal = data.EquippedPortal,
 		from = origin + Vector3.new(0, 1.5, 2), to = landing, t = flight, perfect = perfect, dist = realDist, zone = worldId,
+		rarity = rolledRarity, windup = windup,
 	})
-	task.delay(flight + 0.9, function()
+	task.delay(windup + flight + 0.9, function()
 		local p = Pending[id]
 		if not p then return end
 		p.opened = true
@@ -8554,7 +8567,7 @@ ThrowRE.OnServerEvent:Connect(function(player, power, dir)
 			end
 		end)
 	end)
-	task.delay(flight + Config.PendingLifetime, function()
+	task.delay(windup + flight + Config.PendingLifetime, function()
 		if Pending[id] then
 			Pending[id] = nil
 			CreatureGoneRE:FireAllClients(id, "expired")
@@ -16325,23 +16338,20 @@ function TC.StartAim(hrp)
 	Effects.Letterbox(true)
 end
 
+-- Release: the throw itself now happens at the END of the throw cutscene (TC.PlayThrowCutscene),
+-- which starts when the server confirms the launch. Here we only hold the shot until then.
 function TC.ReleaseAim(power)
-	playThrowAnim()
 	if not Settings.ReducedMotion then
-		Effects.Shake(0.3 + power * 0.4, 0.18)
-	end
-	local hcf = handCFrame()
-	if hcf then
-		Effects.Burst(hcf.Position, PortalBuilder.ColorSeq(State.Data.EquippedPortal), 30, 18, 0.8)
+		Effects.Shake(0.15 + power * 0.2, 0.12)
 	end
 	local a = aimCam
 	if not a then
 		return
 	end
 	a.released = os.clock()
-	task.delay(0.9, function()
-		if aimCam == a then
-			TC.EndAim() -- no follow camera took over (short throw or the launch wasn't confirmed)
+	task.delay(1.5, function()
+		if aimCam == a and not a.cutscene then
+			TC.EndAim() -- the launch was never confirmed: give the camera back
 		end
 	end)
 end
@@ -16355,6 +16365,182 @@ function TC.EndAim()
 	Effects.Letterbox(false)
 	camera = workspace.CurrentCamera or camera
 	camReturn = { saved = a.saved, started = os.clock(), from = camera.CFrame, fov = camera.FieldOfView }
+end
+
+---------------------------------------------------------------- THROW CUTSCENE
+-- When the server confirms your launch it also tells us how rare the creature inside is (tier 1-8)
+-- and how long the wind-up lasts. The cutscene:
+--   A  (first half)   the portal appears in your hand and grows; you raise it up (camera in front)
+--   B  (power-up)     the camera circles you while the portal charges, effects scale with rarity
+--   C  (last 0.3 s)   camera whips over your shoulder, overhand throw, the ball leaves your hand
+-- Rarer = crazier:  Rare sparkles | Epic lightning + shake | Legendary golden pillar + flash |
+--                   Mythical sky darkens + energy rings | Secret glitch cuts | Divine heaven beam
+local Lighting = game:GetService("Lighting")
+local RAISE_ANIM = {
+	[Enum.HumanoidRigType.R15] = "rbxassetid://507770677", -- Roblox's built-in cheer: both arms up
+	[Enum.HumanoidRigType.R6] = "rbxassetid://129423030",
+}
+local raiseTrack, raiseHum = nil, nil
+local function raiseAnim()
+	local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+	if not hum then
+		return nil
+	end
+	if hum ~= raiseHum then
+		raiseHum, raiseTrack = hum, nil
+		local animator = hum:FindFirstChildOfClass("Animator") or hum
+		local anim = Instance.new("Animation")
+		anim.AnimationId = RAISE_ANIM[hum.RigType] or RAISE_ANIM[Enum.HumanoidRigType.R15]
+		local ok, track = pcall(function()
+			return animator:LoadAnimation(anim)
+		end)
+		if ok and track then
+			track.Priority = Enum.AnimationPriority.Action
+			track.Looped = false
+			raiseTrack = track
+		end
+	end
+	return raiseTrack
+end
+
+local cutsceneConn = nil
+function TC.PlayThrowCutscene(info, windup, tier, color)
+	if cutsceneConn then
+		cutsceneConn:Disconnect()
+		cutsceneConn = nil
+	end
+	color = color or Color3.fromRGB(200, 200, 210)
+	tier = tier or 1
+	local w = math.max(windup, 0.4)
+	local calm = Settings.ReducedMotion
+	local t0 = os.clock()
+	if aimCam then
+		aimCam.cutscene = { t0 = t0, w = w, tier = tier }
+	end
+	-- the portal appears in your hand
+	local handOrb, handRefs = PortalBuilder.BuildOrb(info.portal, 0.45)
+	handOrb.Parent = Effects.Folder
+	if handRefs.light and tier >= 3 then
+		handRefs.light.Color = color
+	end
+	local hcf0 = handCFrame()
+	if hcf0 then
+		Effects.Burst(hcf0.Position, PortalBuilder.ColorSeq(info.portal), 18, 8, 0.6)
+	end
+	Sounds.Play("Open", 1.3)
+	local raise = raiseAnim()
+	if raise then
+		raise:Play(0.15, 1, 1)
+	end
+	local phaseB, phaseC, released = false, false, false
+	local fxTimer, ringTimer = 0, 0
+	local savedExposure = nil
+	local function finish()
+		if cutsceneConn then
+			cutsceneConn:Disconnect()
+			cutsceneConn = nil
+		end
+		if handOrb then
+			handOrb:Destroy()
+			handOrb = nil
+		end
+		if raise and raise.IsPlaying then
+			raise:Stop(0.1)
+		end
+		if savedExposure then
+			Effects.Tween(Lighting, 0.6, { ExposureCompensation = savedExposure })
+			savedExposure = nil
+		end
+	end
+	cutsceneConn = RunService.RenderStepped:Connect(function(dt)
+		local t = os.clock() - t0
+		local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+		if not root then
+			finish()
+			return
+		end
+		local hcf = handCFrame()
+		local handPos = hcf and hcf.Position or (root.Position + Vector3.new(0, 3, 0))
+		-- the portal in your hand grows, then pulses harder as it charges
+		if handOrb and hcf then
+			local grow = math.min(1, t / 0.4)
+			local pulse = 1 + math.sin(t * (8 + tier * 2)) * 0.06 * tier / 4
+			handOrb:PivotTo(hcf * CFrame.new(0, -1.1, 0))
+			handOrb:ScaleTo(math.max(0.05, (1 - (1 - grow) ^ 3) * pulse * (1 + 0.25 * math.min(1, t / w))))
+			PortalBuilder.Spin(handRefs, t * (2 + tier))
+			if handRefs.light then
+				handRefs.light.Range = 8 + tier * 2 + t * 4
+			end
+		end
+		-- B: power-up (escalates with rarity)
+		if not phaseB and t >= w * 0.45 then
+			phaseB = true
+			Sounds.Play("Upgrade", 0.7 + tier * 0.1)
+			if tier >= 5 then
+				Effects.LightBeam(root.Position - Vector3.new(0, 3, 0), tier == 8 and Color3.fromRGB(255, 250, 225) or color, 120, w)
+				if not calm then
+					Effects.Flash(tier == 7 and Color3.new(0, 0, 0) or color, 0.5, 0.35)
+				end
+				Effects.Shockwave(root.Position - Vector3.new(0, 2.8, 0), color, 14 + tier * 2, 0.6)
+			end
+			if tier >= 6 and not calm then
+				savedExposure = Lighting.ExposureCompensation
+				Effects.Tween(Lighting, 0.4, { ExposureCompensation = savedExposure - 1 })
+			end
+			if tier == 8 then
+				Sounds.Play("Rare", 0.75)
+			end
+		end
+		if phaseB and not phaseC then
+			fxTimer -= dt
+			ringTimer -= dt
+			if fxTimer <= 0 then
+				fxTimer = 0.12
+				if tier >= 3 then
+					Effects.Burst(handPos, color, 3 + tier * 2, 6, 0.5)
+				end
+				if tier >= 4 then
+					local off = Vector3.new(math.random(-30, 30), math.random(-10, 30), math.random(-30, 30)) / 10
+					Effects.Burst(handPos + off, color, 10, 20, 0.45)
+					if not calm then
+						Effects.Shake(0.12 * tier / 4, 0.15)
+					end
+				end
+				if tier == 7 and not calm and math.random() < 0.3 then
+					Effects.Flash(Color3.new(0, 0, 0), 0.06, 0.75)
+					Effects.Burst(handPos, ColorSequence.new(Color3.fromRGB(0, 255, 200), Color3.fromRGB(255, 0, 170)), 12, 18, 0.5)
+				end
+			end
+			if tier >= 6 and ringTimer <= 0 then
+				ringTimer = 0.36
+				Effects.Shockwave(root.Position - Vector3.new(0, 2.8, 0), color, 8 + tier, 0.4)
+			end
+		end
+		-- C: whip over the shoulder and throw
+		if not phaseC and t >= w - 0.3 then
+			phaseC = true
+			if raise and raise.IsPlaying then
+				raise:Stop(0.08)
+			end
+			playThrowAnim()
+			Sounds.Play("Throw", 1 + tier * 0.03)
+		end
+		-- the ball leaves your hand (the flight starts at exactly this moment)
+		if not released and t >= w then
+			released = true
+			Effects.Burst(handPos, PortalBuilder.ColorSeq(info.portal), 30, 18, 0.8)
+			if tier >= 3 then
+				Effects.Burst(handPos, color, 20 + tier * 6, 22, 0.8)
+			end
+			if not calm then
+				Effects.Shake(0.3 + tier * 0.12, 0.25)
+				if tier >= 5 then
+					Effects.Flash(color, 0.35, 0.3)
+				end
+			end
+			finish()
+		end
+	end)
 end
 function TC.IsFollowing()
 	return camFollow ~= nil or camReturn ~= nil
@@ -16401,6 +16587,36 @@ RunService:BindToRenderStep("TPFC_FollowCam", Enum.RenderPriority.Camera.Value, 
 		local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
 		if not root then
 			TC.EndAim()
+			return
+		end
+		if aimCam.cutscene then
+			-- THROW CUTSCENE camera (character faces +Z: front is +Z, right side is -X)
+			local cs = aimCam.cutscene
+			local t = os.clock() - cs.t0
+			local R = root.Position
+			local desired, fov, sharp
+			if t < cs.w - 0.3 then
+				local kk = math.clamp(t / math.max(0.1, cs.w - 0.3), 0, 1)
+				local ang = -0.45 + kk * (1.2 + cs.tier * 0.12) -- orbit from the front; rarer = wider swing
+				local r = 7.5 - kk * 1.8
+				local h = 2.2 + kk * 1.4
+				local center = R + Vector3.new(-0.8, 0, 0)
+				desired = CFrame.lookAt(center + Vector3.new(math.sin(ang) * r, h, math.cos(ang) * r), R + Vector3.new(-0.6, 2.6 + kk, 0))
+				fov = 58 - kk * (4 + cs.tier * 1.5)
+				sharp = 7
+				if cs.tier == 7 and not Settings.ReducedMotion then
+					desired = desired * CFrame.new(math.random(-6, 6) / 10, math.random(-6, 6) / 10, 0) -- glitch jitter
+					sharp = 30
+				end
+			else
+				desired = CFrame.lookAt(R + Vector3.new(-2.8, 2.4, -7.5), R + Vector3.new(0, 3.5, 45))
+				fov = aimCam.saved.fov + 6
+				sharp = 14
+			end
+			aimCam.cf = aimCam.cf:Lerp(desired, 1 - math.exp(-sharp * dt))
+			camera.CameraType = Enum.CameraType.Scriptable
+			camera.CFrame = aimCam.cf
+			camera.FieldOfView += (fov - camera.FieldOfView) * (1 - math.exp(-8 * dt))
 			return
 		end
 		local released = aimCam.released and (os.clock() - aimCam.released) or nil
@@ -16606,17 +16822,48 @@ Remotes.PortalThrown.OnClientEvent:Connect(function(info)
 		seenThrown[info.id] = nil
 		seenOpened[info.id] = nil
 	end)
-	local orb, refs = PortalBuilder.BuildOrb(info.portal, 0.75)
-	local a, c = info.from, info.to + Vector3.new(0, 0.9, 0)
-	local mid = (a + c) / 2 + Vector3.new(0, math.min(10 + info.dist * 0.3, 220), 0)
-	orb:PivotTo(CFrame.new(a))
-	orb.Parent = Effects.Folder
-	refs.trail.Enabled = true
 	local mine = info.owner == player.UserId
 	if mine then
 		TC.Submitting = false
 		submissionSerial += 1
 		TC.MyThrow, TC.MyThrowT, TC.Phase, TC.TargetZone = info.id, os.clock(), "Flying", info.zone
+	end
+	-- THROW CUTSCENE first; the ball leaves the hand when it ends (the server waits the same time)
+	local windup = math.clamp(tonumber(info.windup) or 0, 0, 4)
+	local rinfo = info.rarity and Config.Rarities[info.rarity]
+	local tier = rinfo and rinfo.order or 1
+	local rarityColor = rinfo and rinfo.color or nil
+	if mine then
+		TC.PlayThrowCutscene(info, windup, tier, rarityColor)
+	elseif tier >= 5 and windup > 0 and rarityColor then
+		Effects.LightBeam(info.from - Vector3.new(0, 1.5, 0), rarityColor, 80, windup) -- others see the power-up too
+	end
+	task.delay(windup, function()
+	if finishedThrows[info.id] then
+		return
+	end
+	local orb, refs = PortalBuilder.BuildOrb(info.portal, 0.75)
+	local a, c = info.from, info.to + Vector3.new(0, 0.9, 0)
+	if mine then
+		local hcf = handCFrame()
+		if hcf and (hcf.Position - a).Magnitude < 12 then
+			a = hcf.Position -- the ball leaves from your hand
+		end
+	end
+	local mid = (a + c) / 2 + Vector3.new(0, math.min(10 + info.dist * 0.3, 220), 0)
+	orb:PivotTo(CFrame.new(a))
+	orb.Parent = Effects.Folder
+	refs.trail.Enabled = true
+	if tier >= 3 and rarityColor then
+		-- the ball glows in the colour of what's inside (gacha style)
+		refs.trail.Color = ColorSequence.new(rarityColor, Color3.new(1, 1, 1))
+		if refs.light then
+			refs.light.Color = rarityColor
+			refs.light.Range = 10 + tier * 3
+		end
+		if refs.emitter then
+			refs.emitter.Color = ColorSequence.new(rarityColor)
+		end
 	end
 	local follow = mine
 		and info.dist > 70
@@ -16625,6 +16872,8 @@ Remotes.PortalThrown.OnClientEvent:Connect(function(info)
 		and not TC.SystemMenuOpen
 	if follow then
 		claimCamera(info.id, a, info.t + Timeline.LandBounce + 1.5)
+	elseif mine and TC.EndAim then
+		task.delay(0.35, TC.EndAim) -- short throw: glide the camera back after the release
 	end
 	if not mine then
 		Sounds.PlayAt("Whoosh", a)
@@ -16690,6 +16939,7 @@ Remotes.PortalThrown.OnClientEvent:Connect(function(info)
 			end
 		end
 	end)
+	end) -- task.delay(windup): flight starts after the throw cutscene
 end)
 
 Remotes.PortalOpened.OnClientEvent:Connect(function(info)
