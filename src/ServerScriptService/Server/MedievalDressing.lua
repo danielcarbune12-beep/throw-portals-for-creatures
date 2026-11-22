@@ -205,6 +205,81 @@ local function dressSanctuarySign()
 	end
 end
 
+---------------------------------------------------------------- construction detail
+-- Pillars get a seated plinth and a cap course; timber posts get iron straps at their joints.
+-- Detection is by shape and material, and every addition is skipped if the structure already has one.
+local STONE = {
+	[Enum.Material.Limestone] = true, [Enum.Material.Marble] = true, [Enum.Material.Concrete] = true,
+	[Enum.Material.Slate] = true, [Enum.Material.Granite] = true, [Enum.Material.Cobblestone] = true,
+	[Enum.Material.Sandstone] = true, [Enum.Material.Rock] = true, [Enum.Material.SmoothPlastic] = true,
+	[Enum.Material.Plastic] = true, [Enum.Material.Basalt] = true,
+}
+local overlap = OverlapParams.new()
+overlap.FilterType = Enum.RaycastFilterType.Exclude
+
+local function wider(at, size, except, minW)
+	overlap.FilterDescendantsInstances = { except, folder }
+	for _, q in ipairs(workspace:GetPartBoundsInBox(at, size, overlap)) do
+		if q.Transparency < 0.5 and math.max(q.Size.X, q.Size.Z) >= minW then return true end
+	end
+	return false
+end
+
+local function pillarDetail(root)
+	local n = 0
+	for _, p in ipairs(root:GetDescendants()) do
+		if n >= 220 then break end
+		if p:IsA("Part") and p.Shape == Enum.PartType.Block and p.Transparency < 0.1 and STONE[p.Material] then
+			local s = p.Size
+			local h, w = s.Y, math.max(s.X, s.Z)
+			local lum = p.Color.R * 0.3 + p.Color.G * 0.59 + p.Color.B * 0.11
+			if h >= 5 and h <= 30 and w >= 0.9 and w <= 3.4 and math.min(s.X, s.Z) >= 0.7 and p.CFrame.UpVector.Y > 0.99 and lum > 0.55 then
+				local bottom = p.Position - Vector3.new(0, h / 2, 0)
+				ray.FilterDescendantsInstances = { folder, p }
+				local hit = workspace:Raycast(bottom + Vector3.new(0, 0.3, 0), Vector3.new(0, -2, 0), ray)
+				local gy = hit and hit.Position.Y or bottom.Y
+				local seated = hit ~= nil and math.abs(gy - bottom.Y) < 0.8
+				local rot = p.CFrame.Rotation
+				local stone = p.Color:Lerp(Color3.fromRGB(150, 144, 132), 0.35)
+				if seated and not wider(CFrame.new(bottom.X, gy + 0.3, bottom.Z), Vector3.new(s.X + 0.2, 0.4, s.Z + 0.2), p, w + 0.35) then
+					local b = part("PillarPlinth", Vector3.new(s.X + 0.7, 0.55, s.Z + 0.7), CFrame.new(bottom.X, gy + 0.275, bottom.Z) * rot, stone, p.Material)
+					b.CastShadow = true
+					part("PillarTorus", Vector3.new(s.X + 0.36, 0.22, s.Z + 0.36), CFrame.new(bottom.X, gy + 0.66, bottom.Z) * rot, stone, p.Material)
+					n += 1
+				end
+				local top = p.Position + Vector3.new(0, h / 2, 0)
+				if not wider(CFrame.new(top + Vector3.new(0, 0.25, 0)), Vector3.new(s.X - 0.1, 0.3, s.Z - 0.1), p, 0) then
+					part("PillarCap", Vector3.new(s.X + 0.5, 0.3, s.Z + 0.5), CFrame.new(top + Vector3.new(0, 0.15, 0)) * rot, stone, p.Material)
+					n += 1
+				end
+			end
+		end
+	end
+	return n
+end
+
+local function timberStraps(root)
+	for _, p in ipairs(root:GetDescendants()) do
+		if p:IsA("BasePart") and (p.Name:find("TimberPost") or p.Name:find("Post") and p.Material == Enum.Material.Wood) and p.Size.Y > 4 then
+			local s = p.Size
+			for _, y in ipairs({ s.Y / 2 - 0.6, -s.Y / 2 + 0.7 }) do
+				part("IronStrap", Vector3.new(s.X + 0.08, 0.22, s.Z + 0.08), p.CFrame * CFrame.new(0, y, 0), C.iron, Enum.Material.Metal)
+				part("StrapBolt", Vector3.new(0.16, 0.16, 0.16), p.CFrame * CFrame.new(0, y, -s.Z / 2 - 0.05), C.brass, Enum.Material.Metal, Enum.PartType.Ball)
+			end
+		end
+	end
+end
+
+local function construction()
+	local roots = { workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Start"), workspace:FindFirstChild("Bases") }
+	for _, r in ipairs(roots) do
+		if r then
+			pillarDetail(r)
+			timberStraps(r)
+		end
+	end
+end
+
 ---------------------------------------------------------------- ambient life
 local function bannersSway()
 	local roots = { workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Start"), workspace:FindFirstChild("Bases") }
@@ -292,7 +367,7 @@ function D.Apply()
 			if not ok then warn("[MedievalDressing] expedition " .. b.Name .. ": " .. tostring(err)) end
 		end
 	end
-	for _, f in ipairs({ dressSanctuarySign, bannersSway, pollen, waterfallMist }) do
+	for _, f in ipairs({ dressSanctuarySign, construction, bannersSway, pollen, waterfallMist }) do
 		local ok, err = pcall(f)
 		if not ok then warn("[MedievalDressing] " .. tostring(err)) end
 	end
