@@ -35,6 +35,7 @@ local heldOrb, heldRefs
 local chargeSound
 local throws = {} -- [id] = { gate, gateRefs, pos, portal }
 local finishedThrows = {} -- terminal events can arrive before a paused client finishes its arc
+local aimCam = nil -- cinematic over-the-shoulder camera while charging / throwing (see TC.StartAim)
 
 ---------------------------------------------------------------- arm pose (local)
 local shoulder, shoulderC0, armBlend, armTarget = nil, nil, 0, 0
@@ -86,6 +87,10 @@ function TC.CancelCharge(_reason)
 	end
 	if wasCharging then
 		TC.Phase = "Ready"
+		-- cancelled (not thrown): leave throw mode and give the camera back
+		if _reason ~= "released" and TC.EndAim then
+			TC.EndAim()
+		end
 	end
 	return wasCharging
 end
@@ -135,6 +140,9 @@ function TC.BeginCharge(source)
 	heldOrb, heldRefs = PortalBuilder.BuildOrb(d.EquippedPortal, 0.5)
 	heldOrb.Parent = Effects.Folder
 	chargeSound = Sounds.Play("Charge")
+	if TC.StartAim then
+		TC.StartAim(hrp)
+	end
 	return true
 end
 
@@ -161,9 +169,16 @@ function TC.EndCharge(source)
 	if dir.Magnitude < 0.1 or dir.Z < 0.2 then
 		dir = Vector3.new(math.clamp(dir.X, -0.5, 0.5), 0, 1)
 	end
+	if aimCam then
+		-- the throw-mode camera sits over the shoulder (slightly off-centre), so throw straight down the lane
+		dir = Vector3.new(0, 0, 1)
+	end
 	dir = dir.Unit
 	hrp.CFrame = CFrame.lookAt(hrp.Position, hrp.Position + dir)
 	Remotes.Throw:FireServer(power, dir)
+	if TC.ReleaseAim then
+		TC.ReleaseAim(power)
+	end
 	armTarget = -0.45
 	task.delay(0.16, function()
 		if not TC.Charging then
@@ -339,6 +354,7 @@ local function claimCamera(id, pos, duration)
 	local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
 	local saved = camFollow and camFollow.saved
 		or camReturn and camReturn.saved
+		or aimCam and aimCam.saved
 		or {
 			type = camera.CameraType,
 			subject = camera.CameraSubject,
@@ -347,6 +363,7 @@ local function claimCamera(id, pos, duration)
 			rotation = camera.CFrame.Rotation,
 		}
 	camReturn = nil
+	aimCam = nil -- the follow camera takes over smoothly from the throw camera
 	camFollow = {
 		pos = pos,
 		untilT = os.clock() + math.min(duration, Timeline.CameraTimeout),
@@ -354,6 +371,96 @@ local function claimCamera(id, pos, duration)
 		saved = saved,
 		started = os.clock(),
 	}
+end
+
+---------------------------------------------------------------- THROW MODE (cinematic aim + throw)
+-- Charging puts you in "throw mode": the camera glides over your right shoulder, facing down the
+-- lane, letterbox bars slide in and the view tightens as power builds. On release your character
+-- plays an overhand throw, light bursts from your hand, the camera kicks forward, and then the
+-- follow camera picks up the ball (or the view glides back for a short throw).
+local THROW_ANIM = {
+	[Enum.HumanoidRigType.R15] = "rbxassetid://522635514", -- Roblox's built-in overhand tool swing
+	[Enum.HumanoidRigType.R6] = "rbxassetid://129967390",
+}
+local throwTrack, throwHum = nil, nil
+local function playThrowAnim()
+	local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+	if not hum then
+		return
+	end
+	if hum ~= throwHum then
+		throwHum, throwTrack = hum, nil
+		local animator = hum:FindFirstChildOfClass("Animator") or hum
+		local anim = Instance.new("Animation")
+		anim.AnimationId = THROW_ANIM[hum.RigType] or THROW_ANIM[Enum.HumanoidRigType.R15]
+		local ok, track = pcall(function()
+			return animator:LoadAnimation(anim)
+		end)
+		if ok and track then
+			track.Priority = Enum.AnimationPriority.Action
+			track.Looped = false
+			throwTrack = track
+		end
+	end
+	if throwTrack then
+		throwTrack:Play(0.05, 1, 1.25)
+	end
+end
+
+function TC.StartAim(hrp)
+	if Settings.ReducedMotion or camFollow or camReturn then
+		return
+	end
+	camera = workspace.CurrentCamera or camera
+	if camera.CameraType ~= Enum.CameraType.Custom then
+		return
+	end
+	aimCam = {
+		saved = {
+			type = camera.CameraType,
+			subject = camera.CameraSubject,
+			fov = camera.FieldOfView,
+			offset = hrp and (camera.CFrame.Position - hrp.Position) or Vector3.new(0, 7, -16),
+			rotation = camera.CFrame.Rotation,
+		},
+		cf = camera.CFrame,
+	}
+	if hrp then
+		hrp.CFrame = CFrame.lookAt(hrp.Position, hrp.Position + Vector3.new(0, 0, 1)) -- face down the lane
+	end
+	Effects.Letterbox(true)
+end
+
+function TC.ReleaseAim(power)
+	playThrowAnim()
+	if not Settings.ReducedMotion then
+		Effects.Shake(0.3 + power * 0.4, 0.18)
+	end
+	local hcf = handCFrame()
+	if hcf then
+		Effects.Burst(hcf.Position, PortalBuilder.ColorSeq(State.Data.EquippedPortal), 30, 18, 0.8)
+	end
+	local a = aimCam
+	if not a then
+		return
+	end
+	a.released = os.clock()
+	task.delay(0.9, function()
+		if aimCam == a then
+			TC.EndAim() -- no follow camera took over (short throw or the launch wasn't confirmed)
+		end
+	end)
+end
+
+function TC.EndAim()
+	local a = aimCam
+	if not a then
+		return
+	end
+	aimCam = nil
+	Effects.Letterbox(false)
+	camera = workspace.CurrentCamera or camera
+	camReturn = { saved = a.saved, started = os.clock(), from = camera.CFrame, fov = camera.FieldOfView }
 end
 function TC.IsFollowing()
 	return camFollow ~= nil or camReturn ~= nil
@@ -364,6 +471,7 @@ function TC.StopFollow(immediate)
 		return
 	end
 	if camFollow and camFollow.closeup then TC.EndCloseup() end
+	Effects.Letterbox(false) -- throw mode / follow bars always slide away when the camera is handed back
 	local saved = active.saved
 	camFollow, camReturn = nil, nil
 	if immediate or Settings.ReducedMotion then
@@ -392,6 +500,26 @@ RunService:BindToRenderStep("TPFC_FollowCam", Enum.RenderPriority.Camera.Value, 
 			camReturn = nil
 			restoreCamera(r.saved)
 		end
+		return
+	end
+	if aimCam and not camFollow then
+		-- THROW MODE camera: over the right shoulder, looking down the lane
+		local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+		if not root then
+			TC.EndAim()
+			return
+		end
+		local released = aimCam.released and (os.clock() - aimCam.released) or nil
+		local power = TC.Charging and TC.Power or (released and 1 or 0)
+		local push = released and math.min(1, released / 0.35) or 0
+		-- facing +Z, the character's right side is -X
+		local pos = root.Position + Vector3.new(-2.8, 2.6 - push * 0.5, -8.5 + push * 3)
+		local desired = CFrame.lookAt(pos, root.Position + Vector3.new(0, 3.5, 45))
+		aimCam.cf = aimCam.cf:Lerp(desired, 1 - math.exp(-9 * dt))
+		camera.CameraType = Enum.CameraType.Scriptable
+		camera.CFrame = aimCam.cf
+		local fovTarget = aimCam.saved.fov - 16 * power + push * 10
+		camera.FieldOfView += (fovTarget - camera.FieldOfView) * (1 - math.exp(-10 * dt))
 		return
 	end
 	if not camFollow then
@@ -459,6 +587,12 @@ RunService:BindToRenderStep("TPFC_FollowCam", Enum.RenderPriority.Camera.Value, 
 	camera.CFrame = camFollow.cf
 end)
 local function watchCharacter(char)
+	if aimCam then
+		local a = aimCam
+		aimCam = nil
+		Effects.Letterbox(false)
+		restoreCamera(a.saved)
+	end
 	TC.StopFollow(true)
 	local hum = char:WaitForChild("Humanoid", 10)
 	if hum then

@@ -161,6 +161,10 @@ function BaseBuilder.SetGymSign(base, level)
 	local label = base.gymLabel
 	local bb = label and label.Parent
 	if not bb then return end
+	-- the big floating sign above the dumbbells was removed on request (the gym panel shows this info)
+	local gui = bb:IsA("BillboardGui") and bb or bb:FindFirstAncestorWhichIsA("BillboardGui")
+	if gui then gui.Enabled = false end
+	do return end
 	if not bb:FindFirstChild("SanctuaryPanel") then
 		bb.Size = UDim2.fromScale(9, 3.4)
 		bb.MaxDistance = 70
