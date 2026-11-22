@@ -1,7 +1,12 @@
 -- Crisp native geometry. Every navigation icon also has a visible text label.
 local T = require(script.Parent.UITheme)
+local Sky = require(script.Parent.SkyforgeUI)
 local Icons = {}
 function Icons.Draw(name, parent, size, color, position)
+	local enamel = Sky.Icon(name, parent, size, position)
+	if enamel then
+		return enamel
+	end
 	local root = Instance.new("Frame")
 	root.Name = "Icon_" .. name
 	root.BackgroundTransparency = 1

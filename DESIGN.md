@@ -10,15 +10,15 @@ Ink #141020, panel #211A34, raised #302644, border #594D70, text #F6F2FF, muted 
 
 ## Typography
 
-Gotham/GothamBold for interface text and data. Body 16, secondary 14, row title 19, panel title 26. Native labels avoid text strokes and automatic shrinking. Long names wrap in reserved title areas.
+Builder Sans for interface text and data, with Gotham fallbacks. Body 16, secondary 14, row title 19, panel title 26; compact phone data can use 13. Native labels avoid text strokes and automatic shrinking. Long names wrap in reserved title areas.
 
 ## Layout
 
-Compact top status strip and one labeled Menu button. Shop, upgrades, pets and all secondary destinations are inside Menu. The throw control appears only in the launch hall, and the launch guide appears only while charging or a portal is active. A dimmed modal layer contains a consistent header, explanatory subtitle and scrollable body. Wide shops use catalogue/detail columns; narrow screens stack the preview above the catalogue. Inventory actions stay inside the panel.
+Compact balance/income strip and one labeled Menu button on every device. Menu has exactly four destinations: Pets, Shop, Expeditions and Settings. Collection lives under Pets; portals, upgrades, courtyard customization and biome unlocks/travel live under Shop. Settings includes return home and authorized developer tools. The throw control appears only in the launch hall. Expeditions use the approved Skyforge bottom drawer with a biome diorama carousel, owned-pet portraits, exact payout and one dispatch action. An active mission adds a small progress widget; relics are a secondary journal inside Expeditions. Other panels retain responsive catalogue/detail layouts.
 
 ## Symbols
 
-Native Frames and UIStroke build a consistent geometric icon family, no external images or emoji dependency: portal, upgrade, pet, book, compass, home, decor, coin, strength, bag, settings, check, close, lock, search and arrow.
+The four primary destinations use approved C Relic enamel artwork: silver wolf, violet merchant stall, compass map, and silver/gold cog. SkyforgeUI clips the transparent atlas into four icons. Small utility symbols remain native Frames/UIStroke. Visible labels accompany navigation. Ink-violet panels use restrained gold edges and angled corner accents, matching approved HUD concept 2.
 
 ## States and Motion
 

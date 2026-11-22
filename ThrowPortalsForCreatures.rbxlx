@@ -13345,7 +13345,7 @@ return L
 ]]></ProtectedString></Properties></Item>
 </Item>
 </Item>
-<Item class="StarterPlayer" referent="RBX71"><Properties><string name="Name">StarterPlayer</string></Properties>
+<Item class="StarterPlayer" referent="RBX73"><Properties><string name="Name">StarterPlayer</string></Properties>
 <Item class="StarterPlayerScripts" referent="RBX47"><Properties><string name="Name">StarterPlayerScripts</string></Properties>
 <Item class="Folder" referent="RBX48"><Properties><string name="Name">Client</string></Properties>
 <Item class="ModuleScript" referent="RBX49"><Properties><string name="Name">CaughtPresentation</string><ProtectedString name="Source"><![CDATA[-- Caught card for an already confirmed catch, styled after Actions/02_Rarity_Reveal_and_Capture ("03 ADDED"):
@@ -15742,411 +15742,316 @@ end
 
 return Effects
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX56"><Properties><string name="Name">ExpeditionPanel</string><ProtectedString name="Source"><![CDATA[-- Contextual expedition planning. The only world control is the prompt on the
--- player's own map table; mission identity, timestamps and rewards stay server-owned.
+<Item class="ModuleScript" referent="RBX56"><Properties><string name="Name">ExpeditionPanel</string><ProtectedString name="Source"><![CDATA[-- Skyforge visual planning; all mission authority remains on the server.
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
-local Http = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
-local Shared = RS:WaitForChild("Shared")
-local Config = require(Shared.Config)
-local Creatures = require(Shared.CreatureData)
-local Rules = require(Shared.ExpeditionConfig)
-local Format = require(Shared.Format)
-local variantModule = Shared:FindFirstChild("Variants")
-local Variants = variantModule and require(variantModule)
+local Config = require(RS.Shared.Config)
+local Creatures = require(RS.Shared.CreatureData)
+local Rules = require(RS.Shared.ExpeditionConfig)
+local Format = require(RS.Shared.Format)
+local Variants = require(RS.Shared.Variants)
 local K = require(script.Parent.UIKit)
 local T = K.Theme
+local Sky = require(script.Parent.SkyforgeUI)
+local Scene = require(script.Parent.ExpeditionScene)
+local Renderer = require(script.Parent.CreatureRenderer)
 local HUD = require(script.Parent.HUD)
 local State = require(script.Parent.ClientState)
 local Sounds = require(script.Parent.Sounds)
 local Panel = {}
 local player = Players.LocalPlayer
-local initialized, busy = false, false
-local selectedUid, selectedRoute
-local noticeText, noticeColor = "", T.Muted
+local ready, busy = false, false
+local selectedUid, routeIndex = nil, 1
 local lastView, serverClock, localClock = nil, 0, 0
-local anchor, prompt
-local page, notice, activeBox, idleBox, petList, routeList, petSummary, preview, action, claim
-local activeTitle, activeDetail, countdown, activeReward, activeHint, journalTitle, journalGrid
-local petSearch, petEmpty
-local introduction, journalHint
-local petHeading, missionHeading, planningLayout
-local render, renderPets, renderRoutes, updateSelection, updateClock
-
+local page, notice, planning, activeBox, portraits, petLabel, reward, bonus, send, claim
+local routeTitle, sceneFrame, stats, relicLink
+local activeTitle, activeTime, activeReward, activePortrait, progressFill
+local tracker, trackerText, trackerFill
+local anchor, prompt, sceneId, petKey, activeKey
+local render, updateClock, updateSelection, renderPets
+local function view()
+	return type(State.Data.Expeditions) == "table" and State.Data.Expeditions or nil
+end
+local function activeTrip()
+	local v = view()
+	return v and type(v.active) == "table" and v.active or nil
+end
+local function route()
+	local v = view()
+	return v and v.routes and v.routes[routeIndex]
+end
 local function worldName(id)
 	return Config.Worlds[id] and Config.Worlds[id].name or tostring(id)
 end
-
-local function duration(seconds)
-	seconds = math.max(0, math.ceil(seconds or 0))
-	return string.format("%dm %02ds", math.floor(seconds / 60), seconds % 60)
+local function duration(n)
+	n = math.max(0, math.ceil(n))
+	return string.format("%dm %02ds", math.floor(n / 60), n % 60)
 end
-
-local function petName(pet)
-	local def = pet and Creatures.ById[pet.c]
-	if not def then
-		return "Unknown creature"
-	end
-	return (Variants and Variants.Prefix(pet.s, pet.v) or "") .. def.name
-end
-
-local function petIncome(pet)
-	return Creatures.Income(pet.c) * (Variants and Variants.Mult(pet.s, pet.v) or 1)
-end
-
-local function getView()
-	return type(State.Data.Expeditions) == "table" and State.Data.Expeditions or nil
-end
-
-local function selectedPet()
-	for _, pet in State.Data.Creatures or {} do
-		if pet.u == selectedUid and Creatures.ById[pet.c] then
-			return pet
-		end
-	end
-end
-
-local function routeById(id)
-	local view = getView()
-	for _, route in view and view.routes or {} do
-		if route.id == id then
-			return route
-		end
-	end
-end
-
 local function clockNow()
 	return serverClock + math.max(0, os.clock() - localClock)
 end
-
-local function clearRows(parent)
-	for _, child in parent:GetChildren() do
-		if child:IsA("GuiObject") then
-			child:Destroy()
+local function ownedPet()
+	for _, p in State.Data.Creatures or {} do
+		if p.u == selectedUid then
+			return p
 		end
 	end
 end
-
-local function label(parent, text, height, size, color, bold, order)
-	return K.label(text, UDim2.new(1, -12, 0, height), color or T.Text, {
-		TextSize = size or 16,
-		Font = bold and T.Bold or T.Font,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		RichText = false,
-		LayoutOrder = order or 0,
-		Parent = parent,
-	})
+local function inRange()
+	local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	return anchor and root and (root.Position - anchor.Position).Magnitude <= Rules.TableRange
 end
-
-local function stack(parent, name, order)
-	local f = K.new("Frame", {
-		Name = name,
-		BackgroundTransparency = 1,
-		Size = UDim2.new(1, -12, 0, 0),
-		AutomaticSize = Enum.AutomaticSize.Y,
-		LayoutOrder = order,
-		Parent = parent,
-	})
-	K.list(Enum.FillDirection.Vertical, 10).Parent = f
-	return f
+local function message(text, color)
+	notice.Text = text or ""
+	notice.TextColor3 = color or T.Muted
+	notice.Visible = notice.Text ~= ""
 end
-
-local function scrollList(parent, name, height, order)
-	local f = K.new("ScrollingFrame", {
-		Name = name,
-		BackgroundTransparency = 1,
-		Size = UDim2.new(1, -12, 0, height),
-		AutomaticCanvasSize = Enum.AutomaticSize.Y,
-		CanvasSize = UDim2.new(),
-		ScrollBarThickness = 4,
-		ScrollBarImageColor3 = T.Violet,
-		ScrollingDirection = Enum.ScrollingDirection.Y,
-		LayoutOrder = order,
-		Parent = parent,
-	})
-	K.list(Enum.FillDirection.Vertical, 8).Parent = f
-	K.pad(3).Parent = f
-	return f
+local function portrait(parent, pet, size)
+	local m = Renderer.BuildPreview(pet.c, pet.v)
+	local vp = K.viewport(m, size, false)
+	vp.Name = "PetPortrait"
+	vp.Parent = parent
+	return vp
 end
-
-local function markSelected(button, chosen)
-	local border = button:FindFirstChildOfClass("UIStroke")
-	border.Color, border.Thickness = chosen and T.Gold or T.Border, chosen and 2 or 1
-end
-
-local function setNotice(text, color)
-	noticeText, noticeColor = text or "", color or T.Muted
-	if notice then
-		notice.Text, notice.TextColor3 = noticeText, noticeColor
-		notice.Visible = noticeText ~= ""
+local function clear(parent)
+	for _, c in parent:GetChildren() do
+		if c:IsA("GuiObject") then
+			c:Destroy()
+		end
 	end
 end
-
-local function request(actionName, argument)
+local function goToTable()
 	if busy then
+		return
+	end
+	busy = true
+	local ok, err = State.Request("Teleport", "Home")
+	busy = false
+	if not ok then
+		message(err or "Could not return home.", T.Danger)
+		return
+	end
+	HUD.Close()
+	task.delay(0.5, function()
+		local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+		if anchor and hum then
+			hum:MoveTo(anchor.Position + Vector3.new(0, 0, -5))
+		end
+	end)
+	HUD.Notify("Approach your map table to send or claim your pet.", "info")
+end
+local function request(name, arg)
+	if busy then
+		return
+	end
+	if not inRange() then
+		goToTable()
 		return
 	end
 	busy = true
 	updateSelection()
 	updateClock()
-	local ok, message = State.Request(actionName, argument)
+	local ok, err = State.Request(name, arg)
 	busy = false
-	setNotice(
-		message or (ok and "Expedition updated." or "Could not update the expedition. Try again."),
-		ok and T.Success or T.Danger
-	)
+	message(ok and "" or (err or "Please try again."), T.Danger)
 	if ok then
 		Sounds.Play("Upgrade")
 		State.Request("Sync")
+		if name == "StartExpedition" then
+			HUD.Close()
+			HUD.Notify("Pet dispatched. Your timer is on the HUD.", "success")
+		else
+			HUD.Notify(err or "Expedition finds claimed.", "success")
+		end
 	end
 	render()
 end
-
-updateSelection = function()
-	local pet, route = selectedPet(), routeById(selectedRoute)
-	local view = getView()
-	local active = view and type(view.active) == "table" and view.active
-	if pet then
-		local def = Creatures.ById[pet.c]
-		petSummary.Text = petName(pet)
-			.. "  #"
-			.. tostring(pet.u)
-			.. "\n"
-			.. def.rarity
-			.. " | "
-			.. worldName(def.world)
-		petSummary.TextColor3 = T.Rarity(def.rarity, Config)
-	else
-		petSummary.Text, petSummary.TextColor3 = "Choose a creature for the expedition.", T.Muted
-	end
-	if pet and route then
-		local matched = Creatures.ById[pet.c].world == route.world
-		local incomePart = route.incomeCoinsPerSecond or Rules.IncomeFraction
-		local multiplier = matched and (route.matchMultiplier or Rules.MatchingBiomeMultiplier) or 1
-		local coins = math.floor((route.coins + petIncome(pet) * route.duration * incomePart) * multiplier)
-		preview.Text = worldName(route.world)
-			.. " | "
-			.. duration(route.duration)
-			.. " | "
-			.. Format.Money(coins)
-			.. "\n"
-			.. (matched and "Native biome match: +25% reward." or "A pet from this biome earns a +25% reward.")
-			.. "\n"
-			.. (
-				view.relics and view.relics[route.world] and "Biome relic already recovered."
-				or "First completion recovers this biome's relic."
-			)
-		preview.TextColor3 = route.unlocked and T.Text or T.Muted
-	else
-		preview.Text, preview.TextColor3 = "Select a pet and an unlocked biome to see the duration and finds.", T.Muted
-	end
-	local enabled = State.Loaded and pet ~= nil and route ~= nil and route.unlocked == true and not active and not busy
-	K.setButton(action, busy and "Sending pet..." or "Send on expedition", T.Gold)
-	K.setEnabled(action, enabled)
-end
-
 renderPets = function()
-	local oldScroll = petList.CanvasPosition
-	clearRows(petList)
-	local query = string.lower(petSearch.Text)
-	local found = 0
-	for i, pet in State.Data.Creatures or {} do
-		local def = Creatures.ById[pet.c]
-		if
-			def
-			and (
-				query == ""
-				or string.find(
-					string.lower(petName(pet) .. " " .. def.rarity .. " " .. worldName(def.world)),
-					query,
-					1,
-					true
+	local keys = {}
+	for _, p in State.Data.Creatures or {} do
+		table.insert(keys, tostring(p.u) .. ":" .. p.c .. ":" .. tostring(p.v) .. ":" .. tostring(p.s))
+	end
+	local nextKey = table.concat(keys, "|")
+	if nextKey ~= petKey then
+		petKey = nextKey
+		clear(portraits)
+		local short = page.frame.Size.Y.Offset < 310
+		local size = page.frame.Size.Y.Offset < 260 and 44 or (short and 58 or 78)
+		for i, p in State.Data.Creatures or {} do
+			if Creatures.ById[p.c] then
+				local b = K.button(
+					"",
+					T.Raised,
+					nil,
+					UDim2.fromOffset(size, size),
+					{ Name = "Pet_" .. p.u, LayoutOrder = i, Parent = portraits }
 				)
-			)
-		then
-			found += 1
-			local button = K.button(
-				petName(pet) .. "  #" .. tostring(pet.u) .. "\n" .. def.rarity .. " | " .. worldName(def.world),
-				T.Raised,
-				nil,
-				UDim2.new(1, -14, 0, 64),
-				{
-					Name = "Pet_" .. tostring(pet.u),
-					LayoutOrder = i,
-					Parent = petList,
-				}
-			)
-			button.Label.RichText = false
-			markSelected(button, selectedUid == pet.u)
-			K.bind(button, function()
-				selectedUid = pet.u
-				renderPets()
-				updateSelection()
-			end)
+				portrait(b, p, UDim2.fromScale(1, 1))
+				K.bind(b, function()
+					selectedUid = p.u
+					updateSelection()
+				end)
+			end
 		end
 	end
-	petEmpty.Visible = found == 0
-	petEmpty.Text = #(State.Data.Creatures or {}) == 0
-			and "Catch your first creature in the Launch Hall, then return to the map table."
-		or "No creatures match this search."
-	task.defer(function()
-		if petList.Parent then
-			petList.CanvasPosition = oldScroll
+	for _, b in portraits:GetChildren() do
+		if b:IsA("TextButton") then
+			local st = b:FindFirstChildOfClass("UIStroke")
+			local chosen = b.Name == "Pet_" .. tostring(selectedUid)
+			st.Color = chosen and T.Gold or T.Border
+			st.Thickness = chosen and 2 or 1
 		end
-	end)
-end
-
-renderRoutes = function()
-	local oldScroll = routeList.CanvasPosition
-	clearRows(routeList)
-	local view = getView()
-	for i, route in view and view.routes or {} do
-		local title = worldName(route.world) .. " | " .. duration(route.duration)
-		if not route.unlocked then
-			title ..= "\nUnlock this biome to explore it."
-		end
-		local button = K.button(title, T.Raised, nil, UDim2.new(1, -14, 0, 58), {
-			Name = "Route_" .. route.id,
-			LayoutOrder = i,
-			Parent = routeList,
-		})
-		button.Label.RichText = false
-		markSelected(button, selectedRoute == route.id)
-		K.setEnabled(button, route.unlocked == true)
-		K.bind(button, function()
-			selectedRoute = route.id
-			renderRoutes()
-			updateSelection()
-		end)
 	end
-	task.defer(function()
-		if routeList.Parent then
-			routeList.CanvasPosition = oldScroll
-		end
-	end)
 end
-
+updateSelection = function()
+	if not ready then
+		return
+	end
+	local p, r = ownedPet(), route()
+	local d = p and Creatures.ById[p.c]
+	petLabel.Text = d and Variants.Prefix(p.s, p.v) .. d.name or "Choose a pet"
+	bonus.Text = "Income pauses while away."
+	reward.Text = ""
+	reward.TextSize = 20
+	if p and d and r then
+		local matched = d.world == r.world
+		local coins = math.floor(
+			(
+				r.coins
+				+ Creatures.Income(p.c)
+					* Variants.Mult(p.s, p.v)
+					* r.duration
+					* (r.incomeCoinsPerSecond or Rules.IncomeFraction)
+			) * (matched and (r.matchMultiplier or Rules.MatchingBiomeMultiplier) or 1)
+		)
+		reward.Text = Format.Money(coins) .. " coins"
+		bonus.Text = matched and "+25% biome bonus / income pauses" or "Income pauses while away."
+	end
+	if r then
+		routeTitle.Text = worldName(r.world)
+		stats.Text = duration(r.duration) .. "  /  " .. (r.unlocked and "Unlocked" or "Locked biome")
+		if page.frame.Size.Y.Offset < 260 then
+			stats.Text = duration(r.duration) .. " / " .. (r.unlocked and "Income pauses while away." or "Locked biome")
+			if d and d.world == r.world then
+				reward.Text ..= " (+25%)"
+			end
+		end
+		if sceneId ~= r.world then
+			sceneId = r.world
+			clear(sceneFrame)
+			local vp = K.viewport(Scene.Build(r.world), UDim2.fromScale(1, 1), false)
+			vp.Name = "BiomePreview"
+			vp.Parent = sceneFrame
+			vp.CurrentCamera.CFrame = CFrame.lookAt(Vector3.new(-13, 12, -18), Vector3.new(0, 1, 0))
+		end
+	end
+	local count = 0
+	local v = view()
+	for _, yes in v and v.relics or {} do
+		if yes then
+			count += 1
+		end
+	end
+	relicLink.Label.Text = "Relics " .. count .. " / 8"
+	K.setButton(send, busy and "Sending..." or (not inRange() and "Go to table" or "Send pet"), T.Gold)
+	K.setEnabled(send, State.Loaded and p ~= nil and r ~= nil and r.unlocked == true and not activeTrip() and not busy)
+	if #(State.Data.Creatures or {}) == 0 then
+		petLabel.Text = "No pets yet"
+		reward.Text = "Catch a pet to begin."
+		reward.TextSize = 16
+	end
+	renderPets()
+end
 updateClock = function()
-	local view = getView()
-	local active = view and type(view.active) == "table" and view.active
-	if not active then
+	if not ready then
+		return
+	end
+	local a = activeTrip()
+	tracker.Visible = a ~= nil
+	if not a then
 		if prompt then
 			prompt.ActionText = "Plan expedition"
 		end
 		return
 	end
-	local remaining = math.max(0, active.endsAt - clockNow())
-	countdown.Text = remaining > 0 and duration(remaining) .. " remaining" or "Your pet has returned"
-	countdown.TextColor3 = remaining > 0 and T.Text or T.Success
-	K.setButton(claim, busy and "Claiming finds..." or "Claim finds", T.Gold)
-	K.setEnabled(claim, remaining <= 0 and not busy)
+	local left = math.max(0, a.endsAt - clockNow())
+	local pct = math.clamp(1 - left / math.max(1, a.endsAt - a.startedAt), 0, 1)
+	activeTime.Text = left > 0 and duration(left) .. " remaining" or "Your pet has returned"
+	activeTime.TextColor3 = left > 0 and T.Text or T.Success
+	progressFill.Size = UDim2.fromScale(pct, 1)
+	trackerFill.Size = UDim2.fromScale(pct, 1)
+	trackerText.Text = left > 0 and (worldName(a.world) .. " / " .. duration(left))
+		or ("Claim " .. Format.Money(a.coins))
+	K.setButton(
+		claim,
+		busy and "Claiming..." or (inRange() and "Claim " .. Format.Money(a.coins) or "Go to table"),
+		T.Gold
+	)
+	K.setEnabled(claim, left <= 0 and not busy)
 	if prompt then
-		prompt.ActionText = remaining <= 0 and "Claim expedition finds" or "View expedition"
+		prompt.ActionText = left > 0 and "View expedition" or "Claim return"
 	end
 end
-
 render = function()
-	local view = getView()
-	if view ~= lastView then
-		lastView = view
-		serverClock, localClock = view and view.serverNow or os.time(), os.clock()
+	local v = view()
+	if v ~= lastView then
+		lastView = v
+		serverClock = v and v.serverNow or os.time()
+		localClock = os.clock()
 	end
-	local active = view and type(view.active) == "table" and view.active
-	activeBox.Visible, idleBox.Visible = active ~= false and active ~= nil, active == false or active == nil
-	setNotice(noticeText, noticeColor)
-	if not State.Loaded or not view then
-		setNotice("Loading expedition plans...", T.Muted)
-		idleBox.Visible = false
+	local a = activeTrip()
+	planning.Visible = a == nil and State.Loaded and v ~= nil
+	activeBox.Visible = a ~= nil
+	if not State.Loaded or not v then
+		message("Loading expedition...", T.Muted)
+	elseif notice.Text == "Loading expedition..." then
+		message("")
+	end
+	if a then
+		activeTitle.Text = worldName(a.world)
+		activeReward.Text = Format.Money(a.coins) .. " coins" .. (a.matched and " / +25% bonus included" or "")
+		if activeKey ~= a.id then
+			activeKey = a.id
+			clear(activePortrait)
+			portrait(activePortrait, { c = a.creature, v = a.v }, UDim2.fromScale(1, 1))
+		end
 	else
-		if noticeText == "Loading expedition plans..." then
-			setNotice("", T.Muted)
+		if not ownedPet() then
+			selectedUid = State.Data.Creatures[1] and State.Data.Creatures[1].u
 		end
-		if active then
-			local pet
-			for _, owned in State.Data.Creatures or {} do
-				if owned.u == active.petUid then
-					pet = owned
-					break
-				end
-			end
-			local def = Creatures.ById[active.creature]
-			activeTitle.Text = pet and petName(pet) or (def and def.name or "Your creature")
-			activeDetail.Text = worldName(active.world) .. " expedition"
-			activeReward.Text = "Finds: "
-				.. Format.Money(active.coins)
-				.. (active.matched and " | Native biome bonus included" or "")
-			activeHint.Text = "Unavailable until return is claimed. Garden income pauses while away.\n"
-				.. (
-					view.relics and view.relics[active.world] and "This biome's relic is already in your journal."
-					or "Its first return recovers a biome relic for your map table."
-				)
-		else
-			if not selectedPet() then
-				selectedUid = State.Data.Creatures[1] and State.Data.Creatures[1].u
-			end
-			if not routeById(selectedRoute) then
-				selectedRoute = nil
-				for _, route in view.routes or {} do
-					if route.unlocked then
-						selectedRoute = route.id
-						break
-					end
-				end
-			end
-			renderPets()
-			renderRoutes()
+		if not route() then
+			routeIndex = 1
 		end
 	end
-	local collected = 0
-	clearRows(journalGrid)
-	for i, id in Rules.Order do
-		local recovered = view and view.relics and view.relics[id] == true
-		if recovered then
-			collected += 1
-		end
-		label(
-			journalGrid,
-			worldName(id) .. "\n" .. (recovered and "Recovered" or "Not found"),
-			38,
-			14,
-			recovered and T.Success or T.Muted,
-			false,
-			i
-		).Size =
-			UDim2.new(0.5, -6, 0, 38)
-	end
-	journalTitle.Text = "Biome relics  |  " .. collected .. " / " .. #Rules.Order
 	updateSelection()
 	updateClock()
 end
-
 function Panel.Open()
-	if not initialized or HUD.IsOpen("Expeditions") then
+	if not ready or HUD.IsOpen("Expeditions") then
 		return
 	end
 	HUD.Open("Expeditions")
 	task.spawn(function()
-		local ok, message = State.Request("Sync")
+		local ok, err = State.Request("Sync")
 		if not ok then
-			setNotice(message or "Your plans could not refresh. Try the table again.", T.Danger)
+			message(err or "Could not load expedition.", T.Danger)
 		end
 	end)
 end
-
 local function attachPrompt()
 	local bases = workspace:FindFirstChild("Bases")
 	local index = player:GetAttribute("BaseIndex") or State.Data.BaseIndex
-	local base = bases and index and bases:FindFirstChild("Base" .. tostring(index))
+	local base = bases and bases:FindFirstChild("Base" .. tostring(index))
 	local nextAnchor = base and base:FindFirstChild("ExpeditionAnchor", true)
-	if nextAnchor == anchor then
+	if anchor == nextAnchor then
 		return
 	end
 	if prompt then
 		prompt:Destroy()
 	end
 	anchor, prompt = nextAnchor, nil
-	if not nextAnchor or not nextAnchor:IsA("BasePart") then
+	if not anchor then
 		return
 	end
 	prompt = K.new("ProximityPrompt", {
@@ -16158,167 +16063,247 @@ local function attachPrompt()
 		MaxActivationDistance = Rules.TableRange,
 		HoldDuration = 0,
 		RequiresLineOfSight = false,
-		Parent = nextAnchor,
+		Parent = anchor,
 	})
 	prompt.Triggered:Connect(function(who)
 		if who == player then
 			Panel.Open()
 		end
 	end)
-	updateClock()
 end
-
 function Panel.Init()
-	if initialized then
+	if ready then
 		return
 	end
-	initialized = true
-	page = HUD.MakePanel("Expeditions", "Pet expeditions", "Send a pet and recover biome relics.", "Compass")
-	K.list(Enum.FillDirection.Vertical, 14).Parent = page.content
-	notice = label(page.content, "", 58, 15, T.Muted, false, 0)
-	notice.Name, notice.Visible = "ExpeditionNotice", false
-	activeBox = K.surface(page.content, "ActiveExpedition", UDim2.new(1, -12, 0, 286), nil, T.Ink)
-	activeBox.LayoutOrder = 1
-	activeTitle = K.text(activeBox, "", 16, 10, -32, 46, 20, T.Text, true)
-	activeDetail = K.text(activeBox, "", 16, 60, -32, 26, 16, T.Muted)
-	countdown = K.text(activeBox, "", 16, 92, -32, 30, 20, T.Text, true)
-	activeReward = K.text(activeBox, "", 16, 128, -32, 42, 15, T.Gold)
-	activeHint = K.text(activeBox, "", 16, 175, -32, 58, 14, T.Muted)
-	for _, l in { activeTitle, activeDetail, countdown, activeReward, activeHint } do
-		l.RichText = false
+	page = HUD.MakePanel("Expeditions", "Pet expedition", "", "Compass")
+	page.contextual = true
+	page.subtitle.Visible = false
+	page.title.Position = UDim2.fromOffset(58, 8)
+	page.title.Size = UDim2.new(1, -130, 0, 30)
+	page.title.TextSize = 20
+	page.close.Position = UDim2.new(1, -48, 0, 4)
+	page.close.Size = UDim2.fromOffset(40, 40)
+	page.content.Position = UDim2.fromOffset(14, 48)
+	page.content.Size = UDim2.new(1, -28, 1, -58)
+	page.content.AutomaticCanvasSize = Enum.AutomaticSize.None
+	page.content.ScrollingEnabled = false
+	notice = K.text(page.frame, "", 14, -32, -28, 28, 14, T.Muted)
+	notice.Name = "ExpeditionNotice"
+	notice.Visible = false
+	planning = K.new(
+		"Frame",
+		{ Name = "ExpeditionPlanning", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Parent = page.content }
+	)
+	sceneFrame = K.new(
+		"Frame",
+		{ Name = "BiomeScene", Size = UDim2.new(0.3, -12, 1, -34), BackgroundTransparency = 1, Parent = planning }
+	)
+	relicLink = K.button(
+		"Relics 0 / 8",
+		T.Raised,
+		nil,
+		UDim2.new(0.3, -12, 0, 30),
+		{ Name = "OpenRelics", Position = UDim2.new(0, 0, 1, -30), Parent = planning }
+	)
+	K.bind(relicLink, function()
+		HUD.Open("Relics")
+	end)
+	local right = K.new("Frame", {
+		Name = "MissionSelection",
+		Position = UDim2.fromScale(0.32, 0),
+		Size = UDim2.fromScale(0.68, 1),
+		BackgroundTransparency = 1,
+		Parent = planning,
+	})
+	routeTitle = K.text(right, "", 44, 0, -88, 30, 20, T.Text, true)
+	routeTitle.TextXAlignment = Enum.TextXAlignment.Center
+	for _, def in { { -1, "<", 0 }, { 1, ">", 1 } } do
+		local b = K.button(def[2], T.Raised, nil, UDim2.fromOffset(40, 40), {
+			Name = def[1] == -1 and "PreviousBiome" or "NextBiome",
+			Position = UDim2.new(def[3], def[3] == 0 and 0 or -40, 0, 0),
+			Parent = right,
+		})
+		K.bind(b, function()
+			local routes = view() and view().routes or {}
+			if #routes == 0 then
+				return
+			end
+			routeIndex = ((routeIndex - 1 + def[1]) % #routes) + 1
+			message("")
+			updateSelection()
+		end)
 	end
-	claim = K.button(
-		"Claim finds",
+	stats = K.text(right, "", 0, 38, -4, 22, 14, T.Muted)
+	reward = K.text(right, "", 0, 63, -4, 26, 20, T.Gold, true)
+	portraits = K.new("ScrollingFrame", {
+		Name = "ExpeditionPets",
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(0, 96),
+		Size = UDim2.new(1, 0, 0, 86),
+		ScrollingDirection = Enum.ScrollingDirection.X,
+		AutomaticCanvasSize = Enum.AutomaticSize.X,
+		CanvasSize = UDim2.new(),
+		ScrollBarThickness = 3,
+		ScrollBarImageColor3 = T.Violet,
+		Parent = right,
+	})
+	K.list(Enum.FillDirection.Horizontal, 8, Enum.HorizontalAlignment.Left).Parent = portraits
+	K.pad(3).Parent = portraits
+	petLabel = K.text(right, "", 0, 187, -4, 24, 15, T.Text, true)
+	bonus = K.text(right, "", 0, 213, -160, 22, 13, T.Muted)
+	send = K.button(
+		"Send pet",
 		T.Gold,
 		nil,
-		UDim2.new(1, -32, 0, 44),
-		{ Name = "ClaimExpedition", Position = UDim2.new(0, 16, 1, -52), Parent = activeBox }
+		UDim2.fromOffset(154, 44),
+		{ Name = "StartExpedition", AnchorPoint = Vector2.new(1, 1), Position = UDim2.fromScale(1, 1), Parent = right }
+	)
+	K.bind(send, function()
+		local r = route()
+		if selectedUid and r then
+			request("StartExpedition", game.HttpService:JSONEncode({ route = r.id, petUid = selectedUid }))
+		end
+	end)
+	activeBox = K.new(
+		"Frame",
+		{ Name = "ActiveExpedition", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Parent = page.content }
+	)
+	activePortrait = K.new(
+		"Frame",
+		{ Name = "AwayPet", Size = UDim2.new(0.28, 0, 1, -20), BackgroundTransparency = 1, Parent = activeBox }
+	)
+	activeTitle = K.text(activeBox, "", 0, 0, -8, 30, 22, T.Text, true)
+	activeTitle.Position = UDim2.fromScale(0.32, 0)
+	activeTitle.Size = UDim2.new(0.68, -8, 0, 30)
+	activeTime = K.text(activeBox, "", 0, 44, -8, 28, 18, T.Text, true)
+	activeTime.Position = UDim2.new(0.32, 0, 0, 44)
+	activeTime.Size = UDim2.new(0.68, -8, 0, 28)
+	activeReward = K.text(activeBox, "", 0, 108, -8, 30, 16, T.Gold)
+	activeReward.Position = UDim2.new(0.32, 0, 0, 108)
+	activeReward.Size = UDim2.new(0.68, -8, 0, 30)
+	local track = K.surface(activeBox, "ReturnProgress", UDim2.new(0.68, -8, 0, 8), UDim2.new(0.32, 0, 0, 88), T.Ink)
+	track.ClipsDescendants = true
+	progressFill =
+		K.new("Frame", { Name = "Fill", Size = UDim2.fromScale(0, 1), BackgroundColor3 = T.Gold, Parent = track })
+	claim = K.button(
+		"Claim",
+		T.Gold,
+		nil,
+		UDim2.new(0.68, -8, 0, 44),
+		{ Name = "ClaimExpedition", Position = UDim2.new(0.32, 0, 1, -48), Parent = activeBox }
 	)
 	K.bind(claim, function()
-		local view = getView()
-		if view and type(view.active) == "table" then
-			request("ClaimExpedition", view.active.id)
+		local a = activeTrip()
+		if a then
+			request("ClaimExpedition", a.id)
 		end
 	end)
-	idleBox = stack(page.content, "ExpeditionPlanning", 2)
-	planningLayout = idleBox:FindFirstChildOfClass("UIListLayout")
-	petHeading = label(idleBox, "Choose a creature", 30, 20, T.Text, true, 0)
-	introduction = label(
-		idleBox,
-		"Pets from the mission's biome recover 25% more coins. A dispatched creature is unavailable and pauses its garden income until you claim its return.",
-		70,
-		15,
-		T.Muted,
-		false,
-		1
-	)
-	petSearch = K.search(idleBox, "Search creatures", UDim2.new(1, -12, 0, 44))
-	petSearch.Parent.LayoutOrder = 2
-	petSearch:GetPropertyChangedSignal("Text"):Connect(function()
-		renderPets()
-	end)
-	petEmpty = label(idleBox, "", 60, 15, T.Muted, false, 3)
-	petList = scrollList(idleBox, "ExpeditionPets", 204, 4)
-	petSummary = label(idleBox, "", 58, 16, T.Text, true, 5)
-	missionHeading = label(idleBox, "Choose a mission", 30, 20, T.Text, true, 6)
-	routeList = scrollList(idleBox, "ExpeditionRoutes", 194, 7)
-	preview = label(idleBox, "", 100, 15, T.Text, false, 8)
-	action = K.button(
-		"Send on expedition",
-		T.Gold,
+	local hint = K.text(activeBox, "Pet income resumes when you claim its return.", 0, 148, -8, 38, 14, T.Muted)
+	hint.Position = UDim2.new(0.32, 0, 0, 148)
+	hint.Size = UDim2.new(0.68, -8, 0, 38)
+	local journal =
+		HUD.MakePanel("Relics", "Biome relics", "First completion in each biome adds a relic to your table.", "Compass")
+	journal.refresh = function()
+		journal.content:ClearAllChildren()
+		K.list(Enum.FillDirection.Vertical, 8).Parent = journal.content
+		local back = K.button(
+			"<  Expedition",
+			T.Raised,
+			nil,
+			UDim2.new(1, -8, 0, 40),
+			{ LayoutOrder = 0, Parent = journal.content }
+		)
+		K.bind(back, function()
+			Panel.Open()
+		end)
+		for i, id in Rules.Order do
+			local found = view() and view().relics and view().relics[id]
+			local l = K.label(
+				worldName(id) .. " / " .. (found and "Recovered" or "Not found"),
+				UDim2.new(1, -8, 0, 36),
+				found and T.Success or T.Muted,
+				{ LayoutOrder = i, Parent = journal.content }
+			)
+			l.RichText = false
+		end
+	end
+	tracker = K.button(
+		"",
+		T.Panel,
 		nil,
-		UDim2.new(1, -12, 0, 48),
-		{ Name = "StartExpedition", LayoutOrder = 9, Parent = idleBox }
+		UDim2.fromOffset(276, 64),
+		{ Name = "ExpeditionTracker", Position = UDim2.fromOffset(12, 70), Visible = false, Parent = HUD.Root.Gameplay }
 	)
-	K.bind(action, function()
-		if selectedUid and selectedRoute then
-			request("StartExpedition", Http:JSONEncode({ route = selectedRoute, petUid = selectedUid }))
-		end
-	end)
-	local journal = stack(page.content, "RelicJournal", 3)
-	journalTitle = label(journal, "Biome relics", 30, 20, T.Text, true, 0)
-	journalHint =
-		label(journal, "First completion in each biome adds its relic to your map table.", 42, 14, T.Muted, false, 1)
-	journalGrid = K.new("Frame", {
-		Name = "BiomeRelics",
-		BackgroundTransparency = 1,
-		Size = UDim2.new(1, -12, 0, 176),
-		LayoutOrder = 2,
-		Parent = journal,
-	})
-	K.new("UIGridLayout", {
-		CellSize = UDim2.new(0.5, -6, 0, 38),
-		CellPadding = UDim2.fromOffset(8, 6),
-		SortOrder = Enum.SortOrder.LayoutOrder,
-		Parent = journalGrid,
-	})
+	Sky.Trim(tracker)
+	K.Icon("Compass", tracker, UDim2.fromOffset(48, 48), T.Text, UDim2.fromOffset(4, 2))
+	trackerText = K.text(tracker, "", 58, 5, -66, 30, 14, T.Text, true)
+	local tiny = K.surface(tracker, "Progress", UDim2.new(1, -70, 0, 5), UDim2.fromOffset(58, 43), T.Ink)
+	tiny.ClipsDescendants = true
+	trackerFill = K.new("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = T.Gold, Parent = tiny })
+	K.bind(tracker, Panel.Open)
 	page.refresh = render
 	page.layout = function()
-		local narrow = page.frame.Size.X.Offset < 540
-		local desktop = page.frame.Size.X.Offset >= 760
-		activeBox.Size = UDim2.new(1, -12, 0, narrow and 444 or 286)
-		activeTitle.Size = UDim2.new(1, -32, 0, narrow and 66 or 46)
-		activeDetail.Position = UDim2.fromOffset(16, narrow and 80 or 60)
-		activeDetail.Size = UDim2.new(1, -32, 0, narrow and 42 or 26)
-		countdown.Position = UDim2.fromOffset(16, narrow and 127 or 92)
-		activeReward.Position = UDim2.fromOffset(16, narrow and 166 or 128)
-		activeReward.Size = UDim2.new(1, -32, 0, narrow and 72 or 42)
-		activeHint.Position = UDim2.fromOffset(16, narrow and 244 or 175)
-		activeHint.Size = UDim2.new(1, -32, 0, narrow and 124 or 58)
-		if desktop then
-			-- Keep selecting and dispatching in one view; each catalogue scrolls
-			-- independently and the final choice/reward remains beside Send.
-			planningLayout.Parent = nil
-			idleBox.AutomaticSize = Enum.AutomaticSize.None
-			idleBox.Size = UDim2.new(1, -12, 0, 440)
-			introduction.Position = UDim2.fromOffset(0, 0)
-			introduction.Size = UDim2.new(1, -12, 0, 42)
-			petHeading.Position = UDim2.fromOffset(0, 50)
-			petHeading.Size = UDim2.new(0.48, -8, 0, 26)
-			missionHeading.Position = UDim2.new(0.52, 0, 0, 50)
-			missionHeading.Size = UDim2.new(0.48, -8, 0, 26)
-			petSearch.Parent.Position = UDim2.fromOffset(0, 84)
-			petSearch.Parent.Size = UDim2.new(0.48, -8, 0, 40)
-			petEmpty.Position = UDim2.fromOffset(0, 136)
-			petEmpty.Size = UDim2.new(0.48, -8, 0, 60)
-			petList.Position = UDim2.fromOffset(0, 132)
-			petList.Size = UDim2.new(0.48, -8, 0, 144)
-			routeList.Position = UDim2.new(0.52, 0, 0, 84)
-			routeList.Size = UDim2.new(0.48, -8, 0, 192)
-			petSummary.Position = UDim2.fromOffset(0, 288)
-			petSummary.Size = UDim2.new(0.48, -8, 0, 64)
-			preview.Position = UDim2.new(0.52, 0, 0, 288)
-			preview.Size = UDim2.new(0.48, -8, 0, 96)
-			action.Position = UDim2.fromOffset(0, 392)
-			action.Size = UDim2.new(1, -12, 0, 48)
-		else
-			-- The phone/tablet plan remains one readable vertical sequence.
-			planningLayout.Parent = idleBox
-			idleBox.AutomaticSize = Enum.AutomaticSize.Y
-			idleBox.Size = UDim2.new(1, -12, 0, 0)
-			petHeading.Size = UDim2.new(1, -12, 0, 30)
-			missionHeading.Size = UDim2.new(1, -12, 0, 30)
-			introduction.Size = UDim2.new(1, -12, 0, narrow and 110 or 70)
-			petSearch.Parent.Size = UDim2.new(1, -12, 0, 44)
-			petEmpty.Size = UDim2.new(1, -12, 0, 60)
-			petList.Size = UDim2.new(1, -12, 0, 204)
-			petSummary.Size = UDim2.new(1, -12, 0, 58)
-			routeList.Size = UDim2.new(1, -12, 0, 194)
-			preview.Size = UDim2.new(1, -12, 0, narrow and 154 or 100)
-			action.Size = UDim2.new(1, -12, 0, 48)
+		local root = HUD.Root.AbsoluteSize
+		local h = math.min(334, root.Y - 82)
+		page.frame.Size = UDim2.fromOffset(math.min(1000, root.X - 24), h)
+		page.frame.AnchorPoint = Vector2.new(0.5, 1)
+		page.targetPosition = UDim2.new(0.5, 0, 1, -12)
+		page.frame.Position = page.targetPosition
+		local short = h < 310
+		reward.Position = UDim2.fromOffset(0, short and 58 or 63)
+		reward.Size = UDim2.new(1, -4, 0, short and 22 or 26)
+		portraits.Position = UDim2.fromOffset(0, short and 84 or 96)
+		portraits.Size = UDim2.new(1, 0, 0, short and 65 or 86)
+		for _, b in portraits:GetChildren() do
+			if b:IsA("GuiObject") then
+				b.Size = UDim2.fromOffset(short and 58 or 78, short and 58 or 78)
+			end
 		end
-		journalHint.Size = UDim2.new(1, -12, 0, narrow and 64 or 42)
-		journalGrid.Size = UDim2.new(1, -12, 0, narrow and 352 or 176)
-		journalGrid:FindFirstChildOfClass("UIGridLayout").CellSize = UDim2.new(narrow and 1 or 0.5, -6, 0, 38)
+		petLabel.Position = UDim2.fromOffset(0, short and 150 or 187)
+		petLabel.Size = UDim2.new(1, short and -160 or -4, 0, 24)
+		bonus.Position = UDim2.new(0, 0, 1, -24)
+		bonus.Visible = true
+		hint.Visible = not short
+		portraits.Size = UDim2.new(1, 0, 0, short and 65 or 86)
+		petLabel.TextSize = 15
+		stats.Position = UDim2.fromOffset(44, 38)
+		stats.Size = UDim2.new(1, -88, 0, 22)
+		stats.TextSize = 14
+		activeTime.Position = UDim2.new(0.32, 0, 0, 44)
+		activeReward.Position = UDim2.new(0.32, 0, 0, 108)
+		activeReward.Size = UDim2.new(0.68, -8, 0, 30)
+		track.Position = UDim2.new(0.32, 0, 0, 88)
+		if h < 260 then
+			stats.Position = UDim2.fromOffset(44, 30)
+			stats.Size = UDim2.new(1, -88, 0, 18)
+			stats.TextSize = 13
+			reward.Position = UDim2.fromOffset(0, 50)
+			reward.Size = UDim2.new(1, -164, 0, 22)
+			petLabel.Position = UDim2.fromOffset(0, 70)
+			petLabel.Size = UDim2.new(1, -164, 0, 18)
+			petLabel.TextSize = 13
+			portraits.Position = UDim2.fromOffset(0, 90)
+			portraits.Size = UDim2.new(1, -164, 0, 48)
+			bonus.Visible = false
+			for _, b in portraits:GetChildren() do
+				if b:IsA("GuiObject") then
+					b.Size = UDim2.fromOffset(44, 44)
+				end
+			end
+			activeTime.Position = UDim2.new(0.32, 0, 0, 30)
+			track.Position = UDim2.new(0.32, 0, 0, 60)
+			activeReward.Position = UDim2.new(0.32, 0, 0, 72)
+			activeReward.Size = UDim2.new(0.68, -8, 0, 18)
+		end
 	end
 	State.Changed:Connect(function(full)
-		local view = getView()
-		local viewChanged = view ~= lastView
-		if viewChanged then
-			lastView = view
-			serverClock, localClock = view and view.serverNow or os.time(), os.clock()
+		local v = view()
+		if v ~= lastView then
+			lastView = v
+			serverClock = v and v.serverNow or os.time()
+			localClock = os.clock()
 		end
-		if HUD.IsOpen("Expeditions") and (viewChanged or full) then
+		if HUD.IsOpen("Expeditions") or full then
 			render()
 		else
 			updateClock()
@@ -16335,18 +16320,77 @@ function Panel.Init()
 		if prompt then
 			prompt.Enabled = State.Loaded and not HUD.AnyPanelOpen()
 		end
+		updateClock()
 		if HUD.IsOpen("Expeditions") then
-			updateClock()
+			updateSelection()
 		end
 	end)
+	ready = true
+	attachPrompt()
 	HUD.Rescale()
 	render()
-	attachPrompt()
 end
-
 return Panel
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX57"><Properties><string name="Name">GameplayFeel</string><ProtectedString name="Source"><![CDATA[-- Quiet, state-driven feedback around the complete play loop. No extra HUD buttons.
+<Item class="ModuleScript" referent="RBX57"><Properties><string name="Name">ExpeditionScene</string><ProtectedString name="Source"><![CDATA[-- Lightweight native biome dioramas for expedition selection, not imported images.
+local Config = require(game.ReplicatedStorage.Shared.Config)
+local Scene = {}
+function Scene.Build(id)
+	local def = Config.Worlds[id] or Config.Worlds.Forest
+	local m = Instance.new("Model")
+	m.Name = "Biome_" .. id
+	local function part(name, size, pos, color, class)
+		local p = Instance.new(class or "Part")
+		p.Name, p.Size, p.Position, p.Color = name, size, pos, color
+		p.Anchored, p.CanCollide, p.CanQuery, p.CanTouch = true, false, false, false
+		p.Material = Enum.Material.SmoothPlastic
+		p.Parent = m
+		return p
+	end
+	part("Island", Vector3.new(16, 1, 10), Vector3.zero, def.groundColor)
+	local stone = def.groundColor:Lerp(Color3.fromRGB(105, 106, 126), 0.6)
+	for i = 1, 4 do
+		part("Step", Vector3.new(2.3, 0.15, 1.2), Vector3.new(i * 2 - 5, 0.62, -1), stone)
+	end
+	for i = 1, 5 do
+		local x = (i % 2 == 0 and -1 or 1) * (4 + (i % 3))
+		local z = -3 + (i % 3) * 2.5
+		if id == "Crystal" or id == "Frozen" or id == "Space" then
+			local p = part(
+				"Spire",
+				Vector3.new(1.2, 2 + i % 3, 1.2),
+				Vector3.new(x, 1.5, z),
+				id == "Frozen" and Color3.fromRGB(169, 224, 243) or Color3.fromRGB(153, 112, 229)
+			)
+			p.CFrame *= CFrame.Angles(0, 0.6, 0.16 * i)
+		elseif id == "Volcano" then
+			part("Basalt", Vector3.new(2, 2 + i % 3, 2), Vector3.new(x, 1.5, z), stone, "WedgePart")
+		else
+			part("Trunk", Vector3.new(0.6, 2.4, 0.6), Vector3.new(x, 1.5, z), Color3.fromRGB(96, 67, 47))
+			part(
+				"Crown",
+				Vector3.new(2.6, 1.8, 2.6),
+				Vector3.new(x, 3.1, z),
+				id == "Candy" and Color3.fromRGB(219, 137, 198)
+					or id == "Shadow" and Color3.fromRGB(115, 78, 154)
+					or def.groundColor:Lerp(Color3.fromRGB(86, 157, 66), 0.5)
+			)
+		end
+	end
+	if id == "Volcano" then
+		part("Lava", Vector3.new(12, 0.08, 1), Vector3.new(0, 0.57, 2), Color3.fromRGB(245, 115, 38))
+	end
+	local pale, gold = Color3.fromRGB(220, 217, 233), Color3.fromRGB(230, 185, 92)
+	for _, x in { -1.3, 1.3 } do
+		part("PortalPillar", Vector3.new(0.55, 3.5, 0.65), Vector3.new(x, 2.2, 1), pale)
+	end
+	part("Lintel", Vector3.new(3.2, 0.5, 0.7), Vector3.new(0, 4, 1), gold)
+	part("Portal", Vector3.new(2.1, 2.8, 0.2), Vector3.new(0, 2.2, 1), Color3.fromRGB(132, 78, 216))
+	return m
+end
+return Scene
+]]></ProtectedString></Properties></Item>
+<Item class="ModuleScript" referent="RBX58"><Properties><string name="Name">GameplayFeel</string><ProtectedString name="Source"><![CDATA[-- Quiet, state-driven feedback around the complete play loop. No extra HUD buttons.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local RS = game:GetService("ReplicatedStorage")
@@ -16468,7 +16512,7 @@ function Feel.Money(amount, position)
 end
 return Feel
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX58"><Properties><string name="Name">HUD</string><ProtectedString name="Source"><![CDATA[-- Compact sanctuary HUD and one shared, responsive panel layer.
+<Item class="ModuleScript" referent="RBX59"><Properties><string name="Name">HUD</string><ProtectedString name="Source"><![CDATA[-- Compact sanctuary HUD and one shared, responsive panel layer.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Input = game:GetService("UserInputService")
@@ -16478,6 +16522,7 @@ local Config = require(RS.Shared.Config)
 local Format = require(RS.Shared.Format)
 local K = require(script.Parent.UIKit)
 local T = K.Theme
+local Sky = require(script.Parent.SkyforgeUI)
 local State = require(script.Parent.ClientState)
 local Settings = require(script.Parent.ClientSettings)
 local Effects = require(script.Parent.Effects)
@@ -16516,7 +16561,7 @@ Effects.OnCoinArrive = function()
 	K.pop(moneyIcon)
 end
 local side = K.new("Frame", { Name = "Navigation", BackgroundTransparency = 1, Parent = world })
-local sideGrid = K.new("UIGridLayout", {
+K.new("UIGridLayout", {
 	CellSize = UDim2.fromOffset(78, 62),
 	CellPadding = UDim2.fromOffset(6, 6),
 	FillDirection = Enum.FillDirection.Vertical,
@@ -16536,74 +16581,20 @@ local SANCT = {
 }
 HUD.SanctuaryColors = SANCT
 
--- A marble nav tile: gold frame, purple medallion with the icon, gold keystone diamond on top.
+-- Approved enamel art, one consistent restrained Skyforge tile.
 local function sanctuaryTile(name, icon, size, parent, order)
-	local b = K.new("TextButton", {
+	local b = K.button("", T.Panel, nil, size or UDim2.fromOffset(148, 126), {
 		Name = "Nav_" .. name,
-		Text = "",
-		AutoButtonColor = false,
-		BackgroundColor3 = Color3.new(1, 1, 1),
-		Size = size or UDim2.fromOffset(78, 62),
 		LayoutOrder = order or 0,
-		Selectable = true,
 		Parent = parent,
-	}, {
-		K.corner(12),
-		K.new("UIStroke", { Thickness = 2, Color = SANCT.Gold, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }),
-		K.new("UIGradient", { Rotation = 90, Color = ColorSequence.new(SANCT.Marble, SANCT.Marble2) }),
 	})
-	b:SetAttribute("Enabled", true)
-	local scale = K.new("UIScale", { Parent = b })
-	local med = K.new("Frame", {
-		Name = "Medallion",
-		AnchorPoint = Vector2.new(0.5, 0),
-		Position = UDim2.new(0.5, 0, 0, 6),
-		Size = UDim2.fromOffset(32, 32),
-		BackgroundColor3 = Color3.new(1, 1, 1),
-		Parent = b,
-	}, {
-		K.round(),
-		K.new("UIStroke", { Thickness = 2, Color = SANCT.Gold }),
-		K.new("UIGradient", { Rotation = 90, Color = ColorSequence.new(SANCT.PurpleLight, SANCT.PurpleDeep) }),
-	})
-	K.Icon(icon, med, UDim2.fromOffset(18, 18), SANCT.Cream, UDim2.fromOffset(7, 7))
-	local gem = K.new("Frame", {
-		Name = "Keystone",
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.new(0.5, 0, 0, 0),
-		Size = UDim2.fromOffset(9, 9),
-		Rotation = 45,
-		BackgroundColor3 = SANCT.Gold,
-		BorderSizePixel = 0,
-		ZIndex = 3,
-		Parent = b,
-	}, { K.new("UIStroke", { Thickness = 1, Color = SANCT.PurpleDeep }) })
-	K.new("TextLabel", {
-		Name = "Label",
-		BackgroundTransparency = 1,
-		Text = name,
-		Font = T.Bold,
-		TextSize = 13,
-		TextColor3 = SANCT.PurpleDeep,
-		TextTruncate = Enum.TextTruncate.AtEnd,
-		Size = UDim2.new(1, -6, 0, 16),
-		Position = UDim2.new(0, 3, 1, -19),
-		Parent = b,
-	})
-	local stroke = b:FindFirstChildOfClass("UIStroke")
-	local function hover(on)
-		K.tween(scale, 0.14, { Scale = on and 1.07 or 1 }, Enum.EasingStyle.Back)
-		K.tween(gem, 0.25, { Rotation = on and 225 or 45 })
-		stroke.Thickness = on and 3 or 2
-		stroke.Color = on and SANCT.Cream or SANCT.Gold
-	end
-	b.MouseEnter:Connect(function() hover(true) end)
-	b.MouseLeave:Connect(function() hover(false) end)
-	b.SelectionGained:Connect(function() hover(true) end)
-	b.SelectionLost:Connect(function() hover(false) end)
-	b.MouseButton1Down:Connect(function() K.tween(scale, 0.07, { Scale = 0.94 }) end)
-	b.MouseButton1Up:Connect(function() K.tween(scale, 0.18, { Scale = 1.07 }, Enum.EasingStyle.Back) end)
-	b.Activated:Connect(function() Sounds.Play("Click") end)
+	Sky.Trim(b)
+	K.Icon(icon, b, UDim2.fromOffset(70, 70), T.Text, UDim2.new(0.5, -35, 0, 5))
+	b.Label.Text = name
+	b.Label.Position = UDim2.new(0, 4, 1, -40)
+	b.Label.Size = UDim2.new(1, -8, 0, 32)
+	b.Label.TextColor3 = T.Text
+	b.Label.TextSize = 16
 	return b
 end
 HUD.SanctuaryTile = sanctuaryTile
@@ -16617,13 +16608,9 @@ local menuBtn = K.button("Menu", T.Panel, nil, UDim2.fromOffset(100, 48), {
 })
 menuBtn.Label.Position = UDim2.fromOffset(35, 0)
 menuBtn.Label.Size = UDim2.new(1, -42, 1, 0)
--- themed like the sanctuary gate: purple with gold trim and cream lettering
-menuBtn.BackgroundColor3 = Color3.fromRGB(112, 72, 196)
-menuBtn.Label.TextColor3 = Color3.fromRGB(255, 242, 205)
-menuBtn:FindFirstChildOfClass("UIStroke").Color = Color3.fromRGB(241, 202, 115)
-menuBtn:FindFirstChildOfClass("UIStroke").Thickness = 2
-K.new("UIGradient", { Rotation = 90, Color = ColorSequence.new(Color3.fromRGB(170, 135, 255), Color3.fromRGB(110, 80, 170)), Parent = menuBtn })
-K.Icon("Menu", menuBtn, UDim2.fromOffset(20, 20), Color3.fromRGB(255, 242, 205), UDim2.fromOffset(10, 14))
+Sky.Trim(menuBtn)
+K.Icon("Menu", menuBtn, UDim2.fromOffset(20, 20), T.Text, UDim2.fromOffset(10, 14))
+Sky.Trim(moneyIcon)
 local homeBtn = K.button("Home", T.Panel, nil, UDim2.fromOffset(84, 48), {
 	Name = "QuickHome",
 	Parent = world,
@@ -16689,95 +16676,9 @@ Input.InputEnded:Connect(function(i)
 		HUD.TC.EndCharge("Pointer")
 	end
 end)
-local train = K.surface(world, "Gym", UDim2.fromOffset(470, 114), UDim2.new(0.5, -235, 1, -144), T.Panel)
-train.Visible = false
-local trainTitle = K.text(train, "Personal gym", 14, 9, -28, 22, 17, T.Text, true)
-local lift = K.button(
-	"Lift",
-	T.Gold,
-	nil,
-	UDim2.fromOffset(160, 44),
-	{ Name = "Lift", Position = UDim2.fromOffset(12, 37), Parent = train }
-)
-local auto = K.button(
-	"Auto: off",
-	T.Raised,
-	nil,
-	UDim2.fromOffset(120, 44),
-	{ Name = "AutoTrain", Position = UDim2.fromOffset(182, 37), Parent = train }
-)
-local gymUpgrade = K.button(
-	"Upgrade",
-	T.Raised,
-	nil,
-	UDim2.fromOffset(144, 44),
-	{ Name = "GymUpgrade", Position = UDim2.fromOffset(312, 37), Parent = train }
-)
-lift.InputBegan:Connect(function(i)
-	if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
-		HUD.TrainHeld = HUD.TrainStation ~= nil
-	end
-end)
-Input.InputEnded:Connect(function(i)
-	if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
-		HUD.TrainHeld = false
-	end
-end)
-K.bind(auto, function()
-	HUD.AutoTrain = not HUD.AutoTrain
-	K.setButton(auto, HUD.AutoTrain and "AUTO: ON" or "AUTO: OFF")
-	HUD.Sanctify(auto, HUD.AutoTrain and SANCT.Gold or SANCT.Purple, HUD.AutoTrain and SANCT.PurpleDeep or SANCT.Cream)
-end)
-K.bind(gymUpgrade, function()
-	if HUD.OnUpgradeGym then
-		HUD.OnUpgradeGym()
-	end
-end)
--- Portal Sanctuary look for the gym panel: violet board, gold frame + keystone, gold title
-do
-	train.BackgroundColor3 = Color3.new(1, 1, 1)
-	K.new("UIGradient", { Rotation = 90, Color = ColorSequence.new(SANCT.PurpleLight:Lerp(SANCT.Purple, 0.4), SANCT.PurpleDeep), Parent = train })
-	local st = train:FindFirstChildOfClass("UIStroke")
-	if st then st.Color = SANCT.Gold; st.Thickness = 2 end
-	K.new("Frame", { Name = "Keystone", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0, 0), Size = UDim2.fromOffset(12, 12),
-		Rotation = 45, BackgroundColor3 = SANCT.Gold, BorderSizePixel = 0, ZIndex = 3, Parent = train })
-	trainTitle.Font = T.Display
-	trainTitle.TextColor3 = SANCT.Gold
-	local trainHint = K.text(train, "Sit on the bench and press!", 230, 9, -244, 22, 13, SANCT.Cream)
-	trainHint.TextXAlignment = Enum.TextXAlignment.Right
-	local function sanctify(b, fill, textCol)
-		b.BackgroundColor3 = fill
-		b.Label.TextColor3 = textCol
-		b.Label.Font = T.Bold
-		local s = b:FindFirstChildOfClass("UIStroke")
-		if s then s.Color = SANCT.Gold; s.Thickness = 2 end
-	end
-	HUD.Sanctify = sanctify
-	sanctify(lift, SANCT.Gold, SANCT.PurpleDeep)
-	sanctify(auto, SANCT.Purple, SANCT.Cream)
-	sanctify(gymUpgrade, SANCT.Purple, SANCT.Cream)
-end
-function HUD.SetGym(level)
-	HUD.TrainStation = level
-	train.Visible = level ~= nil
-	if not level then
-		HUD.TrainHeld = false
-		return
-	end
-	local st = Config.TrainingStations[level]
-	trainTitle.Text = string.upper(st.name)
-	K.setButton(lift, "LIFT  +" .. Format.Short(st.gain))
-	local nextSt = Config.TrainingStations[level + 1]
-	gymUpgrade.Visible = nextSt ~= nil
-	if nextSt then
-		K.setButton(gymUpgrade, "UPGRADE  " .. Format.Money(nextSt.price))
-		local can = State.Data.Money >= nextSt.price
-		K.setEnabled(gymUpgrade, can)
-		if can then HUD.Sanctify(gymUpgrade, SANCT.Purple, SANCT.Cream) end
-	end
-end
-function HUD.TrainPulse()
-	K.pop(lift)
+-- Compatibility for the retired lifting proximity hook; no gym controls exist.
+function HUD.SetGym(_level)
+	HUD.TrainHeld = false
 end
 local collect = K.button(
 	"Collect creature",
@@ -16888,6 +16789,7 @@ local blur = K.new("BlurEffect", { Name = "SanctuaryMenuBlur", Size = 0, Parent 
 local width, height = 1280, 720
 function HUD.MakePanel(name, title, subtitle, icon)
 	local frame = K.surface(layer, name, UDim2.fromOffset(1000, 620), UDim2.fromScale(0.5, 0.5), T.Panel)
+	Sky.Trim(frame)
 	frame.AnchorPoint = Vector2.new(0.5, 0.5)
 	frame.Visible = false
 	K.Icon(icon or "Portal", frame, UDim2.fromOffset(28, 28), T.Gold, UDim2.fromOffset(20, 20))
@@ -16953,7 +16855,8 @@ function HUD.Open(name)
 		HUD.TC.InputBlocked = true
 	end
 	HUD.TrainHeld = false
-	world.Visible = false
+	world.Visible = p.contextual == true
+	dim.BackgroundTransparency = p.contextual and 0.94 or 0.4
 	dim.Visible = true
 	p.frame.Visible = true
 	if p.refresh then
@@ -16972,9 +16875,10 @@ function HUD.Open(name)
 		end
 	end)
 
-	p.frame.Position = UDim2.new(0.5, 0, 0.5, Settings.ReducedMotion and 0 or 8)
-	K.tween(p.frame, 0.18, { Position = UDim2.fromScale(0.5, 0.5) })
-	K.tween(blur, 0.18, { Size = Settings.ReducedMotion and 0 or 4 })
+	local target = p.targetPosition or UDim2.fromScale(0.5, 0.5)
+	p.frame.Position = target + UDim2.fromOffset(0, Settings.ReducedMotion and 0 or 8)
+	K.tween(p.frame, 0.18, { Position = target })
+	K.tween(blur, 0.18, { Size = (Settings.ReducedMotion or p.contextual) and 0 or 4 })
 	if Input.GamepadEnabled then
 		GuiService.SelectedObject = p.close
 	end
@@ -17024,11 +16928,11 @@ Input.InputBegan:Connect(function(i, processed)
 		HUD.Open(keys[i.KeyCode])
 	end
 end)
-local menuPanel = HUD.MakePanel("Menu", "Sanctuary menu", "Choose where to go.", "Compass")
+local menuPanel = HUD.MakePanel("Menu", "Your sanctuary", "Everything you need, in four places.", "Compass")
 menuPanel.refresh = function()
 	menuPanel.content:ClearAllChildren()
 	K.new("UIGridLayout", {
-		CellSize = UDim2.new(0.25, -8, 0, 74),
+		CellSize = UDim2.new(0.25, -8, 0, 126),
 		CellPadding = UDim2.fromOffset(8, 10),
 		SortOrder = Enum.SortOrder.LayoutOrder,
 		Parent = menuPanel.content,
@@ -17040,6 +16944,14 @@ menuPanel.refresh = function()
 			HUD.Close()
 			n.callback()
 		end)
+	end
+end
+menuPanel.layout = function()
+	local w = math.min(700, width - 24)
+	menuPanel.frame.Size = UDim2.fromOffset(w, math.min(height - 24, w < 540 and 404 or 292))
+	local grid = menuPanel.content:FindFirstChildOfClass("UIGridLayout")
+	if grid then
+		grid.CellSize = UDim2.new(w < 540 and 0.5 or 0.25, -8, 0, 126)
 	end
 end
 K.bind(menuBtn, function()
@@ -17076,48 +16988,27 @@ local function rescale()
 	scaler.Scale = scale
 	root.Size = UDim2.fromScale(1 / scale, 1 / scale)
 	width, height = v.X / scale, v.Y / scale
-	local narrow = width < 620
 	local compact = Input.TouchEnabled or width < 700 or height < 580
 	HUD.Compact = compact
-	local sw = narrow and (width - 32) / 2 or math.min(184, (width - 48) / 4)
-	top.Size = UDim2.fromOffset(sw * 2 + 8, 50)
-	top.Position = UDim2.new(0.5, -top.Size.X.Offset / 2, 0, 8)
+
+	top.Size = UDim2.fromOffset(math.min(250, width - 144), 50)
+	top.Position = UDim2.fromOffset(12, 8)
 	for i, f in ipairs(stats) do
-		f.Visible = i <= 2
-		f.Size = UDim2.fromOffset(sw, 50)
-		f.Position = UDim2.fromOffset(
-			narrow and ((i - 1) % 2) * (sw + 8) or (i - 1) * (sw + 8),
-			narrow and math.floor((i - 1) / 2) * 56 or 0
-		)
+		f.Visible = i == 1
+		f.Size = UDim2.fromOffset(top.Size.X.Offset, 50)
+		f.Position = UDim2.fromOffset(0, 0)
 	end
-	-- desktop: sanctuary tiles sit on the left (two columns if the screen is short);
-	-- phones / small screens: one themed Menu button that opens the same tiles
-	local perColumn = math.max(1, math.floor((height - 150) / 68))
-	sideGrid.FillDirectionMaxCells = perColumn
-	local columns = math.max(1, math.ceil(#navOrder / perColumn))
-	side.Size = UDim2.fromOffset(columns * 84, math.min(#navOrder, perColumn) * 68)
-	side.Position = UDim2.fromOffset(12, 76)
-	side.Visible = not compact
-	menuBtn.Visible = compact
+	-- The four destinations are inside Menu on every device.
+	side.Visible = false
+	menuBtn.Visible = true
 	homeBtn.Visible = false
 	menuBtn.AnchorPoint = Vector2.zero
-	homeBtn.AnchorPoint = Vector2.zero
-	menuBtn.Position = UDim2.fromOffset(12, 76)
-	homeBtn.Position = UDim2.fromOffset(12, narrow and 184 or 130)
+	menuBtn.Position = UDim2.fromOffset(top.Size.X.Offset + 20, 8)
+	menuBtn.Size = UDim2.fromOffset(104, 50)
 	throwBtn.Position = UDim2.new(1, -16, 1, Input.TouchEnabled and -138 or -16)
 	launch.Size = UDim2.fromOffset(Input.TouchEnabled and math.min(300, width - 24) or 354, 102)
 	launch.Position = Input.TouchEnabled and UDim2.new(0.5, -launch.Size.X.Offset / 2, 1, -110)
 		or UDim2.new(1, -370, 1, -182)
-	train.Size = UDim2.fromOffset(compact and width - 24 or 470, 114)
-	train.Position = UDim2.new(0.5, -train.Size.X.Offset / 2, 1, -270)
-	if compact then
-		lift.Size = UDim2.new(0.5, -18, 0, 44)
-		auto.Position = UDim2.new(0.5, 0, 0, 37)
-		auto.Size = UDim2.new(0.5, -12, 0, 44)
-		gymUpgrade.Position = UDim2.fromOffset(12, 85)
-		gymUpgrade.Size = UDim2.new(1, -24, 0, 44)
-		train.Size = UDim2.new(1, -24, 0, 142)
-	end
 	notices.Size = UDim2.fromOffset(math.min(420, width - 24), 240)
 	notices.Position = UDim2.new(0.5, 0, 0, compact and 126 or 78)
 	for _, p in pairs(HUD.Panels) do
@@ -17151,7 +17042,7 @@ RunService.RenderStepped:Connect(function(dt)
 	local tc = HUD.TC
 	local p = tc and tc.Power or 0
 	launch.Visible = tc ~= nil and (tc.Charging or tc.Submitting or (tc.MyThrow ~= nil and tc.Phase == "Flying"))
-	throwBtn.Visible = HUD.InZone and not (tc and (tc.MyThrow or tc.Submitting)) and not train.Visible
+	throwBtn.Visible = HUD.InZone and not (tc and (tc.MyThrow or tc.Submitting))
 	if tc and tc.Charging then
 		local d = math.clamp((State.Data.MaxDistance or 40) * p * (p >= 0.92 and 1.15 or 1), 8, Config.LaneLength - 15)
 		launchTitle.Text = string.format("%d%% charge  |  %d m", p * 100, d)
@@ -17184,7 +17075,7 @@ end)
 task.defer(rescale)
 return HUD
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX59"><Properties><string name="Name">Intro</string><ProtectedString name="Source"><![CDATA[-- Intro: cinematic fly-over when you join. The camera sweeps down the whole lane (every zone),
+<Item class="ModuleScript" referent="RBX60"><Properties><string name="Name">Intro</string><ProtectedString name="Source"><![CDATA[-- Intro: cinematic fly-over when you join. The camera sweeps down the whole lane (every zone),
 -- past the Portal Launch Hall, and lands at your base while the title animates in.
 -- Click / tap / any key to skip.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > Intro (ModuleScript)
@@ -17402,7 +17293,7 @@ end
 
 return Intro
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX60"><Properties><string name="Name">Panels</string><ProtectedString name="Source"><![CDATA[-- Sanctuary shops, collection, index, customization and settings.
+<Item class="ModuleScript" referent="RBX61"><Properties><string name="Name">Panels</string><ProtectedString name="Source"><![CDATA[-- Sanctuary shops, collection, index, customization and settings.
 -- All spending and ownership changes use the existing authoritative server actions.
 local RS = game:GetService("ReplicatedStorage")
 local Http = game:GetService("HttpService")
@@ -18318,40 +18209,99 @@ for i, id in zonesOrder do
 end
 admin.refresh = function() end
 
-function Panels.Init()
-	local nav = {
-		{ "Shop", "Portal", "Portals" },
-		{ "Upgrades", "Upgrade", "Upgrades" },
-		{ "Pets", "Pet", "Creatures" },
-		{ "Index", "Book", "Index" },
-		{ "Zones", "Compass", "Worlds" },
-		{ "Garden", "Decor", "Base" },
-		{ "Settings", "Settings", "Settings" },
+-- Secondary tools remain reachable without adding primary HUD destinations.
+local function headerLink(panel, name, title, target)
+	local b = K.button(title, T.Raised, nil, UDim2.fromOffset(176, 36), {
+		Name = name,
+		Position = UDim2.fromOffset(20, 64),
+		Parent = panel.frame,
+	})
+	panel.subtitle.Visible = false
+	K.bind(b, function()
+		HUD.Open(target)
+	end)
+	return b
+end
+headerLink(inv, "OpenCollection", "Collection", "Index")
+headerLink(idx, "BackToPets", "<  Pets", "Creatures")
+local hub = HUD.MakePanel("Shop", "Sanctuary shop", "Choose what you want to improve.", "Shop")
+K.new("UIGridLayout", {
+	CellSize = UDim2.new(0.5, -8, 0, 128),
+	CellPadding = UDim2.fromOffset(12, 12),
+	SortOrder = Enum.SortOrder.LayoutOrder,
+	Parent = hub.content,
+})
+for i, def in
+	{
+		{ "Portals", "Portal", "Portals", "Buy and equip your portal." },
+		{ "Upgrades", "Upgrade", "Upgrades", "Throw power, slots and income." },
+		{ "Courtyard", "Home", "Base", "Flooring and base details." },
+		{ "Biomes", "Compass", "Worlds", "Unlock and travel to new zones." },
 	}
-	for _, def in nav do
+do
+	local b = K.button("", T.Raised, nil, nil, { Name = "Shop_" .. def[1], LayoutOrder = i, Parent = hub.content })
+	K.Icon(def[2], b, UDim2.fromOffset(40, 40), T.Gold, UDim2.fromOffset(14, 16))
+	b.Label.Position = UDim2.fromOffset(64, 12)
+	b.Label.Size = UDim2.new(1, -76, 0, 32)
+	b.Label.Text = def[1]
+	b.Label.TextSize = 19
+	b.Label.TextXAlignment = Enum.TextXAlignment.Left
+	K.text(b, def[4], 14, 66, -28, 48, 14, T.Muted)
+	K.bind(b, function()
+		HUD.Open(def[3])
+	end)
+end
+for _, panel in { shop, upg, base, worlds } do
+	headerLink(panel, "BackToShop", "<  Shop", "Shop")
+end
+local home = K.button("Return to courtyard", T.Raised, nil, UDim2.new(1, -12, 0, 44), {
+	Name = "ReturnHome",
+	LayoutOrder = 90,
+	Parent = settings.content,
+})
+K.bind(home, function()
+	if request("Teleport", "Home", "Returned home.") then
+		HUD.Close()
+	end
+end)
+local adminLink = K.button("Developer tools", T.Raised, nil, UDim2.new(1, -12, 0, 44), {
+	Name = "DeveloperTools",
+	LayoutOrder = 91,
+	Parent = settings.content,
+	Visible = false,
+})
+K.bind(adminLink, function()
+	HUD.Open("Admin")
+end)
+headerLink(admin, "BackToSettings", "<  Settings", "Settings")
+function Panels.Init()
+	for _, def in
+		{
+			{ "Pets", "Pet", "Creatures" },
+			{ "Shop", "Shop", "Shop" },
+			{ "Expeditions", "Compass", "Expeditions" },
+			{ "Settings", "Settings", "Settings" },
+		}
+	do
 		HUD.AddSideButton(def[1], def[2], nil, nil, function()
-			HUD.Open(def[3])
+			if def[3] == "Expeditions" then
+				require(script.Parent.ExpeditionPanel).Open()
+			else
+				HUD.Open(def[3])
+			end
 		end)
 	end
-	HUD.AddSideButton("Home", "Home", nil, nil, function()
-		request("Teleport", "Home", "Returned home.")
-	end)
 	local p = Players.LocalPlayer
-	local function adminNav()
-		if p:GetAttribute("IsAdmin") and not HUD.SideButtons.Admin then
-			HUD.AddSideButton("Admin", "Settings", nil, nil, function()
-				HUD.Open("Admin")
-			end)
-			HUD.Rescale()
-		end
+	local function refreshAdmin()
+		adminLink.Visible = p:GetAttribute("IsAdmin") == true
 	end
-	p:GetAttributeChangedSignal("IsAdmin"):Connect(adminNav)
-	adminNav()
+	p:GetAttributeChangedSignal("IsAdmin"):Connect(refreshAdmin)
+	refreshAdmin()
 	HUD.Rescale()
 end
 return Panels
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX61"><Properties><string name="Name">Plaque</string><ProtectedString name="Source"><![CDATA[-- Plaque: the carved rarity plaque from the reveal reference sheet (Actions/02_Rarity_Reveal_and_Capture):
+<Item class="ModuleScript" referent="RBX62"><Properties><string name="Name">Plaque</string><ProtectedString name="Source"><![CDATA[-- Plaque: the carved rarity plaque from the reveal reference sheet (Actions/02_Rarity_Reveal_and_Capture):
 -- a bevelled bar with pointed diamond ends, double gold trim, small gold diamond ornaments, serif caps,
 -- and gold laurels for the showcase tiers. Pixel sized, so it works in ScreenGuis and BillboardGuis.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > Plaque (ModuleScript)
@@ -18508,7 +18458,7 @@ end
 
 return P
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX62"><Properties><string name="Name">PlayerFeel</string><ProtectedString name="Source"><![CDATA[-- PlayerFeel: how the local player's character moves and feels.
+<Item class="LocalScript" referent="RBX63"><Properties><string name="Name">PlayerFeel</string><ProtectedString name="Source"><![CDATA[-- PlayerFeel: how the local player's character moves and feels.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > PlayerFeel (LocalScript)
 --
 --   * Run: hold Left Shift (PC), press L3 (gamepad) or tap the Run button (mobile, toggles).
@@ -18819,7 +18769,7 @@ task.spawn(function()
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX63"><Properties><string name="Name">RevealTitle</string><ProtectedString name="Source"><![CDATA[-- RevealTitle: on-screen title for a creature reveal, styled after Actions/02_Rarity_Reveal_and_Capture.
+<Item class="ModuleScript" referent="RBX64"><Properties><string name="Name">RevealTitle</string><ProtectedString name="Source"><![CDATA[-- RevealTitle: on-screen title for a creature reveal, styled after Actions/02_Rarity_Reveal_and_Capture.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > RevealTitle (ModuleScript)
 --
 --   Common / Uncommon      nothing on screen: the carved plaque above the pet carries it (restrained tiers)
@@ -19135,7 +19085,68 @@ end
 
 return R
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX64"><Properties><string name="Name">Sounds</string><ProtectedString name="Source"><![CDATA[-- Restrained event audio. Built-in assets keep the game independent of uploaded audio.
+<Item class="ModuleScript" referent="RBX65"><Properties><string name="Name">SkyforgeUI</string><ProtectedString name="Source"><![CDATA[-- Shared Skyforge trim and approved C enamel atlas. Four primary destinations.
+local T = require(script.Parent.UITheme)
+local S = {}
+S.Atlas = "rbxassetid://102541518466565"
+task.spawn(function()
+	pcall(function()
+		game:GetService("ContentProvider"):PreloadAsync({ S.Atlas })
+	end)
+end)
+local cells = { Pet = { 0, 0 }, Shop = { 1, 0 }, Compass = { 0, 1 }, Settings = { 1, 1 } }
+function S.Icon(name, parent, size, position)
+	local cell = cells[name]
+	if not cell then
+		return nil
+	end
+	local f = Instance.new("Frame")
+	f.Name = "Icon_" .. name
+	f.BackgroundTransparency = 1
+	f.ClipsDescendants = true
+	f.Size = size or UDim2.fromOffset(48, 48)
+	f.Position = position or UDim2.new()
+	local im = Instance.new("ImageLabel")
+	im.Name = "Enamel"
+	im.BackgroundTransparency = 1
+	im.Image = S.Atlas
+	im.Size = UDim2.fromScale(2, 2)
+	im.Position = UDim2.fromScale(-cell[1], -cell[2])
+	im.Parent = f
+	f.Parent = parent
+	return f
+end
+function S.Trim(frame)
+	frame.BackgroundColor3 = T.Panel
+	local c = frame:FindFirstChildOfClass("UICorner")
+	if c then
+		c.CornerRadius = UDim.new(0, 4)
+	end
+	local s = frame:FindFirstChildOfClass("UIStroke")
+	if s then
+		s.Color = T.Gold
+		s.Thickness = 1
+		s.Transparency = 0.28
+	end
+	if frame:FindFirstChild("SkyforgeCorner1") then
+		return frame
+	end
+	for i, p in { { 0, 0, 45 }, { 1, 0, -45 }, { 0, 1, -45 }, { 1, 1, 45 } } do
+		local line = Instance.new("Frame")
+		line.Name = "SkyforgeCorner" .. i
+		line.Size = UDim2.fromOffset(12, 2)
+		line.AnchorPoint = Vector2.new(0.5, 0.5)
+		line.Position = UDim2.new(p[1], p[1] == 0 and 4 or -4, p[2], p[2] == 0 and 4 or -4)
+		line.Rotation = p[3]
+		line.BackgroundColor3 = T.Gold
+		line.BorderSizePixel = 0
+		line.Parent = frame
+	end
+	return frame
+end
+return S
+]]></ProtectedString></Properties></Item>
+<Item class="ModuleScript" referent="RBX66"><Properties><string name="Name">Sounds</string><ProtectedString name="Source"><![CDATA[-- Restrained event audio. Built-in assets keep the game independent of uploaded audio.
 local SoundService = game:GetService("SoundService")
 local TweenService = game:GetService("TweenService")
 local Sounds = {}
@@ -19254,7 +19265,7 @@ function Sounds.Get(name)
 end
 return Sounds
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX65"><Properties><string name="Name">ThrowCinematic</string><ProtectedString name="Source"><![CDATA[-- ThrowCinematic: the throw cutscene (owner only). Full screen, no letterbox.
+<Item class="ModuleScript" referent="RBX67"><Properties><string name="Name">ThrowCinematic</string><ProtectedString name="Source"><![CDATA[-- ThrowCinematic: the throw cutscene (owner only). Full screen, no letterbox.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ThrowCinematic (ModuleScript)
 --
 -- A short film in up to four camera shots, with HARD CUTS between them (w = wind-up seconds sent
@@ -20136,7 +20147,7 @@ end
 
 return Cine
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX66"><Properties><string name="Name">ThrowController</string><ProtectedString name="Source"><![CDATA[-- ThrowController: charge meter input, held-portal + arm wind-up, the portal flight arc,
+<Item class="ModuleScript" referent="RBX68"><Properties><string name="Name">ThrowController</string><ProtectedString name="Source"><![CDATA[-- ThrowController: charge meter input, held-portal + arm wind-up, the portal flight arc,
 -- landing bounce, portal gate opening and creature reveal choreography (for ALL players' throws).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ThrowController (ModuleScript)
 
@@ -21115,10 +21126,15 @@ end)
 
 return TC
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX67"><Properties><string name="Name">UIIcons</string><ProtectedString name="Source"><![CDATA[-- Crisp native geometry. Every navigation icon also has a visible text label.
+<Item class="ModuleScript" referent="RBX69"><Properties><string name="Name">UIIcons</string><ProtectedString name="Source"><![CDATA[-- Crisp native geometry. Every navigation icon also has a visible text label.
 local T = require(script.Parent.UITheme)
+local Sky = require(script.Parent.SkyforgeUI)
 local Icons = {}
 function Icons.Draw(name, parent, size, color, position)
+	local enamel = Sky.Icon(name, parent, size, position)
+	if enamel then
+		return enamel
+	end
 	local root = Instance.new("Frame")
 	root.Name = "Icon_" .. name
 	root.BackgroundTransparency = 1
@@ -21235,7 +21251,7 @@ function Icons.Draw(name, parent, size, color, position)
 end
 return Icons
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX68"><Properties><string name="Name">UIKit</string><ProtectedString name="Source"><![CDATA[-- Native sanctuary components. No uploaded icon/font dependency.
+<Item class="ModuleScript" referent="RBX70"><Properties><string name="Name">UIKit</string><ProtectedString name="Source"><![CDATA[-- Native sanctuary components. No uploaded icon/font dependency.
 local TweenService = game:GetService("TweenService")
 local Sounds = require(script.Parent.Sounds)
 local Settings = require(script.Parent.ClientSettings)
@@ -21585,7 +21601,7 @@ end
 
 return K
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX69"><Properties><string name="Name">UITheme</string><ProtectedString name="Source"><![CDATA[-- Sanctuary UI tokens, shared by the HUD, icons and every shop.
+<Item class="ModuleScript" referent="RBX71"><Properties><string name="Name">UITheme</string><ProtectedString name="Source"><![CDATA[-- Sanctuary UI tokens, shared by the HUD, icons and every shop.
 -- Fonts: Builder Sans (Roblox's modern UI family) for text, Montserrat Black for display titles;
 -- resolved with a fallback so an older client without these enums still renders.
 local function font(name, fallback)
@@ -21625,7 +21641,7 @@ function T.Rarity(name, config)
 end
 return T
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX70"><Properties><string name="Name">WorldFx</string><ProtectedString name="Source"><![CDATA[-- WorldFx: ONE shared, staggered scheduler for environment motion on tagged map parts
+<Item class="ModuleScript" referent="RBX72"><Properties><string name="Name">WorldFx</string><ProtectedString name="Source"><![CDATA[-- WorldFx: ONE shared, staggered scheduler for environment motion on tagged map parts
 -- (no per-prop RenderStepped connections, no camera-following particles).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > WorldFx (ModuleScript)
 --

@@ -914,35 +914,94 @@ for i, id in zonesOrder do
 end
 admin.refresh = function() end
 
-function Panels.Init()
-	local nav = {
-		{ "Shop", "Portal", "Portals" },
-		{ "Upgrades", "Upgrade", "Upgrades" },
-		{ "Pets", "Pet", "Creatures" },
-		{ "Index", "Book", "Index" },
-		{ "Zones", "Compass", "Worlds" },
-		{ "Garden", "Decor", "Base" },
-		{ "Settings", "Settings", "Settings" },
+-- Secondary tools remain reachable without adding primary HUD destinations.
+local function headerLink(panel, name, title, target)
+	local b = K.button(title, T.Raised, nil, UDim2.fromOffset(176, 36), {
+		Name = name,
+		Position = UDim2.fromOffset(20, 64),
+		Parent = panel.frame,
+	})
+	panel.subtitle.Visible = false
+	K.bind(b, function()
+		HUD.Open(target)
+	end)
+	return b
+end
+headerLink(inv, "OpenCollection", "Collection", "Index")
+headerLink(idx, "BackToPets", "<  Pets", "Creatures")
+local hub = HUD.MakePanel("Shop", "Sanctuary shop", "Choose what you want to improve.", "Shop")
+K.new("UIGridLayout", {
+	CellSize = UDim2.new(0.5, -8, 0, 128),
+	CellPadding = UDim2.fromOffset(12, 12),
+	SortOrder = Enum.SortOrder.LayoutOrder,
+	Parent = hub.content,
+})
+for i, def in
+	{
+		{ "Portals", "Portal", "Portals", "Buy and equip your portal." },
+		{ "Upgrades", "Upgrade", "Upgrades", "Throw power, slots and income." },
+		{ "Courtyard", "Home", "Base", "Flooring and base details." },
+		{ "Biomes", "Compass", "Worlds", "Unlock and travel to new zones." },
 	}
-	for _, def in nav do
+do
+	local b = K.button("", T.Raised, nil, nil, { Name = "Shop_" .. def[1], LayoutOrder = i, Parent = hub.content })
+	K.Icon(def[2], b, UDim2.fromOffset(40, 40), T.Gold, UDim2.fromOffset(14, 16))
+	b.Label.Position = UDim2.fromOffset(64, 12)
+	b.Label.Size = UDim2.new(1, -76, 0, 32)
+	b.Label.Text = def[1]
+	b.Label.TextSize = 19
+	b.Label.TextXAlignment = Enum.TextXAlignment.Left
+	K.text(b, def[4], 14, 66, -28, 48, 14, T.Muted)
+	K.bind(b, function()
+		HUD.Open(def[3])
+	end)
+end
+for _, panel in { shop, upg, base, worlds } do
+	headerLink(panel, "BackToShop", "<  Shop", "Shop")
+end
+local home = K.button("Return to courtyard", T.Raised, nil, UDim2.new(1, -12, 0, 44), {
+	Name = "ReturnHome",
+	LayoutOrder = 90,
+	Parent = settings.content,
+})
+K.bind(home, function()
+	if request("Teleport", "Home", "Returned home.") then
+		HUD.Close()
+	end
+end)
+local adminLink = K.button("Developer tools", T.Raised, nil, UDim2.new(1, -12, 0, 44), {
+	Name = "DeveloperTools",
+	LayoutOrder = 91,
+	Parent = settings.content,
+	Visible = false,
+})
+K.bind(adminLink, function()
+	HUD.Open("Admin")
+end)
+headerLink(admin, "BackToSettings", "<  Settings", "Settings")
+function Panels.Init()
+	for _, def in
+		{
+			{ "Pets", "Pet", "Creatures" },
+			{ "Shop", "Shop", "Shop" },
+			{ "Expeditions", "Compass", "Expeditions" },
+			{ "Settings", "Settings", "Settings" },
+		}
+	do
 		HUD.AddSideButton(def[1], def[2], nil, nil, function()
-			HUD.Open(def[3])
+			if def[3] == "Expeditions" then
+				require(script.Parent.ExpeditionPanel).Open()
+			else
+				HUD.Open(def[3])
+			end
 		end)
 	end
-	HUD.AddSideButton("Home", "Home", nil, nil, function()
-		request("Teleport", "Home", "Returned home.")
-	end)
 	local p = Players.LocalPlayer
-	local function adminNav()
-		if p:GetAttribute("IsAdmin") and not HUD.SideButtons.Admin then
-			HUD.AddSideButton("Admin", "Settings", nil, nil, function()
-				HUD.Open("Admin")
-			end)
-			HUD.Rescale()
-		end
+	local function refreshAdmin()
+		adminLink.Visible = p:GetAttribute("IsAdmin") == true
 	end
-	p:GetAttributeChangedSignal("IsAdmin"):Connect(adminNav)
-	adminNav()
+	p:GetAttributeChangedSignal("IsAdmin"):Connect(refreshAdmin)
+	refreshAdmin()
 	HUD.Rescale()
 end
 return Panels

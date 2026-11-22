@@ -100,7 +100,20 @@ local ok, err = pcall(function()
 	check(H.IsOpen("Expeditions"), "expedition panel opens")
 	local page = H.Panels.Expeditions
 	check(page.frame:FindFirstChild("Pet_" .. uid, true) ~= nil, "owned pet selector shown")
-	check(page.frame:FindFirstChild("Route_Forest", true) ~= nil, "route selector shown")
+	check(page.frame:FindFirstChild("NextBiome", true) ~= nil, "biome carousel shown")
+	check(page.frame:FindFirstChild("BiomePreview", true) ~= nil, "native biome preview shown")
+	local destinations = 0
+	for _ in H.SideButtons do
+		destinations += 1
+	end
+	check(
+		destinations == 4
+			and H.SideButtons.Pets
+			and H.SideButtons.Shop
+			and H.SideButtons.Expeditions
+			and H.SideButtons.Settings,
+		"exactly four primary destinations"
+	)
 	check(request("StartExpedition", Http:JSONEncode({ route = "Forest", petUid = uid })), "real expedition dispatch")
 	local active = S.Data.Expeditions.active
 	check(type(active) == "table" and active.petUid == uid and active.matched, "native biome bonus and identity")
@@ -143,6 +156,30 @@ local ok, err = pcall(function()
 	)
 	H.Close()
 	check(not H.Root.Gameplay.Navigation.Visible and H.Root.Gameplay.Menu.Visible, "minimal HUD retained")
+	check(not H.Root.Gameplay.ExpeditionTracker.Visible, "tracker disappears after claiming")
+	H.Open("Menu")
+	local buttons = 0
+	for _, child in H.Panels.Menu.content:GetChildren() do
+		if child:IsA("TextButton") then
+			buttons += 1
+			local image = child:FindFirstChild("Enamel", true)
+			check(
+				waitFor(function()
+					return image and image.IsLoaded
+				end, 8),
+				"approved enamel icon loaded: " .. child.Name
+			)
+		end
+	end
+	check(buttons == 4, "four destinations rendered in menu")
+	H.Open("Shop")
+	check(H.Panels.Shop.content:FindFirstChild("Shop_Portals") ~= nil, "portals nested under Shop")
+	check(H.Panels.Shop.content:FindFirstChild("Shop_Upgrades") ~= nil, "upgrades nested under Shop")
+	check(H.Panels.Shop.content:FindFirstChild("Shop_Courtyard") ~= nil, "courtyard nested under Shop")
+	check(H.Panels.Shop.content:FindFirstChild("Shop_Biomes") ~= nil, "biomes nested under Shop")
+	check(H.Panels.Creatures.frame:FindFirstChild("OpenCollection") ~= nil, "collection reachable from Pets")
+	check(H.Panels.Settings.content:FindFirstChild("ReturnHome") ~= nil, "home reachable from Settings")
+	H.Close()
 	check(
 		not H.Root.Gameplay:FindFirstChild("Training", true) or not H.Root.Gameplay.Training.Visible,
 		"lifting panel stays hidden"

@@ -1,9 +1,11 @@
 # HUD and expedition design options
 
 Concept sheets generated with the built-in imagegen tool. The user approved
-option 2 (Skyforge) for the HUD and expedition layout. The icon family selection
-is pending. These UI changes are not implemented or saved to Studio yet.
-Pet portraits are illustrative proposals.
+option 2 (Skyforge) and icon family C (Relic enamel). The implemented menu has
+only Pets, Shop, Expeditions and Settings. The remaining concept-sheet icons are
+reference art. The new interface is saved in Team Create as version 36; see
+`review/skyforge-hud-navigation.md`. Concept pet portraits are illustrative;
+the implemented expedition picker renders the player's actual creature models.
 
 1. Sanctuary: compact violet HUD and a right-side expedition drawer.
 2. Skyforge: angular stone/gold widgets and a wide bottom planning panel.
