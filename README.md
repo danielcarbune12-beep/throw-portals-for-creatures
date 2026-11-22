@@ -219,3 +219,26 @@ request/90-second mission checks passed. Review scripts are under `tests/studio`
 The expedition panel was inspected on desktop and iPhone 17 Pro landscape; Studio
 was reset to its default viewport afterward. Physical phone/gamepad hardware and
 live DataStore rejoin were not tested. Existing imported-asset warnings remain.
+
+## Skyforge HUD: four destinations (2026-11-22)
+
+The approved Skyforge layout and C Relic enamel icons are saved in shared Team
+Create place `129975585465401`, version 36. Restart Play to refresh the scripts.
+The primary menu contains only **Pets, Shop, Expeditions, Settings**. Collection
+is under Pets. Portals, upgrades, courtyard customization and biome unlocks are
+under Shop. Settings includes return home and authorized developer tools.
+
+The expedition screen uses a bottom drawer, native biome dioramas, actual pet
+portraits, a reward preview and one dispatch action. Its compact progress widget
+appears only while a pet is away. Relics stay inside Expeditions. The old lifting
+widgets have been removed. Server ownership, range checks and mission balance
+are unchanged. From afar, Go to table returns home and walks toward the table.
+
+Validation: 53 timed-mission/navigation assertions passed, including one real
+90-second trip and exact single payout. All four enamel images passed a separate
+asynchronous load check; the review now waits for loading before asserting it.
+Desktop, iPhone 17 Pro and Samsung Galaxy A06 landscape layouts were inspected.
+The compact portrait and action fit the small phone; Studio returned to its
+default viewport. Seven scoped files pass Selene with no errors or warnings.
+Physical device/gamepad and live DataStore rejoin are not covered by this pass.
+The public Roblox game was not published. See `review/skyforge-hud-navigation.md`.

@@ -8,6 +8,7 @@ local Config = require(RS.Shared.Config)
 local Format = require(RS.Shared.Format)
 local K = require(script.Parent.UIKit)
 local T = K.Theme
+local Sky = require(script.Parent.SkyforgeUI)
 local State = require(script.Parent.ClientState)
 local Settings = require(script.Parent.ClientSettings)
 local Effects = require(script.Parent.Effects)
@@ -46,7 +47,7 @@ Effects.OnCoinArrive = function()
 	K.pop(moneyIcon)
 end
 local side = K.new("Frame", { Name = "Navigation", BackgroundTransparency = 1, Parent = world })
-local sideGrid = K.new("UIGridLayout", {
+K.new("UIGridLayout", {
 	CellSize = UDim2.fromOffset(78, 62),
 	CellPadding = UDim2.fromOffset(6, 6),
 	FillDirection = Enum.FillDirection.Vertical,
@@ -66,74 +67,20 @@ local SANCT = {
 }
 HUD.SanctuaryColors = SANCT
 
--- A marble nav tile: gold frame, purple medallion with the icon, gold keystone diamond on top.
+-- Approved enamel art, one consistent restrained Skyforge tile.
 local function sanctuaryTile(name, icon, size, parent, order)
-	local b = K.new("TextButton", {
+	local b = K.button("", T.Panel, nil, size or UDim2.fromOffset(148, 126), {
 		Name = "Nav_" .. name,
-		Text = "",
-		AutoButtonColor = false,
-		BackgroundColor3 = Color3.new(1, 1, 1),
-		Size = size or UDim2.fromOffset(78, 62),
 		LayoutOrder = order or 0,
-		Selectable = true,
 		Parent = parent,
-	}, {
-		K.corner(12),
-		K.new("UIStroke", { Thickness = 2, Color = SANCT.Gold, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }),
-		K.new("UIGradient", { Rotation = 90, Color = ColorSequence.new(SANCT.Marble, SANCT.Marble2) }),
 	})
-	b:SetAttribute("Enabled", true)
-	local scale = K.new("UIScale", { Parent = b })
-	local med = K.new("Frame", {
-		Name = "Medallion",
-		AnchorPoint = Vector2.new(0.5, 0),
-		Position = UDim2.new(0.5, 0, 0, 6),
-		Size = UDim2.fromOffset(32, 32),
-		BackgroundColor3 = Color3.new(1, 1, 1),
-		Parent = b,
-	}, {
-		K.round(),
-		K.new("UIStroke", { Thickness = 2, Color = SANCT.Gold }),
-		K.new("UIGradient", { Rotation = 90, Color = ColorSequence.new(SANCT.PurpleLight, SANCT.PurpleDeep) }),
-	})
-	K.Icon(icon, med, UDim2.fromOffset(18, 18), SANCT.Cream, UDim2.fromOffset(7, 7))
-	local gem = K.new("Frame", {
-		Name = "Keystone",
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.new(0.5, 0, 0, 0),
-		Size = UDim2.fromOffset(9, 9),
-		Rotation = 45,
-		BackgroundColor3 = SANCT.Gold,
-		BorderSizePixel = 0,
-		ZIndex = 3,
-		Parent = b,
-	}, { K.new("UIStroke", { Thickness = 1, Color = SANCT.PurpleDeep }) })
-	K.new("TextLabel", {
-		Name = "Label",
-		BackgroundTransparency = 1,
-		Text = name,
-		Font = T.Bold,
-		TextSize = 13,
-		TextColor3 = SANCT.PurpleDeep,
-		TextTruncate = Enum.TextTruncate.AtEnd,
-		Size = UDim2.new(1, -6, 0, 16),
-		Position = UDim2.new(0, 3, 1, -19),
-		Parent = b,
-	})
-	local stroke = b:FindFirstChildOfClass("UIStroke")
-	local function hover(on)
-		K.tween(scale, 0.14, { Scale = on and 1.07 or 1 }, Enum.EasingStyle.Back)
-		K.tween(gem, 0.25, { Rotation = on and 225 or 45 })
-		stroke.Thickness = on and 3 or 2
-		stroke.Color = on and SANCT.Cream or SANCT.Gold
-	end
-	b.MouseEnter:Connect(function() hover(true) end)
-	b.MouseLeave:Connect(function() hover(false) end)
-	b.SelectionGained:Connect(function() hover(true) end)
-	b.SelectionLost:Connect(function() hover(false) end)
-	b.MouseButton1Down:Connect(function() K.tween(scale, 0.07, { Scale = 0.94 }) end)
-	b.MouseButton1Up:Connect(function() K.tween(scale, 0.18, { Scale = 1.07 }, Enum.EasingStyle.Back) end)
-	b.Activated:Connect(function() Sounds.Play("Click") end)
+	Sky.Trim(b)
+	K.Icon(icon, b, UDim2.fromOffset(70, 70), T.Text, UDim2.new(0.5, -35, 0, 5))
+	b.Label.Text = name
+	b.Label.Position = UDim2.new(0, 4, 1, -40)
+	b.Label.Size = UDim2.new(1, -8, 0, 32)
+	b.Label.TextColor3 = T.Text
+	b.Label.TextSize = 16
 	return b
 end
 HUD.SanctuaryTile = sanctuaryTile
@@ -147,13 +94,9 @@ local menuBtn = K.button("Menu", T.Panel, nil, UDim2.fromOffset(100, 48), {
 })
 menuBtn.Label.Position = UDim2.fromOffset(35, 0)
 menuBtn.Label.Size = UDim2.new(1, -42, 1, 0)
--- themed like the sanctuary gate: purple with gold trim and cream lettering
-menuBtn.BackgroundColor3 = Color3.fromRGB(112, 72, 196)
-menuBtn.Label.TextColor3 = Color3.fromRGB(255, 242, 205)
-menuBtn:FindFirstChildOfClass("UIStroke").Color = Color3.fromRGB(241, 202, 115)
-menuBtn:FindFirstChildOfClass("UIStroke").Thickness = 2
-K.new("UIGradient", { Rotation = 90, Color = ColorSequence.new(Color3.fromRGB(170, 135, 255), Color3.fromRGB(110, 80, 170)), Parent = menuBtn })
-K.Icon("Menu", menuBtn, UDim2.fromOffset(20, 20), Color3.fromRGB(255, 242, 205), UDim2.fromOffset(10, 14))
+Sky.Trim(menuBtn)
+K.Icon("Menu", menuBtn, UDim2.fromOffset(20, 20), T.Text, UDim2.fromOffset(10, 14))
+Sky.Trim(moneyIcon)
 local homeBtn = K.button("Home", T.Panel, nil, UDim2.fromOffset(84, 48), {
 	Name = "QuickHome",
 	Parent = world,
@@ -219,95 +162,9 @@ Input.InputEnded:Connect(function(i)
 		HUD.TC.EndCharge("Pointer")
 	end
 end)
-local train = K.surface(world, "Gym", UDim2.fromOffset(470, 114), UDim2.new(0.5, -235, 1, -144), T.Panel)
-train.Visible = false
-local trainTitle = K.text(train, "Personal gym", 14, 9, -28, 22, 17, T.Text, true)
-local lift = K.button(
-	"Lift",
-	T.Gold,
-	nil,
-	UDim2.fromOffset(160, 44),
-	{ Name = "Lift", Position = UDim2.fromOffset(12, 37), Parent = train }
-)
-local auto = K.button(
-	"Auto: off",
-	T.Raised,
-	nil,
-	UDim2.fromOffset(120, 44),
-	{ Name = "AutoTrain", Position = UDim2.fromOffset(182, 37), Parent = train }
-)
-local gymUpgrade = K.button(
-	"Upgrade",
-	T.Raised,
-	nil,
-	UDim2.fromOffset(144, 44),
-	{ Name = "GymUpgrade", Position = UDim2.fromOffset(312, 37), Parent = train }
-)
-lift.InputBegan:Connect(function(i)
-	if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
-		HUD.TrainHeld = HUD.TrainStation ~= nil
-	end
-end)
-Input.InputEnded:Connect(function(i)
-	if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
-		HUD.TrainHeld = false
-	end
-end)
-K.bind(auto, function()
-	HUD.AutoTrain = not HUD.AutoTrain
-	K.setButton(auto, HUD.AutoTrain and "AUTO: ON" or "AUTO: OFF")
-	HUD.Sanctify(auto, HUD.AutoTrain and SANCT.Gold or SANCT.Purple, HUD.AutoTrain and SANCT.PurpleDeep or SANCT.Cream)
-end)
-K.bind(gymUpgrade, function()
-	if HUD.OnUpgradeGym then
-		HUD.OnUpgradeGym()
-	end
-end)
--- Portal Sanctuary look for the gym panel: violet board, gold frame + keystone, gold title
-do
-	train.BackgroundColor3 = Color3.new(1, 1, 1)
-	K.new("UIGradient", { Rotation = 90, Color = ColorSequence.new(SANCT.PurpleLight:Lerp(SANCT.Purple, 0.4), SANCT.PurpleDeep), Parent = train })
-	local st = train:FindFirstChildOfClass("UIStroke")
-	if st then st.Color = SANCT.Gold; st.Thickness = 2 end
-	K.new("Frame", { Name = "Keystone", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0, 0), Size = UDim2.fromOffset(12, 12),
-		Rotation = 45, BackgroundColor3 = SANCT.Gold, BorderSizePixel = 0, ZIndex = 3, Parent = train })
-	trainTitle.Font = T.Display
-	trainTitle.TextColor3 = SANCT.Gold
-	local trainHint = K.text(train, "Sit on the bench and press!", 230, 9, -244, 22, 13, SANCT.Cream)
-	trainHint.TextXAlignment = Enum.TextXAlignment.Right
-	local function sanctify(b, fill, textCol)
-		b.BackgroundColor3 = fill
-		b.Label.TextColor3 = textCol
-		b.Label.Font = T.Bold
-		local s = b:FindFirstChildOfClass("UIStroke")
-		if s then s.Color = SANCT.Gold; s.Thickness = 2 end
-	end
-	HUD.Sanctify = sanctify
-	sanctify(lift, SANCT.Gold, SANCT.PurpleDeep)
-	sanctify(auto, SANCT.Purple, SANCT.Cream)
-	sanctify(gymUpgrade, SANCT.Purple, SANCT.Cream)
-end
-function HUD.SetGym(level)
-	HUD.TrainStation = level
-	train.Visible = level ~= nil
-	if not level then
-		HUD.TrainHeld = false
-		return
-	end
-	local st = Config.TrainingStations[level]
-	trainTitle.Text = string.upper(st.name)
-	K.setButton(lift, "LIFT  +" .. Format.Short(st.gain))
-	local nextSt = Config.TrainingStations[level + 1]
-	gymUpgrade.Visible = nextSt ~= nil
-	if nextSt then
-		K.setButton(gymUpgrade, "UPGRADE  " .. Format.Money(nextSt.price))
-		local can = State.Data.Money >= nextSt.price
-		K.setEnabled(gymUpgrade, can)
-		if can then HUD.Sanctify(gymUpgrade, SANCT.Purple, SANCT.Cream) end
-	end
-end
-function HUD.TrainPulse()
-	K.pop(lift)
+-- Compatibility for the retired lifting proximity hook; no gym controls exist.
+function HUD.SetGym(_level)
+	HUD.TrainHeld = false
 end
 local collect = K.button(
 	"Collect creature",
@@ -418,6 +275,7 @@ local blur = K.new("BlurEffect", { Name = "SanctuaryMenuBlur", Size = 0, Parent 
 local width, height = 1280, 720
 function HUD.MakePanel(name, title, subtitle, icon)
 	local frame = K.surface(layer, name, UDim2.fromOffset(1000, 620), UDim2.fromScale(0.5, 0.5), T.Panel)
+	Sky.Trim(frame)
 	frame.AnchorPoint = Vector2.new(0.5, 0.5)
 	frame.Visible = false
 	K.Icon(icon or "Portal", frame, UDim2.fromOffset(28, 28), T.Gold, UDim2.fromOffset(20, 20))
@@ -483,7 +341,8 @@ function HUD.Open(name)
 		HUD.TC.InputBlocked = true
 	end
 	HUD.TrainHeld = false
-	world.Visible = false
+	world.Visible = p.contextual == true
+	dim.BackgroundTransparency = p.contextual and 0.94 or 0.4
 	dim.Visible = true
 	p.frame.Visible = true
 	if p.refresh then
@@ -502,9 +361,10 @@ function HUD.Open(name)
 		end
 	end)
 
-	p.frame.Position = UDim2.new(0.5, 0, 0.5, Settings.ReducedMotion and 0 or 8)
-	K.tween(p.frame, 0.18, { Position = UDim2.fromScale(0.5, 0.5) })
-	K.tween(blur, 0.18, { Size = Settings.ReducedMotion and 0 or 4 })
+	local target = p.targetPosition or UDim2.fromScale(0.5, 0.5)
+	p.frame.Position = target + UDim2.fromOffset(0, Settings.ReducedMotion and 0 or 8)
+	K.tween(p.frame, 0.18, { Position = target })
+	K.tween(blur, 0.18, { Size = (Settings.ReducedMotion or p.contextual) and 0 or 4 })
 	if Input.GamepadEnabled then
 		GuiService.SelectedObject = p.close
 	end
@@ -554,11 +414,11 @@ Input.InputBegan:Connect(function(i, processed)
 		HUD.Open(keys[i.KeyCode])
 	end
 end)
-local menuPanel = HUD.MakePanel("Menu", "Sanctuary menu", "Choose where to go.", "Compass")
+local menuPanel = HUD.MakePanel("Menu", "Your sanctuary", "Everything you need, in four places.", "Compass")
 menuPanel.refresh = function()
 	menuPanel.content:ClearAllChildren()
 	K.new("UIGridLayout", {
-		CellSize = UDim2.new(0.25, -8, 0, 74),
+		CellSize = UDim2.new(0.25, -8, 0, 126),
 		CellPadding = UDim2.fromOffset(8, 10),
 		SortOrder = Enum.SortOrder.LayoutOrder,
 		Parent = menuPanel.content,
@@ -570,6 +430,14 @@ menuPanel.refresh = function()
 			HUD.Close()
 			n.callback()
 		end)
+	end
+end
+menuPanel.layout = function()
+	local w = math.min(700, width - 24)
+	menuPanel.frame.Size = UDim2.fromOffset(w, math.min(height - 24, w < 540 and 404 or 292))
+	local grid = menuPanel.content:FindFirstChildOfClass("UIGridLayout")
+	if grid then
+		grid.CellSize = UDim2.new(w < 540 and 0.5 or 0.25, -8, 0, 126)
 	end
 end
 K.bind(menuBtn, function()
@@ -606,48 +474,27 @@ local function rescale()
 	scaler.Scale = scale
 	root.Size = UDim2.fromScale(1 / scale, 1 / scale)
 	width, height = v.X / scale, v.Y / scale
-	local narrow = width < 620
 	local compact = Input.TouchEnabled or width < 700 or height < 580
 	HUD.Compact = compact
-	local sw = narrow and (width - 32) / 2 or math.min(184, (width - 48) / 4)
-	top.Size = UDim2.fromOffset(sw * 2 + 8, 50)
-	top.Position = UDim2.new(0.5, -top.Size.X.Offset / 2, 0, 8)
+
+	top.Size = UDim2.fromOffset(math.min(250, width - 144), 50)
+	top.Position = UDim2.fromOffset(12, 8)
 	for i, f in ipairs(stats) do
-		f.Visible = i <= 2
-		f.Size = UDim2.fromOffset(sw, 50)
-		f.Position = UDim2.fromOffset(
-			narrow and ((i - 1) % 2) * (sw + 8) or (i - 1) * (sw + 8),
-			narrow and math.floor((i - 1) / 2) * 56 or 0
-		)
+		f.Visible = i == 1
+		f.Size = UDim2.fromOffset(top.Size.X.Offset, 50)
+		f.Position = UDim2.fromOffset(0, 0)
 	end
-	-- desktop: sanctuary tiles sit on the left (two columns if the screen is short);
-	-- phones / small screens: one themed Menu button that opens the same tiles
-	local perColumn = math.max(1, math.floor((height - 150) / 68))
-	sideGrid.FillDirectionMaxCells = perColumn
-	local columns = math.max(1, math.ceil(#navOrder / perColumn))
-	side.Size = UDim2.fromOffset(columns * 84, math.min(#navOrder, perColumn) * 68)
-	side.Position = UDim2.fromOffset(12, 76)
-	side.Visible = not compact
-	menuBtn.Visible = compact
+	-- The four destinations are inside Menu on every device.
+	side.Visible = false
+	menuBtn.Visible = true
 	homeBtn.Visible = false
 	menuBtn.AnchorPoint = Vector2.zero
-	homeBtn.AnchorPoint = Vector2.zero
-	menuBtn.Position = UDim2.fromOffset(12, 76)
-	homeBtn.Position = UDim2.fromOffset(12, narrow and 184 or 130)
+	menuBtn.Position = UDim2.fromOffset(top.Size.X.Offset + 20, 8)
+	menuBtn.Size = UDim2.fromOffset(104, 50)
 	throwBtn.Position = UDim2.new(1, -16, 1, Input.TouchEnabled and -138 or -16)
 	launch.Size = UDim2.fromOffset(Input.TouchEnabled and math.min(300, width - 24) or 354, 102)
 	launch.Position = Input.TouchEnabled and UDim2.new(0.5, -launch.Size.X.Offset / 2, 1, -110)
 		or UDim2.new(1, -370, 1, -182)
-	train.Size = UDim2.fromOffset(compact and width - 24 or 470, 114)
-	train.Position = UDim2.new(0.5, -train.Size.X.Offset / 2, 1, -270)
-	if compact then
-		lift.Size = UDim2.new(0.5, -18, 0, 44)
-		auto.Position = UDim2.new(0.5, 0, 0, 37)
-		auto.Size = UDim2.new(0.5, -12, 0, 44)
-		gymUpgrade.Position = UDim2.fromOffset(12, 85)
-		gymUpgrade.Size = UDim2.new(1, -24, 0, 44)
-		train.Size = UDim2.new(1, -24, 0, 142)
-	end
 	notices.Size = UDim2.fromOffset(math.min(420, width - 24), 240)
 	notices.Position = UDim2.new(0.5, 0, 0, compact and 126 or 78)
 	for _, p in pairs(HUD.Panels) do
@@ -681,7 +528,7 @@ RunService.RenderStepped:Connect(function(dt)
 	local tc = HUD.TC
 	local p = tc and tc.Power or 0
 	launch.Visible = tc ~= nil and (tc.Charging or tc.Submitting or (tc.MyThrow ~= nil and tc.Phase == "Flying"))
-	throwBtn.Visible = HUD.InZone and not (tc and (tc.MyThrow or tc.Submitting)) and not train.Visible
+	throwBtn.Visible = HUD.InZone and not (tc and (tc.MyThrow or tc.Submitting))
 	if tc and tc.Charging then
 		local d = math.clamp((State.Data.MaxDistance or 40) * p * (p >= 0.92 and 1.15 or 1), 8, Config.LaneLength - 15)
 		launchTitle.Text = string.format("%d%% charge  |  %d m", p * 100, d)
