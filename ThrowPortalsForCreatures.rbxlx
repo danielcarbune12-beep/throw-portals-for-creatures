@@ -80,7 +80,7 @@ end
 Config.Worlds = {
 	Forest  = { index = 1, name = "Green Forest",     cost = 0,         throwLevel = 1,  incomeMult = 1,
 		material = Enum.Material.Grass,     groundColor = Color3.fromRGB(104, 168, 70),
-		ambient = Color3.fromRGB(140, 150, 130), fog = Color3.fromRGB(190, 230, 255), fogEnd = 900, clock = 14, tint = Color3.fromRGB(255, 255, 250), atmo = Color3.fromRGB(200, 230, 255) },
+		ambient = Color3.fromRGB(140, 150, 130), fog = Color3.fromRGB(196, 214, 226), fogEnd = 900, clock = 14, tint = Color3.fromRGB(255, 250, 240), atmo = Color3.fromRGB(214, 220, 218) },
 	Volcano = { index = 2, name = "Volcano World",    cost = 3000,      throwLevel = 5,  incomeMult = 3,
 		material = Enum.Material.Asphalt,   groundColor = Color3.fromRGB(54, 46, 52),
 		ambient = Color3.fromRGB(135, 108, 100), fog = Color3.fromRGB(170, 120, 100), fogEnd = 700, clock = 15.2, tint = Color3.fromRGB(255, 238, 225), atmo = Color3.fromRGB(225, 160, 130) },
@@ -4076,26 +4076,34 @@ return T
 ]]></ProtectedString></Properties></Item>
 <Item class="ModuleScript" referent="RBX18"><Properties><string name="Name">SanctuaryLook</string><ProtectedString name="Source"><![CDATA[-- Shared art direction so Edit preview and runtime use the same sanctuary atmosphere.
 local Look = {
-	ambient = Color3.fromRGB(129, 120, 148),
-	fog = Color3.fromRGB(179, 183, 207),
-	clock = 16.1,
-	tint = Color3.fromRGB(255, 246, 235),
-	atmo = Color3.fromRGB(204, 213, 236),
-	density = 0.31,
-	haze = 1.65,
-	glare = 0.12,
-	offset = 0.10,
-	bloom = 0.22,
+	-- cinematic medieval afternoon: warm low sun, cool neutral shade, light distance haze
+	ambient = Color3.fromRGB(112, 118, 132), -- outdoor shade fill (cool, not purple)
+	indoor = Color3.fromRGB(62, 64, 72), -- occluded areas: readable but darker
+	fog = Color3.fromRGB(188, 198, 212),
+	clock = 15.3,
+	tint = Color3.fromRGB(255, 246, 232),
+	atmo = Color3.fromRGB(214, 212, 204),
+	density = 0.3,
+	haze = 0.9,
+	glare = 0.15,
+	offset = 0.16,
+	bloom = 0.25,
+	sunTop = Color3.fromRGB(255, 232, 198), -- warm on sunlit faces
+	shadeBottom = Color3.fromRGB(150, 168, 196), -- cool bounce underneath
 }
 function Look.Apply(lighting)
 	lighting.GlobalShadows = true
-	lighting.Brightness = 2.15
+	lighting.Brightness = 3
 	lighting.ClockTime = Look.clock
-	lighting.Ambient = Look.ambient
+	lighting.GeographicLatitude = 38
+	lighting.Ambient = Look.indoor
 	lighting.OutdoorAmbient = Look.ambient
-	lighting.EnvironmentDiffuseScale = 0.65
-	lighting.EnvironmentSpecularScale = 0.65
-	lighting.ExposureCompensation = -0.05
+	lighting.ColorShift_Top = Look.sunTop
+	lighting.ColorShift_Bottom = Look.shadeBottom
+	lighting.ShadowSoftness = 0.12
+	lighting.EnvironmentDiffuseScale = 0.55
+	lighting.EnvironmentSpecularScale = 0.3 -- less plastic shine
+	lighting.ExposureCompensation = -0.15 -- keeps pale paving from blowing out
 	lighting.FogColor = Look.fog
 	lighting.FogStart = 110
 	lighting.FogEnd = 850
@@ -4111,18 +4119,18 @@ function Look.Apply(lighting)
 	local bloom = lighting:FindFirstChildOfClass("BloomEffect") or Instance.new("BloomEffect")
 	bloom.Name = "TPFC_Bloom"
 	bloom.Intensity = Look.bloom
-	bloom.Threshold = 1.6
-	bloom.Size = 24
+	bloom.Threshold = 1.9 -- only genuinely bright/emissive surfaces glow
+	bloom.Size = 22
 	bloom.Parent = lighting
 	local cc = lighting:FindFirstChildOfClass("ColorCorrectionEffect") or Instance.new("ColorCorrectionEffect")
 	cc.Name = "TPFC_CC"
 	cc.TintColor = Look.tint
-	cc.Contrast = 0.07
-	cc.Saturation = 0.025
+	cc.Contrast = 0.1
+	cc.Saturation = 0.06
 	cc.Parent = lighting
 	local rays = lighting:FindFirstChildOfClass("SunRaysEffect") or Instance.new("SunRaysEffect")
 	rays.Name = "TPFC_Rays"
-	rays.Intensity = 0.045
+	rays.Intensity = 0.05
 	rays.Spread = 0.72
 	rays.Parent = lighting
 end
@@ -9691,7 +9699,7 @@ return V
 ]]></ProtectedString></Properties></Item>
 </Item>
 </Item>
-<Item class="ServerScriptService" referent="RBX60"><Properties><string name="Name">ServerScriptService</string></Properties>
+<Item class="ServerScriptService" referent="RBX61"><Properties><string name="Name">ServerScriptService</string></Properties>
 <Item class="Folder" referent="RBX33"><Properties><string name="Name">Server</string></Properties>
 <Item class="ModuleScript" referent="RBX34"><Properties><string name="Name">BaseBuilder</string><ProtectedString name="Source"><![CDATA[-- BaseBuilder: builds eight Skyforge courtyards and owned decorations.
 -- Location: ServerScriptService > Server > BaseBuilder (ModuleScript)
@@ -14431,6 +14439,11 @@ task.spawn(function()
 end)
 BaseBuilder.BuildAll()
 WorldBuilder.BuildAll()
+-- art-direction pass: signs, station props and ambient life added next to the built world (cosmetic only)
+do
+	local ok, err = pcall(function() require(script.Parent.MedievalDressing).Apply() end)
+	if not ok then warn("[MedievalDressing] " .. tostring(err)) end
+end
 
 ---------------------------------------------------------------- state
 local State = {} -- [player] = { base, carry = {ids}, lastThrow, tokens, lastTokenT, dirty }
@@ -15468,7 +15481,309 @@ Actions.Sync = function(player)
 	return true
 end
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX47"><Properties><string name="Name">OuterForest</string><ProtectedString name="Source"><![CDATA[-- OuterForest: the world OUTSIDE the Forest lane, from the outer-world design canvas (sheet "01 Forest").
+<Item class="ModuleScript" referent="RBX47"><Properties><string name="Name">MedievalDressing</string><ProtectedString name="Source"><![CDATA[-- MedievalDressing: art-direction pass that runs after the hub, courtyards and lane are built.
+-- Location: ServerScriptService > Server > MedievalDressing (ModuleScript)
+--
+-- It never rebuilds anyone else's geometry. It finds existing landmarks by name and adds purposeful,
+-- physically-mounted detail next to them, so the hub/base/biome builders stay untouched:
+--   * Expedition stations: carved timber sign on an iron-bracketed post, supply crates, a travel pack,
+--     rolled maps and a lantern. The floating "Expeditions" billboard is retired in favour of the sign.
+--   * "PORTAL SANCTUARY": the flat label becomes a stone tablet in an iron frame with bolts and
+--     engraved gold lettering.
+--   * Ambient life: banners sway (WorldFx), sunlit pollen over the avenue, mist at waterfall feet.
+-- Everything is non-colliding, CanQuery=false and seated by raycast on the surface below it.
+
+local CollectionService = game:GetService("CollectionService")
+
+local D = {}
+
+local C = {
+	oak = Color3.fromRGB(112, 78, 48),
+	oakDark = Color3.fromRGB(78, 54, 34),
+	iron = Color3.fromRGB(54, 52, 50),
+	brass = Color3.fromRGB(176, 136, 62),
+	stone = Color3.fromRGB(126, 122, 114),
+	canvas = Color3.fromRGB(176, 158, 122),
+	parchment = Color3.fromRGB(226, 210, 172),
+	rope = Color3.fromRGB(150, 122, 84),
+	flame = Color3.fromRGB(255, 196, 120),
+	carve = Color3.fromRGB(58, 38, 22),
+	gold = Color3.fromRGB(226, 186, 104),
+}
+
+local folder
+local function part(name, size, cf, color, mat, shape)
+	local p = Instance.new("Part")
+	p.Name = name
+	p.Anchored, p.CanCollide, p.CanQuery, p.CanTouch = true, false, false, false
+	p.Size, p.CFrame, p.Color = size, cf, color
+	p.Material = mat or Enum.Material.Wood
+	p.TopSurface, p.BottomSurface = Enum.SurfaceType.Smooth, Enum.SurfaceType.Smooth
+	p.CastShadow = math.max(size.X, size.Y, size.Z) >= 2
+	if shape then p.Shape = shape end
+	p.Parent = folder
+	return p
+end
+
+local ray = RaycastParams.new()
+ray.FilterType = Enum.RaycastFilterType.Exclude
+local function floorAt(pos)
+	ray.FilterDescendantsInstances = { folder }
+	local hit = workspace:Raycast(pos + Vector3.new(0, 12, 0), Vector3.new(0, -40, 0), ray)
+	return hit and hit.Position.Y or pos.Y
+end
+
+local function fontFace()
+	local ok, f = pcall(function() return Font.new("rbxasset://fonts/families/Fondamento.json", Enum.FontWeight.Bold) end)
+	return ok and f or Font.fromEnum(Enum.Font.Fondamento)
+end
+local SIGN_FONT = fontFace()
+
+-- lettering on a modeled surface (both faces), carved dark with a light bevel edge
+local function letter(board, text, color, stroke, faces)
+	for _, face in ipairs(faces or { Enum.NormalId.Front, Enum.NormalId.Back }) do
+		local g = Instance.new("SurfaceGui")
+		g.Face = face
+		g.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+		g.PixelsPerStud = 60
+		g.LightInfluence = 1
+		local t = Instance.new("TextLabel")
+		t.BackgroundTransparency = 1
+		t.Size = UDim2.fromScale(0.86, 0.72)
+		t.Position = UDim2.fromScale(0.07, 0.14)
+		t.FontFace = SIGN_FONT
+		t.TextScaled = true
+		t.Text = text
+		t.TextColor3 = color
+		local s = Instance.new("UIStroke")
+		s.Color = stroke
+		s.Thickness = 2
+		s.Transparency = 0.35
+		s.Parent = t
+		t.Parent = g
+		g.Parent = board
+	end
+end
+
+---------------------------------------------------------------- expedition stations
+local function lantern(cf)
+	part("LanternCap", Vector3.new(0.9, 0.18, 0.9), cf * CFrame.new(0, 0.62, 0), C.iron, Enum.Material.Metal)
+	local glass = part("LanternGlass", Vector3.new(0.62, 0.9, 0.62), cf, C.flame, Enum.Material.Neon)
+	glass.Transparency = 0.35
+	for _, x in ipairs({ -0.36, 0.36 }) do
+		for _, z in ipairs({ -0.36, 0.36 }) do
+			part("LanternFrame", Vector3.new(0.08, 1.05, 0.08), cf * CFrame.new(x, 0, z), C.iron, Enum.Material.Metal)
+		end
+	end
+	part("LanternBase", Vector3.new(0.8, 0.14, 0.8), cf * CFrame.new(0, -0.52, 0), C.iron, Enum.Material.Metal)
+	local light = Instance.new("PointLight")
+	light.Color = C.flame
+	light.Range = 12
+	light.Brightness = 0.9
+	light.Shadows = false
+	light.Parent = glass
+	CollectionService:AddTag(glass, "TPFC_Pulse")
+	glass:SetAttribute("Period", 2.6 + math.random() * 1.4)
+	glass:SetAttribute("Base", 0.3)
+	glass:SetAttribute("Peak", 0.48)
+end
+
+local function crate(cf, s)
+	local body = part("SupplyCrate", Vector3.new(s, s * 0.8, s), cf, C.oak, Enum.Material.WoodPlanks)
+	for _, y in ipairs({ -0.32, 0.32 }) do -- iron straps
+		part("CrateStrap", Vector3.new(s + 0.06, 0.12, s + 0.06), cf * CFrame.new(0, y * s * 0.8, 0), C.iron, Enum.Material.Metal)
+	end
+	return body
+end
+
+local function dressExpedition(base)
+	local map = base:FindFirstChild("ExpeditionMap", true)
+	if not map then return end
+	local cf, size
+	if map:IsA("Model") then
+		cf, size = map:GetBoundingBox()
+	else
+		cf, size = map.CFrame, map.Size
+	end
+	-- the table's long side faces the courtyard; put the station dressing at its short end
+	local rightV = (size.X >= size.Z) and cf.RightVector or cf.LookVector
+	local fwdV = (size.X >= size.Z) and cf.LookVector or cf.RightVector
+	local halfLen = math.max(size.X, size.Z) / 2
+	local base0 = cf.Position + rightV * (halfLen + 2.2)
+	local gy = floorAt(base0)
+	local flat = CFrame.lookAt(Vector3.new(base0.X, gy, base0.Z), Vector3.new(base0.X, gy, base0.Z) + fwdV)
+
+	-- signpost: stone footing, oak post, bracket arm, hanging carved board
+	part("SignFooting", Vector3.new(1.4, 0.5, 1.4), flat * CFrame.new(0, 0.25, 0), C.stone, Enum.Material.Cobblestone)
+	part("SignPost", Vector3.new(0.5, 6.6, 0.5), flat * CFrame.new(0, 3.55, 0), C.oakDark, Enum.Material.Wood)
+	part("SignArm", Vector3.new(3.2, 0.32, 0.36), flat * CFrame.new(-1.45, 6.4, 0), C.oakDark, Enum.Material.Wood)
+	part("SignBrace", Vector3.new(0.22, 1.5, 0.22), flat * CFrame.new(-0.55, 5.85, 0) * CFrame.Angles(0, 0, math.rad(-45)), C.iron, Enum.Material.Metal)
+	for _, x in ipairs({ -0.55, -2.35 }) do -- iron hangers
+		part("SignHanger", Vector3.new(0.08, 0.6, 0.08), flat * CFrame.new(x, 5.95, 0), C.iron, Enum.Material.Metal)
+	end
+	local board = part("SignBoard", Vector3.new(3.4, 1.1, 0.22), flat * CFrame.new(-1.45, 5.1, 0), C.oak, Enum.Material.WoodPlanks)
+	board.CastShadow = true
+	part("SignTrim", Vector3.new(3.56, 0.12, 0.26), flat * CFrame.new(-1.45, 5.69, 0), C.iron, Enum.Material.Metal)
+	part("SignTrim", Vector3.new(3.56, 0.12, 0.26), flat * CFrame.new(-1.45, 4.51, 0), C.iron, Enum.Material.Metal)
+	letter(board, "Expeditions", C.carve, C.parchment)
+	-- lantern on its own short bracket on the far side of the post, clear of the lettering
+	part("LanternArm", Vector3.new(1.1, 0.18, 0.18), flat * CFrame.new(0.75, 5.95, 0), C.iron, Enum.Material.Metal)
+	lantern(flat * CFrame.new(1.15, 5.15, 0))
+
+	-- supplies, grouped behind the post so the table front and its prompt stay clear
+	local back = flat * CFrame.new(0.9, 0, 1.6)
+	crate(back * CFrame.new(0, 0.6 + (floorAt(back.Position) - gy), 0) * CFrame.Angles(0, math.rad(8), 0), 1.5)
+	crate(back * CFrame.new(0.05, 1.75 + (floorAt(back.Position) - gy), 0.05) * CFrame.Angles(0, math.rad(-12), 0), 1.0)
+	local pack = back * CFrame.new(1.6, 0, -0.4)
+	local py = floorAt(pack.Position) - gy
+	part("TravelPack", Vector3.new(1.1, 1.3, 0.8), pack * CFrame.new(0, 0.65 + py, 0) * CFrame.Angles(math.rad(-6), math.rad(20), 0), C.canvas, Enum.Material.Fabric)
+	part("PackFlap", Vector3.new(1.12, 0.5, 0.84), pack * CFrame.new(0, 1.15 + py, 0.02) * CFrame.Angles(math.rad(-6), math.rad(20), 0), C.oakDark, Enum.Material.Fabric)
+	part("BedRoll", Vector3.new(1.2, 0.42, 0.42), pack * CFrame.new(0, 1.5 + py, 0) * CFrame.Angles(0, math.rad(20), 0), C.rope, Enum.Material.Fabric, Enum.PartType.Cylinder)
+	-- rolled maps leaning on the crates
+	for i, a in ipairs({ -14, 6 }) do
+		part("RolledMap", Vector3.new(1.6, 0.26, 0.26), back * CFrame.new(-0.95, 0.75 + (floorAt(back.Position) - gy), -0.3 + i * 0.32) * CFrame.Angles(0, 0, math.rad(62 + a)), C.parchment, Enum.Material.SmoothPlastic, Enum.PartType.Cylinder)
+	end
+
+	-- retire the floating billboard: the carved sign carries the name now
+	local anchor = base:FindFirstChild("ExpeditionAnchor", true)
+	local bb = anchor and anchor:FindFirstChildOfClass("BillboardGui")
+	if bb then bb.Enabled = false end
+end
+
+---------------------------------------------------------------- Portal Sanctuary tablet
+local function dressSanctuarySign()
+	local map = workspace:FindFirstChild("Map")
+	if not map then return end
+	for _, g in ipairs(map:GetDescendants()) do
+		if g:IsA("TextLabel") and g.Text == "PORTAL SANCTUARY" then
+			local sg = g:FindFirstAncestorOfClass("SurfaceGui")
+			local backing = sg and sg.Parent
+			if backing and backing:IsA("BasePart") and not backing:GetAttribute("Dressed") then
+				backing:SetAttribute("Dressed", true)
+				backing.Material = Enum.Material.Slate
+				backing.Color = Color3.fromRGB(96, 92, 86)
+				local cf, s = backing.CFrame, backing.Size
+				-- iron frame, slightly proud of the tablet, with bolts at the corners
+				part("TabletFrame", Vector3.new(s.X + 0.5, 0.26, s.Z + 0.24), cf * CFrame.new(0, s.Y / 2 + 0.1, 0), C.iron, Enum.Material.Metal)
+				part("TabletFrame", Vector3.new(s.X + 0.5, 0.26, s.Z + 0.24), cf * CFrame.new(0, -s.Y / 2 - 0.1, 0), C.iron, Enum.Material.Metal)
+				part("TabletFrame", Vector3.new(0.26, s.Y + 0.46, s.Z + 0.24), cf * CFrame.new(s.X / 2 + 0.12, 0, 0), C.iron, Enum.Material.Metal)
+				part("TabletFrame", Vector3.new(0.26, s.Y + 0.46, s.Z + 0.24), cf * CFrame.new(-s.X / 2 - 0.12, 0, 0), C.iron, Enum.Material.Metal)
+				for _, x in ipairs({ -1, 1 }) do
+					for _, y in ipairs({ -1, 1 }) do
+						part("TabletBolt", Vector3.new(0.3, 0.3, 0.3), cf * CFrame.new(x * (s.X / 2 - 0.35), y * (s.Y / 2 - 0.3), -s.Z / 2 - 0.12), C.brass, Enum.Material.Metal, Enum.PartType.Ball)
+					end
+				end
+				-- engraved gold capitals, readable at distance (no blackletter)
+				g.FontFace = SIGN_FONT
+				g.TextColor3 = C.gold
+				local st = g:FindFirstChildOfClass("UIStroke") or Instance.new("UIStroke")
+				st.Color = Color3.fromRGB(40, 30, 20)
+				st.Thickness = 2.5
+				st.Transparency = 0.2
+				st.Parent = g
+				g.TextStrokeTransparency = 1
+				sg.LightInfluence = 1
+			end
+		end
+	end
+end
+
+---------------------------------------------------------------- ambient life
+local function bannersSway()
+	local roots = { workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Start"), workspace:FindFirstChild("Bases") }
+	local n = 0
+	for _, root in ipairs(roots) do
+		if root then
+			for _, p in ipairs(root:GetDescendants()) do
+				if p:IsA("BasePart") and p.Anchored and p.Name:lower():find("banner") and p.Size.Y > p.Size.X * 1.4 and not CollectionService:HasTag(p, "TPFC_Sway") then
+					CollectionService:AddTag(p, "TPFC_Sway")
+					p:SetAttribute("Period", 4.5 + math.random() * 3) -- desynchronised
+					p:SetAttribute("Amp", 0.018 + math.random() * 0.012)
+					n += 1
+					if n > 160 then return end
+				end
+			end
+		end
+	end
+end
+
+local function emitterPart(name, size, cf)
+	local p = part(name, size, cf, Color3.new(1, 1, 1), Enum.Material.SmoothPlastic)
+	p.Transparency = 1
+	p.CastShadow = false
+	return p
+end
+
+local function pollen()
+	local p = emitterPart("SunlitPollen", Vector3.new(70, 8, 360), CFrame.new(0, 9, -250))
+	local e = Instance.new("ParticleEmitter")
+	e.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+	e.Shape = Enum.ParticleEmitterShape.Box
+	e.ShapeStyle = Enum.ParticleEmitterShapeStyle.Volume
+	e.Color = ColorSequence.new(Color3.fromRGB(255, 240, 200))
+	e.LightEmission = 0.4
+	e.LightInfluence = 0.6
+	e.Size = NumberSequence.new(0.12, 0.08)
+	e.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.3, 0.45), NumberSequenceKeypoint.new(1, 1) })
+	e.Lifetime = NumberRange.new(6, 10)
+	e.Speed = NumberRange.new(0.2, 0.6)
+	e.SpreadAngle = Vector2.new(180, 180)
+	e.Acceleration = Vector3.new(0.15, 0.05, 0.1)
+	e.Rate = 10
+	e:SetAttribute("BaseRate", 10)
+	e.Parent = p
+	CollectionService:AddTag(e, "TPFC_EnvironmentEmitter")
+end
+
+local function waterfallMist()
+	local map = workspace:FindFirstChild("Map")
+	if not map then return end
+	local n = 0
+	for _, p in ipairs(map:GetDescendants()) do
+		if n >= 6 then break end
+		if p:IsA("BasePart") and p.Name:lower():find("fall") and p.Size.Y > 6 and p.Transparency < 0.9 then
+			n += 1
+			local foot = p.Position - Vector3.new(0, p.Size.Y / 2 - 1, 0)
+			local m = emitterPart("WaterfallMist", Vector3.new(math.max(p.Size.X, p.Size.Z), 2, math.max(p.Size.X, p.Size.Z)), CFrame.new(foot))
+			local e = Instance.new("ParticleEmitter")
+			e.Texture = "rbxasset://textures/particles/smoke_main.dds"
+			e.Color = ColorSequence.new(Color3.fromRGB(236, 244, 250))
+			e.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 3), NumberSequenceKeypoint.new(1, 8) })
+			e.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.25, 0.82), NumberSequenceKeypoint.new(1, 1) })
+			e.Lifetime = NumberRange.new(2.5, 4)
+			e.Speed = NumberRange.new(1, 2.5)
+			e.SpreadAngle = Vector2.new(60, 60)
+			e.Rate = 6
+			e:SetAttribute("BaseRate", 6)
+			e.LightInfluence = 0.8
+			e.Parent = m
+			CollectionService:AddTag(e, "TPFC_EnvironmentEmitter")
+		end
+	end
+end
+
+---------------------------------------------------------------- entry
+function D.Apply()
+	folder = workspace:FindFirstChild("MedievalDressing") or Instance.new("Folder")
+	folder.Name = "MedievalDressing"
+	folder.Parent = workspace
+	folder:ClearAllChildren()
+	local bases = workspace:FindFirstChild("Bases")
+	if bases then
+		for _, b in ipairs(bases:GetChildren()) do
+			local ok, err = pcall(dressExpedition, b)
+			if not ok then warn("[MedievalDressing] expedition " .. b.Name .. ": " .. tostring(err)) end
+		end
+	end
+	for _, f in ipairs({ dressSanctuarySign, bannersSway, pollen, waterfallMist }) do
+		local ok, err = pcall(f)
+		if not ok then warn("[MedievalDressing] " .. tostring(err)) end
+	end
+end
+
+return D
+]]></ProtectedString></Properties></Item>
+<Item class="ModuleScript" referent="RBX48"><Properties><string name="Name">OuterForest</string><ProtectedString name="Source"><![CDATA[-- OuterForest: the world OUTSIDE the Forest lane, from the outer-world design canvas (sheet "01 Forest").
 -- The lane module (BiomeForest) owns |X| < ~130; this owns |X| >= 130 out to the skyline.
 -- Authored in design coordinates with K.mirror = true (design -X = screen-left from the hall camera).
 --  LEFT  (wild):  terraced overgrown cliff + root spills + high-ledge waterfall into a gorge pool,
@@ -15831,7 +16146,7 @@ end
 
 return O
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX48"><Properties><string name="Name">OuterHub</string><ProtectedString name="Source"><![CDATA[-- OuterHub: the world OUTSIDE the Portal Sanctuary walls (|X| > ~120 and Z < -470), from the
+<Item class="ModuleScript" referent="RBX49"><Properties><string name="Name">OuterHub</string><ProtectedString name="Source"><![CDATA[-- OuterHub: the world OUTSIDE the Portal Sanctuary walls (|X| > ~120 and Z < -470), from the
 -- outer-world design canvas (sheet "00 Hub") and Maps/00_Portal_Sanctuary_Hub.png. The lobby itself
 -- (SanctuaryHub) is untouched. World coordinates, no mirror: viewer-left down the lane is world +X.
 --  LEFT  (+X): lilac crags just past the walls, a stepped cliff with a two-step waterfall, flowering
@@ -16116,7 +16431,7 @@ end
 
 return O
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX49"><Properties><string name="Name">PetMeshLoader</string><ProtectedString name="Source"><![CDATA[-- PetMeshLoader: builds ReplicatedStorage.PetMeshes/<CreatureId>/<role> MeshPart templates from the
+<Item class="ModuleScript" referent="RBX50"><Properties><string name="Name">PetMeshLoader</string><ProtectedString name="Source"><![CDATA[-- PetMeshLoader: builds ReplicatedStorage.PetMeshes/<CreatureId>/<role> MeshPart templates from the
 -- asset ids in PetMeshManifest, so the client CreatureBuilder can use sculpted meshes.
 -- Location: ServerScriptService > Server > PetMeshLoader (ModuleScript)
 -- If a mesh can't be created (offline, permissions), that species simply keeps the procedural model.
@@ -16173,7 +16488,7 @@ end
 
 return Loader
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX50"><Properties><string name="Name">SanctuaryArchitecture</string><ProtectedString name="Source"><![CDATA[-- Original block/wedge architecture matching Maps/00_Portal_Sanctuary_Hub.png.
+<Item class="ModuleScript" referent="RBX51"><Properties><string name="Name">SanctuaryArchitecture</string><ProtectedString name="Source"><![CDATA[-- Original block/wedge architecture matching Maps/00_Portal_Sanctuary_Hub.png.
 -- Shared by the public sanctuary and the eight gardens. All decoration is non-queryable.
 local K = require(script.Parent.WorldKit)
 local Art = {}
@@ -16358,7 +16673,7 @@ function Art.Planter(cf, length, pink)
 end
 return Art
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX51"><Properties><string name="Name">SanctuaryBase</string><ProtectedString name="Source"><![CDATA[-- Skyforge Courtyard, matching the owner's approved concept2. Original plot,
+<Item class="ModuleScript" referent="RBX52"><Properties><string name="Name">SanctuaryBase</string><ProtectedString name="Source"><![CDATA[-- Skyforge Courtyard, matching the owner's approved concept2. Original plot,
 -- collection and pet-slot anchors stay compatible with saved player gardens.
 local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
 local K = require(script.Parent.WorldKit)
@@ -16787,7 +17102,7 @@ end
 
 return Base
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX52"><Properties><string name="Name">SanctuaryDetails</string><ProtectedString name="Source"><![CDATA[-- Deliberate close-up detail for the lobby. Decorative only; all gameplay paths stay clear.
+<Item class="ModuleScript" referent="RBX53"><Properties><string name="Name">SanctuaryDetails</string><ProtectedString name="Source"><![CDATA[-- Deliberate close-up detail for the lobby. Decorative only; all gameplay paths stay clear.
 local P = require(script.Parent.SanctuaryArchitecture).Palette
 local Details = {}
 local V, CF, A = Vector3.new, CFrame.new, CFrame.Angles
@@ -17011,7 +17326,7 @@ function Details.Build(start)
 end
 return Details
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX53"><Properties><string name="Name">SanctuaryHub</string><ProtectedString name="Source"><![CDATA[-- Portal Sanctuary: a composed, walkable lobby, built from the supplied hub reference.
+<Item class="ModuleScript" referent="RBX54"><Properties><string name="Name">SanctuaryHub</string><ProtectedString name="Source"><![CDATA[-- Portal Sanctuary: a composed, walkable lobby, built from the supplied hub reference.
 -- Plot centers, throw zone, collision barrier and lane direction retain their existing contracts.
 local RS = game:GetService("ReplicatedStorage")
 local Config = require(RS.Shared.Config)
@@ -17411,7 +17726,7 @@ function Hub.Build(folder, textLabel)
 end
 return Hub
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX54"><Properties><string name="Name">SkyforgeDetails</string><ProtectedString name="Source"><![CDATA[-- Small-scale craft for the approved Skyforge courtyard. No extra prompts or
+<Item class="ModuleScript" referent="RBX55"><Properties><string name="Name">SkyforgeDetails</string><ProtectedString name="Source"><![CDATA[-- Small-scale craft for the approved Skyforge courtyard. No extra prompts or
 -- physics obstacles are created here; the expedition table owns interaction.
 local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
 local P = require(script.Parent.SkyforgeStyle)
@@ -17603,7 +17918,7 @@ end
 
 return Details
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX55"><Properties><string name="Name">SkyforgeStyle</string><ProtectedString name="Source"><![CDATA[-- Approved Skyforge concept: pale stone, dark timber, violet tiled roofs and
+<Item class="ModuleScript" referent="RBX56"><Properties><string name="Name">SkyforgeStyle</string><ProtectedString name="Source"><![CDATA[-- Approved Skyforge concept: pale stone, dark timber, violet tiled roofs and
 -- small warm brass accents. Colors stay readable under the sanctuary lighting.
 local C = Color3.fromRGB
 return {
@@ -17634,7 +17949,7 @@ return {
 	lodge = { x = -18, z = 24, w = 26, d = 17, deck = 1.6, postH = 9, rise = 5.6 },
 }
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX56"><Properties><string name="Name">WorldBuilder</string><ProtectedString name="Source"><![CDATA[-- WorldBuilder: builds ONE long map — the hub (bases + launch hall) and the 3200-stud throwing
+<Item class="ModuleScript" referent="RBX57"><Properties><string name="Name">WorldBuilder</string><ProtectedString name="Source"><![CDATA[-- WorldBuilder: builds ONE long map — the hub (bases + launch hall) and the 3200-stud throwing
 -- lane split into 8 biome zones. Each biome lives in its own module (Biome<Id>) built with the
 -- shared WorldKit; this file only orchestrates terrain, zones, markers and boundaries.
 -- Location: ServerScriptService > Server > WorldBuilder (ModuleScript)
@@ -17843,10 +18158,10 @@ end
 
 return WorldBuilder
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX57"><Properties><string name="Name">WorldHub</string><ProtectedString name="Source"><![CDATA[-- Compatibility entry point for the reference-based sanctuary lobby.
+<Item class="ModuleScript" referent="RBX58"><Properties><string name="Name">WorldHub</string><ProtectedString name="Source"><![CDATA[-- Compatibility entry point for the reference-based sanctuary lobby.
 return require(script.Parent.SanctuaryHub)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX58"><Properties><string name="Name">WorldKit</string><ProtectedString name="Source"><![CDATA[-- WorldKit: the shared blocky construction kit used by the hub and all eight biomes.
+<Item class="ModuleScript" referent="RBX59"><Properties><string name="Name">WorldKit</string><ProtectedString name="Source"><![CDATA[-- WorldKit: the shared blocky construction kit used by the hub and all eight biomes.
 -- Location: ServerScriptService > Server > WorldKit (ModuleScript)
 --
 -- CONTRACT (map brief + GameServer landing contract):
@@ -18562,7 +18877,7 @@ end
 
 return K
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX59"><Properties><string name="Name">WorldLandmarks</string><ProtectedString name="Source"><![CDATA[-- WorldLandmarks: construction kit + the hero landmarks for the hub, launch hall and all
+<Item class="ModuleScript" referent="RBX60"><Properties><string name="Name">WorldLandmarks</string><ProtectedString name="Source"><![CDATA[-- WorldLandmarks: construction kit + the hero landmarks for the hub, launch hall and all
 -- eight biomes (blocky architectural language from the map reference pack).
 -- Location: ServerScriptService > Server > WorldLandmarks (ModuleScript)
 --
@@ -19342,10 +19657,10 @@ return L
 ]]></ProtectedString></Properties></Item>
 </Item>
 </Item>
-<Item class="StarterPlayer" referent="RBX88"><Properties><string name="Name">StarterPlayer</string></Properties>
-<Item class="StarterPlayerScripts" referent="RBX61"><Properties><string name="Name">StarterPlayerScripts</string></Properties>
-<Item class="Folder" referent="RBX62"><Properties><string name="Name">Client</string></Properties>
-<Item class="ModuleScript" referent="RBX63"><Properties><string name="Name">CaughtPresentation</string><ProtectedString name="Source"><![CDATA[-- Caught card for an already confirmed catch, styled after Actions/02_Rarity_Reveal_and_Capture ("03 ADDED"):
+<Item class="StarterPlayer" referent="RBX89"><Properties><string name="Name">StarterPlayer</string></Properties>
+<Item class="StarterPlayerScripts" referent="RBX62"><Properties><string name="Name">StarterPlayerScripts</string></Properties>
+<Item class="Folder" referent="RBX63"><Properties><string name="Name">Client</string></Properties>
+<Item class="ModuleScript" referent="RBX64"><Properties><string name="Name">CaughtPresentation</string><ProtectedString name="Source"><![CDATA[-- Caught card for an already confirmed catch, styled after Actions/02_Rarity_Reveal_and_Capture ("03 ADDED"):
 -- purple card with a double gold frame and diamond crest, light rays behind the pet, the creature's name,
 -- a "CAUGHT" ribbon with laurels, an "ADDED TO PETS" plaque, then the card flies into the live Pets button.
 local RS = game:GetService("ReplicatedStorage")
@@ -19563,7 +19878,7 @@ return function(key)
 	end)
 end
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX64"><Properties><string name="Name">CinematicLook</string><ProtectedString name="Source"><![CDATA[-- CinematicLook: premium "modern renderer" finish on top of the existing lighting.
+<Item class="LocalScript" referent="RBX65"><Properties><string name="Name">CinematicLook</string><ProtectedString name="Source"><![CDATA[-- CinematicLook: premium "modern renderer" finish on top of the existing lighting.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > CinematicLook (LocalScript)
 --
 -- Ownership: Effects.lua / SanctuaryLook own Ambient, ClockTime, Fog, Brightness, ExposureCompensation,
@@ -19585,15 +19900,15 @@ local camera = workspace.CurrentCamera
 
 -- per-zone finishing: split-tone tint, extra contrast/saturation, sun latitude, highlight glow
 local GRADE = {
-	Hub     = { tint = Color3.fromRGB(255, 248, 238), contrast = 0.06, sat = 0.06, lat = 34, glow = 0.18 },
-	Forest  = { tint = Color3.fromRGB(255, 250, 236), contrast = 0.08, sat = 0.06, lat = 38, glow = 0.18 },
-	Volcano = { tint = Color3.fromRGB(255, 236, 222), contrast = 0.12, sat = 0.06, lat = 24, glow = 0.30 },
-	Frozen  = { tint = Color3.fromRGB(240, 248, 255), contrast = 0.07, sat = 0.06, lat = 52, glow = 0.20 },
-	Crystal = { tint = Color3.fromRGB(246, 238, 255), contrast = 0.10, sat = 0.06, lat = 30, glow = 0.32 },
-	Candy   = { tint = Color3.fromRGB(255, 246, 250), contrast = 0.05, sat = 0.06, lat = 40, glow = 0.16 },
-	Space   = { tint = Color3.fromRGB(238, 238, 255), contrast = 0.12, sat = 0.06, lat = 20, glow = 0.34 },
-	Shadow  = { tint = Color3.fromRGB(248, 236, 252), contrast = 0.11, sat = 0.06, lat = 28, glow = 0.28 },
-	Heaven  = { tint = Color3.fromRGB(255, 250, 240), contrast = 0.05, sat = 0.06, lat = 46, glow = 0.20 },
+	Hub     = { tint = Color3.fromRGB(255, 248, 238), contrast = 0.06, sat = 0, lat = 34, glow = 0.09 },
+	Forest  = { tint = Color3.fromRGB(255, 250, 236), contrast = 0.08, sat = 0, lat = 38, glow = 0.09 },
+	Volcano = { tint = Color3.fromRGB(255, 236, 222), contrast = 0.12, sat = 0, lat = 24, glow = 0.15 },
+	Frozen  = { tint = Color3.fromRGB(240, 248, 255), contrast = 0.07, sat = 0, lat = 52, glow = 0.10 },
+	Crystal = { tint = Color3.fromRGB(246, 238, 255), contrast = 0.10, sat = 0, lat = 30, glow = 0.16 },
+	Candy   = { tint = Color3.fromRGB(255, 246, 250), contrast = 0.05, sat = 0, lat = 40, glow = 0.08 },
+	Space   = { tint = Color3.fromRGB(238, 238, 255), contrast = 0.12, sat = 0, lat = 20, glow = 0.17 },
+	Shadow  = { tint = Color3.fromRGB(248, 236, 252), contrast = 0.11, sat = 0, lat = 28, glow = 0.14 },
+	Heaven  = { tint = Color3.fromRGB(255, 250, 240), contrast = 0.05, sat = 0, lat = 46, glow = 0.10 },
 }
 
 local function quality()
@@ -19610,11 +19925,11 @@ grade.Parent = Lighting
 
 local glow = Lighting:FindFirstChild("TPFC_HighlightGlow") or Instance.new("BloomEffect")
 glow.Name = "TPFC_HighlightGlow"
-glow.Threshold = 2.4
+glow.Threshold = 2.8
 glow.Size = 40
 glow.Parent = Lighting
 
-pcall(function() Lighting.ShadowSoftness = 0.18 end)
+pcall(function() Lighting.ShadowSoftness = 0.12 end)
 
 ---------------------------------------------------------------- ground mist (low drifting fog sheets around the view)
 -- Built-in smoke texture, no uploads. A box emitter follows a point ahead of the camera at ground level;
@@ -19712,7 +20027,7 @@ RunService.Heartbeat:Connect(function(dt)
 end)
 apply("Hub")
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX65"><Properties><string name="Name">ClientMain</string><ProtectedString name="Source"><![CDATA[-- ClientMain: wires all client modules together.
+<Item class="LocalScript" referent="RBX66"><Properties><string name="Name">ClientMain</string><ProtectedString name="Source"><![CDATA[-- ClientMain: wires all client modules together.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ClientMain (LocalScript)
 
 local Players = game:GetService("Players")
@@ -19988,7 +20303,7 @@ task.spawn(function()
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX66"><Properties><string name="Name">ClientSettings</string><ProtectedString name="Source"><![CDATA[-- ClientSettings: presentation-only player settings (never affect odds, charge, rewards).
+<Item class="ModuleScript" referent="RBX67"><Properties><string name="Name">ClientSettings</string><ProtectedString name="Source"><![CDATA[-- ClientSettings: presentation-only player settings (never affect odds, charge, rewards).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ClientSettings (ModuleScript)
 -- Values persist for the session via player attributes; defaults are safe for everyone.
 
@@ -20024,7 +20339,7 @@ end
 
 return Settings
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX67"><Properties><string name="Name">ClientState</string><ProtectedString name="Source"><![CDATA[-- ClientState: local mirror of the player's data + change signal + request helper.
+<Item class="ModuleScript" referent="RBX68"><Properties><string name="Name">ClientState</string><ProtectedString name="Source"><![CDATA[-- ClientState: local mirror of the player's data + change signal + request helper.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ClientState (ModuleScript)
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -20064,7 +20379,7 @@ end
 
 return State
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX68"><Properties><string name="Name">CreatureRenderer</string><ProtectedString name="Source"><![CDATA[-- CreatureRenderer: renders every creature on this client — base pets of all players,
+<Item class="ModuleScript" referent="RBX69"><Properties><string name="Name">CreatureRenderer</string><ProtectedString name="Source"><![CDATA[-- CreatureRenderer: renders every creature on this client — base pets of all players,
 -- creatures being carried, and freshly revealed wild creatures. Handles species entrances,
 -- capture presentation, reactions, click-to-pet, distance LOD and previews.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > CreatureRenderer (ModuleScript)
@@ -21247,7 +21562,7 @@ end
 
 return Renderer
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX69"><Properties><string name="Name">Effects</string><ProtectedString name="Source"><![CDATA[-- Effects: camera shake, flashes, shockwaves, particle bursts, light beams, floating text,
+<Item class="ModuleScript" referent="RBX70"><Properties><string name="Name">Effects</string><ProtectedString name="Source"><![CDATA[-- Effects: camera shake, flashes, shockwaves, particle bursts, light beams, floating text,
 -- flying-coin money effect, rarity banners and per-world lighting.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > Effects (ModuleScript)
 
@@ -21460,21 +21775,24 @@ function Effects.SetupLighting()
 	pcall(function()
 		Lighting.GlobalShadows = true
 		Lighting.Brightness = 3
-		Lighting.ShadowSoftness = 0.25
-		Lighting.EnvironmentDiffuseScale = 1
-		Lighting.EnvironmentSpecularScale = 1
-		Lighting.GeographicLatitude = 35
+		Lighting.ShadowSoftness = 0.12 -- clean directional shadows
+		Lighting.EnvironmentDiffuseScale = 0.55
+		Lighting.EnvironmentSpecularScale = 0.3 -- stone/wood read matte, not plastic
+		Lighting.GeographicLatitude = 38
+		local look = require(ReplicatedStorage.Shared.SanctuaryLook)
+		Lighting.ColorShift_Top = look.sunTop
+		Lighting.ColorShift_Bottom = look.shadeBottom
 	end)
 	bloom = Lighting:FindFirstChild("TPFC_Bloom") or Instance.new("BloomEffect")
-	bloom.Name = "TPFC_Bloom"; bloom.Intensity = 0.9; bloom.Size = 32; bloom.Threshold = 1.4; bloom.Parent = Lighting
+	bloom.Name = "TPFC_Bloom"; bloom.Intensity = 0.3; bloom.Size = 22; bloom.Threshold = 1.9; bloom.Parent = Lighting
 	cc = Lighting:FindFirstChild("TPFC_CC") or Instance.new("ColorCorrectionEffect")
-	cc.Name = "TPFC_CC"; cc.Saturation = 0.25; cc.Contrast = 0.12; cc.Brightness = 0.02; cc.Parent = Lighting
+	cc.Name = "TPFC_CC"; cc.Saturation = 0.06; cc.Contrast = 0.1; cc.Brightness = 0; cc.Parent = Lighting
 	rays = Lighting:FindFirstChild("TPFC_Rays") or Instance.new("SunRaysEffect")
-	rays.Name = "TPFC_Rays"; rays.Intensity = 0.12; rays.Spread = 0.75; rays.Parent = Lighting
+	rays.Name = "TPFC_Rays"; rays.Intensity = 0.05; rays.Spread = 0.6; rays.Parent = Lighting
 	atmo = Lighting:FindFirstChildOfClass("Atmosphere") or Instance.new("Atmosphere")
-	atmo.Density = 0.32; atmo.Offset = 0.15; atmo.Haze = 1.6; atmo.Glare = 0.6; atmo.Parent = Lighting
+	atmo.Density = 0.3; atmo.Offset = 0.16; atmo.Haze = 0.9; atmo.Glare = 0.15; atmo.Parent = Lighting
 	local dof = Lighting:FindFirstChild("TPFC_DOF") or Instance.new("DepthOfFieldEffect")
-	dof.Name = "TPFC_DOF"; dof.FarIntensity = 0.18; dof.FocusDistance = 50; dof.InFocusRadius = 70; dof.NearIntensity = 0; dof.Parent = Lighting
+	dof.Name = "TPFC_DOF"; dof.FarIntensity = 0; dof.FocusDistance = 50; dof.InFocusRadius = 70; dof.NearIntensity = 0; dof.Parent = Lighting
 	Effects.DOF = dof
 	Effects.SetupExtras()
 	-- vignette removed on request (clean frame edges)
@@ -21782,16 +22100,17 @@ end
 
 local HUB_LOOK = require(ReplicatedStorage.Shared.SanctuaryLook)
 
--- per-zone grade + fog: calmer saturation, real aerial depth (low Offset = fog hugs the horizon)
+-- per-zone grade + fog, restrained: lighting does the work, not bloom or saturation.
+-- density/offset keep the near field crisp and let distant structures fall into soft layers.
 local LOOK = {
-	Forest  = { exposure = 0.1,  sat = 0.2,  contrast = 0.14, bloom = 0.7, rays = 0.16, density = 0.45, haze = 1.2, offset = 0.02, glare = 0.35 },
-	Volcano = { exposure = 0.05, sat = 0.22, contrast = 0.18, bloom = 1.0, rays = 0.18, density = 0.5,  haze = 1.6, offset = 0.0,  glare = 0.25 },
-	Frozen  = { exposure = 0.0,  sat = 0.1,  contrast = 0.12, bloom = 0.6, rays = 0.18, density = 0.48, haze = 1.4, offset = 0.02, glare = 0.4 },
-	Crystal = { exposure = 0.12, sat = 0.25, contrast = 0.16, bloom = 1.2, rays = 0.06, density = 0.45, haze = 1.0, offset = 0.02, glare = 0.2 },
-	Candy   = { exposure = -0.2, sat = 0.25, contrast = 0.1,  bloom = 0.5, rays = 0.12, density = 0.42, haze = 1.0, offset = 0.03, glare = 0.3 },
-	Space   = { exposure = 0.08, sat = 0.2,  contrast = 0.2,  bloom = 1.4, rays = 0.0,  density = 0.25, haze = 0.5, offset = 0.0,  glare = 0.0 },
-	Shadow  = { exposure = 0.0,  sat = 0.12, contrast = 0.2,  bloom = 1.1, rays = 0.0,  density = 0.5,  haze = 1.6, offset = 0.0,  glare = 0.0 },
-	Heaven  = { exposure = 0.0,  sat = 0.12, contrast = 0.08, bloom = 0.7, rays = 0.28, density = 0.45, haze = 1.4, offset = 0.04, glare = 0.5 },
+	Forest  = { exposure = -0.05, sat = 0.08, contrast = 0.12, bloom = 0.3,  rays = 0.07, density = 0.33, haze = 0.9, offset = 0.14, glare = 0.2 },
+	Volcano = { exposure = -0.1,  sat = 0.08, contrast = 0.16, bloom = 0.45, rays = 0.06, density = 0.38, haze = 1.4, offset = 0.12, glare = 0.15 },
+	Frozen  = { exposure = -0.15, sat = 0.02, contrast = 0.1,  bloom = 0.3,  rays = 0.07, density = 0.36, haze = 1.1, offset = 0.14, glare = 0.25 },
+	Crystal = { exposure = -0.05, sat = 0.06, contrast = 0.14, bloom = 0.55, rays = 0.03, density = 0.34, haze = 0.8, offset = 0.14, glare = 0.1 },
+	Candy   = { exposure = -0.25, sat = 0.08, contrast = 0.08, bloom = 0.3,  rays = 0.06, density = 0.32, haze = 0.8, offset = 0.15, glare = 0.15 },
+	Space   = { exposure = 0.0,   sat = 0.06, contrast = 0.18, bloom = 0.7,  rays = 0.0,  density = 0.2,  haze = 0.4, offset = 0.1,  glare = 0.0 },
+	Shadow  = { exposure = -0.05, sat = 0.04, contrast = 0.18, bloom = 0.6,  rays = 0.0,  density = 0.4,  haze = 1.2, offset = 0.1,  glare = 0.0 },
+	Heaven  = { exposure = -0.2,  sat = 0.04, contrast = 0.08, bloom = 0.35, rays = 0.08, density = 0.34, haze = 1.1, offset = 0.15, glare = 0.3 },
 }
 
 function Effects.UpdateWorld(pos: Vector3)
@@ -21808,19 +22127,22 @@ function Effects.UpdateWorld(pos: Vector3)
 	end
 	-- per-zone grade (brother's LOOK) on the map-tuned sun/fog from Config; the hub keeps SanctuaryLook
 	local look = (not inHub) and (LOOK[id] or LOOK.Forest) or nil
-	tween(Lighting, 1.5, { Ambient = W.ambient, OutdoorAmbient = W.ambient, ClockTime = W.clock, FogColor = W.fog, Brightness = inHub and 2.15 or 2.4, ExposureCompensation = inHub and -.05 or look.exposure })
-	if cc then tween(cc, 1.5, { TintColor = W.tint, Saturation = inHub and 0.14 or look.sat, Contrast = inHub and 0.08 or look.contrast }) end
+	-- shade fill: each zone keeps a hint of its own colour, but pulled toward a cool neutral so shadows stay
+	-- readable and nothing turns purple; occluded areas get a darker version of it
+	local NEUTRAL = Color3.fromRGB(118, 124, 138)
+	local outdoor = inHub and HUB_LOOK.ambient or W.ambient:Lerp(NEUTRAL, 0.55)
+	local indoor = inHub and HUB_LOOK.indoor or outdoor:Lerp(Color3.fromRGB(40, 42, 48), 0.45)
+	tween(Lighting, 1.5, { Ambient = indoor, OutdoorAmbient = outdoor, ClockTime = inHub and HUB_LOOK.clock or W.clock, FogColor = W.fog, Brightness = 3, ExposureCompensation = inHub and -0.15 or look.exposure })
+	if cc then tween(cc, 1.5, { TintColor = W.tint, Saturation = inHub and 0.06 or look.sat, Contrast = inHub and 0.1 or look.contrast }) end
 	if atmo then tween(atmo, 1.5, { Color = W.atmo, Decay = W.fog, Haze = inHub and HUB_LOOK.haze or look.haze, Glare = inHub and HUB_LOOK.glare or look.glare, Offset = inHub and HUB_LOOK.offset or look.offset, Density = inHub and HUB_LOOK.density or look.density }) end
 	if bloom then tween(bloom, 1.0, { Intensity = inHub and HUB_LOOK.bloom or look.bloom }) end
-	if rays then tween(rays, 1.5, { Intensity = inHub and 0.12 or look.rays }) end
-	local dof = Lighting:FindFirstChild("TPFC_DOF")
-	if dof then tween(dof, 1.0, { FarIntensity = inHub and 0 or 0.12 }) end
+	if rays then tween(rays, 1.5, { Intensity = inHub and 0.05 or look.rays }) end
 	return id
 end
 
 return Effects
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX70"><Properties><string name="Name">ExpeditionPanel</string><ProtectedString name="Source"><![CDATA[-- Skyforge visual planning; all mission authority remains on the server.
+<Item class="ModuleScript" referent="RBX71"><Properties><string name="Name">ExpeditionPanel</string><ProtectedString name="Source"><![CDATA[-- Skyforge visual planning; all mission authority remains on the server.
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -22703,7 +23025,7 @@ function Panel.Init()
 end
 return Panel
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX71"><Properties><string name="Name">ExpeditionScene</string><ProtectedString name="Source"><![CDATA[-- Detailed, deterministic native biome vignettes for the expedition map.
+<Item class="ModuleScript" referent="RBX72"><Properties><string name="Name">ExpeditionScene</string><ProtectedString name="Source"><![CDATA[-- Detailed, deterministic native biome vignettes for the expedition map.
 local Config = require(game.ReplicatedStorage.Shared.Config)
 local Scene = {}
 local V, C = Vector3.new, Color3.fromRGB
@@ -22893,7 +23215,7 @@ function Scene.Build(id)
 end
 return Scene
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX72"><Properties><string name="Name">FarmClient</string><ProtectedString name="Source"><![CDATA[-- FarmClient: client side of the courtyard farm (server: FarmService).
+<Item class="LocalScript" referent="RBX73"><Properties><string name="Name">FarmClient</string><ProtectedString name="Source"><![CDATA[-- FarmClient: client side of the courtyard farm (server: FarmService).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > FarmClient (LocalScript)
 --  * Shows only YOUR courtyard's farm prompts (beds, stand, board, chest); others' stay hidden.
 --  * Updates permanent physical farm signs. No screen toasts or character message bursts.
@@ -23302,7 +23624,7 @@ FarmFx.OnClientEvent:Connect(function(kind, d)
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX73"><Properties><string name="Name">GameplayFeel</string><ProtectedString name="Source"><![CDATA[-- Quiet, state-driven feedback around the complete play loop. No extra HUD buttons.
+<Item class="ModuleScript" referent="RBX74"><Properties><string name="Name">GameplayFeel</string><ProtectedString name="Source"><![CDATA[-- Quiet, state-driven feedback around the complete play loop. No extra HUD buttons.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local RS = game:GetService("ReplicatedStorage")
@@ -23424,7 +23746,7 @@ function Feel.Money(amount, position)
 end
 return Feel
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX74"><Properties><string name="Name">HUD</string><ProtectedString name="Source"><![CDATA[-- Direct Pets, Shop and Expeditions navigation with a shared responsive panel layer.
+<Item class="ModuleScript" referent="RBX75"><Properties><string name="Name">HUD</string><ProtectedString name="Source"><![CDATA[-- Direct Pets, Shop and Expeditions navigation with a shared responsive panel layer.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Input = game:GetService("UserInputService")
@@ -23952,7 +24274,7 @@ end)
 task.defer(rescale)
 return HUD
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX75"><Properties><string name="Name">Intro</string><ProtectedString name="Source"><![CDATA[-- Intro: cinematic fly-over when you join. The camera sweeps down the whole lane (every zone),
+<Item class="ModuleScript" referent="RBX76"><Properties><string name="Name">Intro</string><ProtectedString name="Source"><![CDATA[-- Intro: cinematic fly-over when you join. The camera sweeps down the whole lane (every zone),
 -- past the Portal Launch Hall, and lands at your base while the title animates in.
 -- Click / tap / any key to skip.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > Intro (ModuleScript)
@@ -24202,7 +24524,7 @@ end
 
 return Intro
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX76"><Properties><string name="Name">Panels</string><ProtectedString name="Source"><![CDATA[-- Sanctuary shops, collection, index, customization and settings.
+<Item class="ModuleScript" referent="RBX77"><Properties><string name="Name">Panels</string><ProtectedString name="Source"><![CDATA[-- Sanctuary shops, collection, index, customization and settings.
 -- All spending and ownership changes use the existing authoritative server actions.
 local RS = game:GetService("ReplicatedStorage")
 local Http = game:GetService("HttpService")
@@ -25323,7 +25645,7 @@ function Panels.Init()
 end
 return Panels
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX77"><Properties><string name="Name">Plaque</string><ProtectedString name="Source"><![CDATA[-- Plaque: the carved rarity plaque from the reveal reference sheet (Actions/02_Rarity_Reveal_and_Capture):
+<Item class="ModuleScript" referent="RBX78"><Properties><string name="Name">Plaque</string><ProtectedString name="Source"><![CDATA[-- Plaque: the carved rarity plaque from the reveal reference sheet (Actions/02_Rarity_Reveal_and_Capture):
 -- a bevelled bar with pointed diamond ends, double gold trim, small gold diamond ornaments, serif caps,
 -- and gold laurels for the showcase tiers. Pixel sized, so it works in ScreenGuis and BillboardGuis.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > Plaque (ModuleScript)
@@ -25480,7 +25802,7 @@ end
 
 return P
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX78"><Properties><string name="Name">PlayerFeel</string><ProtectedString name="Source"><![CDATA[-- PlayerFeel: how the local player's character moves and feels.
+<Item class="LocalScript" referent="RBX79"><Properties><string name="Name">PlayerFeel</string><ProtectedString name="Source"><![CDATA[-- PlayerFeel: how the local player's character moves and feels.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > PlayerFeel (LocalScript)
 --
 --   * Run: hold Left Shift (PC), press L3 (gamepad) or tap the Run button (mobile, toggles).
@@ -25791,7 +26113,7 @@ task.spawn(function()
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX79"><Properties><string name="Name">RevealTitle</string><ProtectedString name="Source"><![CDATA[-- RevealTitle: on-screen title for a creature reveal, styled after Actions/02_Rarity_Reveal_and_Capture.
+<Item class="ModuleScript" referent="RBX80"><Properties><string name="Name">RevealTitle</string><ProtectedString name="Source"><![CDATA[-- RevealTitle: on-screen title for a creature reveal, styled after Actions/02_Rarity_Reveal_and_Capture.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > RevealTitle (ModuleScript)
 --
 --   Common / Uncommon      nothing on screen: the carved plaque above the pet carries it (restrained tiers)
@@ -26107,7 +26429,7 @@ end
 
 return R
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX80"><Properties><string name="Name">SkyforgeUI</string><ProtectedString name="Source"><![CDATA[-- Light sanctuary surfaces and large standalone navigation artwork.
+<Item class="ModuleScript" referent="RBX81"><Properties><string name="Name">SkyforgeUI</string><ProtectedString name="Source"><![CDATA[-- Light sanctuary surfaces and large standalone navigation artwork.
 local T = require(script.Parent.UITheme)
 local S = {}
 S.Atlas = "rbxassetid://110533210650310"
@@ -26189,7 +26511,7 @@ function S.Card(frame, icon)
 end
 return S
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX81"><Properties><string name="Name">Sounds</string><ProtectedString name="Source"><![CDATA[-- Restrained event audio. Built-in assets keep the game independent of uploaded audio.
+<Item class="ModuleScript" referent="RBX82"><Properties><string name="Name">Sounds</string><ProtectedString name="Source"><![CDATA[-- Restrained event audio. Built-in assets keep the game independent of uploaded audio.
 local SoundService = game:GetService("SoundService")
 local TweenService = game:GetService("TweenService")
 local Sounds = {}
@@ -26308,7 +26630,7 @@ function Sounds.Get(name)
 end
 return Sounds
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX82"><Properties><string name="Name">ThrowCinematic</string><ProtectedString name="Source"><![CDATA[-- ThrowCinematic: the throw cutscene (owner only). Full screen, no letterbox.
+<Item class="ModuleScript" referent="RBX83"><Properties><string name="Name">ThrowCinematic</string><ProtectedString name="Source"><![CDATA[-- ThrowCinematic: the throw cutscene (owner only). Full screen, no letterbox.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ThrowCinematic (ModuleScript)
 --
 -- A short film in up to four camera shots, with HARD CUTS between them (w = wind-up seconds sent
@@ -27190,7 +27512,7 @@ end
 
 return Cine
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX83"><Properties><string name="Name">ThrowController</string><ProtectedString name="Source"><![CDATA[-- ThrowController: charge meter input, held-portal + arm wind-up, the portal flight arc,
+<Item class="ModuleScript" referent="RBX84"><Properties><string name="Name">ThrowController</string><ProtectedString name="Source"><![CDATA[-- ThrowController: charge meter input, held-portal + arm wind-up, the portal flight arc,
 -- landing bounce, portal gate opening and creature reveal choreography (for ALL players' throws).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ThrowController (ModuleScript)
 
@@ -28169,7 +28491,7 @@ end)
 
 return TC
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX84"><Properties><string name="Name">UIIcons</string><ProtectedString name="Source"><![CDATA[-- Crisp native geometry. Every navigation icon also has a visible text label.
+<Item class="ModuleScript" referent="RBX85"><Properties><string name="Name">UIIcons</string><ProtectedString name="Source"><![CDATA[-- Crisp native geometry. Every navigation icon also has a visible text label.
 local T = require(script.Parent.UITheme)
 local Sky = require(script.Parent.SkyforgeUI)
 local Icons = {}
@@ -28294,7 +28616,7 @@ function Icons.Draw(name, parent, size, color, position)
 end
 return Icons
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX85"><Properties><string name="Name">UIKit</string><ProtectedString name="Source"><![CDATA[-- Native sanctuary components. No uploaded icon/font dependency.
+<Item class="ModuleScript" referent="RBX86"><Properties><string name="Name">UIKit</string><ProtectedString name="Source"><![CDATA[-- Native sanctuary components. No uploaded icon/font dependency.
 local TweenService = game:GetService("TweenService")
 local Sounds = require(script.Parent.Sounds)
 local Settings = require(script.Parent.ClientSettings)
@@ -28644,7 +28966,7 @@ end
 
 return K
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX86"><Properties><string name="Name">UITheme</string><ProtectedString name="Source"><![CDATA[-- Sanctuary UI tokens, shared by the HUD, icons and every shop.
+<Item class="ModuleScript" referent="RBX87"><Properties><string name="Name">UITheme</string><ProtectedString name="Source"><![CDATA[-- Sanctuary UI tokens, shared by the HUD, icons and every shop.
 -- Fonts: Builder Sans (Roblox's modern UI family) for text, Montserrat Black for display titles;
 -- resolved with a fallback so an older client without these enums still renders.
 local function font(name, fallback)
@@ -28704,7 +29026,7 @@ function T.Rarity(name, config)
 end
 return T
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX87"><Properties><string name="Name">WorldFx</string><ProtectedString name="Source"><![CDATA[-- WorldFx: ONE shared, staggered scheduler for environment motion on tagged map parts
+<Item class="ModuleScript" referent="RBX88"><Properties><string name="Name">WorldFx</string><ProtectedString name="Source"><![CDATA[-- WorldFx: ONE shared, staggered scheduler for environment motion on tagged map parts
 -- (no per-prop RenderStepped connections, no camera-following particles).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > WorldFx (ModuleScript)
 --

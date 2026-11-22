@@ -20,15 +20,15 @@ local camera = workspace.CurrentCamera
 
 -- per-zone finishing: split-tone tint, extra contrast/saturation, sun latitude, highlight glow
 local GRADE = {
-	Hub     = { tint = Color3.fromRGB(255, 248, 238), contrast = 0.06, sat = 0.06, lat = 34, glow = 0.18 },
-	Forest  = { tint = Color3.fromRGB(255, 250, 236), contrast = 0.08, sat = 0.06, lat = 38, glow = 0.18 },
-	Volcano = { tint = Color3.fromRGB(255, 236, 222), contrast = 0.12, sat = 0.06, lat = 24, glow = 0.30 },
-	Frozen  = { tint = Color3.fromRGB(240, 248, 255), contrast = 0.07, sat = 0.06, lat = 52, glow = 0.20 },
-	Crystal = { tint = Color3.fromRGB(246, 238, 255), contrast = 0.10, sat = 0.06, lat = 30, glow = 0.32 },
-	Candy   = { tint = Color3.fromRGB(255, 246, 250), contrast = 0.05, sat = 0.06, lat = 40, glow = 0.16 },
-	Space   = { tint = Color3.fromRGB(238, 238, 255), contrast = 0.12, sat = 0.06, lat = 20, glow = 0.34 },
-	Shadow  = { tint = Color3.fromRGB(248, 236, 252), contrast = 0.11, sat = 0.06, lat = 28, glow = 0.28 },
-	Heaven  = { tint = Color3.fromRGB(255, 250, 240), contrast = 0.05, sat = 0.06, lat = 46, glow = 0.20 },
+	Hub     = { tint = Color3.fromRGB(255, 248, 238), contrast = 0.06, sat = 0, lat = 34, glow = 0.09 },
+	Forest  = { tint = Color3.fromRGB(255, 250, 236), contrast = 0.08, sat = 0, lat = 38, glow = 0.09 },
+	Volcano = { tint = Color3.fromRGB(255, 236, 222), contrast = 0.12, sat = 0, lat = 24, glow = 0.15 },
+	Frozen  = { tint = Color3.fromRGB(240, 248, 255), contrast = 0.07, sat = 0, lat = 52, glow = 0.10 },
+	Crystal = { tint = Color3.fromRGB(246, 238, 255), contrast = 0.10, sat = 0, lat = 30, glow = 0.16 },
+	Candy   = { tint = Color3.fromRGB(255, 246, 250), contrast = 0.05, sat = 0, lat = 40, glow = 0.08 },
+	Space   = { tint = Color3.fromRGB(238, 238, 255), contrast = 0.12, sat = 0, lat = 20, glow = 0.17 },
+	Shadow  = { tint = Color3.fromRGB(248, 236, 252), contrast = 0.11, sat = 0, lat = 28, glow = 0.14 },
+	Heaven  = { tint = Color3.fromRGB(255, 250, 240), contrast = 0.05, sat = 0, lat = 46, glow = 0.10 },
 }
 
 local function quality()
@@ -45,11 +45,11 @@ grade.Parent = Lighting
 
 local glow = Lighting:FindFirstChild("TPFC_HighlightGlow") or Instance.new("BloomEffect")
 glow.Name = "TPFC_HighlightGlow"
-glow.Threshold = 2.4
+glow.Threshold = 2.8
 glow.Size = 40
 glow.Parent = Lighting
 
-pcall(function() Lighting.ShadowSoftness = 0.18 end)
+pcall(function() Lighting.ShadowSoftness = 0.12 end)
 
 ---------------------------------------------------------------- ground mist (low drifting fog sheets around the view)
 -- Built-in smoke texture, no uploads. A box emitter follows a point ahead of the camera at ground level;

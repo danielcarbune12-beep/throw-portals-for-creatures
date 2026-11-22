@@ -75,7 +75,7 @@ end
 Config.Worlds = {
 	Forest  = { index = 1, name = "Green Forest",     cost = 0,         throwLevel = 1,  incomeMult = 1,
 		material = Enum.Material.Grass,     groundColor = Color3.fromRGB(104, 168, 70),
-		ambient = Color3.fromRGB(140, 150, 130), fog = Color3.fromRGB(190, 230, 255), fogEnd = 900, clock = 14, tint = Color3.fromRGB(255, 255, 250), atmo = Color3.fromRGB(200, 230, 255) },
+		ambient = Color3.fromRGB(140, 150, 130), fog = Color3.fromRGB(196, 214, 226), fogEnd = 900, clock = 14, tint = Color3.fromRGB(255, 250, 240), atmo = Color3.fromRGB(214, 220, 218) },
 	Volcano = { index = 2, name = "Volcano World",    cost = 3000,      throwLevel = 5,  incomeMult = 3,
 		material = Enum.Material.Asphalt,   groundColor = Color3.fromRGB(54, 46, 52),
 		ambient = Color3.fromRGB(135, 108, 100), fog = Color3.fromRGB(170, 120, 100), fogEnd = 700, clock = 15.2, tint = Color3.fromRGB(255, 238, 225), atmo = Color3.fromRGB(225, 160, 130) },

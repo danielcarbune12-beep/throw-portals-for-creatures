@@ -56,6 +56,11 @@ task.spawn(function()
 end)
 BaseBuilder.BuildAll()
 WorldBuilder.BuildAll()
+-- art-direction pass: signs, station props and ambient life added next to the built world (cosmetic only)
+do
+	local ok, err = pcall(function() require(script.Parent.MedievalDressing).Apply() end)
+	if not ok then warn("[MedievalDressing] " .. tostring(err)) end
+end
 
 ---------------------------------------------------------------- state
 local State = {} -- [player] = { base, carry = {ids}, lastThrow, tokens, lastTokenT, dirty }
