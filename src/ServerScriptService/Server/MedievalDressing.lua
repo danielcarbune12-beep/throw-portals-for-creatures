@@ -360,6 +360,60 @@ local function clearGrassUnderPaving(root)
 	return n
 end
 
+-- Palette: the hub's cliffs and roofs were saturated lavender/violet, which reads as toy plastic
+-- under realistic light. Natural materials get natural colour (value kept, so composition holds);
+-- heraldry (fabric banners), glass, neon portal energy and small crystals keep their colour.
+local NATURAL = { [Enum.Material.Limestone] = true, [Enum.Material.Slate] = true, [Enum.Material.Rock] = true,
+	[Enum.Material.SmoothPlastic] = true, [Enum.Material.Plastic] = true, [Enum.Material.Concrete] = true,
+	[Enum.Material.Basalt] = true, [Enum.Material.Granite] = true }
+local function naturalPalette(root)
+	for _, p in ipairs(root:GetDescendants()) do
+		if p:IsA("BasePart") and p.Transparency < 0.5 and NATURAL[p.Material] then
+			local h, s, v = p.Color:ToHSV()
+			if s > 0.12 and h > 0.6 and h < 0.86 then
+				local s3 = p.Size
+				local vol = s3.X * s3.Y * s3.Z
+				-- big wedges are cliff facets, not roofs
+				local isRoof = p.Name:lower():find("roof") ~= nil or (p:IsA("WedgePart") and vol <= 2000)
+				if isRoof then
+					-- weathered slate blue: keeps a royal hint without the candy violet
+					p.Color = Color3.fromHSV(0.61, math.min(s, 0.32), v * 0.82)
+					if p.Material == Enum.Material.SmoothPlastic or p.Material == Enum.Material.Plastic then
+						p.Material = Enum.Material.Slate
+					end
+				elseif vol > 2000 then
+					-- cliffs and big masonry: warm grey stone with a faint cool shadow tone
+					p.Color = Color3.fromHSV(0.08, 0.1, math.clamp(v * 0.9, 0.35, 0.82))
+					if p.Material == Enum.Material.SmoothPlastic or p.Material == Enum.Material.Plastic then
+						p.Material = Enum.Material.Rock
+					end
+				end
+			end
+		end
+	end
+end
+
+-- Foliage: canopies sway gently (WorldFx updates only near the camera, desynchronised periods)
+local function foliageSway(root)
+	local n = 0
+	for _, p in ipairs(root:GetDescendants()) do
+		if n >= 260 then return end
+		if p:IsA("BasePart") and p.Anchored and not CollectionService:HasTag(p, "TPFC_Sway") then
+			local nm = p.Name:lower()
+			local h, s = p.Color:ToHSV()
+			local leafy = nm:find("leaf") or nm:find("canopy") or nm:find("foliage") or nm:find("crown") or nm:find("bush")
+				or (p.Material == Enum.Material.LeafyGrass)
+				or (h > 0.2 and h < 0.45 and s > 0.35 and p.Position.Y > 6 and not nm:find("grass") and not nm:find("floor"))
+			if leafy and p.Size.Magnitude > 2 and p.Size.Magnitude < 40 then
+				CollectionService:AddTag(p, "TPFC_Sway")
+				p:SetAttribute("Period", 5 + math.random() * 4)
+				p:SetAttribute("Amp", 0.012 + math.random() * 0.01)
+				n += 1
+			end
+		end
+	end
+end
+
 local function construction()
 	local roots = { workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Start"), workspace:FindFirstChild("Bases") }
 	for _, r in ipairs(roots) do
@@ -370,6 +424,8 @@ local function construction()
 			wallCourses(r)
 			pavingMaterials(r)
 			clearGrassUnderPaving(r)
+			naturalPalette(r)
+			foliageSway(r)
 		end
 	end
 	-- (the hall arches already carry a crystal crest at the apex, so no keystone is added there)
