@@ -1,0 +1,393 @@
+[
+  {
+    "id": "01",
+    "title": "Lobby avenue",
+    "eye": [
+      -23,
+      18,
+      -375
+    ],
+    "look": [
+      0,
+      12,
+      -65
+    ],
+    "hideUI": true,
+    "file": "01_lobby_avenue.png"
+  },
+  {
+    "id": "02",
+    "title": "Courtyards overview",
+    "eye": [
+      145,
+      95,
+      -240
+    ],
+    "look": [
+      0,
+      12,
+      -170
+    ],
+    "hideUI": true,
+    "file": "02_courtyards_overview.png"
+  },
+  {
+    "id": "03",
+    "title": "Player courtyard",
+    "eye": [
+      -10,
+      40,
+      -110
+    ],
+    "look": [
+      -65,
+      8,
+      -84
+    ],
+    "hideUI": true,
+    "file": "03_player_courtyard.png"
+  },
+  {
+    "id": "04",
+    "title": "Farm stand and crop beds",
+    "eye": [
+      -35,
+      15,
+      -130
+    ],
+    "look": [
+      -57,
+      4,
+      -106
+    ],
+    "hideUI": true,
+    "file": "04_farm_stand_and_crop_beds.png"
+  },
+  {
+    "id": "05",
+    "title": "Expedition table",
+    "eye": [
+      -28,
+      14,
+      -49
+    ],
+    "look": [
+      -44,
+      3,
+      -65
+    ],
+    "hideUI": true,
+    "file": "05_expedition_table.png"
+  },
+  {
+    "id": "06",
+    "title": "Launch Hall",
+    "eye": [
+      -21,
+      13,
+      -94
+    ],
+    "look": [
+      0,
+      14,
+      -16
+    ],
+    "hideUI": true,
+    "file": "06_launch_hall.png"
+  },
+  {
+    "id": "07",
+    "title": "Outer cliffs and waterfalls",
+    "eye": [
+      112,
+      110,
+      -340
+    ],
+    "look": [
+      180,
+      88,
+      -282
+    ],
+    "hideUI": true,
+    "file": "07_outer_cliffs_and_waterfalls.png"
+  },
+  {
+    "id": "08",
+    "title": "Forest",
+    "eye": [
+      -28,
+      32,
+      74
+    ],
+    "look": [
+      17,
+      12,
+      137
+    ],
+    "hideUI": true,
+    "file": "08_forest.png"
+  },
+  {
+    "id": "09",
+    "title": "Volcano",
+    "eye": [
+      35,
+      46,
+      182
+    ],
+    "look": [
+      -15,
+      16,
+      295
+    ],
+    "hideUI": true,
+    "file": "09_volcano.png"
+  },
+  {
+    "id": "10",
+    "title": "Frozen",
+    "eye": [
+      36,
+      42,
+      385
+    ],
+    "look": [
+      -12,
+      12,
+      520
+    ],
+    "hideUI": true,
+    "file": "10_frozen.png"
+  },
+  {
+    "id": "11",
+    "title": "Crystal",
+    "eye": [
+      34,
+      44,
+      645
+    ],
+    "look": [
+      -12,
+      17,
+      805
+    ],
+    "hideUI": true,
+    "file": "11_crystal.png"
+  },
+  {
+    "id": "12",
+    "title": "Candy",
+    "eye": [
+      35,
+      45,
+      945
+    ],
+    "look": [
+      -12,
+      13,
+      1110
+    ],
+    "hideUI": true,
+    "file": "12_candy.png"
+  },
+  {
+    "id": "13",
+    "title": "Space",
+    "eye": [
+      34,
+      50,
+      1360
+    ],
+    "look": [
+      -10,
+      20,
+      1570
+    ],
+    "hideUI": true,
+    "file": "13_space.png"
+  },
+  {
+    "id": "14",
+    "title": "Shadow",
+    "eye": [
+      36,
+      48,
+      1880
+    ],
+    "look": [
+      -10,
+      18,
+      2130
+    ],
+    "hideUI": true,
+    "file": "14_shadow.png"
+  },
+  {
+    "id": "15",
+    "title": "Heaven",
+    "eye": [
+      35,
+      52,
+      2500
+    ],
+    "look": [
+      -10,
+      18,
+      2800
+    ],
+    "hideUI": true,
+    "file": "15_heaven.png"
+  },
+  {
+    "id": "16",
+    "title": "Pets inventory",
+    "eye": [
+      -21,
+      11,
+      -68
+    ],
+    "look": [
+      -65,
+      5,
+      -94
+    ],
+    "hideUI": false,
+    "panel": "Creatures",
+    "file": "16_pets_inventory.png"
+  },
+  {
+    "id": "17",
+    "title": "Shop",
+    "eye": [
+      -21,
+      11,
+      -68
+    ],
+    "look": [
+      -65,
+      5,
+      -94
+    ],
+    "hideUI": false,
+    "panel": "Shop",
+    "file": "17_shop.png"
+  },
+  {
+    "id": "18",
+    "title": "Expeditions",
+    "eye": [
+      -21,
+      11,
+      -68
+    ],
+    "look": [
+      -65,
+      5,
+      -94
+    ],
+    "hideUI": false,
+    "panel": "Expeditions",
+    "file": "18_expeditions.png"
+  },
+  {
+    "id": "19",
+    "title": "Settings",
+    "eye": [
+      -21,
+      11,
+      -68
+    ],
+    "look": [
+      -65,
+      5,
+      -94
+    ],
+    "hideUI": false,
+    "panel": "Settings",
+    "file": "19_settings.png"
+  },
+  {
+    "id": "20",
+    "title": "Gameplay HUD",
+    "eye": [
+      -21,
+      11,
+      -68
+    ],
+    "look": [
+      -65,
+      5,
+      -94
+    ],
+    "hideUI": false,
+    "panel": "Gameplay",
+    "file": "20_gameplay_hud.png"
+  },
+  {
+    "id": "21",
+    "title": "Pantry and lodge",
+    "eye": [
+      -73,
+      13,
+      -58
+    ],
+    "look": [
+      -90,
+      5,
+      -85
+    ],
+    "hideUI": true,
+    "file": "21_pantry_and_lodge.png"
+  },
+  {
+    "id": "22",
+    "title": "Portal launch view",
+    "eye": [
+      0,
+      7,
+      -25
+    ],
+    "look": [
+      0,
+      9,
+      110
+    ],
+    "hideUI": true,
+    "file": "22_portal_launch_view.png"
+  },
+  {
+    "id": "23",
+    "title": "Portal shop",
+    "eye": [
+      -21,
+      11,
+      -68
+    ],
+    "look": [
+      -65,
+      5,
+      -94
+    ],
+    "hideUI": false,
+    "panel": "Portals",
+    "file": "23_portal_shop.png"
+  },
+  {
+    "id": "24",
+    "title": "Upgrades",
+    "eye": [
+      -21,
+      11,
+      -68
+    ],
+    "look": [
+      -65,
+      5,
+      -94
+    ],
+    "hideUI": false,
+    "panel": "Upgrades",
+    "file": "24_upgrades.png"
+  }
+]
