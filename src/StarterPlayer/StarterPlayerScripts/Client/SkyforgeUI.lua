@@ -37,7 +37,7 @@ function S.Trim(frame)
 	end
 	local s = frame:FindFirstChildOfClass("UIStroke")
 	if s then
-		s.Color = T.Gold
+		s.Color = T.TrimGold
 		s.Thickness = 1
 		s.Transparency = 0.28
 	end
@@ -51,7 +51,7 @@ function S.Trim(frame)
 		line.AnchorPoint = Vector2.new(0.5, 0.5)
 		line.Position = UDim2.new(p[1], p[1] == 0 and 4 or -4, p[2], p[2] == 0 and 4 or -4)
 		line.Rotation = p[3]
-		line.BackgroundColor3 = T.Gold
+		line.BackgroundColor3 = T.TrimGold
 		line.BorderSizePixel = 0
 		line.Parent = frame
 	end

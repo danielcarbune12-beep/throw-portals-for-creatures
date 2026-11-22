@@ -242,3 +242,19 @@ The compact portrait and action fit the small phone; Studio returned to its
 default viewport. Seven scoped files pass Selene with no errors or warnings.
 Physical device/gamepad and live DataStore rejoin are not covered by this pass.
 The public Roblox game was not published. See `review/skyforge-hud-navigation.md`.
+
+## Light interface correction (2026-11-22)
+
+Shared Team Create version 37 changes the HUD, menu, shops and expedition panels
+to solid white/light stone with dark text and subtle gold trim. The full-screen
+click target is fully transparent and the menu blur is removed; opening a menu
+does not shade or blur the surrounding game world. The four C enamel icons and
+navigation structure remain. Rarity/variant labels are adjusted for contrast on
+white, and button labels choose dark or white lettering by measured contrast.
+The intro retains its original cinematic gold independently of the light UI.
+
+Native visual review passed 34 checks across panel brightness, four destinations,
+absence of screen shading/blur, semantic text contrast, button contrast and rarity
+contrast. Menu-to-Shop navigation was also inspected in Studio. Six core edited
+UI modules pass Selene without errors or warnings. This pass changes presentation;
+the previous mission/navigation checks remain recorded in the HUD delivery.

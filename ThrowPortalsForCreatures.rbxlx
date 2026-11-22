@@ -16181,7 +16181,7 @@ function Panel.Init()
 	activeReward = K.text(activeBox, "", 0, 108, -8, 30, 16, T.Gold)
 	activeReward.Position = UDim2.new(0.32, 0, 0, 108)
 	activeReward.Size = UDim2.new(0.68, -8, 0, 30)
-	local track = K.surface(activeBox, "ReturnProgress", UDim2.new(0.68, -8, 0, 8), UDim2.new(0.32, 0, 0, 88), T.Ink)
+	local track = K.surface(activeBox, "ReturnProgress", UDim2.new(0.68, -8, 0, 8), UDim2.new(0.32, 0, 0, 88), T.Inset)
 	track.ClipsDescendants = true
 	progressFill =
 		K.new("Frame", { Name = "Fill", Size = UDim2.fromScale(0, 1), BackgroundColor3 = T.Gold, Parent = track })
@@ -16237,7 +16237,7 @@ function Panel.Init()
 	Sky.Trim(tracker)
 	K.Icon("Compass", tracker, UDim2.fromOffset(48, 48), T.Text, UDim2.fromOffset(4, 2))
 	trackerText = K.text(tracker, "", 58, 5, -66, 30, 14, T.Text, true)
-	local tiny = K.surface(tracker, "Progress", UDim2.new(1, -70, 0, 5), UDim2.fromOffset(58, 43), T.Ink)
+	local tiny = K.surface(tracker, "Progress", UDim2.new(1, -70, 0, 5), UDim2.fromOffset(58, 43), T.Inset)
 	tiny.ClipsDescendants = true
 	trackerFill = K.new("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = T.Gold, Parent = tiny })
 	K.bind(tracker, Panel.Open)
@@ -16635,7 +16635,7 @@ local bar = K.new("Frame", {
 	Name = "ChargeTrack",
 	Size = UDim2.new(1, -32, 0, 8),
 	Position = UDim2.fromOffset(16, 79),
-	BackgroundColor3 = T.Ink,
+	BackgroundColor3 = T.Inset,
 	Parent = launch,
 }, { K.corner(4) })
 K.new("Frame", {
@@ -16774,7 +16774,7 @@ local dim = K.new("TextButton", {
 	Text = "",
 	AutoButtonColor = false,
 	BackgroundColor3 = T.Ink,
-	BackgroundTransparency = 0.22,
+	BackgroundTransparency = 1,
 	Size = UDim2.fromScale(1, 1),
 	Visible = false,
 	ZIndex = 20,
@@ -16785,7 +16785,6 @@ local layer = K.new(
 	{ Name = "Panels", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = 21, Parent = root }
 )
 local openPanel, previousFocus
-local blur = K.new("BlurEffect", { Name = "SanctuaryMenuBlur", Size = 0, Parent = game:GetService("Lighting") })
 local width, height = 1280, 720
 function HUD.MakePanel(name, title, subtitle, icon)
 	local frame = K.surface(layer, name, UDim2.fromOffset(1000, 620), UDim2.fromScale(0.5, 0.5), T.Panel)
@@ -16856,7 +16855,7 @@ function HUD.Open(name)
 	end
 	HUD.TrainHeld = false
 	world.Visible = p.contextual == true
-	dim.BackgroundTransparency = p.contextual and 0.94 or 0.4
+	dim.BackgroundTransparency = 1
 	dim.Visible = true
 	p.frame.Visible = true
 	if p.refresh then
@@ -16878,7 +16877,6 @@ function HUD.Open(name)
 	local target = p.targetPosition or UDim2.fromScale(0.5, 0.5)
 	p.frame.Position = target + UDim2.fromOffset(0, Settings.ReducedMotion and 0 or 8)
 	K.tween(p.frame, 0.18, { Position = target })
-	K.tween(blur, 0.18, { Size = (Settings.ReducedMotion or p.contextual) and 0 or 4 })
 	if Input.GamepadEnabled then
 		GuiService.SelectedObject = p.close
 	end
@@ -16898,7 +16896,6 @@ function HUD.Close()
 	if old.onClose then
 		old.onClose()
 	end
-	K.tween(blur, 0.15, { Size = 0 })
 	if previousFocus and previousFocus.Parent and Input.GamepadEnabled then
 		GuiService.SelectedObject = previousFocus
 	else
@@ -17023,11 +17020,6 @@ local function rescale()
 end
 HUD.Rescale = rescale
 gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(rescale)
-Settings.Changed.Event:Connect(function(key)
-	if key == "ReducedMotion" and Settings.ReducedMotion then
-		blur.Size = 0
-	end
-end)
 State.Changed:Connect(function(full)
 	HUD.Refresh()
 	if openPanel and openPanel.refresh then
@@ -17139,17 +17131,17 @@ function Intro.Cover(hud)
 		table.insert(labels, l)
 		return l
 	end
-	local eyebrow = line(Reveal.Track("Welcome to"), fnt("MontserratBold", Enum.Font.GothamBold), T.Gold, 0.08, 16, 16, 1.2)
+	local eyebrow = line(Reveal.Track("Welcome to"), fnt("MontserratBold", Enum.Font.GothamBold), T.CinematicGold, 0.08, 16, 16, 1.2)
 	local line1 = line("THROW PORTALS", fnt("MontserratBlack", Enum.Font.GothamBlack), Color3.new(1, 1, 1), 0.42, 104, 104, 3.5)
-	local line2 = line(Reveal.Track("For creatures"), fnt("MontserratBold", Enum.Font.GothamBold), T.Gold, 0.72, 26, 26, 1.5)
+	local line2 = line(Reveal.Track("For creatures"), fnt("MontserratBold", Enum.Font.GothamBold), T.CinematicGold, 0.72, 26, 26, 1.5)
 	local sub = line(Reveal.Track("Throw   ·   catch   ·   collect"), fnt("MontserratMedium", Enum.Font.GothamMedium), T.Muted, 0.95, 14, 14, 1)
 	local shine = K.new("UIGradient", { Rotation = 12, Offset = Vector2.new(-1, 0), Parent = line1,
 		Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.new(1, 1, 1)), ColorSequenceKeypoint.new(0.42, Color3.new(1, 1, 1)),
-			ColorSequenceKeypoint.new(0.5, T.Gold), ColorSequenceKeypoint.new(0.58, Color3.new(1, 1, 1)), ColorSequenceKeypoint.new(1, Color3.new(1, 1, 1)) }) })
+			ColorSequenceKeypoint.new(0.5, T.CinematicGold), ColorSequenceKeypoint.new(0.58, Color3.new(1, 1, 1)), ColorSequenceKeypoint.new(1, Color3.new(1, 1, 1)) }) })
 	local ruleBars = {}
 	for side = -1, 1, 2 do
 		local r = K.new("Frame", { AnchorPoint = Vector2.new(side < 0 and 1 or 0, 0.5), Position = UDim2.new(0.5, side * 110, 0.08, 0), Size = UDim2.new(0, 0, 0, 1),
-			BackgroundColor3 = T.Gold, Parent = title })
+			BackgroundColor3 = T.CinematicGold, Parent = title })
 		K.new("UIGradient", { Transparency = NumberSequence.new(side < 0 and 1 or 0, side < 0 and 0 or 1), Parent = r })
 		table.insert(ruleBars, r)
 	end
@@ -17464,7 +17456,7 @@ local function refreshPortalDetail()
 	K.pad(4).Parent = portalDetail
 	list(portalDetail, 8)
 	local def = Config.Portals[selectedPortal]
-	local preview = K.surface(portalDetail, "Hero", UDim2.new(1, -12, 0, 178), nil, T.Ink)
+	local preview = K.surface(portalDetail, "Hero", UDim2.new(1, -12, 0, 178), nil, T.Inset)
 	preview.LayoutOrder = 1
 	local vp = K.viewport(Portal.BuildGate(selectedPortal, 4), UDim2.fromScale(1, 1), false)
 	vp.Parent = preview
@@ -17657,9 +17649,9 @@ local function renderCreatureDetail()
 		return
 	end
 	local def = Data.ById[entry.c]
-	local color = Variants.Color(entry.s, entry.v) or T.Rarity(def.rarity, Config)
+	local color = T.Legible(Variants.Color(entry.s, entry.v) or T.Rarity(def.rarity, Config))
 	local entryIncome = Data.Income(entry.c) * Variants.Mult(entry.s, entry.v)
-	local hero = K.surface(invDetail, "CreaturePreview", UDim2.new(1, -12, 0, 180), nil, T.Ink)
+	local hero = K.surface(invDetail, "CreaturePreview", UDim2.new(1, -12, 0, 180), nil, T.Inset)
 	hero.LayoutOrder = 1
 	petView(entry.c, UDim2.fromScale(1, 1), nil, entry.v).Parent = hero
 	heading(invDetail, Variants.Prefix(entry.s, entry.v) .. def.name, 2)
@@ -17788,7 +17780,7 @@ inv.refresh = function()
 					-20,
 					38,
 					15,
-					Variants.Color(entry.s, entry.v) or T.Text,
+					T.Legible(Variants.Color(entry.s, entry.v) or T.Text),
 					true
 				)
 				K.text(b, def.rarity, 10, 151, -20, 18, 13, T.Rarity(def.rarity, Config))
@@ -19124,7 +19116,7 @@ function S.Trim(frame)
 	end
 	local s = frame:FindFirstChildOfClass("UIStroke")
 	if s then
-		s.Color = T.Gold
+		s.Color = T.TrimGold
 		s.Thickness = 1
 		s.Transparency = 0.28
 	end
@@ -19138,7 +19130,7 @@ function S.Trim(frame)
 		line.AnchorPoint = Vector2.new(0.5, 0.5)
 		line.Position = UDim2.new(p[1], p[1] == 0 and 4 or -4, p[2], p[2] == 0 and 4 or -4)
 		line.Rotation = p[3]
-		line.BackgroundColor3 = T.Gold
+		line.BackgroundColor3 = T.TrimGold
 		line.BorderSizePixel = 0
 		line.Parent = frame
 	end
@@ -21460,7 +21452,7 @@ function K.pop(o, amount)
 	K.tween(s, 0.16, { Scale = 1 })
 end
 function K.search(parent, placeholder, size, pos)
-	local f = K.surface(parent, "Search", size, pos, T.Ink)
+	local f = K.surface(parent, "Search", size, pos, T.Inset)
 	K.Icon("Search", f, UDim2.fromOffset(19, 19), T.Muted, UDim2.fromOffset(12, 13))
 	local box = K.new("TextBox", {
 		Name = "Input",
@@ -21605,39 +21597,59 @@ return K
 -- Fonts: Builder Sans (Roblox's modern UI family) for text, Montserrat Black for display titles;
 -- resolved with a fallback so an older client without these enums still renders.
 local function font(name, fallback)
-	local ok, f = pcall(function() return Enum.Font[name] end)
+	local ok, f = pcall(function()
+		return Enum.Font[name]
+	end)
 	return (ok and f) or fallback
 end
 local T = {
-	Ink = Color3.fromRGB(20, 16, 32),
-	Panel = Color3.fromRGB(33, 26, 52),
-	Raised = Color3.fromRGB(48, 38, 68),
-	Border = Color3.fromRGB(89, 77, 112),
-	Text = Color3.fromRGB(246, 242, 255),
-	Muted = Color3.fromRGB(196, 186, 213),
-	Gold = Color3.fromRGB(241, 202, 115),
-	Violet = Color3.fromRGB(168, 139, 244),
-	Cyan = Color3.fromRGB(147, 217, 235),
-	Success = Color3.fromRGB(159, 223, 180),
-	Danger = Color3.fromRGB(255, 172, 181),
+	Ink = Color3.fromRGB(27, 35, 44),
+	Panel = Color3.fromRGB(253, 253, 251),
+	Raised = Color3.fromRGB(236, 239, 242),
+	Inset = Color3.fromRGB(243, 245, 247),
+	Border = Color3.fromRGB(120, 132, 142),
+	Text = Color3.fromRGB(27, 35, 44),
+	Muted = Color3.fromRGB(82, 93, 105),
+	Gold = Color3.fromRGB(148, 101, 20),
+	TrimGold = Color3.fromRGB(192, 161, 99),
+	CinematicGold = Color3.fromRGB(241, 202, 115),
+	Violet = Color3.fromRGB(75, 101, 132),
+	Cyan = Color3.fromRGB(29, 99, 126),
+	Success = Color3.fromRGB(35, 112, 72),
+	Danger = Color3.fromRGB(167, 48, 59),
+	OnAccent = Color3.new(1, 1, 1),
 	Font = font("BuilderSansMedium", Enum.Font.Gotham),
 	Bold = font("BuilderSansExtraBold", Enum.Font.GothamBold),
 	Display = font("MontserratBlack", Enum.Font.GothamBlack),
 }
-function T.Readable(c)
-	-- Relative luminance determines whether an accent needs dark or light lettering.
+local function luminance(c)
 	local function linear(v)
 		return v <= 0.04045 and v / 12.92 or ((v + 0.055) / 1.055) ^ 2.4
 	end
-	local l = 0.2126 * linear(c.R) + 0.7152 * linear(c.G) + 0.0722 * linear(c.B)
-	return l > 0.32 and T.Ink or T.Text
+	return 0.2126 * linear(c.R) + 0.7152 * linear(c.G) + 0.0722 * linear(c.B)
+end
+local function contrast(a, b)
+	local x, y = luminance(a), luminance(b)
+	return (math.max(x, y) + 0.05) / (math.min(x, y) + 0.05)
+end
+function T.Readable(c)
+	return contrast(c, T.Ink) >= contrast(c, T.OnAccent) and T.Ink or T.OnAccent
+end
+function T.Legible(c)
+	-- Keep rarity identity while ensuring readable text on the light panel.
+	for _ = 1, 24 do
+		if contrast(c, T.Panel) >= 4.5 then
+			break
+		end
+		c = c:Lerp(T.Ink, 0.12)
+	end
+	return c
 end
 function T.Rarity(name, config)
 	if name == "Secret" then
 		return T.Cyan
 	end
-	local c = config.Rarities[name] and config.Rarities[name].color or T.Muted
-	return c:Lerp(T.Text, 0.18)
+	return T.Legible(config.Rarities[name] and config.Rarities[name].color or T.Muted)
 end
 return T
 ]]></ProtectedString></Properties></Item>

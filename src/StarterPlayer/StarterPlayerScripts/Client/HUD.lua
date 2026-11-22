@@ -121,7 +121,7 @@ local bar = K.new("Frame", {
 	Name = "ChargeTrack",
 	Size = UDim2.new(1, -32, 0, 8),
 	Position = UDim2.fromOffset(16, 79),
-	BackgroundColor3 = T.Ink,
+	BackgroundColor3 = T.Inset,
 	Parent = launch,
 }, { K.corner(4) })
 K.new("Frame", {
@@ -260,7 +260,7 @@ local dim = K.new("TextButton", {
 	Text = "",
 	AutoButtonColor = false,
 	BackgroundColor3 = T.Ink,
-	BackgroundTransparency = 0.22,
+	BackgroundTransparency = 1,
 	Size = UDim2.fromScale(1, 1),
 	Visible = false,
 	ZIndex = 20,
@@ -271,7 +271,6 @@ local layer = K.new(
 	{ Name = "Panels", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = 21, Parent = root }
 )
 local openPanel, previousFocus
-local blur = K.new("BlurEffect", { Name = "SanctuaryMenuBlur", Size = 0, Parent = game:GetService("Lighting") })
 local width, height = 1280, 720
 function HUD.MakePanel(name, title, subtitle, icon)
 	local frame = K.surface(layer, name, UDim2.fromOffset(1000, 620), UDim2.fromScale(0.5, 0.5), T.Panel)
@@ -342,7 +341,7 @@ function HUD.Open(name)
 	end
 	HUD.TrainHeld = false
 	world.Visible = p.contextual == true
-	dim.BackgroundTransparency = p.contextual and 0.94 or 0.4
+	dim.BackgroundTransparency = 1
 	dim.Visible = true
 	p.frame.Visible = true
 	if p.refresh then
@@ -364,7 +363,6 @@ function HUD.Open(name)
 	local target = p.targetPosition or UDim2.fromScale(0.5, 0.5)
 	p.frame.Position = target + UDim2.fromOffset(0, Settings.ReducedMotion and 0 or 8)
 	K.tween(p.frame, 0.18, { Position = target })
-	K.tween(blur, 0.18, { Size = (Settings.ReducedMotion or p.contextual) and 0 or 4 })
 	if Input.GamepadEnabled then
 		GuiService.SelectedObject = p.close
 	end
@@ -384,7 +382,6 @@ function HUD.Close()
 	if old.onClose then
 		old.onClose()
 	end
-	K.tween(blur, 0.15, { Size = 0 })
 	if previousFocus and previousFocus.Parent and Input.GamepadEnabled then
 		GuiService.SelectedObject = previousFocus
 	else
@@ -509,11 +506,6 @@ local function rescale()
 end
 HUD.Rescale = rescale
 gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(rescale)
-Settings.Changed.Event:Connect(function(key)
-	if key == "ReducedMotion" and Settings.ReducedMotion then
-		blur.Size = 0
-	end
-end)
 State.Changed:Connect(function(full)
 	HUD.Refresh()
 	if openPanel and openPanel.refresh then

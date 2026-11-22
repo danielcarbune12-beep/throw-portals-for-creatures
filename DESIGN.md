@@ -2,11 +2,11 @@
 
 ## Overview
 
-Native Roblox GUI for a bright outdoor sanctuary. Opaque ink-violet panels keep white text readable against the moving world. Violet connects to the hall, gold marks the primary action, and pale cyan identifies information. Flat surfaces and angular native geometric symbols follow the blocky art direction.
+Native Roblox GUI for a bright outdoor sanctuary. Solid white/light-stone panels use dark readable text and restrained gold trim. Opening a menu leaves the surrounding 3D world unchanged: no dark screen wash and no menu blur. C enamel navigation artwork supplies small colored accents inside the light interface.
 
 ## Color
 
-Ink #141020, panel #211A34, raised #302644, border #594D70, text #F6F2FF, muted #C4BAD5, gold #F1CA73, violet #A88BF4, cyan #93D9EB, success #9FDFB4, danger #FFACB5. Rarity colors remain linked to Config, with brighter Secret text for contrast on dark surfaces. Primary actions use dark ink on gold.
+Ink/text #1B232C, panel #FDFDFB, raised #ECEFF2, inset #F3F5F7, border #78848E, muted #525D69, action gold #946514, trim gold #C0A163, slate accent #4B6584, information #1D637E, success #237048, danger #A7303B. Primary gold actions use white lettering. Rarity and variant text is darkened as necessary to reach 4.5:1 on the light panel. Cinematic gold remains #F1CA73 independently of interface colors.
 
 ## Typography
 
@@ -18,7 +18,7 @@ Compact balance/income strip and one labeled Menu button on every device. Menu h
 
 ## Symbols
 
-The four primary destinations use approved C Relic enamel artwork: silver wolf, violet merchant stall, compass map, and silver/gold cog. SkyforgeUI clips the transparent atlas into four icons. Small utility symbols remain native Frames/UIStroke. Visible labels accompany navigation. Ink-violet panels use restrained gold edges and angled corner accents, matching approved HUD concept 2.
+The four primary destinations use approved C Relic enamel artwork: silver wolf, violet merchant stall, compass map, and silver/gold cog. SkyforgeUI clips the transparent atlas into four icons. Small utility symbols remain native Frames/UIStroke. Visible labels accompany navigation. White panels use restrained gold edges and angled corner accents from Skyforge concept 2.
 
 ## States and Motion
 

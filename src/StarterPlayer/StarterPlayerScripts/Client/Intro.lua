@@ -62,17 +62,17 @@ function Intro.Cover(hud)
 		table.insert(labels, l)
 		return l
 	end
-	local eyebrow = line(Reveal.Track("Welcome to"), fnt("MontserratBold", Enum.Font.GothamBold), T.Gold, 0.08, 16, 16, 1.2)
+	local eyebrow = line(Reveal.Track("Welcome to"), fnt("MontserratBold", Enum.Font.GothamBold), T.CinematicGold, 0.08, 16, 16, 1.2)
 	local line1 = line("THROW PORTALS", fnt("MontserratBlack", Enum.Font.GothamBlack), Color3.new(1, 1, 1), 0.42, 104, 104, 3.5)
-	local line2 = line(Reveal.Track("For creatures"), fnt("MontserratBold", Enum.Font.GothamBold), T.Gold, 0.72, 26, 26, 1.5)
+	local line2 = line(Reveal.Track("For creatures"), fnt("MontserratBold", Enum.Font.GothamBold), T.CinematicGold, 0.72, 26, 26, 1.5)
 	local sub = line(Reveal.Track("Throw   ·   catch   ·   collect"), fnt("MontserratMedium", Enum.Font.GothamMedium), T.Muted, 0.95, 14, 14, 1)
 	local shine = K.new("UIGradient", { Rotation = 12, Offset = Vector2.new(-1, 0), Parent = line1,
 		Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.new(1, 1, 1)), ColorSequenceKeypoint.new(0.42, Color3.new(1, 1, 1)),
-			ColorSequenceKeypoint.new(0.5, T.Gold), ColorSequenceKeypoint.new(0.58, Color3.new(1, 1, 1)), ColorSequenceKeypoint.new(1, Color3.new(1, 1, 1)) }) })
+			ColorSequenceKeypoint.new(0.5, T.CinematicGold), ColorSequenceKeypoint.new(0.58, Color3.new(1, 1, 1)), ColorSequenceKeypoint.new(1, Color3.new(1, 1, 1)) }) })
 	local ruleBars = {}
 	for side = -1, 1, 2 do
 		local r = K.new("Frame", { AnchorPoint = Vector2.new(side < 0 and 1 or 0, 0.5), Position = UDim2.new(0.5, side * 110, 0.08, 0), Size = UDim2.new(0, 0, 0, 1),
-			BackgroundColor3 = T.Gold, Parent = title })
+			BackgroundColor3 = T.CinematicGold, Parent = title })
 		K.new("UIGradient", { Transparency = NumberSequence.new(side < 0 and 1 or 0, side < 0 and 0 or 1), Parent = r })
 		table.insert(ruleBars, r)
 	end
