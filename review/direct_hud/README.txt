@@ -1,36 +1,30 @@
-DIRECT HUD ICONS
+COMPACT HUD ICONS
 
-Shared Team Create place 129975585465401, saved version 53.
-Pets, Shop and Expeditions are directly available during gameplay, with the existing
-cutout artwork, visible labels and no artwork backplates. Settings is a small gear.
-The intermediate Menu panel and Menu button were removed.
+Shared Team Create place 129975585465401, saved version 55.
+Pets, Shop and Expeditions remain directly on the gameplay HUD. Their text labels
+and white caption strips are removed. Settings remains a small separate gear.
 
-Desktop: 120 x 128 layout cells, 112px artwork, vertical rail on the left.
-Phone/short screen: 86 x 94 cells, 76px artwork, horizontal row at the top right.
-Sizes are before the existing HUD UIScale. Settings has a 44px target. The wallet
-reserves space for the compact row. Primary targets retain mouse and gamepad focus.
-Gamepad Y focuses Pets; the existing panel close/back behavior is preserved.
-The caught-creature presentation still has HUD.SideButtons.Pets as its live target.
+Desktop artwork reduced from 112px to 56px, inside a 64 x 64 target.
+Phone artwork reduced from 76px to 44px, inside a 52 x 52 target.
+All sizes are before the existing HUD UIScale. The desktop rail remains on the
+left; phone icons remain in a top-right row. Focus rings and internal action names
+are retained. The caught-creature card still targets HUD.SideButtons.Pets.
 
 Verified
-- Actual desktop clicks opened Pets, Shop, Expeditions and Settings, then closed each.
-- Actual iPhone 17 Pro simulated touch input opened all four screens, then closed each.
-- Three compact primary targets stayed within the safe HUD bounds, each >=44px.
-- Compact navigation and wallet did not overlap; native movement/jump controls stayed clear.
-- Primary button backgrounds are fully transparent. White is limited to caption surfaces.
-- No intermediate Menu instance remains in the gameplay HUD.
+- Desktop and iPhone 17 Pro screenshots inspected after the reduction.
+- All three caption labels are hidden; artwork/button backgrounds are transparent.
+- Actual simulated phone taps opened Pets, Shop and Expeditions, then closed each.
+- Phone targets are 52 x 52, above the 44px minimum; artwork is 44 x 44.
+- At the tested desktop scale, targets are 51.2px and artwork is 44.8px.
+- No overlap with wallet or native movement/jump controls in the inspected layouts.
 - HUD lint: zero errors, zero warnings, zero parse errors.
-- Exact source parity checked in all three generated place builds.
-- Tests used isolated in-memory profiles; no player saves were changed.
-- Temporary test marker removed, Studio returned to Edit and default viewport.
+- Normal place: exact parity for all 79 scripts. Both test builds: 82 scripts each.
+- Test profiles were isolated in-memory data. Test marker removed before saving.
+- Studio is back in Edit and the device simulator is reset to its default viewport.
 
-The simulator mouse-input tool initially subtracted the device inset twice. Native
-InputBegan tracing showed a 62px / 20px offset on this simulated device. Repeating
-the taps with the observed correction reached the real buttons successfully.
-No game coordinate workaround was added. Physical touch hardware was not tested.
+Files: desktop.png and phone.png show the current small, unlabelled icons.
+Implementation: Client/HUD.lua. Existing screens and gameplay logic are preserved.
+Teammate commit 08fe04d and the preceding farming improvements remain included.
 
-Files: desktop.png and phone.png show the direct gameplay navigation.
-Implementation: Client/HUD.lua. Existing screen content and gameplay logic are preserved.
-
-Final sync includes teammate commit 08fe04d (Heaven, Secret and Shadow models).
-The generated release has 79 scripts; both isolated test builds have 82.
+Simulator input uses the observed device-inset correction from the earlier review.
+No coordinate workaround was added to game code. Physical hardware was not tested.

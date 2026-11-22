@@ -23439,14 +23439,14 @@ Effects.OnCoinArrive = function()
 end
 local side = K.new("Frame", { Name = "Navigation", BackgroundTransparency = 1, Parent = world })
 local navGrid = K.new("UIGridLayout", {
-	CellSize = UDim2.fromOffset(120, 128),
+	CellSize = UDim2.fromOffset(64, 64),
 	CellPadding = UDim2.fromOffset(8, 8),
 	FillDirection = Enum.FillDirection.Vertical,
 	SortOrder = Enum.SortOrder.LayoutOrder,
 	Parent = side,
 })
 
--- The artwork sits directly on the world. Only the short caption has a light surface.
+-- Small cutout icons sit directly on the world without captions or backplates.
 local navOrder = {}
 local settingsBtn = K.button("Settings", T.Panel, nil, UDim2.fromOffset(44, 44), {
 	Name = "SettingsShortcut",
@@ -23459,21 +23459,19 @@ K.Icon("Settings", settingsBtn, UDim2.fromOffset(36, 36), T.Text, UDim2.fromOffs
 Sky.Trim(moneyIcon)
 
 local function directButton(name, icon, order)
-	local b = K.button(name, T.Panel, nil, UDim2.fromOffset(120, 128), {
+	local b = K.button("", T.Panel, nil, UDim2.fromOffset(64, 64), {
 		Name = "Nav_" .. name,
 		Parent = side,
 		LayoutOrder = order,
 		BackgroundTransparency = 1,
 	})
 	b:FindFirstChildOfClass("UIStroke").Transparency = 1
-	local art = K.Icon(icon, b, UDim2.fromOffset(112, 112), T.Text, UDim2.fromOffset(4, 0))
+	local art = K.Icon(icon, b, UDim2.fromOffset(56, 56), T.Text, UDim2.fromOffset(4, 4))
 	art.Name = "NavigationArt"
-	b.Label.AnchorPoint = Vector2.new(0, 1)
-	b.Label.Position = UDim2.new(0, 2, 1, 0)
-	b.Label.Size = UDim2.new(1, -4, 0, 24)
-	b.Label.BackgroundColor3, b.Label.BackgroundTransparency = T.Panel, 0
-	b.Label.TextColor3, b.Label.TextSize = T.Text, 15
-	K.corner(7).Parent = b.Label
+	art.AnchorPoint = Vector2.new(0.5, 0.5)
+	art.Position = UDim2.fromScale(0.5, 0.5)
+	b.Label.Visible = false
+	b:SetAttribute("AccessibleLabel", name)
 	local focus = K.new("Frame", {
 		Name = "Focus",
 		Size = UDim2.fromScale(1, 1),
@@ -23832,7 +23830,7 @@ local function rescale()
 	local compact = Input.TouchEnabled or width < 700 or height < 580
 	HUD.Compact = compact
 
-	local tileW, tileH = compact and 86 or 120, compact and 94 or 128
+	local tileW, tileH = compact and 52 or 64, compact and 52 or 64
 	local navWidth = compact and (3 * tileW + 16) or tileW
 	top.Size = UDim2.fromOffset(math.min(290, compact and (width - navWidth - 36) or (width - 80)), 50)
 	top.Position = UDim2.fromOffset(12, 8)
@@ -23852,11 +23850,8 @@ local function rescale()
 	for _, entry in ipairs(navOrder) do
 		local button = HUD.SideButtons[entry.name]
 		local art = button.NavigationArt
-		local artSize = compact and 76 or 112
+		local artSize = compact and 44 or 56
 		art.Size = UDim2.fromOffset(artSize, artSize)
-		art.Position = UDim2.new(0.5, -artSize / 2, 0, 0)
-		button.Label.Size = UDim2.new(1, -4, 0, compact and 22 or 24)
-		button.Label.TextSize = compact and 13 or 15
 	end
 	settingsBtn.Position = compact and UDim2.fromOffset(12, 66) or UDim2.fromOffset(top.Size.X.Offset + 20, 8)
 	income.TextTruncate = Enum.TextTruncate.AtEnd

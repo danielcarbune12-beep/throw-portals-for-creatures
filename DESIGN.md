@@ -18,10 +18,10 @@ Compact balance/income strip with Pets, Shop and Expeditions directly on the gam
 
 ## Symbols
 
-The three primary destinations use large standalone cutout artwork: pale silver
-wolf, oak/jade merchant stall and parchment compass map. Their artwork has no
-backplate; each has a short dark label on a small white caption. Desktop art is
-112px and compact art is 76px before HUD scaling. A silver/gold/jade cog opens
+The three primary destinations use compact cutout artwork: pale silver wolf,
+oak/jade merchant stall and parchment compass map. Their artwork has no
+backplate, visible text or caption strip. Desktop art is 56px and compact art is
+44px before HUD scaling, inside 64px and 52px targets respectively. A silver/gold/jade cog opens
 Settings from a separate 44px control. Focus uses a gold outline. Ordinary panels
 use quiet rounded stone edges; decorative angled corner marks are removed.
 Small utility symbols remain native geometry.
