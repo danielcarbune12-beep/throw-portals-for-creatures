@@ -124,8 +124,25 @@ function K.spot(p, color, range, brightness, angle, face)
 	return l
 end
 function K.tag(p, name, attrs)
+	if p:IsA("Model") and (name == "TPFC_Bob" or name == "TPFC_Spin") then
+		-- WorldPivot is not replicated. A physical reference must arrive before the
+		-- client animator can move the model, including when its children arrive late.
+		if not p.PrimaryPart then
+			local origin = p:GetPivot()
+			local anchor = Instance.new("Part")
+			anchor.Name, anchor.Size, anchor.CFrame = "AnimationRoot", V3(0.05, 0.05, 0.05), origin
+			anchor.Anchored, anchor.Transparency, anchor.CastShadow = true, 1, false
+			anchor.CanCollide, anchor.CanQuery, anchor.CanTouch = false, false, false
+			anchor.Parent = p
+			p.PrimaryPart = anchor
+		end
+		p:SetAttribute("TPFC_AnimationBase", p:GetPivot())
+		p:SetAttribute("TPFC_AnimationParts", #p:GetChildren())
+	end
+	for k, v in pairs(attrs or {}) do
+		p:SetAttribute(k, v)
+	end
 	CollectionService:AddTag(p, name)
-	for k, v in pairs(attrs or {}) do p:SetAttribute(k, v) end
 	return p
 end
 

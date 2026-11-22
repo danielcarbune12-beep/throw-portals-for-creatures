@@ -20,6 +20,7 @@ local camera = workspace.CurrentCamera
 local RANGE = 650
 local TAGS = { "TPFC_Sway", "TPFC_Bob", "TPFC_Spin", "TPFC_Pulse", "TPFC_Glint", "TPFC_ChargeChannel", "TPFC_Rotor" }
 local items = {} -- part -> { kind, base, baseTr, phase, ... }
+local pendingModels = {} -- tagged models whose replicated pivot/geometry is still arriving
 WorldFx.TC = nil -- ThrowController (for charge channels), set by ClientMain
 
 local function add(kind, p)
@@ -30,7 +31,15 @@ local function add(kind, p)
 	if not p:IsA("BasePart") and not (model and (kind == "TPFC_Bob" or kind == "TPFC_Spin")) then
 		return
 	end
-	local base = model and p:GetPivot() or p.CFrame
+	if model then
+		local count = p:GetAttribute("TPFC_AnimationParts")
+		if not p.PrimaryPart or (count and #p:GetChildren() < count) then
+			pendingModels[p] = kind
+			return
+		end
+	end
+	pendingModels[p] = nil
+	local base = model and (p:GetAttribute("TPFC_AnimationBase") or p:GetPivot()) or p.CFrame
 	local seed = (base.X * 12.9898 + base.Z * 78.233) % 1
 	local rotor = kind == "TPFC_Rotor" and p:FindFirstChild("PortalRotor") or nil
 	items[p] = {
@@ -54,6 +63,7 @@ function WorldFx.Start()
 		end)
 		CollectionService:GetInstanceRemovedSignal(t):Connect(function(p)
 			items[p] = nil
+			pendingModels[p] = nil
 		end)
 	end
 	local emitters = {}
@@ -80,6 +90,13 @@ function WorldFx.Start()
 			return
 		end
 		acc = 0
+		for model, kind in pairs(pendingModels) do
+			if model.Parent and CollectionService:HasTag(model, kind) then
+				add(kind, model)
+			else
+				pendingModels[model] = nil
+			end
+		end
 		local t = os.clock()
 		camera = workspace.CurrentCamera or camera
 		if not camera then
