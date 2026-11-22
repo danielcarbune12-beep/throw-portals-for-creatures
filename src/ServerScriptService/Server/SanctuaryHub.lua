@@ -203,6 +203,66 @@ local function avenue()
 	for _, z in ipairs({ -62, -198, -350 }) do
 		Art.Crest(CF(0, 0.35, z) * A(-PI / 2, 0, 0), 6)
 	end
+	-- Ceremonial runner: a soft lilac stone band with gold edging breaks up the bare paving and
+	-- leads the eye to the hall.
+	local runner, runnerEdge = C(205, 196, 218), C(150, 128, 184)
+	K.block(CF(0, 0.235, -252), V(12, 0.05, 396), runner, M.Limestone)
+	for _, side in ipairs({ -1, 1 }) do
+		K.block(CF(side * 6.25, 0.25, -252), V(0.5, 0.06, 396), P.gold, M.Metal)
+		K.block(CF(side * 5.2, 0.25, -252), V(0.22, 0.06, 396), runnerEdge, M.SmoothPlastic)
+	end
+	-- star medallions between each pair of courtyards (and one at the gate)
+	for _, z in ipairs({ -84, -160, -236, -312, -388 }) do
+		K.block(CF(0, 0.27, z) * A(0, PI / 4, 0), V(10.5, 0.05, 10.5), P.ivory, M.Limestone)
+		for i = 0, 3 do
+			local a = i / 4 * PI * 2 + PI / 4
+			K.block(CF(math.sin(a) * 3.7, 0.3, z + math.cos(a) * 3.7) * A(0, a, 0), V(10.6, 0.05, 0.36), P.gold, M.Metal)
+		end
+		K.block(CF(0, 0.31, z) * A(0, PI / 4, 0), V(4.2, 0.05, 4.2), P.violet, M.SmoothPlastic)
+		local core = K.block(CF(0, 0.33, z) * A(0, PI / 4, 0), V(1.8, 0.05, 1.8), P.lilac, M.Neon, false, 0.2)
+		K.tag(core, "TPFC_Pulse", { Period = 6, Base = 0.35, Peak = 0.05 })
+		-- four gold rays from the centre
+		for i = 0, 3 do
+			local a = i / 4 * PI * 2
+			K.block(CF(math.sin(a) * 4.2, 0.31, z + math.cos(a) * 4.2) * A(0, a, 0), V(0.3, 0.05, 3.2), P.goldLight, M.Metal)
+		end
+	end
+	-- Crystal pylons line the avenue between the courtyards: violet banner, gold collars, a floating
+	-- lilac crystal. Tall enough to give the long walk a rhythm without blocking the bases.
+	for _, side in ipairs({ -1, 1 }) do
+		for _, z in ipairs({ -100, -176, -252, -328, -404 }) do
+			local x = side * 24.2
+			K.block(CF(x, 0.8, z), V(3.6, 1.6, 3.6), P.stone, M.Limestone, true)
+			K.block(CF(x, 1.75, z), V(3.0, 0.3, 3.0), P.gold, M.Metal)
+			K.block(CF(x, 8.6, z), V(2.2, 13.4, 2.2), P.ivory, M.Limestone, true)
+			for _, y in ipairs({ 5.5, 15.2 }) do
+				K.block(CF(x, y, z), V(2.6, 0.35, 2.6), P.gold, M.Metal)
+			end
+			K.block(CF(x, 15.7, z), V(3.0, 0.7, 3.0), P.light, M.Limestone)
+			K.pyramid(CF(x, 16.05, z), 2.4, 1.4, P.gold, M.Metal)
+			local cf = CF(x - side * 1.15, 13.6, z) * A(0, side < 0 and PI / 2 or -PI / 2, 0)
+			Art.Banner(cf, 6.4, 1.7)
+			local gem = K.block(CF(x, 19.4, z) * A(0, PI / 4, 0), V(1.3, 2.6, 1.3), P.lilac, M.Neon, false, 0.1)
+			K.tag(gem, "TPFC_Bob", { Amp = 0.4, Period = 5 + (z % 3), Spin = 18 })
+			K.lamp(gem, P.lilac, 14, 0.7)
+		end
+	end
+	-- Entrance gate: two tall pylon towers framing the start of the avenue.
+	for _, side in ipairs({ -1, 1 }) do
+		local x, z = side * 25.5, -444
+		K.block(CF(x, 1.2, z), V(7.5, 2.4, 7.5), P.stone, M.Limestone, true)
+		K.block(CF(x, 13, z), V(5.2, 22, 5.2), P.ivory, M.Limestone, true)
+		for _, y in ipairs({ 2.6, 12, 23.8 }) do
+			K.block(CF(x, y, z), V(5.8, 0.5, 5.8), P.gold, M.Metal)
+		end
+		K.block(CF(x, 24.6, z), V(6.6, 1.2, 6.6), P.light, M.Limestone)
+		K.pyramid(CF(x, 25.2, z), 6.2, 5.4, P.roof, M.SmoothPlastic)
+		K.block(CF(x, 31.2, z), V(0.6, 1.8, 0.6), P.gold, M.Metal)
+		Art.Banner(CF(x - side * 2.75, 21.5, z) * A(0, side < 0 and PI / 2 or -PI / 2, 0), 12, 3.2)
+		Art.Banner(CF(x, 21.5, z + 2.75), 12, 3.2)
+		Art.Crystal(CF(x, 32, z), 1.6, 5.5, P.lilac)
+		Art.Lantern(CF(side * 20.5, 0.2, z + 5), 1.3, true)
+	end
 end
 local function perimeter()
 	K.Seed(46021)
@@ -211,18 +271,23 @@ local function perimeter()
 			local z = -49 - i * 36
 			local h = 25 + (i * 13 % 23)
 			local x = side * 110
-			K.block(CF(x, h / 2 - 2, z) * A(0.03, side * 0.13, side * -0.08), V(15, h, 39), C(105, 99, 116), M.Slate)
+			-- Lilac-grey stone like the reference (the old dark slate read as navy under the hub light),
+			-- with a grass crown so the walls belong to the gardens.
+			local rot = A(0.03, side * 0.13, side * -0.08)
+			K.block(CF(x, h / 2 - 2, z) * rot, V(15, h, 39), C(150, 140, 168), M.Limestone)
+			K.block(CF(x, h - 1.6, z) * rot, V(13.4, 0.9, 37), P.grass, M.Grass)
+			K.block(CF(x - side * 6.9, h - 2.6, z) * rot, V(0.5, 2.2, 30), P.grass, M.Grass)
 			K.wedge(
 				CF(x - side * 4, h * 0.50, z + 5) * A(0, side * PI / 2, 0),
 				V(24, h * 0.65, 13),
-				C(133, 121, 137),
+				C(170, 160, 184),
 				M.Slate
 			)
 			-- Broken sloped peaks and shallow front facets avoid a flat castle-wall silhouette.
 			K.corner(
 				CF(x + side * 0.8, h + 0.5, z - 7) * A(0, side * PI / 2, 0),
 				V(14, 9 + i % 4, 24),
-				C(125, 115, 133),
+				C(160, 150, 176),
 				M.Slate
 			)
 			Art.Diamond(
@@ -230,7 +295,7 @@ local function perimeter()
 				h * 0.66,
 				13,
 				0.18,
-				C(126, 117, 134),
+				C(156, 146, 172),
 				M.Slate
 			)
 			K.block(CF(x - side * 5.5, 2.2, z), V(3.2, 3.5, 37), P.ivory, M.Limestone)
@@ -243,10 +308,15 @@ local function perimeter()
 				K.tree(V(side * 100, 1, z - 14), 1.12, i % 4 == 0 and P.pink or P.leaf, nil, true)
 			end
 		end
+		-- Two real cascades per side (stepped glass sheets + foam), falling into round pools.
 		for _, z in ipairs({ -124, -278 }) do
-			K.block(CF(side * 101.8, 12, z), V(0.12, 22, 7.3), C(114, 211, 225), M.Glass, false, 0.30)
-			K.block(CF(side * 102.2, 23.2, z), V(4, 1.2, 10), P.stone, M.Limestone)
-			K.vcyl(V(side * 100, 0.2, z), 0.2, 11, P.water, M.SmoothPlastic)
+			K.block(CF(side * 102.6, 24, z), V(6, 1.4, 12), P.stone, M.Limestone)
+			K.block(CF(side * 102.6, 24.8, z), V(6.4, 0.3, 12.4), P.gold, M.Metal)
+			K.waterfall(V(side * 100.2, 23.4, z), 23, 8, side > 0 and PI / 2 or -PI / 2, C(150, 222, 236), C(236, 250, 255))
+			-- small enough to sit in the gap between two courtyards
+			K.vcyl(V(side * 99.8, 0.05, z), 0.5, 10, P.ivory, M.Limestone)
+			local pool = K.vcyl(V(side * 99.8, 0.2, z), 0.4, 8.6, P.water, M.Glass, false, 0.25)
+			K.tag(pool, "TPFC_Glint", { Period = 9 })
 		end
 		task.wait()
 	end

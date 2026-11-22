@@ -2,7 +2,7 @@
 -- small warm brass accents. Colors stay readable under the sanctuary lighting.
 local C = Color3.fromRGB
 return {
-	grass = C(108, 161, 76),
+	grass = C(118, 174, 72),
 	stone = C(165, 158, 153),
 	pale = C(226, 220, 207),
 	light = C(243, 236, 219),
@@ -22,4 +22,9 @@ return {
 	mint = C(102, 171, 116),
 	paper = C(213, 203, 171),
 	text = C(244, 238, 225),
+	rock = C(150, 142, 162),
+	rockLight = C(176, 168, 188),
+	-- rear-left timber lodge, shared by SanctuaryBase (frame) and SkyforgeDetails (roof tiles).
+	-- Local base space: x across (+X = viewer-right from the entrance), z toward the back.
+	lodge = { x = -18, z = 24, w = 26, d = 17, deck = 1.6, postH = 9, rise = 5.6 },
 }

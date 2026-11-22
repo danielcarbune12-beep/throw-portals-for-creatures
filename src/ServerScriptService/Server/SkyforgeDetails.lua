@@ -5,6 +5,7 @@ local P = require(script.Parent.SkyforgeStyle)
 local Details = {}
 local V, CF, A = Vector3.new, CFrame.new, CFrame.Angles
 local M = Enum.Material
+local C3 = Color3.fromRGB
 
 local function factory(root, cf)
 	return function(name, size, frame, color, material, shape)
@@ -27,44 +28,59 @@ function Details.Build(model, cf)
 	local function beam(name, from, to, width, depth, color, material)
 		return part(name, V(width, depth, (to - from).Magnitude), CFrame.lookAt((from + to) / 2, to), color, material)
 	end
-	-- Four rows of individually laid roof courses, split into six staggered tiles.
-	local roofSlope = math.atan(3.3 / 9.85)
+	-- Individually laid roof courses over the lodge gable (geometry from P.lodge), staggered tones.
+	local LG = P.lodge
+	local lx, lz = LG.x, LG.z
+	local top = LG.deck + LG.postH
+	local hs = (LG.w + 2.4) / 2 -- half span to the eave
+	local len = LG.d + 2 -- ridge length
+	local roofSlope = math.atan(LG.rise / hs)
+	local courses = math.ceil(hs / 2.4)
+	local tiles = math.ceil(len / 2.4)
 	for _, side in { -1, 1 } do
-		for course = 0, 3 do
-			local x = 1.2 + course * 2.4
-			local y = 8.8 + 3.3 * (1 - x / 9.85) + 0.10
-			for tile = 0, 5 do
+		for course = 0, courses - 1 do
+			local x = math.min(1.2 + course * 2.4, hs - 1.0)
+			local y = top + LG.rise * (1 - x / hs) + 0.10
+			for tile = 0, tiles - 1 do
 				part(
 					"VioletRoofTile",
-					V(2.48, 0.13, 2.38),
-					CF(-20 + side * x, y, 18 + tile * 2.4) * A(0, 0, -side * roofSlope),
+					V(2.48, 0.14, 2.38),
+					CF(lx + side * x, y, lz - len / 2 + 1.2 + tile * (len - 2.4) / math.max(1, tiles - 1)) * A(0, 0, -side * roofSlope),
 					(course + tile) % 3 == 0 and P.roofLight or P.roof
 				)
 			end
 		end
-		part("GoldEave", V(0.22, 0.25, 15.8), CF(-20 + side * 9.85, 8.87, 24), P.gold, M.Metal)
-		for _, z in { 16.1, 31.9 } do
-			beam("GableGoldEdge", V(-20, 12.25, z), V(-20 + side * 9.85, 8.87, z), 0.24, 0.25, P.gold, M.Metal)
+		part("GoldEave", V(0.3, 0.3, len + 0.2), CF(lx + side * hs, top + 0.07, lz), P.gold, M.Metal)
+		for _, z in { lz - len / 2 + 0.1, lz + len / 2 - 0.1 } do
+			beam("GableGoldEdge", V(lx, top + LG.rise + 0.05, z), V(lx + side * hs, top + 0.07, z), 0.3, 0.3, P.gold, M.Metal)
 		end
-		for _, z in { 19, 29 } do
+		for _, z in { lz - LG.d / 2 + 1.2, lz + LG.d / 2 - 1.2 } do
 			beam(
 				"TimberKneeBrace",
-				V(-20 + side * 6.8, 6.1, z),
-				V(-20 + side * 4.8, 8.2, z),
-				0.40,
-				0.42,
+				V(lx + side * (LG.w / 2 - 1.2), top - 3.2, z),
+				V(lx + side * (LG.w / 2 - 3.4), top - 0.9, z),
+				0.5,
+				0.5,
 				P.wood,
 				M.Wood
 			)
 		end
 	end
-	part("GoldRidge", V(0.60, 0.40, 16.2), CF(-20, 12.35, 24), P.gold, M.Metal)
+	part("GoldRidge", V(0.7, 0.5, len + 0.4), CF(lx, top + LG.rise + 0.15, lz), P.gold, M.Metal)
 	for _, side in { -1, 1 } do
-		part("RidgeEnd", V(0.65, 1.45, 0.70), CF(-20, 12.9, 24 + side * 7.9) * A(side * 0.36, 0, 0), P.gold, M.Metal)
+		-- upswept ridge ends, like the concept's carved finials
+		part("RidgeEnd", V(0.75, 2.2, 0.8), CF(lx, top + LG.rise + 0.9, lz + side * (len / 2 - 0.2)) * A(side * 0.45, 0, 0), P.gold, M.Metal)
 	end
-	part("LodgeBanner", V(2.3, 3.3, 0.12), CF(-20, 5.3, 29.05), P.roof, M.Fabric)
-	part("BannerCrest", V(0.73, 0.73, 0.10), CF(-20, 5.65, 28.95) * A(0, 0, math.pi / 4), P.gold, M.Metal)
-	part("BannerCrestInset", V(0.40, 0.40, 0.08), CF(-20, 5.65, 28.87) * A(0, 0, math.pi / 4), P.roof)
+	-- gable-front pediment: violet panel with a gold diamond, facing the courtyard
+	local fz = lz - LG.d / 2 - 1.05
+	part("LodgeBanner", V(3.0, 4.4, 0.14), CF(lx, top - 2.6, fz + 0.6), P.roof, M.Fabric)
+	part("BannerTrim", V(3.2, 0.2, 0.18), CF(lx, top - 0.35, fz + 0.6), P.gold, M.Metal)
+	part("BannerCrest", V(0.95, 0.95, 0.12), CF(lx, top - 2.3, fz + 0.5) * A(0, 0, math.pi / 4), P.gold, M.Metal)
+	part("BannerCrestInset", V(0.5, 0.5, 0.1), CF(lx, top - 2.3, fz + 0.42) * A(0, 0, math.pi / 4), P.roof)
+	-- warm lantern hanging under the roof
+	local lantern = part("LodgeLantern", V(0.9, 1.2, 0.9), CF(lx, top - 1.8, lz), C3(255, 214, 150), M.Neon)
+	local glow = Instance.new("PointLight")
+	glow.Color, glow.Range, glow.Brightness, glow.Parent = C3(255, 205, 140), 18, 0.9, lantern
 	-- Slab joints and cut corners are broad enough to read from the game camera.
 	for i = 0, 4 do
 		local z = -29.8 + i * 4.4
@@ -73,13 +89,34 @@ function Details.Build(model, cf)
 	for _, x in { -3.0, 3.0 } do
 		part("ThresholdInlay", V(0.16, 0.022, 2.7), CF(x, 1.093, -31), P.gold, M.Metal)
 	end
-	-- Back-corner trees are rooted inside the old lodge/relic obstacle volumes.
-	for _, point in { V(-25.5, 0, 29), V(26.5, 0, 26.2) } do
-		part("TimberTreeTrunk", V(0.88, 7.2, 0.88), CF(point.X, 4.6, point.Z), P.timber, M.Wood)
-		part("TreeBough", V(2.2, 0.55, 0.55), CF(point.X + 0.5, 7.0, point.Z) * A(0, 0, 0.35), P.wood, M.Wood)
-		part("BlockCanopy", V(4.8, 3.4, 4.7), CF(point.X, 10.0, point.Z), P.leaf)
-		part("BlockCanopy", V(3.7, 2.9, 3.9), CF(point.X + 2.1, 10.9, point.Z - 0.8), P.leafLight)
-		part("BlockCanopy", V(3.4, 2.5, 3.5), CF(point.X - 1.6, 11.4, point.Z + 0.2), P.leaf)
+	-- The concept's back edge: grey rock outcrops with grass caps and blocky trees behind the fence
+	-- (local z > 33, on the foundation rim), so the courtyard reads as an enclosed garden.
+	local rng = Random.new(cf.Position.Z * 7 + cf.Position.X)
+	local function rock(x, z, s)
+		local n = rng:NextInteger(2, 3)
+		for i = 1, n do
+			local w, h, d = rng:NextNumber(2.6, 4.2) * s, rng:NextNumber(2.2, 4.4) * s, rng:NextNumber(2.4, 3.8) * s
+			local ox, oz = rng:NextNumber(-1.6, 1.6) * s, rng:NextNumber(-1, 1) * s
+			local col = i == 1 and P.rock or P.rockLight
+			local yaw, tilt = rng:NextNumber(-0.5, 0.5), rng:NextNumber(-0.08, 0.08)
+			part("RockOutcrop", V(w, h, d), CF(x + ox, 0.6 + h / 2, z + oz) * A(tilt, yaw, -tilt), col, M.Slate)
+			if i == 1 then
+				part("RockGrassCap", V(w * 0.82, 0.35, d * 0.82), CF(x + ox, 0.6 + h + 0.12, z + oz) * A(0, yaw, 0), P.grass, M.Grass)
+			end
+		end
+	end
+	local function blockTree(x, z, s)
+		part("TimberTreeTrunk", V(0.9, 6.4, 0.9) * s, CF(x, 1 + 3.2 * s, z), P.timber, M.Wood)
+		part("TreeBough", V(2.2, 0.55, 0.55) * s, CF(x + 0.5 * s, 1 + 5.2 * s, z) * A(0, 0, 0.35), P.wood, M.Wood)
+		part("BlockCanopy", V(4.8, 3.4, 4.7) * s, CF(x, 1 + 8.0 * s, z), P.leaf)
+		part("BlockCanopy", V(3.7, 2.9, 3.9) * s, CF(x + 2.1 * s, 1 + 8.9 * s, z - 0.8 * s), P.leafLight)
+		part("BlockCanopy", V(3.4, 2.5, 3.5) * s, CF(x - 1.6 * s, 1 + 9.4 * s, z + 0.2 * s), P.leaf)
+	end
+	for _, r in { { -28, 34.2, 1.2 }, { -9, 34.4, 1.0 }, { 8, 34.2, 1.15 }, { 26, 34.4, 1.3 }, { -34.3, 24, 0.9 }, { 34.3, 14, 0.9 } } do
+		rock(r[1], r[2], r[3])
+	end
+	for _, t in { { -20, 34.6, 1.25 }, { 0, 34.8, 1.1 }, { 15, 34.6, 1.3 }, { 31, 33.8, 1.0 }, { -33.8, 30, 1.0 } } do
+		blockTree(t[1], t[2], t[3])
 	end
 	-- Physical map props. These stay low so they never obscure the expedition UI.
 	part("ExpeditionMap", V(7.1, 0.06, 4.5), CF(19, 3.33, -19), P.paper)

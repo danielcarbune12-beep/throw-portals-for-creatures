@@ -100,55 +100,88 @@ function Base.Build(index)
 	route(V(-10, 1.025, 19), V(10, 1.025, 19))
 	route(V(-10, 1.025, 19), V(-20, 1.025, 16), 3.8)
 	-- The central shrine is a small architectural portal, not a water fountain.
+	-- Scaled 1.5x around the floor so it holds the courtyard's centre like the concept's gate does
+	-- (pedestal radius 9.6 stays inside the slot ring's inner edge at 12.5).
 	local shrine = Instance.new("Model")
 	shrine.Name = "PortalShrine"
 	K.SetFolder(shrine)
-	local pedestal = K.vcyl(L(0, 1.0, 0).Position, 0.45, 12.8, P.stone, M.Limestone, true)
+	local S = 1.5
+	local function LS(x, y, z)
+		return L(x * S, 1 + (y - 1) * S, z * S)
+	end
+	local function VS(x, y, z)
+		return V(x * S, 1 + (y - 1) * S, z * S)
+	end
+	local pedestal = K.vcyl(L(0, 1.0, 0).Position, 0.45, 12.8 * S, P.stone, M.Limestone, true)
 	pedestal.Name = "ShrineFoundation"
-	K.vcyl(L(0, 1.45, 0).Position, 0.32, 11.5, P.pale, M.Limestone, true)
-	K.vcyl(L(0, 1.77, 0).Position, 0.10, 10.8, P.slate, M.Slate)
+	K.vcyl(L(0, 1.45, 0).Position, 0.32, 11.5 * S, P.pale, M.Limestone, true)
+	K.vcyl(L(0, 1.77, 0).Position, 0.10, 10.8 * S, P.slate, M.Slate)
+	-- gold ring + two steps up to the gate (front and back)
+	K.vcyl(L(0, 1.86, 0).Position, 0.06, 9.2 * S, P.gold, M.Metal)
+	K.vcyl(L(0, 1.88, 0).Position, 0.07, 8.6 * S, P.slate, M.Slate)
 	for _, sd in { -1, 1 } do
-		b("ShrineFoot", V(2.45, 0.48, 2.8), L(sd * 3.5, 2.0, 0), P.stone, M.Limestone)
+		b("ShrineFoot", V(2.45, 0.48, 2.8) * S, LS(sd * 3.5, 2.0, 0), P.stone, M.Limestone)
 		for i = 0, 2 do
 			b(
 				"ShrineAshlar",
-				V(1.25, 1.42, 1.65),
-				L(sd * 3.5, 2.9 + i * 1.45, 0),
+				V(1.25, 1.42, 1.65) * S,
+				LS(sd * 3.5, 2.9 + i * 1.45, 0),
 				i % 2 == 0 and P.pale or P.light,
 				M.Limestone
 			)
 		end
-		b("ShrineGoldCollar", V(1.48, 0.18, 1.85), L(sd * 3.5, 6.75, 0), P.gold, M.Metal)
+		b("ShrineGoldCollar", V(1.48, 0.18, 1.85) * S, LS(sd * 3.5, 6.75, 0), P.gold, M.Metal)
+		-- violet banner on each pier, facing the entrance
+		b("ShrinePierBanner", V(0.9, 2.6, 0.08) * S, LS(sd * 3.5, 4.4, -0.88), P.roof, M.Fabric)
+		b("ShrinePierBannerTrim", V(0.95, 0.12, 0.1) * S, LS(sd * 3.5, 5.75, -0.9), P.gold, M.Metal)
+		b("ShrinePierGem", V(0.42, 0.42, 0.08) * S, LS(sd * 3.5, 4.5, -0.95) * A(0, 0, PI / 4), P.goldLight, M.Metal)
 	end
 	for i = 0, 4 do
 		local a, z = i / 5 * PI, (i + 1) / 5 * PI
 		beam(
 			"ShrineVoussoir",
-			V(math.cos(a) * 3.5, 6.1 + math.sin(a) * 2.6, 0),
-			V(math.cos(z) * 3.5, 6.1 + math.sin(z) * 2.6, 0),
-			0.95,
-			1.65,
+			VS(math.cos(a) * 3.5, 6.1 + math.sin(a) * 2.6, 0),
+			VS(math.cos(z) * 3.5, 6.1 + math.sin(z) * 2.6, 0),
+			0.95 * S,
+			1.65 * S,
 			i % 2 == 0 and P.pale or P.light,
 			M.Limestone
 		)
+		-- thin gold inner trim along the arch
+		beam(
+			"ShrineArchTrim",
+			VS(math.cos(a) * 2.95, 6.1 + math.sin(a) * 2.05, -0.86),
+			VS(math.cos(z) * 2.95, 6.1 + math.sin(z) * 2.05, -0.86),
+			0.18 * S,
+			0.1,
+			P.gold,
+			M.Metal
+		)
 	end
-	local portal = K.cyl(L(0, 5.2, 0) * A(0, PI / 2, 0), 0.10, 5.8, P.portal, M.Neon, false, 0.14)
+	local portal = K.cyl(LS(0, 5.2, 0) * A(0, PI / 2, 0), 0.10, 5.8 * S, P.portal, M.Neon, false, 0.14)
 	portal.Name = "SkyforgeAperture"
-	K.cyl(L(0, 5.2, -0.065) * A(0, PI / 2, 0), 0.035, 4.6, P.portalDark, M.Neon, false, 0.2)
+	K.cyl(LS(0, 5.2, -0.065) * A(0, PI / 2, 0), 0.035, 4.6 * S, P.portalDark, M.Neon, false, 0.2)
+	local swirl = K.cyl(LS(0, 5.2, -0.11) * A(0, PI / 2, 0), 0.03, 2.4 * S, P.portal:Lerp(P.light, 0.35), M.Neon, false, 0.25)
+	K.tag(swirl, "TPFC_Pulse", { Period = 3.5, Base = 0.35, Peak = 0.05 })
 	for i = 0, 5 do
 		local a = i / 6 * PI * 2
 		b(
 			"PortalRune",
-			V(0.16, 0.7, 0.08),
-			L(math.cos(a) * 1.95, 5.2 + math.sin(a) * 1.95, -0.10) * A(0, 0, a),
+			V(0.16, 0.7, 0.08) * S,
+			LS(math.cos(a) * 1.95, 5.2 + math.sin(a) * 1.95, -0.10) * A(0, 0, a),
 			P.light,
 			M.Neon
 		)
 	end
-	b("ShrineCrest", V(0.83, 0.83, 0.20), L(0, 8.75, -0.88) * A(0, 0, PI / 4), P.gold, M.Metal)
+	b("ShrineCrest", V(0.83, 0.83, 0.20) * S, LS(0, 8.75, -0.88) * A(0, 0, PI / 4), P.gold, M.Metal)
+	-- floating crystal above the keystone (bobs gently)
+	local gem = b("ShrineCrystal", V(1.0, 1.6, 1.0) * S, LS(0, 10.4, 0) * A(0, PI / 4, 0), P.portal, M.Neon)
+	K.tag(gem, "TPFC_Bob", { Amp = 0.35, Period = 4.5, Spin = 12 })
+	K.lamp(gem, P.portal, 16, 0.9)
 	shrine.Parent = model
 	K.SetFolder(model)
-	local anchor = b("IncomeCrystal", V(0.1, 0.1, 0.1), L(0, 7, 0), P.portal)
+	-- floats above the (taller) shrine crystal
+	local anchor = b("IncomeCrystal", V(0.1, 0.1, 0.1), L(0, 15.5, 0), P.portal)
 	anchor.Transparency = 1
 	local crystalLabel = label(anchor, "", UDim2.fromScale(8, 1.1), V(0, 1.7, 0), P.text, 32)
 	local slots, slotFolder = {}, Instance.new("Folder")
@@ -181,33 +214,56 @@ function Base.Build(index)
 	end
 	local collectLabel = label(collect, "$0", UDim2.fromScale(5, 1.2), V(0, 3.0, 0), P.text, 28)
 	label(collect, "Collect", UDim2.fromScale(4, 0.65), V(0, 1.9, 0), P.text, 23)
-	-- Rear-left lodge: an open timber hall on stone footings, with a broad tiled roof.
-	b("LodgeFoundation", V(17, 0.48, 12.8), L(-20, 1.2, 24), P.stone, M.Limestone, true)
-	for i = 0, 7 do
+	-- Rear-left lodge: the courtyard's landmark. An open timber hall on a stone plinth, three bays
+	-- wide, with stone half-walls at the back and sides and a broad violet tiled roof (tiles in Details).
+	local LG = P.lodge
+	local lx, lz, lw, ld = LG.x, LG.z, LG.w, LG.d
+	local top = LG.deck + LG.postH
+	b("LodgeFoundation", V(lw + 1.2, 0.9, ld + 1.2), L(lx, 1.05, lz), P.stone, M.Limestone, true)
+	b("LodgePlinthCap", V(lw + 1.5, 0.22, ld + 1.5), L(lx, 1.55, lz), P.pale, M.Limestone)
+	local boards = math.floor(lw / 1.96)
+	for i = 0, boards - 1 do
 		b(
 			"LodgeDeckBoard",
-			V(1.95, 0.17, 11.5),
-			L(-26.85 + i * 1.96, 1.52, 24),
+			V(1.95, 0.17, ld - 1),
+			L(lx - lw / 2 + 1 + i * 1.96, LG.deck - 0.02, lz),
 			i % 2 == 0 and P.timber or P.wood,
 			M.WoodPlanks
 		)
 	end
-	b("LodgeStep", V(6.0, 0.18, 1.4), L(-20, 1.11, 16.8), P.pale, M.Limestone)
-	for _, x in { -27, -13 } do
-		for _, z in { 19, 29 } do
-			b("LodgeStoneFoot", V(1.8, 0.75, 1.8), L(x, 1.8, z), P.pale, M.Limestone)
-			b("LodgeTimberPost", V(0.85, 6.4, 0.85), L(x, 5.25, z), P.timber, M.Wood, true)
-			b("PostBrassShoe", V(0.98, 0.16, 0.98), L(x, 2.15, z), P.gold, M.Metal)
+	for i = 0, 2 do
+		b("LodgeStep", V(9 - i * 1.2, 0.3, 1.2), L(lx, 1.1 + i * 0.3, lz - ld / 2 - 2.2 + i * 1.0), P.pale, M.Limestone)
+	end
+	local px = { lx - lw / 2 + 1.2, lx - lw / 6, lx + lw / 6, lx + lw / 2 - 1.2 }
+	local pz = { lz - ld / 2 + 1.2, lz + ld / 2 - 1.2 }
+	for _, x in px do
+		for _, z in pz do
+			b("LodgeStoneFoot", V(2.0, 1.0, 2.0), L(x, LG.deck + 0.5, z), P.pale, M.Limestone)
+			b("LodgeTimberPost", V(1.1, LG.postH - 1, 1.1), L(x, LG.deck + 1 + (LG.postH - 1) / 2, z), P.timber, M.Wood, true)
+			b("PostBrassShoe", V(1.25, 0.2, 1.25), L(x, LG.deck + 1.1, z), P.gold, M.Metal)
 		end
-		b("LodgeSideRafter", V(0.85, 0.8, 11.5), L(x, 8.1, 24), P.wood, M.Wood)
+		b("LodgeTieBeam", V(1.0, 1.0, ld - 1.2), L(x, top - 0.4, lz), P.wood, M.Wood)
 	end
-	for _, z in { 19, 29 } do
-		b("LodgeCrossRafter", V(15.7, 0.9, 0.8), L(-20, 8.2, z), P.wood, M.Wood)
+	for _, z in pz do
+		b("LodgeCrossRafter", V(lw - 1.2, 1.1, 1.0), L(lx, top - 0.3, z), P.wood, M.Wood)
 	end
-	for i = 0, 4 do
-		b("LodgeRearPanel", V(2.6, 5.7, 0.35), L(-25.4 + i * 2.7, 4.7, 29.35), P.timber, M.WoodPlanks)
+	-- stone half-walls: full back wall, rear half of each side; timber panels above at the back
+	b("LodgeBackWall", V(lw - 2.4, 3.2, 1.2), L(lx, LG.deck + 1.6, lz + ld / 2 - 1.2), P.pale, M.Limestone, true)
+	b("LodgeBackWallCap", V(lw - 2.0, 0.3, 1.5), L(lx, LG.deck + 3.35, lz + ld / 2 - 1.2), P.light, M.Limestone)
+	for _, sd in { -1, 1 } do
+		b("LodgeSideWall", V(1.2, 3.2, ld / 2), L(lx + sd * (lw / 2 - 1.2), LG.deck + 1.6, lz + ld / 4), P.pale, M.Limestone, true)
 	end
-	Art.Gable(L(-20, 8.8, 24), 19.7, 3.3, 15.7, P.roof)
+	local panels = math.floor((lw - 2.4) / 2.75)
+	for i = 0, panels - 1 do
+		b(
+			"LodgeRearPanel",
+			V(2.65, LG.postH - 4.6, 0.4),
+			L(lx - (panels - 1) * 1.375 + i * 2.75, LG.deck + 3.5 + (LG.postH - 4.6) / 2, lz + ld / 2 - 1.0),
+			i % 2 == 0 and P.timber or P.darkWood,
+			M.WoodPlanks
+		)
+	end
+	Art.Gable(L(lx, top, lz), lw + 2.4, LG.rise, ld + 2, P.roof)
 	-- Rear-right floating relic pavilion sits on the original pond exclusion area.
 	b("RelicRockBase", V(11.4, 1.9, 10.4), L(21, 1.95, 23) * A(0, 0.10, 0), P.stone, M.Slate, true)
 	b("RelicRockTier", V(9.6, 1.1, 9.0), L(21, 3.0, 23) * A(0, -0.10, 0), P.pale, M.Limestone)
