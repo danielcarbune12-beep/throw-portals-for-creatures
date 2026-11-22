@@ -93,7 +93,7 @@ Config.Worlds = {
 		ambient = Color3.fromRGB(156, 156, 210), fog = Color3.fromRGB(70, 60, 130),    fogEnd = 1500, clock = 0, tint = Color3.fromRGB(232, 230, 255), atmo = Color3.fromRGB(100, 80, 180) },
 	Shadow  = { index = 7, name = "Shadow Dimension", cost = 40000000,  throwLevel = 34, incomeMult = 800,
 		material = Enum.Material.Ground,    groundColor = Color3.fromRGB(122, 104, 150),
-		ambient = Color3.fromRGB(162, 132, 182), fog = Color3.fromRGB(150, 122, 172),  fogEnd = 650, clock = 17.2, tint = Color3.fromRGB(246, 232, 250), atmo = Color3.fromRGB(184, 144, 204) },
+		ambient = Color3.fromRGB(118, 104, 140), fog = Color3.fromRGB(104, 88, 128),   fogEnd = 650, clock = 17.2, tint = Color3.fromRGB(240, 232, 250), atmo = Color3.fromRGB(132, 108, 158) },
 	Heaven  = { index = 8, name = "Heaven World",     cost = 250000000, throwLevel = 42, incomeMult = 2500,
 		material = Enum.Material.Salt,      groundColor = Color3.fromRGB(255, 250, 235),
 		ambient = Color3.fromRGB(220, 210, 170), fog = Color3.fromRGB(255, 248, 225), fogEnd = 900, clock = 12, tint = Color3.fromRGB(255, 250, 235), atmo = Color3.fromRGB(255, 240, 200) },
