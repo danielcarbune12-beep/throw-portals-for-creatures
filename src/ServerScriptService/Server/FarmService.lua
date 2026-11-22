@@ -36,6 +36,11 @@ local bases = {}
 local FarmFxRE, MoneyFxRE
 local rng = Random.new()
 
+-- server-wide events, the same for everyone: weather and market demand (published as workspace
+-- attributes FarmWeather / FarmWeatherEnds / FarmDemand / FarmDemandEnds for the client)
+local weather = { id = nil, ends = 0, nextAt = os.time() + Farm.WeatherFirst }
+local demand = { crop = nil, ends = 0 }
+
 local SOIL, SOIL_WET = C(92, 64, 44), C(70, 48, 34)
 local LOCKED = C(150, 142, 132)
 local GOLD_TEXT, TEXT, MUTED = C(255, 214, 120), C(250, 246, 236), C(220, 212, 200)
@@ -67,6 +72,7 @@ local function ensure(data)
 	f.Harvests = tonumber(f.Harvests) or 0
 	f.Pantry = type(f.Pantry) == "table" and f.Pantry or {} -- ["Crop|Mutation"] = count
 	f.Fed = tonumber(f.Fed) or 0
+	f.FedUntil = tonumber(f.FedUntil) or 0
 	data.Bounties = type(data.Bounties) == "table" and data.Bounties or {}
 	data.Daily = type(data.Daily) == "table" and data.Daily or { last = 0, streak = 0 }
 	return f
@@ -262,8 +268,12 @@ end
 -- mutation rolled at planting time (rarest first); Watered gets likelier with Sprinklers
 local function rollMutation(data)
 	local r = rng:NextNumber()
+	local w = weather.id and Farm.WeatherById[weather.id]
 	for _, m in ipairs(Farm.Mutations) do
 		local chance = m.chance + (m.perSprinkler or 0) * data.Farm.Sprinkler
+		if w then
+			chance = chance * (w.boost and w.boost[m.id] or 1) + (w.flat and w.flat[m.id] or 0)
+		end
 		if r < chance then
 			return m.id
 		end
@@ -280,7 +290,17 @@ end
 local function itemValue(data, crop, m)
 	local f = data.Farm
 	local pets = #(data.Placed or {})
-	return math.floor(crop.sell * soil(data) * (1 + Farm.LevelBonus * (f.Level - 1)) * (1 + Farm.PetBonus * pets) * mutMult(m))
+	local market = (crop.id == demand.crop) and Farm.DemandMult or 1
+	return math.floor(crop.sell * soil(data) * (1 + Farm.LevelBonus * (f.Level - 1)) * (1 + Farm.PetBonus * pets) * mutMult(m) * market)
+end
+
+-- Well Fed: courtyard-wide income buff after a proper feeding (GameServer.incomePerSec uses this)
+function FarmService.IncomeBuff(data)
+	local f = data and data.Farm
+	if f and (tonumber(f.FedUntil) or 0) > os.time() then
+		return 1 + Farm.WellFed.income
+	end
+	return 1
 end
 -- pet XP from one produce item
 local function itemFood(crop, m)
@@ -786,7 +806,7 @@ local function refreshBase(base)
 		local mName = mdef and ('<font color="#' .. mdef.color:ToHex() .. '">' .. m .. "</font> ") or ""
 		local stage = 0
 		if state == "locked" then
-			e.label.Text = '<font color="#DCD4C8">Locked bed</font>\n<font size="16">buy at the Farm Stand</font>'
+			e.label.Text = '<font color="#DCD4C8">Locked · Farm Stand</font>'
 			e.prompt.ActionText, e.prompt.ObjectText = "Locked", "Farm Stand: R"
 			e.soil.Color = LOCKED
 		elseif state == "empty" then
@@ -820,6 +840,18 @@ local function refreshBase(base)
 	farm.standLabel.Text = '<font color="#FFD678">FARMER LV ' .. f.Level .. "</font>  " .. math.floor(f.XP) .. " / " .. need .. " XP\n"
 		.. "Seed: " .. seed.name .. " (" .. Format.Money(seedCost(data, seed)) .. ", " .. fmtTime(growTime(data, seed)) .. ")\n"
 		.. '<font color="#DCD4C8">Soil x' .. Format.Money(soil(data)):gsub("%$", "") .. "  ·  " .. f.Harvests .. " harvests" .. (f.Spirit and "  ·  Spirit on" or "") .. "</font>"
+	local dc = demand.crop and Farm.ById[demand.crop]
+	local extra = {}
+	if weather.id then
+		local w = Farm.WeatherById[weather.id]
+		table.insert(extra, '<font color="#9CD8FF">' .. w.name .. " " .. fmtTime(weather.ends - now) .. "</font>")
+	end
+	if dc then
+		table.insert(extra, '<font color="#9CFFA8">Demand: ' .. dc.name .. " x" .. Farm.DemandMult .. "</font>")
+	end
+	if #extra > 0 then
+		farm.standLabel.Text ..= "\n" .. table.concat(extra, "  ·  ")
+	end
 	local st = farm.stand
 	st.Seeds.ActionText, st.Seeds.ObjectText = "Change seed", seed.name
 	if f.PlotsOwned < Farm.MaxPlots then
@@ -893,7 +925,9 @@ local function refreshBase(base)
 	local avg = #pets > 0 and sum / #pets or 1
 	farm.troughLabel.Text = '<font color="#FFD678">PANTRY ' .. n .. " / " .. Farm.PantryCap .. "</font>\n"
 		.. "Worth " .. Format.Money(value) .. "\n"
-		.. '<font color="#DCD4C8">' .. #pets .. " pets  ·  avg Lv " .. string.format("%.1f", avg) .. "  ·  best Lv " .. best .. "</font>"
+		.. '<font color="#DCD4C8">' .. #pets .. " pets  ·  avg Lv " .. string.format("%.1f", avg) .. "  ·  best Lv " .. best .. "</font>\n"
+		.. ((f.FedUntil > now) and ('<font color="#9CFFA8">Well fed ' .. fmtTime(f.FedUntil - now) .. "  ·  +" .. math.floor(Farm.WellFed.income * 100) .. "% income</font>")
+			or ('<font color="#FFB27A">Hungry: feed ' .. Farm.WellFed.min .. "+ food for +" .. math.floor(Farm.WellFed.income * 100) .. "% income</font>"))
 	farm.feedPrompt.ActionText = n > 0 and ("Feed pets (" .. n .. " food)") or "Feed pets"
 	farm.feedPrompt.ObjectText = "Pantry"
 	farm.sellPrompt.ActionText = n > 0 and "Sell produce" or "Nothing to sell"
@@ -1151,8 +1185,12 @@ function FarmService.OnFeed(base, player)
 	end
 	f.Fed += fed
 	bountyEvent(player, data, "feed", fed)
+	local wellFed = fed >= Farm.WellFed.min
+	if wellFed then
+		f.FedUntil = os.time() + Farm.WellFed.duration
+	end
 	local def = star and CreatureData.ById[star.c]
-	fx(player, "fed", { pos = pos, count = fed, ups = ups, star = def and def.name, level = star and star.l })
+	fx(player, "fed", { pos = pos, count = fed, ups = ups, star = def and def.name, level = star and star.l, wellFed = wellFed })
 	if hooks and hooks.sync then
 		hooks.sync(player, false) -- full sync: income per second changed
 	end
@@ -1203,6 +1241,65 @@ function FarmService.Event(player, kind, amount, info)
 	bountyEvent(player, data, kind, amount or 1, info)
 end
 
+---------------------------------------------------------------- weather + market demand (server-wide)
+local function publish()
+	workspace:SetAttribute("FarmWeather", weather.id or "")
+	workspace:SetAttribute("FarmWeatherEnds", weather.ends)
+	workspace:SetAttribute("FarmDemand", demand.crop or "")
+	workspace:SetAttribute("FarmDemandEnds", demand.ends)
+end
+
+function FarmService.StartWeather(id)
+	local w = Farm.WeatherById[id]
+	if not w then
+		-- weighted pick
+		local total = 0
+		for _, x in ipairs(Farm.Weather) do
+			total += x.weight
+		end
+		local r = rng:NextNumber() * total
+		for _, x in ipairs(Farm.Weather) do
+			r -= x.weight
+			if r <= 0 then
+				w = x
+				break
+			end
+		end
+		w = w or Farm.Weather[1]
+	end
+	weather.id, weather.ends = w.id, os.time() + w.duration
+	publish()
+	if FarmFxRE then
+		FarmFxRE:FireAllClients("weather", { id = w.id, name = w.name, desc = w.desc, duration = w.duration })
+	end
+	return w
+end
+FarmService.Weather = function()
+	return weather.id, weather.ends
+end
+
+local function worldTick(now)
+	if weather.id and now >= weather.ends then
+		weather.id = nil
+		weather.nextAt = now + rng:NextInteger(Farm.WeatherGap[1], Farm.WeatherGap[2])
+		publish()
+		if FarmFxRE then
+			FarmFxRE:FireAllClients("weatherEnd", {})
+		end
+	elseif not weather.id and now >= weather.nextAt then
+		FarmService.StartWeather(nil)
+	end
+	if now >= demand.ends then
+		local last = demand.crop
+		local pick
+		repeat
+			pick = Farm.Crops[rng:NextInteger(1, #Farm.Crops)].id
+		until pick ~= last or #Farm.Crops == 1
+		demand.crop, demand.ends = pick, now + Farm.DemandEvery
+		publish()
+	end
+end
+
 ---------------------------------------------------------------- start
 function FarmService.Init(baseBuilder, h)
 	hooks = h
@@ -1221,11 +1318,24 @@ function FarmService.Init(baseBuilder, h)
 	task.spawn(function()
 		while true do
 			task.wait(1)
+			local okW, errW = pcall(worldTick, os.time())
+			if not okW then
+				warn("[FarmService] weather", errW)
+			end
+			local w = weather.id and Farm.WeatherById[weather.id]
 			for _, base in ipairs(bases) do
 				local player = base.owner
 				local data = player and DataService.Get(player)
 				if data then
 					ensure(data)
+					-- Rain: every growing crop of an online player gains extra seconds
+					if w and w.growSpeed then
+						for _, plot in pairs(data.Farm.Plots) do
+							if type(plot) == "table" and plot.t then
+								plot.t -= (w.growSpeed - 1)
+							end
+						end
+					end
 					local ok, err = pcall(function()
 						if runSpirit(player, data, base) then
 							syncMoney(player)

@@ -63,6 +63,32 @@ end
 Farm.PantryCap = 300 -- past this, extra produce is sold automatically
 Farm.FeedXpPerCropXp = 4 -- pet XP per food = crop.xp * this * mutation mult
 
+-- Weather: a server-wide event every 12-18 minutes. Being online (and planting) during one pays.
+-- boost multiplies a mutation's planting chance; flat adds to it; growSpeed speeds up every crop.
+Farm.Weather = {
+	{ id = "Rain", name = "Rain", weight = 40, duration = 240, growSpeed = 1.5, flat = { Watered = 0.35 },
+		desc = "Crops grow 50% faster  ·  lots of Watered crops" },
+	{ id = "GoldenHour", name = "Golden Hour", weight = 30, duration = 180, boost = { Golden = 4 },
+		desc = "Golden mutations x4 when you plant" },
+	{ id = "Starfall", name = "Starfall", weight = 22, duration = 180, boost = { Giant = 4 },
+		desc = "Giant mutations x4 when you plant" },
+	{ id = "Aurora", name = "Rainbow Aurora", weight = 8, duration = 120, boost = { Rainbow = 8 },
+		desc = "Rainbow mutations x8 when you plant" },
+}
+Farm.WeatherById = {}
+for _, w in ipairs(Farm.Weather) do
+	Farm.WeatherById[w.id] = w
+end
+Farm.WeatherGap = { 720, 1080 } -- seconds between events
+Farm.WeatherFirst = 150 -- first event this long after the server starts
+
+-- Well Fed: feeding at least `min` food gives your whole courtyard +20% income for 30 minutes
+Farm.WellFed = { min = 5, duration = 1800, income = 0.2 }
+
+-- Market Demand: every 20 minutes one crop sells for double
+Farm.DemandEvery = 1200
+Farm.DemandMult = 2
+
 -- Pet levels: each level adds income to that pet. Food always goes to your lowest-level pet first.
 Farm.PetLevelIncome = 0.06 -- +6% income per pet level above 1
 Farm.PetMaxLevel = 100

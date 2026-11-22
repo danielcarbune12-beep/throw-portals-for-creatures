@@ -113,7 +113,8 @@ local function incomePerSec(data)
 		end
 	end
 	local _, incomeBuff = equippedBuffs(data)
-	return total * trainingMult(data) * incomeBuff
+	-- Well Fed (feeding at the courtyard trough): +20% for 30 minutes
+	return total * trainingMult(data) * incomeBuff * FarmService.IncomeBuff(data)
 end
 
 local function storedCount(data)
@@ -126,14 +127,17 @@ local function freeSpace(player, data)
 end
 
 local function updateAttributes(player, data)
-	local ids = {}
+	local ids, levels = {}, {}
 	for _, uid in ipairs(data.Placed) do
 		local c = findCreature(data, uid)
 		if c and not Expeditions.IsAway(data, uid) then
 			table.insert(ids, Variants.Key(c.c, c.s, c.v))
+			table.insert(levels, c.l or 1)
 		end
 	end
 	player:SetAttribute("BaseCreatures", HttpService:JSONEncode(ids))
+	-- pet levels (from feeding), aligned with BaseCreatures, for the name tags
+	player:SetAttribute("BaseLevels", HttpService:JSONEncode(levels))
 	equippedBuffs(data)
 	local eq = {}
 	for _, uid in ipairs(data.EquippedPets) do
@@ -744,6 +748,11 @@ function AdminCmds.allportals(player, data, st)
 		data.OwnedPortals[id] = true
 	end
 	return true, "All portals unlocked"
+end
+-- start a farm weather event now (Rain / GoldenHour / Starfall / Aurora, or random)
+function AdminCmds.weather(player, data, st, id)
+	local w = FarmService.StartWeather(id)
+	return true, "Weather: " .. w.name
 end
 function AdminCmds.give(player, data, st, key)
 	local id, gs, gm = Variants.Parse(tostring(key))

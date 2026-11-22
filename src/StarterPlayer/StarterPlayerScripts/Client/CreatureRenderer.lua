@@ -19,6 +19,7 @@ local Animator = require(Shared.CreatureAnimator)
 local Timeline = require(Shared.PresentationTimeline)
 local Format = require(Shared.Format)
 local Variants = require(Shared.Variants)
+local Farm = require(Shared.FarmConfig) -- pet levels from feeding (PetMult) for the name tags
 local Effects = require(script.Parent.Effects)
 local Sounds = require(script.Parent.Sounds)
 local Settings = require(script.Parent.ClientSettings)
@@ -352,6 +353,15 @@ local function refreshBase(plr)
 			list = res
 		end
 	end
+	-- pet levels from feeding, aligned with BaseCreatures (FarmService / GameServer.updateAttributes)
+	local levels = {}
+	local rawLv = plr:GetAttribute("BaseLevels")
+	if rawLv then
+		local ok, res = pcall(HttpService.JSONDecode, HttpService, rawLv)
+		if ok and type(res) == "table" then
+			levels = res
+		end
+	end
 	local base = idx and idx > 0 and baseModel(idx)
 	local existing = basePets[plr.UserId] or {}
 	if not base then
@@ -415,6 +425,20 @@ local function refreshBase(plr)
 		cand.anim:SetHome(base.Center.Position, 28)
 		cand.baseCF = base.Center.CFrame
 		cand.slot = i
+		-- name tag shows the pet's level and its levelled income
+		local lv = tonumber(levels[i]) or 1
+		local tdef = CreatureData.ById[cid]
+		if cand.tag and tdef and cand.shownLevel ~= lv then
+			cand.shownLevel = lv
+			local label = cand.tag:FindFirstChildOfClass("TextLabel")
+			if label then
+				label.Text = Variants.Prefix(vsize, vmat) .. tdef.name
+					.. (lv > 1 and (" <font color='#FFD678'>Lv " .. lv .. "</font>") or "")
+					.. "\n<font size='18' color='#9CFFA8'>"
+					.. Format.Money(CreatureData.Income(cid) * Variants.Mult(vsize, vmat) * Farm.PetMult(lv))
+					.. "/s</font>"
+			end
+		end
 		table.insert(result, cand)
 	end
 	for _, arr in pairs(pool) do
@@ -1076,6 +1100,9 @@ end)
 ---------------------------------------------------------------- wiring
 local function watchPlayer(plr)
 	plr:GetAttributeChangedSignal("BaseCreatures"):Connect(function()
+		refreshBase(plr)
+	end)
+	plr:GetAttributeChangedSignal("BaseLevels"):Connect(function()
 		refreshBase(plr)
 	end)
 	plr:GetAttributeChangedSignal("BaseIndex"):Connect(function()

@@ -73,7 +73,10 @@ Every courtyard has a farm, all of it physical and driven by proximity prompts (
 - **Soil quality:** seed prices and harvests are multiplied by the income multiplier of your best unlocked world, so farming stays relevant all game.
 - **Mutations** are rolled when you plant, so you watch a lucky bed grow: **Watered** (x1.5, +5% chance per Sprinkler level), **Golden** (x3, 8%), **Giant** (x10, 1.5%, a much bigger plant) and **Rainbow** (x40, 0.3%, glowing rainbow fruit).
 - **Pantry:** harvests go to your Pantry (300 max; past that the extra is sold automatically). At the **Feeding Trough** press **E to feed your pets** or **R to sell** the produce. Mutations multiply both the food and the sale value.
-- **Pet levels:** food gives pet XP, always to your lowest-level placed pet first. Each pet level adds +6% to that pet's income (max level 100).
+- **Pet levels:** food gives pet XP, always to your lowest-level placed pet first. Each pet level adds +6% to that pet's income (max level 100). Levels show on the pets' name tags in the courtyard.
+- **Well Fed:** feeding 5+ food at once gives your courtyard +20% income for 30 minutes.
+- **Weather (server-wide, every 12-18 min):** **Rain** (4 min: crops grow 50% faster, lots of Watered crops), **Golden Hour** (Golden x4 when you plant), **Starfall** (Giant x4), and the rare **Rainbow Aurora** (Rainbow x8). Each has its own sky and particles. Admins can start one: admin command `weather` with `Rain`, `GoldenHour`, `Starfall` or `Aurora`.
+- **Market Demand:** every 20 minutes one crop sells for x2 (shown on the Farm Stand).
 - **Sale value bonuses:** +5% per Farmer Level and +1.5% per pet placed in your courtyard.
 - **Farmer Level:** XP from harvests, catches, bounties and daily gifts. Levels unlock new seeds (Lv 2, 4, 6, 9, 12).
 - **Farm Stand:** E change seed · R buy a bed · T Sprinkler (-8% grow time per level, 5 levels) · G hire the **Harvest Spirit** (Lv 5, $250K). The Spirit sows empty beds, harvests ripe ones into your Pantry and resows, also while you're offline (up to 24 h of catch-up). When the Pantry is full, its extra harvests are sold into your Treasury.
