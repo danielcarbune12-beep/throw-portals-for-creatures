@@ -12,16 +12,18 @@
 --  * Bounty Board: three rotating jobs (harvest, catch, collect, throw, zone) with rewards.
 --  * Daily Gift chest: once every 20 h, 7-day streak.
 -- Everything is physical, in the courtyard, driven by ProximityPrompts (the HUD has exactly four
--- menu destinations by design). Feedback is in-world: labels, coins (MoneyFx) and FarmFx bursts.
+-- menu destinations by design). Feedback stays on permanent farm signs; no screen or character message bursts.
 -- All prices, rolls and timers are decided here; the client only triggers prompts.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
 local Farm = require(Shared.FarmConfig)
+local Care = require(Shared.FarmCare)
 local Format = require(Shared.Format)
 local CreatureData = require(Shared.CreatureData)
 local DataService = require(script.Parent.DataService)
+local Expeditions = require(script.Parent.ExpeditionService)
 local K = require(script.Parent.WorldKit)
 local Art = require(script.Parent.SanctuaryArchitecture)
 local Style = require(script.Parent.SkyforgeStyle)
@@ -43,7 +45,7 @@ local demand = { crop = nil, ends = 0 }
 
 local SOIL, SOIL_WET = C(92, 64, 44), C(70, 48, 34)
 local LOCKED = C(150, 142, 132)
-local GOLD_TEXT, TEXT, MUTED = C(255, 214, 120), C(250, 246, 236), C(220, 212, 200)
+local TEXT = C(250, 246, 236)
 
 -- base-local layout (base space: -Z faces the avenue entrance)
 local PLOTS = {}
@@ -72,6 +74,7 @@ local function ensure(data)
 	f.Harvests = tonumber(f.Harvests) or 0
 	f.Pantry = type(f.Pantry) == "table" and f.Pantry or {} -- ["Crop|Mutation"] = count
 	f.Fed = tonumber(f.Fed) or 0
+	f.FedProgress = math.clamp(math.floor(tonumber(f.FedProgress) or 0), 0, Farm.WellFed.min - 1)
 	f.FedUntil = tonumber(f.FedUntil) or 0
 	f.Almanac = type(f.Almanac) == "table" and f.Almanac or {} -- ["Crop|Mutation"] = true
 	data.Bounties = type(data.Bounties) == "table" and data.Bounties or {}
@@ -128,7 +131,7 @@ local function syncMoney(player)
 end
 
 ---------------------------------------------------------------- Farmer Level
-local function addXp(player, data, amount)
+local function addXp(player, data, amount, silent)
 	local f = data.Farm
 	f.XP += amount
 	local leveled = false
@@ -142,7 +145,9 @@ local function addXp(player, data, amount)
 				table.insert(unlockedNow, c.name)
 			end
 		end
-		fx(player, "level", { level = f.Level, unlocks = unlockedNow, spirit = f.Level == Farm.SpiritLevel })
+		if not silent then
+			fx(player, "level", { level = f.Level, unlocks = unlockedNow, spirit = f.Level == Farm.SpiritLevel })
+		end
 	end
 	player:SetAttribute("FarmerLevel", f.Level)
 	return leveled
@@ -267,9 +272,12 @@ end
 
 ---------------------------------------------------------------- harvest / plant
 -- mutation rolled at planting time (rarest first); Watered gets likelier with Sprinklers
-local function rollMutation(data)
+local function rollMutation(data, plantedAt)
 	local r = rng:NextNumber()
-	local w = weather.id and Farm.WeatherById[weather.id]
+	-- Historical Spirit cycles must not inherit a weather event that started today.
+	local w = weather.id
+		and Care.WeatherApplies(plantedAt, weather.started, weather.ends)
+		and Farm.WeatherById[weather.id]
 	for _, m in ipairs(Farm.Mutations) do
 		local chance = m.chance + (m.perSprinkler or 0) * data.Farm.Sprinkler
 		if w then
@@ -292,7 +300,15 @@ local function itemValue(data, crop, m)
 	local f = data.Farm
 	local pets = #(data.Placed or {})
 	local market = (crop.id == demand.crop) and Farm.DemandMult or 1
-	return math.floor(crop.sell * soil(data) * (1 + Farm.LevelBonus * (f.Level - 1)) * (1 + Farm.PetBonus * pets) * mutMult(m) * market * FarmService.AlmanacMult(data))
+	return math.floor(
+		crop.sell
+			* soil(data)
+			* (1 + Farm.LevelBonus * (f.Level - 1))
+			* (1 + Farm.PetBonus * pets)
+			* mutMult(m)
+			* market
+			* FarmService.AlmanacMult(data)
+	)
 end
 
 -- Crop Almanac: discoveries so far and the permanent value/food bonus they give
@@ -365,14 +381,15 @@ local function harvest(player, data, base, i, auto)
 	end
 	f.Plots[key] = nil
 	f.Harvests += 1
-	addXp(player, data, crop.xp)
+	addXp(player, data, crop.xp, auto)
 	-- Crop Almanac: first time this crop x mutation is harvested
 	local ak = crop.id .. "|" .. (m or "")
 	if not f.Almanac[ak] then
 		f.Almanac[ak] = true
-		addXp(player, data, Farm.AlmanacXp * crop.order)
+		addXp(player, data, Farm.AlmanacXp * crop.order, auto)
 		local n = FarmService.AlmanacCount(data)
 		task.delay(1.1, fx, player, "almanac", {
+			auto = auto,
 			pos = pos + V(0, 2, 0),
 			name = (m and (m .. " ") or "") .. crop.name,
 			count = n,
@@ -390,7 +407,7 @@ local function harvest(player, data, base, i, auto)
 	return 1
 end
 
-local function plant(player, data, i, cropId, at)
+local function plant(_player, data, i, cropId, at)
 	local f = data.Farm
 	local crop = Farm.ById[cropId]
 	if not crop or not unlocked(data, crop) then
@@ -401,7 +418,7 @@ local function plant(player, data, i, cropId, at)
 		return false, "Need " .. Format.Money(cost) .. " for " .. crop.name .. " seeds"
 	end
 	data.Money -= cost
-	local m = rollMutation(data)
+	local m = rollMutation(data, at or os.time())
 	f.Plots[tostring(i)] = { c = crop.id, t = at or os.time(), m = m }
 	return true, nil, m
 end
@@ -496,7 +513,12 @@ local function plantVisual(entry, crop, stage, plotCF, m)
 				local h = 2.6 * s
 				K.block(b * CF(k * 0.35, h / 2, 0) * A(0, 0, k * 0.12), V(0.16, h, 0.16), crop.stem, M.SmoothPlastic)
 				if stage >= 2 then
-					K.ellipsoid(b * CF(k * 0.35 + k * 0.15 * s, h + 0.25 * s, 0) * A(0, 0, k * 0.12), V(0.4, 1.1, 0.4) * s, fruit, fmat)
+					K.ellipsoid(
+						b * CF(k * 0.35 + k * 0.15 * s, h + 0.25 * s, 0) * A(0, 0, k * 0.12),
+						V(0.4, 1.1, 0.4) * s,
+						fruit,
+						fmat
+					)
 				end
 			end
 		elseif crop.shape == "melon" or crop.shape == "pumpkin" then
@@ -519,14 +541,26 @@ local function plantVisual(entry, crop, stage, plotCF, m)
 			K.block(b * CF(0, 0.6 * s, 0), V(0.2, 1.2 * s, 0.2), crop.stem, M.SmoothPlastic)
 			K.wedge(b * CF(0.35 * s, 0.5 * s, 0) * A(0, PI / 2, 0), V(0.9, 0.2, 0.7) * s, crop.leaf, M.Glass)
 			if stage >= 2 then
-				K.gem(b * CF(0, 1.4 * s, 0) * A(0, PI / 4, 0), 0.8 * s, 1.5 * s, fruit, ripe and M.Neon or M.Glass, ripe and 0.1 or 0.3)
+				K.gem(
+					b * CF(0, 1.4 * s, 0) * A(0, PI / 4, 0),
+					0.8 * s,
+					1.5 * s,
+					fruit,
+					ripe and M.Neon or M.Glass,
+					ripe and 0.1 or 0.3
+				)
 			end
 		elseif crop.shape == "lotus" then
 			K.ellipsoid(b * CF(0, 0.1, 0), V(1.8, 0.18, 1.8) * s, crop.leaf, M.SmoothPlastic)
 			if stage >= 2 then
 				for p = 0, 5 do
 					local a = p / 6 * PI * 2
-					K.ellipsoid(b * CF(math.cos(a) * 0.45 * s, 0.45 * s, math.sin(a) * 0.45 * s) * A(0, -a, 0.6), V(0.9, 0.16, 0.45) * s, fruit, fmat)
+					K.ellipsoid(
+						b * CF(math.cos(a) * 0.45 * s, 0.45 * s, math.sin(a) * 0.45 * s) * A(0, -a, 0.6),
+						V(0.9, 0.16, 0.45) * s,
+						fruit,
+						fmat
+					)
 				end
 				if ripe then
 					K.ellipsoid(b * CF(0, 0.5 * s, 0), V(0.45, 0.45, 0.45) * s, C(255, 236, 160), M.Neon)
@@ -537,19 +571,36 @@ local function plantVisual(entry, crop, stage, plotCF, m)
 			K.block(b * CF(0, h / 2, 0), V(0.2, h, 0.2), crop.stem, M.SmoothPlastic)
 			for p = 0, 2 do
 				local a = p / 3 * PI * 2
-				K.wedge(b * CF(math.cos(a) * 0.4, h * 0.55, math.sin(a) * 0.4) * A(0, -a + PI / 2, 0), V(0.7, 0.15, 0.8) * s, crop.leaf, M.SmoothPlastic)
+				K.wedge(
+					b * CF(math.cos(a) * 0.4, h * 0.55, math.sin(a) * 0.4) * A(0, -a + PI / 2, 0),
+					V(0.7, 0.15, 0.8) * s,
+					crop.leaf,
+					M.SmoothPlastic
+				)
 			end
 			if stage >= 2 then
 				for p = 0, 3 do
 					local a = p / 4 * PI * 2 + 0.4
-					K.ellipsoid(b * CF(math.cos(a) * 0.35 * s, h + 0.1, math.sin(a) * 0.35 * s), V(0.5, 0.5, 0.5) * s, fruit, fmat)
+					K.ellipsoid(
+						b * CF(math.cos(a) * 0.35 * s, h + 0.1, math.sin(a) * 0.35 * s),
+						V(0.5, 0.5, 0.5) * s,
+						fruit,
+						fmat
+					)
 				end
 			end
 		end
 	end
 	if ripe then
 		local big = mdef and m ~= "Watered"
-		local gem = K.gem(plotCF * CF(0, big and 7.2 or 6.2, 0), big and 1.1 or 0.7, big and 2.0 or 1.3, mdef and mdef.color or C(255, 214, 120), M.Neon, 0.1)
+		local gem = K.gem(
+			plotCF * CF(0, big and 7.2 or 6.2, 0),
+			big and 1.1 or 0.7,
+			big and 2.0 or 1.3,
+			mdef and mdef.color or C(255, 214, 120),
+			M.Neon,
+			0.1
+		)
 		gem.Name = "RipeMarker"
 		K.tag(gem, "TPFC_Bob", { Amp = 0.35, Period = 2.2, Spin = 60 })
 	end
@@ -586,6 +637,23 @@ local function prompt(part, key, gamepad, offset)
 	p:SetAttribute("FarmPrompt", true)
 	p.Parent = att
 	return p
+end
+
+local function feedbackPlate(cf, size, name, text)
+	local plate = K.block(cf, size, C(253, 253, 251), M.SmoothPlastic)
+	plate.Name = "FarmFeedback" .. (name or "Summary")
+	local gui = Instance.new("SurfaceGui")
+	gui.Face, gui.CanvasSize, gui.LightInfluence = Enum.NormalId.Front, Vector2.new(640, 144), 0
+	gui.Parent = plate
+	local label = Instance.new("TextLabel")
+	label.Name, label.BackgroundTransparency = "FarmStatus", 1
+	label.Size, label.Position = UDim2.new(1, -24, 1, -16), UDim2.fromOffset(12, 8)
+	label.Font, label.TextSize = Enum.Font.BuilderSansMedium, 28
+	label.TextColor3, label.TextWrapped, label.Text = C(27, 35, 44), true, text
+	label:SetAttribute("FarmFeedback", name)
+	label:SetAttribute("DefaultText", text)
+	label.Parent = gui
+	return plate
 end
 
 local function buildBase(base)
@@ -628,7 +696,8 @@ local function buildBase(base)
 		pr.Triggered:Connect(function(player)
 			FarmService.OnPlot(base, i, player)
 		end)
-		farm.plots[i] = { soil = soilPart, plants = plants, label = label, prompt = pr, cf = pcf, stage = -1, crop = nil }
+		farm.plots[i] =
+			{ soil = soilPart, plants = plants, label = label, prompt = pr, cf = pcf, stage = -1, crop = nil }
 		K.SetFolder(root)
 	end
 	-- Farm Stand: timber counter under a violet awning, four goods with their own keys
@@ -651,16 +720,24 @@ local function buildBase(base)
 	}
 	farm.stand = {}
 	for _, g in ipairs(goods) do
-		local item = K.block(scf * CF(g.x, 4.2, -0.2), V(1.1, 0.9, 1.1), g.col, g.name == "Spirit" and M.Neon or M.SmoothPlastic)
+		local item =
+			K.block(scf * CF(g.x, 4.2, -0.2), V(1.1, 0.9, 1.1), g.col, g.name == "Spirit" and M.Neon or M.SmoothPlastic)
 		item.Name = "Stand" .. g.name
 		local pr = prompt(item, g.key, g.pad, V(0, 0.8, 0))
 		pr.MaxActivationDistance = 5
+		pr:SetAttribute("FarmStation", "Stand")
 		pr:SetAttribute("BaseIndex", base.index)
 		pr.Triggered:Connect(function(player)
 			FarmService.OnStand(base, g.name, player)
 		end)
 		farm.stand[g.name] = pr
 	end
+	feedbackPlate(
+		scf * CF(0, 2.6, -1.36),
+		V(6.4, 1.35, 0.12),
+		"Stand",
+		"Plant a crop, harvest it, then feed pets or sell at the Pantry."
+	)
 	local sign = K.block(scf * CF(0, 7.2, -1.5), V(6.4, 1.4, 0.25), Style.roof, M.SmoothPlastic)
 	farm.standLabel = billboard(sign, V(0, 2.2, 0), UDim2.fromOffset(200, 66), 22)
 	-- Bounty Board: two posts, a timber board with three parchment cards, a little roof
@@ -678,14 +755,15 @@ local function buildBase(base)
 	gui.LightInfluence = 0.2
 	gui.Parent = board
 	local title = Instance.new("TextLabel")
-	title.Size, title.Position, title.BackgroundTransparency = UDim2.new(1, 0, 0, 56), UDim2.new(0, 0, 0, 6), 1
-	title.Font, title.TextScaled, title.Text, title.TextColor3 = Enum.Font.GothamBlack, true, "BOUNTIES", C(255, 236, 190)
+	title.Size, title.Position, title.BackgroundTransparency = UDim2.new(1, 0, 0, 56), UDim2.fromOffset(0, 6), 1
+	title.Font, title.TextScaled, title.Text, title.TextColor3 =
+		Enum.Font.GothamBlack, true, "BOUNTIES", C(255, 236, 190)
 	title.Parent = gui
 	farm.cards = {}
 	for k = 1, Farm.BountySlots do
 		local card = Instance.new("Frame")
 		card.Size = UDim2.new(1, -40, 0, 118)
-		card.Position = UDim2.new(0, 20, 0, 66 + (k - 1) * 128)
+		card.Position = UDim2.fromOffset(20, 66 + (k - 1) * 128)
 		card.BackgroundColor3 = C(236, 222, 186)
 		card.BorderSizePixel = 0
 		card.Parent = gui
@@ -694,13 +772,15 @@ local function buildBase(base)
 		corner.Parent = card
 		local t = Instance.new("TextLabel")
 		t.Name = "Text"
-		t.Size, t.Position, t.BackgroundTransparency = UDim2.new(1, -24, 0.55, 0), UDim2.new(0, 12, 0, 6), 1
-		t.Font, t.TextScaled, t.TextXAlignment, t.TextColor3 = Enum.Font.GothamBold, true, Enum.TextXAlignment.Left, C(50, 36, 28)
+		t.Size, t.Position, t.BackgroundTransparency = UDim2.new(1, -24, 0.55, 0), UDim2.fromOffset(12, 6), 1
+		t.Font, t.TextScaled, t.TextXAlignment, t.TextColor3 =
+			Enum.Font.GothamBold, true, Enum.TextXAlignment.Left, C(50, 36, 28)
 		t.Parent = card
 		local r = Instance.new("TextLabel")
 		r.Name = "Reward"
 		r.Size, r.Position, r.BackgroundTransparency = UDim2.new(1, -24, 0.38, 0), UDim2.new(0, 12, 0.58, 0), 1
-		r.Font, r.TextScaled, r.TextXAlignment, r.TextColor3 = Enum.Font.GothamMedium, true, Enum.TextXAlignment.Left, C(110, 80, 40)
+		r.Font, r.TextScaled, r.TextXAlignment, r.TextColor3 =
+			Enum.Font.GothamMedium, true, Enum.TextXAlignment.Left, C(110, 80, 40)
 		r.RichText = true
 		r.Parent = card
 		farm.cards[k] = card
@@ -713,6 +793,12 @@ local function buildBase(base)
 		FarmService.OnBoard(base, player)
 	end)
 	farm.boardPrompt = bp
+	feedbackPlate(
+		bcf * CF(0, 1.35, -0.23),
+		V(6.4, 0.9, 0.12),
+		"Bounty",
+		"Complete the jobs above, then claim their rewards here."
+	)
 	-- Daily Gift chest
 	local ccf = L(CHEST.X, 0, CHEST.Z) * A(0, PI, 0)
 	K.block(ccf * CF(0, 1.4, 0), V(4.2, 0.4, 3.0), Style.stone, M.Limestone, true)
@@ -726,7 +812,7 @@ local function buildBase(base)
 	local glow = K.block(ccf * CF(0, 3.2, 0), V(2.8, 0.2, 1.8), C(255, 214, 120), M.Neon, false, 0.5)
 	glow.Name = "ChestGlow"
 	farm.chestGlow = glow
-	farm.chestLabel = billboard(box, V(0, 3.6, 0), UDim2.fromOffset(200, 50), 50)
+	farm.chestLabel = billboard(box, V(0, 3.2, 0), UDim2.fromOffset(130, 26), 20)
 	local cp = prompt(box, Enum.KeyCode.E, Enum.KeyCode.ButtonX, V(0, 1.2, 0))
 	cp.ActionText = "Open daily gift"
 	cp.ObjectText = "Daily Gift"
@@ -735,6 +821,7 @@ local function buildBase(base)
 		FarmService.OnChest(base, player)
 	end)
 	farm.chestPrompt = cp
+	feedbackPlate(ccf * CF(0, 1.45, -1.56), V(3.8, 0.9, 0.12), "Daily", "A daily gift, ready every 20 hours.")
 	-- Feeding Trough: Pantry produce becomes pet food (E) or money (R). Long side faces the shrine.
 	local tcf = L(TROUGH.X, 0, TROUGH.Z)
 	K.block(tcf * CF(0, 1.3, 0), V(7.8, 0.6, 3.8), Style.stone, M.Limestone, true)
@@ -748,12 +835,24 @@ local function buildBase(base)
 		K.block(tcf * CF(x, 4.4, 1.2), V(0.4, 5.2, 0.4), woodD, M.Wood)
 	end
 	K.block(tcf * CF(0, 7.0, 1.2), V(8.0, 0.4, 0.5), wood, M.Wood)
-	local plaque = K.block(tcf * CF(0, 6.1, 1.2), V(4.6, 1.2, 0.2), Style.roof, M.SmoothPlastic)
-	farm.troughLabel = billboard(plaque, V(0, 2.6, 0), UDim2.fromOffset(210, 66), 30)
+	feedbackPlate(
+		tcf * CF(0, 6.1, 1.2),
+		V(7.2, 1.6, 0.2),
+		"Pantry",
+		"Feed up to 5 food. Ordinary food first. Hold to sell the whole Pantry."
+	)
+	local summary = feedbackPlate(tcf * CF(0, 8.0, 1.2), V(7.2, 1.9, 0.2), nil, "")
+	farm.troughLabel = summary.SurfaceGui.FarmStatus
+	farm.troughLabel.TextSize = 30
 	-- the food heap grows with the Pantry
 	farm.heap = {}
 	for k, x in ipairs({ -1.8, 0, 1.8 }) do
-		local h = K.ellipsoid(tcf * CF(x, 3.1, 0), V(1.8, 0.6, 1.6), ({ C(150, 110, 230), C(242, 202, 90), C(120, 200, 150) })[k], M.SmoothPlastic)
+		local h = K.ellipsoid(
+			tcf * CF(x, 3.1, 0),
+			V(1.8, 0.6, 1.6),
+			({ C(150, 110, 230), C(242, 202, 90), C(120, 200, 150) })[k],
+			M.SmoothPlastic
+		)
 		h.Name = "FoodHeap"
 		farm.heap[k] = h
 	end
@@ -765,6 +864,7 @@ local function buildBase(base)
 	end)
 	local sell = prompt(trough, Enum.KeyCode.R, Enum.KeyCode.ButtonY, V(1.6, 0.9, -1.6))
 	sell.MaxActivationDistance = 6
+	sell.HoldDuration = 1
 	sell:SetAttribute("BaseIndex", base.index)
 	sell.Triggered:Connect(function(player)
 		FarmService.OnSell(base, player)
@@ -784,14 +884,15 @@ local function buildBase(base)
 	ag.LightInfluence = 0.15
 	ag.Parent = board2
 	local at = Instance.new("TextLabel")
-	at.Size, at.Position, at.BackgroundTransparency = UDim2.new(1, -20, 0, 44), UDim2.new(0, 10, 0, 4), 1
+	at.Size, at.Position, at.BackgroundTransparency = UDim2.new(1, -20, 0, 44), UDim2.fromOffset(10, 4), 1
 	at.Font, at.TextScaled, at.RichText, at.TextColor3 = Enum.Font.GothamBlack, true, true, C(255, 236, 190)
 	at.Parent = ag
 	farm.almanacTitle = at
 	farm.almanacCells = {}
 	for col, mut in ipairs(Farm.AlmanacColumns) do
 		local h = Instance.new("TextLabel")
-		h.Size, h.Position, h.BackgroundTransparency = UDim2.fromOffset(236, 24), UDim2.fromOffset(254 + (col - 1) * 244, 52), 1
+		h.Size, h.Position, h.BackgroundTransparency =
+			UDim2.fromOffset(236, 24), UDim2.fromOffset(254 + (col - 1) * 244, 52), 1
 		h.Font, h.TextScaled, h.Text = Enum.Font.GothamBold, true, mut == "" and "Normal" or mut
 		h.TextColor3 = mut ~= "" and Farm.MutationById[mut].color or C(230, 222, 206)
 		h.Parent = ag
@@ -824,7 +925,7 @@ local function placedPets(data)
 	end
 	local list = {}
 	for _, uid in ipairs(data.Placed or {}) do
-		if byUid[uid] then
+		if byUid[uid] and not Expeditions.IsAway(data, uid) then
 			table.insert(list, byUid[uid])
 		end
 	end
@@ -900,12 +1001,24 @@ local function refreshBase(base)
 			e.soil.Color = m == "Watered" and C(60, 62, 70) or SOIL_WET
 			if state == "ready" then
 				e.label.Text = mName .. '<font color="#FFD678">' .. crop.name .. " ready!</font>"
-				e.prompt.ActionText, e.prompt.ObjectText = "Harvest", (m and (m .. " ") or "") .. crop.name
+				local seed = Farm.ById[f.Seed]
+				local replant = seed and unlocked(data, seed) and data.Money >= seedCost(data, seed)
+				e.prompt.ActionText = replant and "Harvest + replant" or "Harvest to Pantry"
+				e.prompt.ObjectText = replant and (seed.name .. " · " .. Format.Money(seedCost(data, seed)))
+					or crop.name
 			else
-				e.label.Text = mName .. crop.name .. "  " .. math.floor(p * 100) .. "%\n" .. '<font color="#DCD4C8">' .. fmtTime(left) .. "</font>"
+				e.label.Text = mName
+					.. crop.name
+					.. "  "
+					.. math.floor(p * 100)
+					.. "%\n"
+					.. '<font color="#DCD4C8">'
+					.. fmtTime(left)
+					.. "</font>"
 				e.prompt.ActionText, e.prompt.ObjectText = "Growing", fmtTime(left)
 			end
 		end
+		e.prompt:SetAttribute("FarmAvailable", state == "empty" or state == "ready")
 		local visKey = (crop and crop.id or "") .. (m or "")
 		if stage ~= e.stage or visKey ~= e.crop then
 			e.stage, e.crop = stage, visKey
@@ -915,9 +1028,27 @@ local function refreshBase(base)
 	-- stand
 	local seed = Farm.ById[f.Seed]
 	local need = Farm.XpToNext(f.Level)
-	farm.standLabel.Text = '<font color="#FFD678">FARMER LV ' .. f.Level .. "</font>  " .. math.floor(f.XP) .. " / " .. need .. " XP\n"
-		.. "Seed: " .. seed.name .. " (" .. Format.Money(seedCost(data, seed)) .. ", " .. fmtTime(growTime(data, seed)) .. ")\n"
-		.. '<font color="#DCD4C8">Soil x' .. Format.Money(soil(data)):gsub("%$", "") .. "  ·  " .. f.Harvests .. " harvests" .. (f.Spirit and "  ·  Spirit on" or "") .. "</font>"
+	farm.standLabel.Text = '<font color="#FFD678">FARMER LV '
+		.. f.Level
+		.. "</font>  "
+		.. math.floor(f.XP)
+		.. " / "
+		.. need
+		.. " XP\n"
+		.. "Seed: "
+		.. seed.name
+		.. " ("
+		.. Format.Money(seedCost(data, seed))
+		.. ", "
+		.. fmtTime(growTime(data, seed))
+		.. ")\n"
+		.. '<font color="#DCD4C8">Soil x'
+		.. Format.Money(soil(data)):gsub("%$", "")
+		.. "  ·  "
+		.. f.Harvests
+		.. " harvests"
+		.. (f.Spirit and "  ·  Spirit on" or "")
+		.. "</font>"
 	local dc = demand.crop and Farm.ById[demand.crop]
 	local extra = {}
 	if weather.id then
@@ -931,7 +1062,11 @@ local function refreshBase(base)
 		farm.standLabel.Text ..= "\n" .. table.concat(extra, "  ·  ")
 	end
 	local st = farm.stand
-	st.Seeds.ActionText, st.Seeds.ObjectText = "Change seed", seed.name
+	st.Seeds.ActionText, st.Seeds.ObjectText = "Next seed", seed.name
+	st.Seeds:SetAttribute("FarmAvailable", true)
+	st.Beds:SetAttribute("FarmAvailable", f.PlotsOwned < Farm.MaxPlots)
+	st.Sprinkler:SetAttribute("FarmAvailable", f.Sprinkler < #Farm.SprinklerPrices)
+	st.Spirit:SetAttribute("FarmAvailable", not f.Spirit)
 	if f.PlotsOwned < Farm.MaxPlots then
 		st.Beds.ActionText = "Buy bed " .. (f.PlotsOwned + 1)
 		st.Beds.ObjectText = Format.Money(Farm.PlotPrices[f.PlotsOwned - Farm.StartPlots + 1])
@@ -953,12 +1088,12 @@ local function refreshBase(base)
 	end
 	-- board (rewrite only when something changed)
 	fillBounties(data)
-	local key = ""
+	local bountyKey = ""
 	for _, b in ipairs(data.Bounties) do
-		key ..= b.k .. b.n .. b.p .. (b.crop or "") .. (b.zone or "") .. "|"
+		bountyKey ..= b.k .. b.n .. b.p .. (b.crop or "") .. (b.zone or "") .. "|"
 	end
-	if key ~= farm.boardKey then
-		farm.boardKey = key
+	if bountyKey ~= farm.boardKey then
+		farm.boardKey = bountyKey
 		local ready = 0
 		for k, card in ipairs(farm.cards) do
 			local b = data.Bounties[k]
@@ -967,14 +1102,22 @@ local function refreshBase(base)
 				ready += done and 1 or 0
 				card.BackgroundColor3 = done and C(250, 226, 150) or C(236, 222, 186)
 				card.Text.Text = (done and "DONE  " or "") .. bountyText(b)
-				card.Reward.Text = bountyProgress(b) .. "   ·   <b>" .. Format.Money(b.money) .. "</b>  +" .. b.xp .. " XP"
+				card.Reward.Text = bountyProgress(b)
+					.. "   ·   <b>"
+					.. Format.Money(b.money)
+					.. "</b>  +"
+					.. b.xp
+					.. " XP"
 			end
 		end
-		farm.boardPrompt.ActionText = ready > 0 and ("Claim " .. ready .. (ready == 1 and " reward" or " rewards")) or "Bounties"
+		farm.boardPrompt:SetAttribute("FarmAvailable", ready > 0)
+		farm.boardPrompt.ActionText = ready > 0 and ("Claim " .. ready .. (ready == 1 and " reward" or " rewards"))
+			or "Bounties"
 	end
 	-- chest
 	local d = data.Daily
 	local wait = (d.last or 0) + Farm.DailyCooldown - now
+	farm.chestPrompt:SetAttribute("FarmAvailable", wait <= 0)
 	if wait <= 0 then
 		local streak = ((d.last or 0) > 0 and now - d.last <= Farm.DailyStreakWindow) and (d.streak or 0) + 1 or 1
 		farm.chestLabel.Text = '<font color="#FFD678">Day ' .. ((streak - 1) % 7 + 1) .. " gift ready!</font>"
@@ -995,28 +1138,36 @@ local function refreshBase(base)
 		end
 	end
 	local pets = placedPets(data)
-	local sum, best = 0, 1
-	for _, c in ipairs(pets) do
-		sum += c.l or 1
-		best = math.max(best, c.l or 1)
-	end
-	local avg = #pets > 0 and sum / #pets or 1
-	farm.troughLabel.Text = '<font color="#FFD678">PANTRY ' .. n .. " / " .. Farm.PantryCap .. "</font>\n"
-		.. "Worth " .. Format.Money(value) .. "\n"
-		.. '<font color="#DCD4C8">' .. #pets .. " pets  ·  avg Lv " .. string.format("%.1f", avg) .. "  ·  best Lv " .. best .. "</font>\n"
-		.. ((f.FedUntil > now) and ('<font color="#9CFFA8">Well fed ' .. fmtTime(f.FedUntil - now) .. "  ·  +" .. math.floor(Farm.WellFed.income * 100) .. "% income</font>")
-			or ('<font color="#FFB27A">Hungry: feed ' .. Farm.WellFed.min .. "+ food for +" .. math.floor(Farm.WellFed.income * 100) .. "% income</font>"))
-	farm.feedPrompt.ActionText = n > 0 and ("Feed pets (" .. n .. " food)") or "Feed pets"
-	farm.feedPrompt.ObjectText = "Pantry"
-	farm.sellPrompt.ActionText = n > 0 and "Sell produce" or "Nothing to sell"
+	local condition = f.FedUntil > now and ("Well Fed " .. fmtTime(f.FedUntil - now) .. " · +20% income")
+		or ("Meal " .. f.FedProgress .. "/" .. Farm.WellFed.min .. " · Feed for +20% income")
+	farm.troughLabel.Text = "Pantry "
+		.. n
+		.. "/"
+		.. Farm.PantryCap
+		.. " · "
+		.. Format.Money(value)
+		.. "\n"
+		.. #pets
+		.. " pets at home · "
+		.. condition
+	farm.feedPrompt:SetAttribute("FarmAvailable", n > 0 and #pets > 0)
+	farm.sellPrompt:SetAttribute("FarmAvailable", n > 0)
+	farm.feedPrompt.ActionText = n > 0 and ("Feed " .. math.min(n, Farm.WellFed.min) .. " food") or "Feed pets"
+	farm.feedPrompt.ObjectText = "Ordinary food first"
+	farm.sellPrompt.ActionText = n > 0 and ("Sell all " .. n .. " produce") or "Nothing to sell"
 	farm.sellPrompt.ObjectText = n > 0 and Format.Money(value) or ""
 	-- almanac board (rewrite only when the count changes)
 	local found = FarmService.AlmanacCount(data)
 	if farm.almanacShown ~= found then
 		farm.almanacShown = found
 		local total = #Farm.Crops * #Farm.AlmanacColumns
-		farm.almanacTitle.Text = "CROP ALMANAC  " .. found .. " / " .. total
-			.. '  <font color="#9CFFA8">+' .. math.floor(Farm.AlmanacBonus * found * 100 + 0.5) .. "% crop value</font>"
+		farm.almanacTitle.Text = "CROP ALMANAC  "
+			.. found
+			.. " / "
+			.. total
+			.. '  <font color="#9CFFA8">+'
+			.. math.floor(Farm.AlmanacBonus * found * 100 + 0.5)
+			.. "% crop value</font>"
 		for key, cell in pairs(farm.almanacCells) do
 			local _, mut = string.match(key, "^([^|]+)|(.*)$")
 			if f.Almanac[key] then
@@ -1037,10 +1188,26 @@ local function refreshBase(base)
 end
 
 ---------------------------------------------------------------- prompt handlers
-local function ownerData(base, player)
+local function ownerData(base, player, offset)
 	if base.owner ~= player then
 		return nil
 	end
+	local character = player.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if
+		not root
+		or not humanoid
+		or humanoid.Health <= 0
+		or (root.Position - base.cf:PointToWorldSpace(offset + V(0, 3, 0))).Magnitude > 12
+	then
+		return nil
+	end
+	local now = os.clock()
+	if base.farm.lastActionOwner == player and now - (base.farm.lastAction or 0) < 0.25 then
+		return nil
+	end
+	base.farm.lastActionOwner, base.farm.lastAction = player, now
 	local data = DataService.Get(player)
 	if data then
 		ensure(data)
@@ -1049,7 +1216,10 @@ local function ownerData(base, player)
 end
 
 function FarmService.OnPlot(base, i, player)
-	local data = ownerData(base, player)
+	if type(i) ~= "number" or i % 1 ~= 0 or not PLOTS[i] then
+		return
+	end
+	local data = ownerData(base, player, PLOTS[i])
 	if not data then
 		return
 	end
@@ -1087,7 +1257,10 @@ function FarmService.OnPlot(base, i, player)
 end
 
 function FarmService.OnStand(base, what, player)
-	local data = ownerData(base, player)
+	if not base.farm.stand[what] then
+		return
+	end
+	local data = ownerData(base, player, STAND)
 	if not data then
 		return
 	end
@@ -1110,7 +1283,13 @@ function FarmService.OnStand(base, what, player)
 				break
 			end
 		end
-		say(player, Farm.ById[f.Seed].name .. " seeds" .. (nextLocked and ("  ·  " .. nextLocked.name .. " at Lv " .. nextLocked.level) or ""), pos)
+		say(
+			player,
+			Farm.ById[f.Seed].name
+				.. " seeds"
+				.. (nextLocked and ("  ·  " .. nextLocked.name .. " at Lv " .. nextLocked.level) or ""),
+			pos
+		)
 	elseif what == "Beds" then
 		if f.PlotsOwned >= Farm.MaxPlots then
 			say(player, "All six beds are yours", pos)
@@ -1157,7 +1336,7 @@ function FarmService.OnStand(base, what, player)
 end
 
 function FarmService.OnBoard(base, player)
-	local data = ownerData(base, player)
+	local data = ownerData(base, player, BOARD)
 	if not data then
 		return
 	end
@@ -1190,7 +1369,7 @@ function FarmService.OnBoard(base, player)
 end
 
 function FarmService.OnChest(base, player)
-	local data = ownerData(base, player)
+	local data = ownerData(base, player, CHEST)
 	if not data then
 		return
 	end
@@ -1216,10 +1395,9 @@ function FarmService.OnChest(base, player)
 	refreshBase(base)
 end
 
--- Feed the whole Pantry to your courtyard pets: richest food first, always to the lowest-level pet,
--- so the team levels evenly. Pet levels raise each pet's income (Farm.PetMult).
+-- Serve one small meal. The rest of the Pantry remains available for another meal or a sale.
 function FarmService.OnFeed(base, player)
-	local data = ownerData(base, player)
+	local data = ownerData(base, player, TROUGH)
 	if not data then
 		return
 	end
@@ -1227,74 +1405,37 @@ function FarmService.OnFeed(base, player)
 	local pos = base.cf:PointToWorldSpace(TROUGH + V(0, 5, 0))
 	local pets = placedPets(data)
 	if #pets == 0 then
-		say(player, "Place pets in your courtyard to feed them", pos)
+		say(player, "Place a pet at home to feed it. Expedition pets are away.", pos)
 		return
 	end
-	local items = {}
-	for key, count in pairs(f.Pantry) do
-		local crop, m = splitKey(key)
-		if crop then
-			table.insert(items, { key = key, food = itemFood(data, crop, m), count = count })
-		else
-			f.Pantry[key] = nil
-		end
-	end
-	if #items == 0 then
-		say(player, "The Pantry is empty: harvest some crops first", pos)
+	local meal = Care.Feed(f, pets, function(key)
+		local crop, mutation = splitKey(key)
+		return crop and itemFood(data, crop, mutation)
+	end, os.time())
+	if meal.count == 0 then
+		say(player, "Pantry empty. Harvest a ripe crop first.", pos)
 		return
 	end
-	table.sort(items, function(a, b)
-		return a.food > b.food
-	end)
-	local fed, ups, star = 0, 0, nil
-	for _, it in ipairs(items) do
-		for _ = 1, it.count do
-			local pet
-			for _, c in ipairs(pets) do
-				if (c.l or 1) < Farm.PetMaxLevel and (not pet or (c.l or 1) < (pet.l or 1)) then
-					pet = c
-				end
-			end
-			if not pet then
-				break
-			end
-			pet.l = pet.l or 1
-			pet.e = (pet.e or 0) + it.food
-			while pet.l < Farm.PetMaxLevel and pet.e >= Farm.PetXpToNext(pet.l) do
-				pet.e -= Farm.PetXpToNext(pet.l)
-				pet.l += 1
-				ups += 1
-				if not star or pet.l > (star.l or 1) then
-					star = pet
-				end
-			end
-			f.Pantry[it.key] -= 1
-			if f.Pantry[it.key] <= 0 then
-				f.Pantry[it.key] = nil
-			end
-			fed += 1
-		end
-	end
-	if fed == 0 then
-		say(player, "Your pets are all max level!", pos)
-		return
-	end
-	f.Fed += fed
-	bountyEvent(player, data, "feed", fed)
-	local wellFed = fed >= Farm.WellFed.min
-	if wellFed then
-		f.FedUntil = os.time() + Farm.WellFed.duration
-	end
-	local def = star and CreatureData.ById[star.c]
-	fx(player, "fed", { pos = pos, count = fed, ups = ups, star = def and def.name, level = star and star.l, wellFed = wellFed })
+	bountyEvent(player, data, "feed", meal.count)
+	local def = meal.star and CreatureData.ById[meal.star.c]
+	fx(player, "fed", {
+		pos = pos,
+		count = meal.count,
+		ups = meal.ups,
+		star = def and def.name,
+		level = meal.star and meal.star.l,
+		wellFed = meal.wellFed,
+		progress = f.FedProgress,
+		remaining = pantryCount(f),
+	})
 	if hooks and hooks.sync then
-		hooks.sync(player, false) -- full sync: income per second changed
+		hooks.sync(player, false)
 	end
 	refreshBase(base)
 end
 
 function FarmService.OnSell(base, player)
-	local data = ownerData(base, player)
+	local data = ownerData(base, player, TROUGH)
 	if not data then
 		return
 	end
@@ -1363,7 +1504,8 @@ function FarmService.StartWeather(id)
 		end
 		w = w or Farm.Weather[1]
 	end
-	weather.id, weather.ends = w.id, os.time() + w.duration
+	weather.started = os.time()
+	weather.id, weather.ends = w.id, weather.started + w.duration
 	publish()
 	if FarmFxRE then
 		FarmFxRE:FireAllClients("weather", { id = w.id, name = w.name, desc = w.desc, duration = w.duration })
@@ -1412,23 +1554,36 @@ function FarmService.Init(baseBuilder, h)
 		end
 	end
 	task.spawn(function()
+		local previousTick = os.time()
 		while true do
 			task.wait(1)
+			local now = os.time()
+			local rainId, rainStarted, rainEnds = weather.id, weather.started, weather.ends
 			local okW, errW = pcall(worldTick, os.time())
 			if not okW then
 				warn("[FarmService] weather", errW)
 			end
-			local w = weather.id and Farm.WeatherById[weather.id]
+			if not rainId then
+				rainId, rainStarted, rainEnds = weather.id, weather.started, weather.ends
+			end
+			local w = rainId and Farm.WeatherById[rainId]
 			for _, base in ipairs(bases) do
 				local player = base.owner
 				local data = player and DataService.Get(player)
 				if data then
 					ensure(data)
-					-- Rain: every growing crop of an online player gains extra seconds
+					-- No rain is credited before the current online interval or event start.
 					if w and w.growSpeed then
 						for _, plot in pairs(data.Farm.Plots) do
-							if type(plot) == "table" and plot.t then
-								plot.t -= (w.growSpeed - 1)
+							local crop = type(plot) == "table" and Farm.ById[plot.c]
+							if crop and type(plot.t) == "number" then
+								Care.ApplyRain(
+									plot,
+									growTime(data, crop),
+									math.max(previousTick, rainStarted),
+									math.min(now, rainEnds),
+									w.growSpeed
+								)
 							end
 						end
 					end
@@ -1447,6 +1602,7 @@ function FarmService.Init(baseBuilder, h)
 					warn("[FarmService] refresh", base.index, err)
 				end
 			end
+			previousTick = now
 		end
 	end)
 end

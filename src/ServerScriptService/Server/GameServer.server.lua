@@ -906,7 +906,8 @@ function Actions.EquipBest(player, data, st)
 	end
 	local list = table.clone(data.Creatures)
 	table.sort(list, function(a, b)
-		return CreatureData.Income(a.c) * Variants.Mult(a.s, a.v) > CreatureData.Income(b.c) * Variants.Mult(b.s, b.v)
+		return CreatureData.Income(a.c) * Variants.Mult(a.s, a.v) * FarmService.PetMult(a)
+			> CreatureData.Income(b.c) * Variants.Mult(b.s, b.v) * FarmService.PetMult(b)
 	end)
 	local n = math.min(#list, slotsOpen(data))
 	if #list - n > storageCap(data) then

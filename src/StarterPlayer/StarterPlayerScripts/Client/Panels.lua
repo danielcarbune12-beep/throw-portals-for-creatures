@@ -9,6 +9,7 @@ local Portal = require(RS.Shared.PortalBuilder)
 local Format = require(RS.Shared.Format)
 local Odds = require(RS.Shared.Odds)
 local Variants = require(RS.Shared.Variants)
+local Farm = require(RS.Shared.FarmConfig)
 local K = require(script.Parent.UIKit)
 local T = K.Theme
 local HUD = require(script.Parent.HUD)
@@ -81,7 +82,8 @@ local function bindGrid(container, minWidth, cellHeight)
 	local function resize()
 		local w = container.AbsoluteSize.X / HUD.Root:FindFirstChildOfClass("UIScale").Scale - 12
 		local cols = math.max(1, math.floor((w + 10) / (minWidth + 10)))
-		g.CellSize = UDim2.new(1 / cols, -(10 * (cols - 1) + 12) / cols, 0, cellHeight)
+		local h = type(cellHeight) == "function" and cellHeight() or cellHeight
+		g.CellSize = UDim2.new(1 / cols, -(10 * (cols - 1) + 12) / cols, 0, h)
 	end
 	container:GetPropertyChangedSignal("AbsoluteSize"):Connect(resize)
 	task.defer(resize)
@@ -315,10 +317,52 @@ local inv = HUD.MakePanel(
 	"Pet"
 )
 local invCatalogue, invDetail = split(inv)
-local invSearch = K.search(invCatalogue, "Search creatures", UDim2.new(1, -12, 0, 46), UDim2.fromOffset(4, 4))
+local invSearch, best, invGrid
+local inventoryButtons = {}
+local inventoryLayout = inv.layout
+inv.layout = function()
+	inventoryLayout()
+	local compact = inv.compact
+	inv.content.Position = UDim2.fromOffset(16, compact and 64 or 108)
+	inv.contentSize = UDim2.new(1, -32, 1, compact and -80 or -124)
+	inv.content.Size = inv.contentSize - UDim2.fromOffset(0, inv.feedback.Visible and 40 or 0)
+	inv.title.Size = UDim2.new(1, compact and -270 or -130, 0, 35)
+	local collection = inv.frame:FindFirstChild("OpenCollection")
+	if collection then
+		collection.Size = compact and UDim2.fromOffset(128, 36) or UDim2.fromOffset(176, 36)
+		collection.Position = compact and UDim2.new(1, -194, 0, 18) or UDim2.fromOffset(20, 64)
+	end
+	if invSearch then
+		invSearch.Parent.Size = UDim2.new(1, compact and -152 or -12, 0, compact and 44 or 46)
+		best.Size = compact and UDim2.fromOffset(136, 44) or UDim2.new(1, -12, 0, 44)
+		best.Position = compact and UDim2.new(1, -140, 0, 4) or UDim2.fromOffset(4, 58)
+		invGrid.Position = UDim2.fromOffset(0, compact and 56 or 112)
+		invGrid.Size = UDim2.new(1, 0, 1, compact and -60 or -116)
+	end
+	for _, button in pairs(inventoryButtons) do
+		local view = button:FindFirstChildWhichIsA("ViewportFrame")
+		if view then
+			view.Size = UDim2.new(1, -8, 0, compact and 64 or 108)
+		end
+		local name, rarity, status =
+			button:FindFirstChild("PetName"), button:FindFirstChild("PetRarity"), button:FindFirstChild("PetStatus")
+		if name then
+			name.Position, name.Size =
+				UDim2.fromOffset(10, compact and 66 or 110), UDim2.new(1, -20, 0, compact and 32 or 38)
+			rarity.Position = UDim2.fromOffset(10, compact and 100 or 151)
+			status.Position = UDim2.fromOffset(10, compact and 117 or 171)
+		end
+	end
+	local preview = invDetail:FindFirstChild("CreaturePreview")
+	if preview then
+		preview.LayoutOrder = inv.compact and 9 or 1
+		preview.Size = UDim2.new(1, -12, 0, inv.compact and 112 or 180)
+	end
+end
+invSearch = K.search(invCatalogue, "Search creatures", UDim2.new(1, -12, 0, 46), UDim2.fromOffset(4, 4))
 invCatalogue.AutomaticCanvasSize = Enum.AutomaticSize.None
 invCatalogue.ScrollingEnabled = false
-local best = K.button(
+best = K.button(
 	"Place best",
 	T.Gold,
 	nil,
@@ -328,9 +372,8 @@ local best = K.button(
 K.bind(best, function()
 	request("EquipBest", nil, "Best earners placed in your garden.")
 end)
-local invGrid = scroll(invCatalogue, "Creatures", UDim2.new(1, 0, 1, -116), UDim2.fromOffset(0, 112))
+invGrid = scroll(invCatalogue, "Creatures", UDim2.new(1, 0, 1, -116), UDim2.fromOffset(0, 112))
 local selectedUid, inventoryKey, detailKey, armedUid, armToken = nil, nil, nil, nil, 0
-local inventoryButtons = {}
 local function clearArm()
 	armedUid = nil
 	armToken += 1
@@ -350,6 +393,12 @@ local function renderCreatureDetail()
 				awayUid
 			)
 		or "empty"
+	if entry then
+		key ..= ":" .. tostring(entry.l or 1) .. ":" .. tostring(entry.e or 0) .. ":" .. table.concat(
+			d.EquippedPets or {},
+			","
+		)
+	end
 	if detailKey == key then
 		return
 	end
@@ -364,6 +413,7 @@ local function renderCreatureDetail()
 	local def = Data.ById[entry.c]
 	local color = T.Legible(Variants.Color(entry.s, entry.v) or T.Rarity(def.rarity, Config))
 	local entryIncome = Data.Income(entry.c) * Variants.Mult(entry.s, entry.v)
+	local level = entry.l or 1
 	local hero = K.surface(invDetail, "CreaturePreview", UDim2.new(1, -12, 0, 180), nil, T.Inset)
 	hero.LayoutOrder = 1
 	petView(entry.c, UDim2.fromScale(1, 1), nil, entry.v).Parent = hero
@@ -371,14 +421,29 @@ local function renderCreatureDetail()
 	K.label(
 		def.rarity
 			.. " · "
-			.. Format.Money(entryIncome)
+			.. Format.Rate(entryIncome * Farm.PetMult(level))
 			.. " / sec"
 			.. (Variants.Mult(entry.s, entry.v) > 1 and ("  (x" .. Variants.Mult(entry.s, entry.v) .. ")") or ""),
 		UDim2.new(1, -12, 0, 28),
 		color,
 		{ TextSize = 16, LayoutOrder = 3, Parent = invDetail }
 	)
-	K.label(def.desc or "", UDim2.new(1, -12, 0, 56), T.Muted, { TextSize = 14, LayoutOrder = 4, Parent = invDetail })
+	local xp = level >= Farm.PetMaxLevel and "Max level"
+		or (math.floor(entry.e or 0) .. " / " .. Farm.PetXpToNext(level) .. " XP")
+	K.label(
+		"Level "
+			.. level
+			.. " · "
+			.. xp
+			.. " · +"
+			.. math.floor((Farm.PetMult(level) - 1) * 100 + 0.5)
+			.. "% pet income\n"
+			.. (def.desc or "")
+			.. "\nFeed crops at your courtyard Pantry to level this pet.",
+		UDim2.new(1, -12, 0, 76),
+		T.Muted,
+		{ TextSize = 14, LayoutOrder = 4, Parent = invDetail }
+	)
 	local isPlaced = State.IsPlaced(entry.u)
 	local away = awayUid == entry.u
 	local place = K.button(
@@ -406,7 +471,11 @@ local function renderCreatureDetail()
 		away and "On expedition"
 			or isEquipped and "Unequip · following you"
 			or full and ("Equipped " .. #equippedList .. "/" .. Config.EquipLimit .. " · unequip one first")
-			or string.format("Equip · +%d%% luck, +%d%% income", math.floor(buff.luck * 100 + 0.5), math.floor(buff.income * 100 + 0.5)),
+			or string.format(
+				"Equip · +%d%% luck, +%d%% income",
+				math.floor(buff.luck * 100 + 0.5),
+				math.floor(buff.income * 100 + 0.5)
+			),
 		isEquipped and T.Raised or T.Violet,
 		nil,
 		UDim2.new(1, -12, 0, 46),
@@ -473,6 +542,7 @@ local function renderCreatureDetail()
 		armedUid == entry.u and T.Danger or T.Muted,
 		{ TextSize = 14, LayoutOrder = 7, Parent = invDetail }
 	)
+	inv.layout()
 end
 inv.refresh = function()
 	local d = State.Data
@@ -486,17 +556,20 @@ inv.refresh = function()
 	)
 	local ids = {}
 	for _, e in ipairs(d.Creatures) do
-		table.insert(ids, e.u .. ":" .. tostring(State.IsPlaced(e.u)))
+		table.insert(ids, e.u .. ":" .. tostring(State.IsPlaced(e.u)) .. ":" .. tostring(e.l or 1))
 	end
 	local key = table.concat(ids, ",") .. invSearch.Text:lower()
 	if inventoryKey ~= key then
 		inventoryKey = key
 		invGrid:ClearAllChildren()
 		inventoryButtons = {}
-		bindGrid(invGrid, 140, 192)
+		bindGrid(invGrid, 140, function()
+			return inv.compact and 136 or 192
+		end)
 		local items = table.clone(d.Creatures)
 		table.sort(items, function(a, b)
-			return Data.Income(a.c) * Variants.Mult(a.s, a.v) > Data.Income(b.c) * Variants.Mult(b.s, b.v)
+			return Data.Income(a.c) * Variants.Mult(a.s, a.v) * Farm.PetMult(a.l)
+				> Data.Income(b.c) * Variants.Mult(b.s, b.v) * Farm.PetMult(b.l)
 		end)
 		local count = 0
 		for i, entry in ipairs(items) do
@@ -511,7 +584,7 @@ inv.refresh = function()
 					{ Name = "Creature_" .. entry.u, LayoutOrder = i, Parent = invGrid }
 				)
 				petView(entry.c, UDim2.new(1, -8, 0, 108), nil, entry.v).Parent = b
-				K.text(
+				local nameLabel = K.text(
 					b,
 					Variants.Prefix(entry.s, entry.v) .. def.name,
 					10,
@@ -522,8 +595,19 @@ inv.refresh = function()
 					T.Legible(Variants.Color(entry.s, entry.v) or T.Text),
 					true
 				)
-				K.text(b, def.rarity, 10, 151, -20, 18, 13, T.Rarity(def.rarity, Config))
-				K.text(
+				nameLabel.Name = "PetName"
+				local rarityLabel = K.text(
+					b,
+					def.rarity .. " · Lv " .. (entry.l or 1),
+					10,
+					151,
+					-20,
+					18,
+					13,
+					T.Rarity(def.rarity, Config)
+				)
+				rarityLabel.Name = "PetRarity"
+				local statusLabel = K.text(
 					b,
 					State.IsPlaced(entry.u) and "In garden" or "In storage",
 					10,
@@ -533,6 +617,7 @@ inv.refresh = function()
 					13,
 					State.IsPlaced(entry.u) and T.Success or T.Muted
 				)
+				statusLabel.Name = "PetStatus"
 				inventoryButtons[entry.u] = b
 				K.bind(b, function()
 					clearArm()
@@ -571,6 +656,7 @@ inv.refresh = function()
 		end
 	end
 	renderCreatureDetail()
+	inv.layout()
 end
 inv.onClose = function()
 	clearArm()

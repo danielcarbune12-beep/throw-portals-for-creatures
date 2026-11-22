@@ -42,3 +42,15 @@ success/info messages and launch reminders stay silent during gameplay. Errors
 appear only inside an open panel: a reserved footer for ordinary panels, or the
 existing expedition header. Closing the panel clears its feedback. Collection
 descriptions use inline panel text. No message box covers the player.
+
+Farm feedback uses fixed white signs on physical stations. No rising text or
+messages over the character. The Farm Stand offers its nearest available action;
+growing beds keep a timer without an action prompt. Feeding serves at most five
+items, with ordinary produce first. Selling the whole Pantry displays quantity
+and value and requires a one-second hold. Low VFX disables farm weather particles;
+Reduced Flashes removes weather grading and Reduced Motion removes aurora motion.
+
+Compact pet inventory puts search and Place best on one row and Collection in the
+header, leaving enough height for complete first-row cards. Pet details show level,
+XP and personal income before the preview on narrow screens. Global bonuses remain
+part of the courtyard income shown in the HUD; creature resale still uses base value.

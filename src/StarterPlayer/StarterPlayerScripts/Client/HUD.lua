@@ -463,7 +463,7 @@ function HUD.Refresh()
 	gui:SetAttribute("EquippedPortal", d.EquippedPortal)
 	gui:SetAttribute("Money", d.Money or 0)
 	-- The displayed balance settles in the existing render loop; server data stays exact.
-	income.Text = "Treasury " .. Format.Money(d.Uncollected or 0) .. "  /  +" .. Format.Money(d.Income or 0) .. "/s"
+	income.Text = "Treasury " .. Format.Money(d.Uncollected or 0) .. "  /  +" .. Format.Rate(d.Income or 0) .. "/s"
 	power.Text = math.floor(d.MaxDistance or 0) .. " m"
 	distance.Text = "Throw level " .. (d.Upgrades.ThrowPower or 1)
 	strength.Text = Format.Short(d.Strength or 0)

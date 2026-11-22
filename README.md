@@ -72,17 +72,18 @@ Every courtyard has a farm, all of it physical and driven by proximity prompts (
 - **Crops grow in real time, even while you're offline:** Moonberry 45 s, Sunwheat 3 min, Starmelon 15 min, Portal Pumpkin 1 h, Crystal Bloom 4 h, Void Lotus 12 h. Longer crops pay more per second, so plant a long one before logging off.
 - **Soil quality:** seed prices and harvests are multiplied by the income multiplier of your best unlocked world, so farming stays relevant all game.
 - **Mutations** are rolled when you plant, so you watch a lucky bed grow: **Watered** (x1.5, +5% chance per Sprinkler level), **Golden** (x3, 8%), **Giant** (x10, 1.5%, a much bigger plant) and **Rainbow** (x40, 0.3%, glowing rainbow fruit).
-- **Pantry:** harvests go to your Pantry (300 max; past that the extra is sold automatically). At the **Feeding Trough** press **E to feed your pets** or **R to sell** the produce. Mutations multiply both the food and the sale value.
+- **Pantry:** harvests go to your Pantry (300 max; past that the extra is sold automatically). At the **Feeding Trough**, E serves up to five food, ordinary produce before rare mutations. The remaining Pantry is kept. Hold R for one second to sell the whole Pantry at its displayed value. Mutations multiply both food XP and sale value.
 - **Pet levels:** food gives pet XP, always to your lowest-level placed pet first. Each pet level adds +6% to that pet's income (max level 100). Levels show on the pets' name tags in the courtyard.
-- **Well Fed:** feeding 5+ food at once gives your courtyard +20% income for 30 minutes.
+- **Well Fed:** every five food served gives your courtyard +20% income for 30 minutes. Smaller meals count toward the next five. Max-level pets can still eat for this buff; pets away on expeditions cannot eat at home.
 - **Weather (server-wide, every 12-18 min):** **Rain** (4 min: crops grow 50% faster, lots of Watered crops), **Golden Hour** (Golden x4 when you plant), **Starfall** (Giant x4), and the rare **Rainbow Aurora** (Rainbow x8). Each has its own sky and particles. Admins can start one: admin command `weather` with `Rain`, `GoldenHour`, `Starfall` or `Aurora`.
 - **Crop Almanac:** the board in your lodge records every crop x mutation you have harvested (6 x 5 = 30). Each new one permanently adds +2% to all produce value and food value, plus Farmer XP.
 - **Market Demand:** every 20 minutes one crop sells for x2 (shown on the Farm Stand).
 - **Sale value bonuses:** +5% per Farmer Level and +1.5% per pet placed in your courtyard.
 - **Farmer Level:** XP from harvests, catches, bounties and daily gifts. Levels unlock new seeds (Lv 2, 4, 6, 9, 12).
-- **Farm Stand:** E change seed · R buy a bed · T Sprinkler (-8% grow time per level, 5 levels) · G hire the **Harvest Spirit** (Lv 5, $250K). The Spirit sows empty beds, harvests ripe ones into your Pantry and resows, also while you're offline (up to 24 h of catch-up). When the Pantry is full, its extra harvests are sold into your Treasury.
+- **Farm Stand:** approach one of the four goods to see its action: E change seed, R buy a bed, T Sprinkler (-8% grow time per level, 5 levels), G hire the **Harvest Spirit** (Lv 5, $250K). One stand action appears at a time. The Spirit sows empty beds, harvests ripe ones into your Pantry and resows, also while you're offline (up to 24 h of catch-up). When the Pantry is full, its extra harvests are sold into your Treasury. Historical planting cycles do not inherit today's weather bonus.
 - **Bounty Board:** three rotating jobs (harvest, catch, collect, throw, harvest a specific crop, land in a world) with money and XP rewards. Press E at the board to claim the finished ones.
 - **Daily Gift chest:** once every 20 h. The streak grows the gift (x1 to x8 on day 7) and breaks after 48 h.
+- **Feedback and progression:** farm results stay on permanent physical station signs. Pet inventory shows level, XP and income including the level bonus; Place best ranks pets by that income. Fractional income remains visible on the HUD. Growing beds, empty sales and completed upgrades do not show unusable prompts.
 
 ## Personal gym (training)
 - Every base has its own gym. Stand in it and hold **💪 LIFT**, press **E**, or turn on **AUTO**. Your character lifts the weight, and each lift gives Strength.
