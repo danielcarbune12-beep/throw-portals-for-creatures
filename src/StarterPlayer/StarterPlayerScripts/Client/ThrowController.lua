@@ -49,12 +49,13 @@ local function findShoulder()
 	end
 	local m = (char:FindFirstChild("RightUpperArm") and char.RightUpperArm:FindFirstChild("RightShoulder"))
 		or (char:FindFirstChild("Torso") and char.Torso:FindFirstChild("Right Shoulder"))
-	if m and not m:IsA("Motor6D") then
+	-- classic Motor6D (offset C0) or the newer AnimationConstraint joint (offset its Attachment0)
+	if m and not (m:IsA("Motor6D") or (m:IsA("AnimationConstraint") and m.Attachment0)) then
 		m = nil
 	end
 	if m ~= shoulder then
 		shoulder = m
-		shoulderC0 = m and m.C0
+		shoulderC0 = m and (m:IsA("Motor6D") and m.C0 or m.Attachment0.CFrame)
 	end
 end
 
@@ -253,7 +254,11 @@ RunService.RenderStepped:Connect(function(dt)
 			local rot = isR15 and CFrame.Angles(armBlend * 1.5, 0, armBlend * -0.15)
 				or CFrame.Angles(0, 0, armBlend * 1.5)
 			local ok = pcall(function()
-				shoulder.C0 = shoulderC0 * rot
+				if shoulder:IsA("Motor6D") then
+					shoulder.C0 = shoulderC0 * rot
+				else
+					shoulder.Attachment0.CFrame = shoulderC0 * rot
+				end
 			end)
 			if not ok then
 				armDisabled = true

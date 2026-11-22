@@ -119,8 +119,10 @@ local function loadRig(char, hum)
 	for key, def in pairs(map) do
 		local part = char:FindFirstChild(def[1])
 		local m = part and part:FindFirstChild(def[2])
-		if m and m:IsA("Motor6D") then
-			local rot = m.C0.Rotation
+		-- classic Motor6D or the newer AnimationConstraint joint; both expose Transform
+		local isMotor = m and m:IsA("Motor6D")
+		if isMotor or (m and m:IsA("AnimationConstraint") and m.Attachment0) then
+			local rot = isMotor and m.C0.Rotation or m.Attachment0.CFrame.Rotation
 			rig[key] = { motor = m, rot = rot, inv = rot:Inverse() }
 		end
 	end
