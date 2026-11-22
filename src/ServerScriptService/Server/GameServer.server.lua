@@ -193,6 +193,10 @@ local function notify(player, text, kind)
 	NotifyRE:FireClient(player, text, kind or "info")
 end
 
+-- courtyard farm, Farmer Level, bounties and daily gift (in-world, see FarmService)
+local FarmService = require(script.Parent.FarmService)
+FarmService.Init(BaseBuilder, { income = incomePerSec, sync = sync })
+
 local function setCarry(player)
 	local st = State[player]
 	player:SetAttribute("Carry", table.concat(st.carry, ","))
@@ -322,6 +326,7 @@ ThrowRE.OnServerEvent:Connect(function(player, power, dir)
 	local landing = groundAt(Vector3.new(lx, 0, dist))
 	local realDist = dist
 	local worldId = Config.WorldAt(landing)
+	FarmService.Event(player, "throw", 1, { world = worldId })
 	local flight = math.clamp(0.7 + math.sqrt(realDist) * 0.07, 0.9, 4.5)
 
 	nextThrowId += 1
@@ -506,6 +511,7 @@ task.spawn(function()
 						st.base.setFill(0)
 					end
 					MoneyFxRE:FireClient(player, amt, pad)
+					FarmService.Event(player, "collect", amt)
 					sync(player, true)
 					updateAttributes(player, data)
 				end
@@ -557,6 +563,7 @@ function Actions.Collect(player, data, st, throwId)
 	CreatureGoneRE:FireAllClients(throwId, "collected", player.UserId)
 	table.insert(st.carry, Variants.Key(p.creature, p.size, p.variant))
 	depositCarry(player, data, st)
+	FarmService.Event(player, "catch", 1, { rarity = CreatureData.ById[p.creature].rarity })
 	return true
 end
 

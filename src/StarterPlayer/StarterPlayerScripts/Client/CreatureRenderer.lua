@@ -307,6 +307,12 @@ local OBSTACLES = {
 	{ circle = Vector2.new(21, 23), r = 8.5 },
 	{ circle = Vector2.new(-19, -21), r = 6.5 },
 	{ rect = Vector2.new(19, -19), half = Vector2.new(8.5, 8.5) },
+	-- courtyard farm (FarmService.Layout): planter beds, farm stand, bounty board, daily chest
+	{ rect = Vector2.new(-26.5, 1.5), half = Vector2.new(4.6, 10.9) },
+	{ rect = Vector2.new(26.5, 1.5), half = Vector2.new(4.6, 10.9) },
+	{ rect = Vector2.new(-29, -13), half = Vector2.new(2.4, 4.4) },
+	{ circle = Vector2.new(-9.5, -28), r = 4.6 },
+	{ circle = Vector2.new(7, -29.5), r = 3 },
 }
 local function blocked(lx, lz)
 	for _, o in ipairs(OBSTACLES) do

@@ -64,7 +64,18 @@ powershell -ExecutionPolicy Bypass -File .\build-place.ps1
 - **Hold Left Click / F** (PC), the **THROW** button (mobile), or **R2** (gamepad) to charge. The power box on the right of the screen shows power, distance, zone and luck. Release in the gold **PERFECT** zone for +15% distance.
 - The camera follows the ball down the lane. It lands, a portal opens, and the creature comes out with an entrance that matches its rarity. Its "1 in X" odds are shown.
 - The creature is **caught automatically** with a capture animation that scales with rarity (a grey puff for Commons, a heavenly beam for Divines). A "CAUGHT!" card then flies into your Pets button. The creature goes straight into your inventory and base, where it roams freely.
-- Step on the green **Collect Pad** in your base to collect your earnings.
+- Walk up to your courtyard's **Treasury** (the gold basin by the entrance) to collect your earnings. Its coin hoard fills up as money piles in.
+
+## Courtyard farm (the long-term grind)
+Every courtyard has a farm, all of it physical and driven by proximity prompts (no extra menus). Tune it in `src/ReplicatedStorage/Shared/FarmConfig.lua`; server logic is `FarmService.lua`, client feedback is `FarmClient.client.lua`.
+- **Planter beds:** 3 free, 3 more to buy ($800 / $8K / $80K). Press E on an empty bed to plant your selected seed; press E on a ripe bed to harvest. It replants automatically if you can afford the seed.
+- **Crops grow in real time, even while you're offline:** Moonberry 45 s, Sunwheat 3 min, Starmelon 15 min, Portal Pumpkin 1 h, Crystal Bloom 4 h, Void Lotus 12 h. Longer crops pay more per second, so plant a long one before logging off.
+- **Soil quality:** seed prices and harvests are multiplied by the income multiplier of your best unlocked world, so farming stays relevant all game.
+- **Yield bonuses:** +5% per Farmer Level, +1.5% per pet placed in your courtyard, 8% chance of a **Golden** harvest (x3) and 1.5% chance of a **Giant** one (x10).
+- **Farmer Level:** XP from harvests, catches, bounties and daily gifts. Levels unlock new seeds (Lv 2, 4, 6, 9, 12).
+- **Farm Stand:** E change seed · R buy a bed · T Sprinkler (-8% grow time per level, 5 levels) · G hire the **Harvest Spirit** (Lv 5, $250K). The Spirit sows empty beds, harvests ripe ones into your Treasury and resows, also while you're offline (up to 24 h of catch-up).
+- **Bounty Board:** three rotating jobs (harvest, catch, collect, throw, harvest a specific crop, land in a world) with money and XP rewards. Press E at the board to claim the finished ones.
+- **Daily Gift chest:** once every 20 h. The streak grows the gift (x1 to x8 on day 7) and breaks after 48 h.
 
 ## Personal gym (training)
 - Every base has its own gym. Stand in it and hold **💪 LIFT**, press **E**, or turn on **AUTO**. Your character lifts the weight, and each lift gives Strength.
