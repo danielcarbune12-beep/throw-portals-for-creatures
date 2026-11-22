@@ -268,6 +268,8 @@ task.spawn(function()
 		Effects.Letterbox(false)
 		local cover = player.PlayerGui:FindFirstChild("Intro")
 		if cover then cover:Destroy() end
+		local blur = game:GetService("Lighting"):FindFirstChild("TPFC_IntroBlur")
+		if blur then blur:Destroy() end
 		workspace:SetAttribute("TPFC_IntroPlaying", nil)
 	end
 end)
