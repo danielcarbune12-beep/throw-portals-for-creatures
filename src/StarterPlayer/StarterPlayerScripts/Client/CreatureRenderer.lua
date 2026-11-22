@@ -21,6 +21,8 @@ local Format = require(Shared.Format)
 local Effects = require(script.Parent.Effects)
 local Sounds = require(script.Parent.Sounds)
 local Settings = require(script.Parent.ClientSettings)
+local Plaque = require(script.Parent.Plaque)
+local TweenService = game:GetService("TweenService")
 
 local Renderer = {}
 local player = Players.LocalPlayer
@@ -64,6 +66,128 @@ local function tag(entry, text, color, maxDist, offsetY)
 	bb.Parent = entry.model.PrimaryPart
 	entry.tag = bb
 	return bb
+end
+
+local GOLD = Color3.fromRGB(255, 208, 112)
+local function montserrat(weight)
+	local ok, f = pcall(function() return Font.new("rbxasset://fonts/families/Montserrat.json", weight) end)
+	return ok and f or Font.fromEnum(Enum.Font.GothamBold)
+end
+local function softTween(o, t, props, style, dir)
+	local tw = TweenService:Create(o, TweenInfo.new(t, style or Enum.EasingStyle.Quart, dir or Enum.EasingDirection.Out), props)
+	tw:Play()
+	return tw
+end
+
+-- Reference-sheet label above a wild pet: carved rarity plaque, serif name, small detail line.
+local function rarityTag(entry, def, sub, offsetY)
+	local bb = Instance.new("BillboardGui")
+	bb.Size = UDim2.fromOffset(340, 104)
+	bb.StudsOffsetWorldSpace = Vector3.new(0, offsetY, 0)
+	bb.MaxDistance = 170
+	bb.LightInfluence = 0
+	bb.AlwaysOnTop = false
+	bb.ResetOnSpawn = false
+	local style = Plaque.Styles[def.rarity] and def.rarity or "Common"
+	local plaque = Plaque.Make(bb, string.upper(def.rarity), style, 190, 30, { Position = UDim2.new(0.5, 0, 0, 18), ZIndex = 2 })
+	local name = Instance.new("TextLabel")
+	name.AnchorPoint = Vector2.new(0.5, 0)
+	name.Position = UDim2.new(0.5, 0, 0, 38)
+	name.Size = UDim2.new(1, -20, 0, 36)
+	name.BackgroundTransparency = 1
+	name.FontFace = Plaque.SerifHeavy
+	name.TextScaled = true
+	name.Text = def.name
+	name.TextColor3 = Color3.fromRGB(255, 252, 244)
+	name.ZIndex = 5
+	local st = Instance.new("UIStroke")
+	st.Color = Color3.fromRGB(34, 20, 46)
+	st.Thickness = 2
+	st.Transparency = 0.15
+	st.Parent = name
+	name.Parent = bb
+	if sub and sub ~= "" then
+		local d = Instance.new("TextLabel")
+		d.AnchorPoint = Vector2.new(0.5, 0)
+		d.Position = UDim2.new(0.5, 0, 0, 76)
+		d.Size = UDim2.new(1, -40, 0, 18)
+		d.BackgroundTransparency = 1
+		d.FontFace = montserrat(Enum.FontWeight.SemiBold)
+		d.TextScaled = true
+		d.Text = sub
+		d.TextColor3 = Color3.fromRGB(236, 228, 246)
+		d.ZIndex = 5
+		local s2 = Instance.new("UIStroke")
+		s2.Color = Color3.fromRGB(34, 20, 46)
+		s2.Thickness = 1.5
+		s2.Transparency = 0.2
+		s2.Parent = d
+		d.Parent = bb
+	end
+	-- plaque drops in, name fades up
+	local sc = Instance.new("UIScale")
+	sc.Scale = 0.6
+	sc.Parent = plaque
+	softTween(sc, 0.45, { Scale = 1 }, Enum.EasingStyle.Back)
+	name.TextTransparency, st.Transparency = 1, 1
+	task.delay(0.15, function()
+		softTween(name, 0.35, { TextTransparency = 0 })
+		softTween(st, 0.35, { Transparency = 0.15 })
+	end)
+	bb.Parent = entry.model.PrimaryPart
+	entry.tag = bb
+	return bb
+end
+
+-- thin glowing floor/halo ring built from short neon segments (a real ring, not a filled disc)
+local function ringModel(center, radius, color, thick, segs, transp)
+	local m = Instance.new("Model")
+	m.Name = "TPFC_Ring"
+	local len = 2 * math.pi * radius / segs * 1.06
+	for i = 1, segs do
+		local a = (i / segs) * math.pi * 2
+		local p = Effects.Part(Vector3.new(len, thick, thick), center * CFrame.Angles(0, a, 0) * CFrame.new(0, 0, -radius), color, Enum.Material.Neon, transp)
+		p.Parent = m
+	end
+	local pivot = Effects.Part(Vector3.new(0.1, 0.1, 0.1), center, color, Enum.Material.SmoothPlastic, 1)
+	pivot.Name = "Pivot"
+	pivot.Parent = m
+	m.PrimaryPart = pivot
+	m.Parent = folder
+	return m
+end
+local function fadeModel(m, t)
+	for _, p in ipairs(m:GetDescendants()) do
+		if p:IsA("BasePart") and p.Transparency < 1 then
+			softTween(p, t, { Transparency = 1 })
+		end
+	end
+	task.delay(t + 0.05, function()
+		if m.Parent then m:Destroy() end
+	end)
+end
+
+-- "CAUGHT" plaque that rises from the capture point (replaces the old floating catch text)
+local function caughtPlaque(pos, rarity, big)
+	local anchor = Effects.Part(Vector3.new(0.1, 0.1, 0.1), CFrame.new(pos), Color3.new(1, 1, 1), Enum.Material.SmoothPlastic, 1)
+	local bb = Instance.new("BillboardGui")
+	bb.Size = UDim2.fromOffset(320, 80)
+	bb.AlwaysOnTop = true
+	bb.LightInfluence = 0
+	bb.Parent = anchor
+	local order = Config.Rarities[rarity] and Config.Rarities[rarity].order or 1
+	local style = order >= 5 and rarity or "Caught"
+	local plaque = Plaque.Make(bb, order >= 5 and (string.upper(rarity) .. " CAUGHT") or "CAUGHT", style, big and 260 or 190, big and 40 or 34,
+		{ ZIndex = 2, Font = Plaque.SerifHeavy })
+	local sc = Instance.new("UIScale")
+	sc.Scale = 0.4
+	sc.Parent = plaque
+	softTween(sc, 0.4, { Scale = 1 }, Enum.EasingStyle.Back)
+	softTween(anchor, 1.7, { CFrame = CFrame.new(pos + Vector3.new(0, 4, 0)) }, Enum.EasingStyle.Quad)
+	task.delay(1.2, function()
+		Plaque.Fade(plaque, 1, 0.45, softTween)
+	end)
+	task.delay(1.8, function() anchor:Destroy() end)
 end
 
 local function heightFor(def)
@@ -532,43 +656,27 @@ function Renderer.SpawnWild(throwId, creatureId, pos, ownerId, chanceText)
 	e.anim:PlayAccent("enter", dur)
 	e.throwId = throwId
 	e.owner = ownerId
-	local rc = Config.Rarities[def.rarity].color
 	local owner = Players:GetPlayerByUserId(ownerId)
 	local mine = ownerId == player.UserId
-	local labelText = mine and def.name
-		or string.format(
-			"%s\n<font size='16'>%s · %s · %s</font>",
-			def.name,
-			def.rarity,
-			chanceText or "",
-			owner and owner.DisplayName or "?"
-		)
-	tag(e, labelText, def.rarity == "Secret" and Color3.fromRGB(147, 217, 235) or rc, 160, heightFor(def) + 0.5)
+	local sub = (not mine) and string.format("%s  ·  %s", chanceText or "", owner and owner.DisplayName or "?") or (chanceText or "")
+	rarityTag(e, def, sub, heightFor(def) + 0.5)
 	if mine then
-		-- Corner marks frame the automatic catch without covering the creature in a filled disk.
-		local center = pos + Vector3.new(0, 0.12, -9)
-		for _, x in { -1, 1 } do
-			for _, z in { -1, 1 } do
-				own(
-					e,
-					Effects.Part(
-						Vector3.new(1.5, 0.045, 0.12),
-						CFrame.new(center + Vector3.new(x * 2.1, 0, z * 2.7)),
-						rc,
-						Enum.Material.SmoothPlastic,
-						0.18
-					)
-				)
-				own(
-					e,
-					Effects.Part(
-						Vector3.new(0.12, 0.045, 1.5),
-						CFrame.new(center + Vector3.new(x * 2.7, 0, z * 2.1)),
-						rc,
-						Enum.Material.SmoothPlastic,
-						0.18
-					)
-				)
+		-- glowing floor ring marks the automatic catch spot (reference: thin gold ring, purple for Epic)
+		local center = pos + Vector3.new(0, 0.1, -9)
+		local order = Config.Rarities[def.rarity].order
+		local ringCol = def.rarity == "Epic" and Color3.fromRGB(190, 120, 255) or (def.rarity == "Secret" and Color3.fromRGB(150, 222, 238) or GOLD)
+		local r = 3.4 + order * 0.25
+		local ring = ringModel(CFrame.new(center), r, ringCol, 0.09, 40, 0.1)
+		local inner = ringModel(CFrame.new(center), r * 0.86, ringCol, 0.05, 36, 0.55)
+		own(e, ring)
+		own(e, inner)
+		for _, m in ipairs({ ring, inner }) do
+			for _, p in ipairs(m:GetChildren()) do
+				if p.Transparency < 1 then
+					local t0 = p.Transparency
+					p.Transparency = 1
+					softTween(p, 0.6, { Transparency = t0 })
+				end
 			end
 		end
 	end
@@ -665,17 +773,25 @@ function Renderer.RemoveWild(throwId, reason, collectorId)
 		e.catchBase = base
 		e.catchY = e.anim.groundY
 		e.catchYaw = e.anim.yaw
-		local ringSize = 4.5 + Config.Rarities[rarity].order * 0.9
-		local ring = Effects.Part(
-			Vector3.new(0.3, 1, 1),
-			CFrame.new(base + Vector3.new(0, cfg.rise, 0)) * CFrame.Angles(0, 0, math.pi / 2),
-			cfg.ring or col,
-			Enum.Material.Neon,
-			0.15
-		)
-		ring.Shape = Enum.PartType.Cylinder
-		Effects.Tween(ring, 0.35, { Size = Vector3.new(0.3, ringSize, ringSize) }, Enum.EasingStyle.Back)
-		e.catchRing = own(e, ring)
+		local order = Config.Rarities[rarity].order
+		local haloR = 1.6 + order * 0.22
+		local haloCol = rarity == "Secret" and Color3.fromRGB(150, 222, 238) or GOLD
+		local halo = ringModel(CFrame.new(base + Vector3.new(0, cfg.rise, 0)), haloR, haloCol, 0.14, 32, 0.05)
+		-- small gold diamond crowning the halo
+		local gem = Effects.Part(Vector3.new(0.45, 0.45, 0.45), CFrame.new(base + Vector3.new(0, cfg.rise + 0.6, -haloR)) * CFrame.Angles(0, 0, math.pi / 4), haloCol, Enum.Material.Neon, 0)
+		gem.Parent = halo
+		halo:ScaleTo(0.2)
+		task.spawn(function()
+			local t0 = os.clock()
+			while halo.Parent and os.clock() - t0 < 0.35 do
+				local k = math.clamp((os.clock() - t0) / 0.35, 0, 1)
+				halo:ScaleTo(0.2 + 0.8 * (1 - (1 - k) ^ 3))
+				task.wait()
+			end
+			if halo.Parent then halo:ScaleTo(1) end
+		end)
+		e.catchRing = own(e, halo)
+		e.trail = true
 	end)
 	if not ok then
 		e.fadeT = 0
@@ -719,7 +835,20 @@ local function stepCapture(e, dt)
 		a:SetScale(math.max(0.01, sc))
 	end
 	if e.catchRing and e.catchRing.Parent then
-		e.catchRing.CFrame = CFrame.new(top) * CFrame.Angles(0, os.clock() * 3, math.pi / 2)
+		-- halo hovers just above the rising pet and turns slowly
+		local hy = math.max(top.Y, a.pos.Y + (a.groundY - e.catchY) + 2.5)
+		e.catchRing:PivotTo(CFrame.new(top.X, hy, top.Z) * CFrame.Angles(0, os.clock() * 1.4, 0))
+	end
+	-- golden ascend trail: short-lived sparks left along the lift path (02 ASCEND)
+	if k > acc and e.trail and not Settings.LowVFX() then
+		e.trailT = (e.trailT or 0) + dt
+		if e.trailT > 0.045 then
+			e.trailT = 0
+			local p = a.pos + Vector3.new(0, a.groundY - e.catchY + 0.8, 0)
+			local sp = Effects.Part(Vector3.new(0.22, 0.22, 0.22), CFrame.new(p) * CFrame.Angles(0, 0, math.pi / 4), GOLD, Enum.Material.Neon, 0.1)
+			softTween(sp, 0.7, { Transparency = 1, Size = Vector3.new(0.05, 0.05, 0.05) })
+			task.delay(0.75, function() sp:Destroy() end)
+		end
 	end
 	if k >= 1 then
 		local mine = e.owner == player.UserId
@@ -730,24 +859,14 @@ local function stepCapture(e, dt)
 			Effects.Shockwave(top, col, cfg.wave, 0.5)
 		end
 		if mine then
-			Effects.FloatingText(
-				top + Vector3.new(0, 2, 0),
-				cfg.text,
-				rarity == "Common" and Color3.fromRGB(215, 235, 255) or col,
-				cfg.size
-			)
+			caughtPlaque(top + Vector3.new(0, 1.5, 0), rarity, Config.Rarities[rarity].order >= 5)
 			if cfg.shake then
 				Effects.Shake(cfg.shake, 0.35)
 			end
 		end
 		local r = e.catchRing
 		if r then
-			Effects.Tween(r, 0.3, { Size = Vector3.new(0.3, 0.1, 0.1), Transparency = 1 })
-			task.delay(0.35, function()
-				if r.Parent then
-					r:Destroy()
-				end
-			end)
+			fadeModel(r, 0.35)
 			e.catchRing = nil
 		end
 		Renderer.CaptureFinished:Fire(e.throwId, e.owner, e.id)
