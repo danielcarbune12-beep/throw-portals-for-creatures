@@ -45,11 +45,98 @@ Effects.MoneyTarget = moneyIcon
 Effects.OnCoinArrive = function()
 	K.pop(moneyIcon)
 end
-local side = K.new(
-	"Frame",
-	{ Name = "Navigation", BackgroundTransparency = 1, Parent = world },
-	{ K.list(Enum.FillDirection.Vertical, 5) }
-)
+local side = K.new("Frame", { Name = "Navigation", BackgroundTransparency = 1, Parent = world })
+local sideGrid = K.new("UIGridLayout", {
+	CellSize = UDim2.fromOffset(78, 62),
+	CellPadding = UDim2.fromOffset(6, 6),
+	FillDirection = Enum.FillDirection.Vertical,
+	SortOrder = Enum.SortOrder.LayoutOrder,
+	Parent = side,
+})
+
+-- Portal Sanctuary style, matching the lobby gate: white marble, gold trim, purple medallions.
+local SANCT = {
+	Marble = Color3.fromRGB(248, 245, 252),
+	Marble2 = Color3.fromRGB(221, 214, 236),
+	Purple = Color3.fromRGB(112, 72, 196),
+	PurpleLight = Color3.fromRGB(156, 118, 242),
+	PurpleDeep = Color3.fromRGB(58, 34, 112),
+	Gold = Color3.fromRGB(241, 202, 115),
+	Cream = Color3.fromRGB(255, 242, 205),
+}
+HUD.SanctuaryColors = SANCT
+
+-- A marble nav tile: gold frame, purple medallion with the icon, gold keystone diamond on top.
+local function sanctuaryTile(name, icon, size, parent, order)
+	local b = K.new("TextButton", {
+		Name = "Nav_" .. name,
+		Text = "",
+		AutoButtonColor = false,
+		BackgroundColor3 = Color3.new(1, 1, 1),
+		Size = size or UDim2.fromOffset(78, 62),
+		LayoutOrder = order or 0,
+		Selectable = true,
+		Parent = parent,
+	}, {
+		K.corner(12),
+		K.new("UIStroke", { Thickness = 2, Color = SANCT.Gold, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }),
+		K.new("UIGradient", { Rotation = 90, Color = ColorSequence.new(SANCT.Marble, SANCT.Marble2) }),
+	})
+	b:SetAttribute("Enabled", true)
+	local scale = K.new("UIScale", { Parent = b })
+	local med = K.new("Frame", {
+		Name = "Medallion",
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 0, 6),
+		Size = UDim2.fromOffset(32, 32),
+		BackgroundColor3 = Color3.new(1, 1, 1),
+		Parent = b,
+	}, {
+		K.round(),
+		K.new("UIStroke", { Thickness = 2, Color = SANCT.Gold }),
+		K.new("UIGradient", { Rotation = 90, Color = ColorSequence.new(SANCT.PurpleLight, SANCT.PurpleDeep) }),
+	})
+	K.Icon(icon, med, UDim2.fromOffset(18, 18), SANCT.Cream, UDim2.fromOffset(7, 7))
+	local gem = K.new("Frame", {
+		Name = "Keystone",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.new(0.5, 0, 0, 0),
+		Size = UDim2.fromOffset(9, 9),
+		Rotation = 45,
+		BackgroundColor3 = SANCT.Gold,
+		BorderSizePixel = 0,
+		ZIndex = 3,
+		Parent = b,
+	}, { K.new("UIStroke", { Thickness = 1, Color = SANCT.PurpleDeep }) })
+	K.new("TextLabel", {
+		Name = "Label",
+		BackgroundTransparency = 1,
+		Text = name,
+		Font = T.Bold,
+		TextSize = 13,
+		TextColor3 = SANCT.PurpleDeep,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		Size = UDim2.new(1, -6, 0, 16),
+		Position = UDim2.new(0, 3, 1, -19),
+		Parent = b,
+	})
+	local stroke = b:FindFirstChildOfClass("UIStroke")
+	local function hover(on)
+		K.tween(scale, 0.14, { Scale = on and 1.07 or 1 }, Enum.EasingStyle.Back)
+		K.tween(gem, 0.25, { Rotation = on and 225 or 45 })
+		stroke.Thickness = on and 3 or 2
+		stroke.Color = on and SANCT.Cream or SANCT.Gold
+	end
+	b.MouseEnter:Connect(function() hover(true) end)
+	b.MouseLeave:Connect(function() hover(false) end)
+	b.SelectionGained:Connect(function() hover(true) end)
+	b.SelectionLost:Connect(function() hover(false) end)
+	b.MouseButton1Down:Connect(function() K.tween(scale, 0.07, { Scale = 0.94 }) end)
+	b.MouseButton1Up:Connect(function() K.tween(scale, 0.18, { Scale = 1.07 }, Enum.EasingStyle.Back) end)
+	b.Activated:Connect(function() Sounds.Play("Click") end)
+	return b
+end
+HUD.SanctuaryTile = sanctuaryTile
 local navOrder = {}
 local menuBtn = K.button("Menu", T.Panel, nil, UDim2.fromOffset(100, 48), {
 	Name = "Menu",
@@ -60,7 +147,13 @@ local menuBtn = K.button("Menu", T.Panel, nil, UDim2.fromOffset(100, 48), {
 })
 menuBtn.Label.Position = UDim2.fromOffset(35, 0)
 menuBtn.Label.Size = UDim2.new(1, -42, 1, 0)
-K.Icon("Menu", menuBtn, UDim2.fromOffset(20, 20), T.Text, UDim2.fromOffset(10, 14))
+-- themed like the sanctuary gate: purple with gold trim and cream lettering
+menuBtn.BackgroundColor3 = Color3.fromRGB(112, 72, 196)
+menuBtn.Label.TextColor3 = Color3.fromRGB(255, 242, 205)
+menuBtn:FindFirstChildOfClass("UIStroke").Color = Color3.fromRGB(241, 202, 115)
+menuBtn:FindFirstChildOfClass("UIStroke").Thickness = 2
+K.new("UIGradient", { Rotation = 90, Color = ColorSequence.new(Color3.fromRGB(170, 135, 255), Color3.fromRGB(110, 80, 170)), Parent = menuBtn })
+K.Icon("Menu", menuBtn, UDim2.fromOffset(20, 20), Color3.fromRGB(255, 242, 205), UDim2.fromOffset(10, 14))
 local homeBtn = K.button("Home", T.Panel, nil, UDim2.fromOffset(84, 48), {
 	Name = "QuickHome",
 	Parent = world,
@@ -72,20 +165,8 @@ function HUD.AddSideButton(name, icon, _a, _b, callback)
 	if HUD.SideButtons[name] then
 		return HUD.SideButtons[name]
 	end
-	local b = K.button(
-		name,
-		T.Panel,
-		nil,
-		UDim2.fromOffset(112, 44),
-		{ Name = "Nav_" .. name, LayoutOrder = #navOrder + 1, Parent = side }
-	)
-	b.Label.Position = UDim2.fromOffset(41, 0)
-	b.Label.Size = UDim2.new(1, -47, 1, 0)
-	b.Label.TextSize = 14
-	b.Label.TextXAlignment = Enum.TextXAlignment.Left
-	K.Icon(icon, b, UDim2.fromOffset(22, 22), T.Violet, UDim2.fromOffset(11, 11))
+	local b = sanctuaryTile(name, icon, nil, side, #navOrder + 1)
 	K.bind(b, callback)
-	b.Visible = false
 	HUD.SideButtons[name] = b
 	table.insert(navOrder, { name = name, icon = icon, callback = callback })
 	return b
@@ -450,19 +531,14 @@ local menuPanel = HUD.MakePanel("Menu", "Sanctuary menu", "Choose where to go.",
 menuPanel.refresh = function()
 	menuPanel.content:ClearAllChildren()
 	K.new("UIGridLayout", {
-		CellSize = UDim2.new(0.5, -8, 0, 54),
-		CellPadding = UDim2.fromOffset(8, 8),
+		CellSize = UDim2.new(0.25, -8, 0, 74),
+		CellPadding = UDim2.fromOffset(8, 10),
 		SortOrder = Enum.SortOrder.LayoutOrder,
 		Parent = menuPanel.content,
 	})
 	for i, n in ipairs(navOrder) do
-		local b = K.button(
-			n.name,
-			T.Raised,
-			nil,
-			nil,
-			{ Name = "Menu_" .. n.name, LayoutOrder = i, Parent = menuPanel.content }
-		)
+		local b = sanctuaryTile(n.name, n.icon, nil, menuPanel.content, i)
+		b.Name = "Menu_" .. n.name
 		K.bind(b, function()
 			HUD.Close()
 			n.callback()
@@ -517,10 +593,15 @@ local function rescale()
 			narrow and math.floor((i - 1) / 2) * 56 or 0
 		)
 	end
-	side.Size = UDim2.fromOffset(112, #navOrder * 49)
-	side.Position = UDim2.fromOffset(12, 80)
-	side.Visible = false
-	menuBtn.Visible = true
+	-- desktop: sanctuary tiles sit on the left (two columns if the screen is short);
+	-- phones / small screens: one themed Menu button that opens the same tiles
+	local perColumn = math.max(1, math.floor((height - 150) / 68))
+	sideGrid.FillDirectionMaxCells = perColumn
+	local columns = math.max(1, math.ceil(#navOrder / perColumn))
+	side.Size = UDim2.fromOffset(columns * 84, math.min(#navOrder, perColumn) * 68)
+	side.Position = UDim2.fromOffset(12, 76)
+	side.Visible = not compact
+	menuBtn.Visible = compact
 	homeBtn.Visible = false
 	menuBtn.AnchorPoint = Vector2.zero
 	homeBtn.AnchorPoint = Vector2.zero
