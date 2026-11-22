@@ -270,14 +270,63 @@ local function timberStraps(root)
 	end
 end
 
+-- Roofs: slate tile surface, timber ridge cap on the high edge, fascia board along the eave.
+-- WedgePart geometry: high edge at local (0, +h/2, +l/2), eave at (0, -h/2, -l/2).
+local function roofDetail(root)
+	local done, n = {}, 0
+	for _, w in ipairs(root:GetDescendants()) do
+		if n >= 260 then break end
+		if w:IsA("WedgePart") and w.Transparency < 0.1 and (w.Material == Enum.Material.SmoothPlastic or w.Material == Enum.Material.Plastic)
+			and w.Size.X >= 3 and w.Size.Z >= 2.5 and w.Size.Y >= 0.8 then
+			local s = w.Size
+			w.Material = Enum.Material.Slate -- reads as tiles, colour kept
+			local ridge = w.CFrame * CFrame.new(0, s.Y / 2, s.Z / 2)
+			local key = string.format("%d,%d,%d", math.floor(ridge.X * 2), math.floor(ridge.Y * 2), math.floor(ridge.Z * 2))
+			if not done[key] then
+				done[key] = true
+				part("RoofRidge", Vector3.new(s.X + 0.4, 0.42, 0.62), ridge * CFrame.new(0, 0.1, 0), C.oakDark, Enum.Material.Wood)
+				n += 1
+			end
+			-- fascia board under the eave edge, angled with the roof's run
+			part("RoofFascia", Vector3.new(s.X + 0.3, 0.38, 0.26), w.CFrame * CFrame.new(0, -s.Y / 2 + 0.12, -s.Z / 2 - 0.08), C.oak, Enum.Material.Wood)
+			n += 1
+		end
+	end
+end
+
+-- Large stone walls: a darker, slightly proud base course where they meet the ground.
+local function wallCourses(root)
+	local n = 0
+	for _, p in ipairs(root:GetDescendants()) do
+		if n >= 140 then break end
+		if p:IsA("Part") and p.Shape == Enum.PartType.Block and p.Transparency < 0.1 and STONE[p.Material]
+			and p.Size.Y >= 6 and math.max(p.Size.X, p.Size.Z) >= 8 and p.CFrame.UpVector.Y > 0.99 then
+			local s = p.Size
+			local bottom = p.Position - Vector3.new(0, s.Y / 2, 0)
+			ray.FilterDescendantsInstances = { folder, p }
+			local hit = workspace:Raycast(bottom + Vector3.new(0, 0.3, 0), Vector3.new(0, -2, 0), ray)
+			if hit and math.abs(hit.Position.Y - bottom.Y) < 0.6
+				and not wider(CFrame.new(bottom.X, hit.Position.Y + 0.45, bottom.Z) * p.CFrame.Rotation, Vector3.new(s.X + 0.1, 0.5, s.Z + 0.1), p, math.max(s.X, s.Z) + 0.25) then
+				local course = part("BaseCourse", Vector3.new(s.X + 0.3, 0.9, s.Z + 0.3), CFrame.new(bottom.X, hit.Position.Y + 0.45, bottom.Z) * p.CFrame.Rotation,
+					p.Color:Lerp(Color3.fromRGB(110, 106, 98), 0.45), Enum.Material.Cobblestone)
+				course.CastShadow = true
+				n += 1
+			end
+		end
+	end
+end
+
 local function construction()
 	local roots = { workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Start"), workspace:FindFirstChild("Bases") }
 	for _, r in ipairs(roots) do
 		if r then
 			pillarDetail(r)
 			timberStraps(r)
+			roofDetail(r)
+			wallCourses(r)
 		end
 	end
+	-- (the hall arches already carry a crystal crest at the apex, so no keystone is added there)
 end
 
 ---------------------------------------------------------------- ambient life
