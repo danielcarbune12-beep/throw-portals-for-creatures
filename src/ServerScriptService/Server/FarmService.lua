@@ -979,13 +979,15 @@ local function refreshBase(base)
 	end
 	local f = ensure(data)
 	local now = os.time()
+	local lockLabelShown = false -- one "Locked" label per farm; neighbouring plots used to stack them
 	for i, e in ipairs(farm.plots) do
 		local state, crop, left, m = plotState(data, i)
 		local mdef = m and Farm.MutationById[m]
 		local mName = mdef and ('<font color="#' .. mdef.color:ToHex() .. '">' .. m .. "</font> ") or ""
 		local stage = 0
 		if state == "locked" then
-			e.label.Text = '<font color="#DCD4C8">Locked · Farm Stand</font>'
+			e.label.Text = lockLabelShown and "" or '<font color="#DCD4C8">Locked · Farm Stand</font>'
+			lockLabelShown = true
 			e.prompt.ActionText, e.prompt.ObjectText = "Locked", "Farm Stand: R"
 			e.soil.Color = LOCKED
 		elseif state == "empty" then

@@ -5,7 +5,18 @@ local Icons = {}
 function Icons.Draw(name, parent, size, color, position)
 	local enamel = Sky.Icon(name, parent, size, position)
 	if enamel then
+		-- if the uploaded atlas never arrives, swap in the native vector icon in the same spot
+		Sky.WhenAtlasFails(function()
+			if enamel.Parent then
+				local p, s, pos = enamel.Parent, enamel.Size, enamel.Position
+				enamel:Destroy()
+				Icons.Draw(name == "Shop" and "Bag" or name, p, s, color, pos)
+			end
+		end)
 		return enamel
+	end
+	if name == "Shop" then
+		name = "Bag" -- vector set calls the shop icon a bag
 	end
 	local root = Instance.new("Frame")
 	root.Name = "Icon_" .. name

@@ -3,15 +3,48 @@ local T = require(script.Parent.UITheme)
 local S = {}
 S.Atlas = "rbxassetid://110533210650310"
 S.RelicAtlas = "rbxassetid://111238084547615"
+-- The atlases are uploaded images. If Roblox can't deliver one (still in moderation, rejected,
+-- or offline), callers fall back to native vector art instead of showing empty buttons.
+S.AtlasOK = nil -- nil = still loading, true = delivered, false = failed
+local failedCallbacks = {}
+S.RelicOK = nil
+local relicFailed = {}
+function S.WhenAtlasFails(fn)
+	if S.AtlasOK == false then
+		task.spawn(fn)
+	elseif S.AtlasOK == nil then
+		table.insert(failedCallbacks, fn)
+	end
+end
 task.spawn(function()
 	pcall(function()
-		game:GetService("ContentProvider"):PreloadAsync({ S.Atlas, S.RelicAtlas })
+		game:GetService("ContentProvider"):PreloadAsync({ S.Atlas, S.RelicAtlas }, function(id, status)
+			if id == S.RelicAtlas then
+				S.RelicOK = status == Enum.AssetFetchStatus.Success
+				if not S.RelicOK then
+					for _, fn in ipairs(relicFailed) do
+						task.spawn(fn)
+					end
+				end
+				table.clear(relicFailed)
+			end
+			if id == S.Atlas then
+				S.AtlasOK = status == Enum.AssetFetchStatus.Success
+				if not S.AtlasOK then
+					warn("[SkyforgeUI] navigation atlas failed to load (" .. tostring(status) .. "); using vector icons")
+					for _, fn in ipairs(failedCallbacks) do
+						task.spawn(fn)
+					end
+				end
+				table.clear(failedCallbacks)
+			end
+		end)
 	end)
 end)
 local cells = { Pet = { 0, 0 }, Shop = { 1, 0 }, Compass = { 0, 1 }, Settings = { 1, 1 } }
 function S.Icon(name, parent, size, position)
 	local cell = cells[name]
-	if not cell then
+	if not cell or S.AtlasOK == false then
 		return nil
 	end
 	local f = Instance.new("Frame")
@@ -30,6 +63,11 @@ function S.Icon(name, parent, size, position)
 	f.Parent = parent
 	return f
 end
+local RELIC_TINT = {
+	Forest = Color3.fromRGB(86, 140, 76), Volcano = Color3.fromRGB(196, 92, 52), Frozen = Color3.fromRGB(110, 160, 206),
+	Crystal = Color3.fromRGB(136, 104, 196), Candy = Color3.fromRGB(222, 120, 160), Space = Color3.fromRGB(64, 72, 140),
+	Shadow = Color3.fromRGB(88, 64, 112), Heaven = Color3.fromRGB(214, 180, 96),
+}
 local relicCells = { Forest = 0, Volcano = 1, Frozen = 2, Crystal = 3, Candy = 4, Space = 5, Shadow = 6, Heaven = 7 }
 function S.Relic(id, parent, size, position, recovered)
 	local index = relicCells[id]
@@ -51,6 +89,42 @@ function S.Relic(id, parent, size, position, recovered)
 	image.ImageTransparency = recovered and 0 or 0.2
 	image.Parent = frame
 	frame.Parent = parent
+	-- if the relic atlas can't be delivered, show a clean world-tinted tile with the world's initial
+	local function fallback()
+		if not frame.Parent then
+			return
+		end
+		image:Destroy()
+		local tile = Instance.new("Frame")
+		tile.Name = "RelicFallback"
+		tile.AnchorPoint = Vector2.new(0.5, 0.5)
+		tile.Position = UDim2.fromScale(0.5, 0.5)
+		tile.Size = UDim2.fromScale(0.78, 0.78)
+		tile.BackgroundColor3 = RELIC_TINT[id] or T.Gold
+		tile.BackgroundTransparency = recovered and 0 or 0.45
+		local corner = Instance.new("UICorner")
+		corner.CornerRadius = UDim.new(0.22, 0)
+		corner.Parent = tile
+		local stroke = Instance.new("UIStroke")
+		stroke.Color = T.Gold
+		stroke.Thickness = 2
+		stroke.Parent = tile
+		local letter = Instance.new("TextLabel")
+		letter.BackgroundTransparency = 1
+		letter.Size = UDim2.fromScale(1, 1)
+		letter.Font = Enum.Font.Fondamento
+		letter.TextScaled = true
+		letter.Text = string.sub(id, 1, 1)
+		letter.TextColor3 = Color3.new(1, 1, 1)
+		letter.TextTransparency = recovered and 0 or 0.35
+		letter.Parent = tile
+		tile.Parent = frame
+	end
+	if S.RelicOK == false then
+		fallback()
+	elseif S.RelicOK == nil then
+		table.insert(relicFailed, fallback)
+	end
 	return frame
 end
 function S.Trim(frame)
