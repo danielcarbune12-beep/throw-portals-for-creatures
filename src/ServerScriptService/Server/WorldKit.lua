@@ -144,6 +144,24 @@ function K.pyramid(cf, w, h, color, mat, d)
 		K.wedge(cf * ANG(0, i * PI / 2, 0) * CF(0, h / 2, -dd / 4), V3(ww, h, dd / 2), color, mat)
 	end
 end
+-- faceted gem (bi-pyramid, widest at cf) as one Model so WorldFx can bob/spin it as a piece.
+-- Returns the model and a part to hang a light on.
+function K.gem(cf, w, h, color, mat, transp)
+	local prev = out
+	local m = Instance.new("Model")
+	m.Name = "Gem"
+	out = m
+	K.pyramid(cf, w, h * 0.62, color, mat)
+	K.pyramid(cf * ANG(PI, 0, 0), w, h * 0.38, K.dark(color, 0.18), mat)
+	out = prev
+	local parts = m:GetChildren()
+	for _, p in ipairs(parts) do
+		p.Transparency = transp or 0
+		p.CastShadow = false
+	end
+	m.Parent = prev
+	return m, parts[1]
+end
 -- gable roof along cf Z: two wedges back to back (w = span across X, h = rise, len = along Z)
 function K.gable(cf, w, h, len, color, mat)
 	K.wedge(cf * CF(-w / 4, h / 2, 0) * ANG(0, -PI / 2, 0), V3(len, h, w / 2), color, mat)

@@ -336,6 +336,9 @@ function BaseBuilder.Release(base)
 		{ Decor = {}, FloorTheme = "Meadow", EquipLevel = 1, Upgrades = { Training = 0, BaseSlots = 0 } }
 	)
 	base.collectLabel.Text = "$0"
+	if base.setFill then
+		base.setFill(0)
+	end
 end
 
 -- Refresh owned decorations, floor theme, earned relics and pet slot markers.

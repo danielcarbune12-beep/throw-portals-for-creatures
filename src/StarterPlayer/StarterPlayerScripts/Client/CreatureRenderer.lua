@@ -299,10 +299,10 @@ local function slotCF(base, i)
 	return CFrame.new(pos) * CFrame.Angles(0, yaw, 0)
 end
 
--- base-local obstacle zones (fountain, cottage, pond, collect pad, gym) — see BaseBuilder
+-- base-local obstacle zones (portal shrine, lodge, relic pavilion, treasury, expedition table) — see SanctuaryBase
 local OBSTACLES = {
-	{ circle = Vector2.new(0, 0), r = 8 },
-	{ rect = Vector2.new(-20, 24), half = Vector2.new(8.5, 6.5) },
+	{ circle = Vector2.new(0, 0), r = 10.5 },
+	{ rect = Vector2.new(-18, 23.2), half = Vector2.new(14.2, 10.4) },
 	{ circle = Vector2.new(21, 23), r = 8.5 },
 	{ circle = Vector2.new(-19, -21), r = 6.5 },
 	{ rect = Vector2.new(19, -19), half = Vector2.new(8.5, 8.5) },

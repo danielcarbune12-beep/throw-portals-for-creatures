@@ -459,10 +459,11 @@ task.spawn(function()
 				if #st.carry > 0 and flatD < Config.BaseRadius then
 					depositCarry(player, data, st)
 				end
+				-- the treasury basin fills the pad's centre, so you collect by walking up to it
 				local pad = st.base.collect.Position
 				if
 					data.Uncollected >= 1
-					and ((hrp.Position - pad) * Vector3.new(1, 0, 1)).Magnitude < 5.5
+					and ((hrp.Position - pad) * Vector3.new(1, 0, 1)).Magnitude < 7
 					and math.abs(hrp.Position.Y - pad.Y) < 8
 				then
 					local amt = math.floor(data.Uncollected)
@@ -470,6 +471,9 @@ task.spawn(function()
 					data.TotalEarned += amt
 					data.Uncollected -= amt
 					st.base.collectLabel.Text = "$0"
+					if st.base.setFill then
+						st.base.setFill(0)
+					end
 					MoneyFxRE:FireClient(player, amt, pad)
 					sync(player, true)
 					updateAttributes(player, data)
@@ -488,6 +492,10 @@ task.spawn(function()
 				data.Uncollected += incomePerSec(data)
 				if st.base then
 					st.base.collectLabel.Text = Format.Money(data.Uncollected)
+					-- the treasury hoard looks full after about a minute of income
+					if st.base.setFill then
+						st.base.setFill(data.Uncollected / math.max(1, incomePerSec(data) * 60))
+					end
 					st.base.incomeLabel.Text = "+"
 						.. Format.Money(incomePerSec(data))
 						.. "/s  •  "

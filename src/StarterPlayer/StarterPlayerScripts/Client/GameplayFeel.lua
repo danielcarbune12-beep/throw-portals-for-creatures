@@ -72,7 +72,7 @@ function Feel.Start(TC, HUD)
 			firstCatchHint = true
 			task.delay(4, function()
 				if not HUD.AnyPanelOpen() then
-					HUD.Notify("Your garden earns coins. Step on its green pad to collect them.", "info")
+					HUD.Notify("Your garden earns coins. Walk up to its treasury to collect them.", "info")
 				end
 			end)
 		end
