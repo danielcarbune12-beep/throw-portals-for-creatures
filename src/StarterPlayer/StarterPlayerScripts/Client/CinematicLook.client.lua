@@ -7,30 +7,28 @@
 --   * crisp-soft shadows (ShadowSoftness) and a per-zone sun latitude for longer, more graphic shadows
 --   * a second filmic grade (TPFC_FilmGrade: contrast/saturation/split tint) stacked on the zone grade
 --   * a high-threshold highlight bloom (TPFC_HighlightGlow) so specular glints and neon read as light
---   * an asset-free edge vignette (four gradient frames) that never takes input
+--   * a soft drifting ground mist near the camera (built-in smoke texture, no uploads)
 -- Everything scales with the player's graphics quality and is skipped on low settings.
 
-local Players = game:GetService("Players")
 local Lighting = game:GetService("Lighting")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.Config)
-local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 
 -- per-zone finishing: split-tone tint, extra contrast/saturation, sun latitude, highlight glow
 local GRADE = {
-	Hub     = { tint = Color3.fromRGB(255, 248, 238), contrast = 0.06, sat = 0.06, lat = 34, glow = 0.18 },
-	Forest  = { tint = Color3.fromRGB(255, 250, 236), contrast = 0.08, sat = 0.10, lat = 38, glow = 0.18 },
-	Volcano = { tint = Color3.fromRGB(255, 236, 222), contrast = 0.12, sat = 0.08, lat = 24, glow = 0.30 },
-	Frozen  = { tint = Color3.fromRGB(240, 248, 255), contrast = 0.07, sat = 0.04, lat = 52, glow = 0.20 },
-	Crystal = { tint = Color3.fromRGB(246, 238, 255), contrast = 0.10, sat = 0.10, lat = 30, glow = 0.32 },
-	Candy   = { tint = Color3.fromRGB(255, 246, 250), contrast = 0.05, sat = 0.04, lat = 40, glow = 0.16 },
-	Space   = { tint = Color3.fromRGB(238, 238, 255), contrast = 0.12, sat = 0.06, lat = 20, glow = 0.34 },
-	Shadow  = { tint = Color3.fromRGB(248, 236, 252), contrast = 0.11, sat = 0.06, lat = 28, glow = 0.28 },
-	Heaven  = { tint = Color3.fromRGB(255, 250, 240), contrast = 0.05, sat = 0.05, lat = 46, glow = 0.20 },
+	Hub     = { tint = Color3.fromRGB(255, 248, 238), contrast = 0.06, sat = 0, lat = 34, glow = 0.18 },
+	Forest  = { tint = Color3.fromRGB(255, 250, 236), contrast = 0.08, sat = 0, lat = 38, glow = 0.18 },
+	Volcano = { tint = Color3.fromRGB(255, 236, 222), contrast = 0.12, sat = 0, lat = 24, glow = 0.30 },
+	Frozen  = { tint = Color3.fromRGB(240, 248, 255), contrast = 0.07, sat = 0, lat = 52, glow = 0.20 },
+	Crystal = { tint = Color3.fromRGB(246, 238, 255), contrast = 0.10, sat = 0, lat = 30, glow = 0.32 },
+	Candy   = { tint = Color3.fromRGB(255, 246, 250), contrast = 0.05, sat = 0, lat = 40, glow = 0.16 },
+	Space   = { tint = Color3.fromRGB(238, 238, 255), contrast = 0.12, sat = 0, lat = 20, glow = 0.34 },
+	Shadow  = { tint = Color3.fromRGB(248, 236, 252), contrast = 0.11, sat = 0, lat = 28, glow = 0.28 },
+	Heaven  = { tint = Color3.fromRGB(255, 250, 240), contrast = 0.05, sat = 0, lat = 46, glow = 0.20 },
 }
 
 local function quality()
@@ -53,37 +51,74 @@ glow.Parent = Lighting
 
 pcall(function() Lighting.ShadowSoftness = 0.18 end)
 
----------------------------------------------------------------- vignette (no image assets: four gradient edges)
-local gui = Instance.new("ScreenGui")
-gui.Name = "TPFC_Vignette"
-gui.IgnoreGuiInset = true
-gui.ResetOnSpawn = false
-gui.DisplayOrder = -10
-gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-local edges = {}
-local function edge(pos, size, rotation)
-	local f = Instance.new("Frame")
-	f.BackgroundColor3 = Color3.fromRGB(8, 6, 16)
-	f.BorderSizePixel = 0
-	f.Position, f.Size = pos, size
-	f.Active = false
-	pcall(function() f.Interactable = false end)
-	local g = Instance.new("UIGradient")
-	g.Rotation = rotation
-	g.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.55), NumberSequenceKeypoint.new(0.55, 0.92), NumberSequenceKeypoint.new(1, 1) })
-	g.Parent = f
-	f.Parent = gui
-	table.insert(edges, g)
+---------------------------------------------------------------- ground mist (low drifting fog sheets around the view)
+-- Built-in smoke texture, no uploads. A box emitter follows a point ahead of the camera at ground level;
+-- sheets are large, very faint and slow so they read as fog layers, never as smoke puffs over the pet.
+local MIST = {
+	Hub     = { color = Color3.fromRGB(226, 228, 244), rate = 9 },
+	Forest  = { color = Color3.fromRGB(222, 238, 226), rate = 12 },
+	Volcano = { color = Color3.fromRGB(150, 120, 112), rate = 15 },
+	Frozen  = { color = Color3.fromRGB(232, 242, 255), rate = 18 },
+	Crystal = { color = Color3.fromRGB(206, 186, 240), rate = 12 },
+	Candy   = { color = Color3.fromRGB(255, 226, 242), rate = 12 },
+	Space   = { color = Color3.fromRGB(120, 110, 180), rate = 0 },
+	Shadow  = { color = Color3.fromRGB(120, 100, 150), rate = 21 },
+	Heaven  = { color = Color3.fromRGB(255, 250, 236), rate = 21 },
+}
+local mistPart = Instance.new("Part")
+mistPart.Name = "TPFC_GroundMist"
+mistPart.Anchored, mistPart.CanCollide, mistPart.CanQuery, mistPart.CanTouch, mistPart.CastShadow = true, false, false, false, false
+mistPart.Transparency = 1
+mistPart.Size = Vector3.new(200, 3, 200)
+local mist = Instance.new("ParticleEmitter")
+mist.Texture = "rbxasset://textures/particles/smoke_main.dds"
+mist.Shape = Enum.ParticleEmitterShape.Box
+mist.ShapeStyle = Enum.ParticleEmitterShapeStyle.Volume
+mist.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 16), NumberSequenceKeypoint.new(1, 30) })
+mist.Transparency = NumberSequence.new({
+	NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.3, 0.74),
+	NumberSequenceKeypoint.new(0.7, 0.78), NumberSequenceKeypoint.new(1, 1),
+})
+mist.Lifetime = NumberRange.new(10, 15)
+mist.Speed = NumberRange.new(0.3, 1)
+mist.SpreadAngle = Vector2.new(180, 10)
+mist.Acceleration = Vector3.new(0.25, 0, 0.15)
+mist.Rotation = NumberRange.new(0, 360)
+mist.RotSpeed = NumberRange.new(-3, 3)
+mist.LightInfluence = 0.55
+mist.LightEmission = 0
+mist.Rate = 0
+mist.Parent = mistPart
+mistPart.Parent = workspace
+
+local groundParams = RaycastParams.new()
+groundParams.FilterType = Enum.RaycastFilterType.Include
+groundParams.FilterDescendantsInstances = { workspace.Terrain }
+local function groundY(x, z, fallback)
+	local hit = workspace:Raycast(Vector3.new(x, fallback + 120, z), Vector3.new(0, -400, 0), groundParams)
+	return hit and hit.Position.Y or 0
 end
-edge(UDim2.fromScale(0, 0), UDim2.fromScale(0.22, 1), 0)       -- left -> fades rightward
-edge(UDim2.fromScale(0.78, 0), UDim2.fromScale(0.22, 1), 180)   -- right
-edge(UDim2.fromScale(0, 0), UDim2.fromScale(1, 0.2), 90)        -- top
-edge(UDim2.fromScale(0, 0.8), UDim2.fromScale(1, 0.2), 270)     -- bottom
-gui.Parent = player:WaitForChild("PlayerGui")
+local mistY, mistT = 0, 0
+RunService.Heartbeat:Connect(function(dt)
+	local cf = camera.CFrame
+	local look = Vector3.new(cf.LookVector.X, 0, cf.LookVector.Z)
+	look = look.Magnitude > 0.01 and look.Unit or Vector3.new(0, 0, 1)
+	local p = cf.Position + look * 45
+	mistT += dt
+	if mistT > 0.5 then
+		mistT = 0
+		mistY = groundY(p.X, p.Z, cf.Position.Y)
+	end
+	mistPart.CFrame = CFrame.new(p.X, mistY + 2, p.Z)
+end)
 
 ---------------------------------------------------------------- zone tracking (camera position, 2 Hz)
 local current
 local function apply(id)
+	local m = MIST[id] or MIST.Hub
+	local mq = quality()
+	mist.Color = ColorSequence.new(m.color)
+	mist.Rate = mq <= 3 and 0 or (mq <= 6 and m.rate * 0.5 or m.rate)
 	local g = GRADE[id] or GRADE.Hub
 	local q = quality()
 	local strength = q <= 3 and 0 or (q <= 6 and 0.6 or 1)
@@ -95,7 +130,6 @@ local function apply(id)
 	}):Play()
 	TweenService:Create(glow, info, { Intensity = g.glow * strength }):Play()
 	pcall(function() TweenService:Create(Lighting, info, { GeographicLatitude = g.lat }):Play() end)
-	gui.Enabled = strength > 0
 end
 
 local acc = 0

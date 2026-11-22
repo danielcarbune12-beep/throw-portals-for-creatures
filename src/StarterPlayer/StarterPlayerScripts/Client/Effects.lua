@@ -228,7 +228,7 @@ function Effects.SetupLighting()
 	dof.Name = "TPFC_DOF"; dof.FarIntensity = 0.18; dof.FocusDistance = 50; dof.InFocusRadius = 70; dof.NearIntensity = 0; dof.Parent = Lighting
 	Effects.DOF = dof
 	Effects.SetupExtras()
-	Effects.SetupVignette()
+	-- vignette removed on request (clean frame edges)
 end
 
 ---------------------------------------------------------------- cinematic vignette + letterbox bars
@@ -533,15 +533,16 @@ end
 
 local HUB_LOOK = require(ReplicatedStorage.Shared.SanctuaryLook)
 
+-- per-zone grade + fog: calmer saturation, real aerial depth (low Offset = fog hugs the horizon)
 local LOOK = {
-	Forest  = { exposure = 0.15, sat = 0.28, contrast = 0.12, bloom = 0.8, rays = 0.16, density = 0.3,  haze = 1.6 }, -- golden afternoon
-	Volcano = { exposure = 0.1,  sat = 0.35, contrast = 0.2,  bloom = 1.2, rays = 0.2,  density = 0.36, haze = 2.4 },
-	Frozen  = { exposure = 0.25, sat = 0.1,  contrast = 0.1,  bloom = 0.9, rays = 0.18, density = 0.35, haze = 2.0 },
-	Crystal = { exposure = 0.3,  sat = 0.45, contrast = 0.18, bloom = 1.6, rays = 0.05, density = 0.38, haze = 1.4 },
-	Candy   = { exposure = 0.25, sat = 0.4,  contrast = 0.08, bloom = 1.0, rays = 0.12, density = 0.28, haze = 1.2 },
-	Space   = { exposure = 0.2,  sat = 0.4,  contrast = 0.2,  bloom = 1.8, rays = 0.0,  density = 0.12, haze = 0.4 },
-	Shadow  = { exposure = 0.0,  sat = 0.3,  contrast = 0.28, bloom = 1.4, rays = 0.0,  density = 0.36, haze = 2.6 },
-	Heaven  = { exposure = 0.35, sat = 0.15, contrast = 0.06, bloom = 1.3, rays = 0.3,  density = 0.25, haze = 2.2 },
+	Forest  = { exposure = 0.05, sat = 0.05, contrast = 0.1,  bloom = 0.7, rays = 0.16, density = 0.6, haze = 2.6, offset = 0.0, glare = 0.35 },
+	Volcano = { exposure = 0.0,  sat = 0.1,  contrast = 0.16, bloom = 1.0, rays = 0.18, density = 0.62, haze = 3.0, offset = 0.0, glare = 0.25 },
+	Frozen  = { exposure = 0.12, sat = 0.0,  contrast = 0.08, bloom = 0.8, rays = 0.18, density = 0.62, haze = 2.8, offset = 0.02, glare = 0.4 },
+	Crystal = { exposure = 0.1,  sat = 0.1,  contrast = 0.14, bloom = 1.2, rays = 0.06, density = 0.58, haze = 2.2, offset = 0.02, glare = 0.2 },
+	Candy   = { exposure = 0.1,  sat = 0.1,  contrast = 0.06, bloom = 0.9, rays = 0.12, density = 0.55, haze = 2.2, offset = 0.03, glare = 0.3 },
+	Space   = { exposure = 0.05, sat = 0.1,  contrast = 0.18, bloom = 1.4, rays = 0.0,  density = 0.3, haze = 1.0, offset = 0.0,  glare = 0.0 },
+	Shadow  = { exposure = -0.1, sat = -0.05, contrast = 0.22, bloom = 1.1, rays = 0.0, density = 0.64, haze = 3.2, offset = 0.0,  glare = 0.0 },
+	Heaven  = { exposure = 0.18, sat = 0.04, contrast = 0.05, bloom = 1.1, rays = 0.28, density = 0.58, haze = 2.8, offset = 0.04, glare = 0.5 },
 }
 
 function Effects.UpdateWorld(pos: Vector3)
@@ -560,7 +561,7 @@ function Effects.UpdateWorld(pos: Vector3)
 	local look = (not inHub) and (LOOK[id] or LOOK.Forest) or nil
 	tween(Lighting, 1.5, { Ambient = W.ambient, OutdoorAmbient = W.ambient, ClockTime = W.clock, FogColor = W.fog, Brightness = inHub and 2.15 or 2.4, ExposureCompensation = inHub and -.05 or look.exposure })
 	if cc then tween(cc, 1.5, { TintColor = W.tint, Saturation = inHub and 0.04 or look.sat, Contrast = inHub and 0.08 or look.contrast }) end
-	if atmo then tween(atmo, 1.5, { Color = W.atmo, Decay = W.fog, Haze = inHub and HUB_LOOK.haze or look.haze, Glare = inHub and HUB_LOOK.glare or .3, Offset = inHub and HUB_LOOK.offset or 0, Density = inHub and HUB_LOOK.density or look.density }) end
+	if atmo then tween(atmo, 1.5, { Color = W.atmo, Decay = W.fog, Haze = inHub and HUB_LOOK.haze or look.haze, Glare = inHub and HUB_LOOK.glare or look.glare, Offset = inHub and HUB_LOOK.offset or look.offset, Density = inHub and HUB_LOOK.density or look.density }) end
 	if bloom then tween(bloom, 1.0, { Intensity = inHub and HUB_LOOK.bloom or look.bloom }) end
 	if rays then tween(rays, 1.5, { Intensity = inHub and 0.12 or look.rays }) end
 	local dof = Lighting:FindFirstChild("TPFC_DOF")
