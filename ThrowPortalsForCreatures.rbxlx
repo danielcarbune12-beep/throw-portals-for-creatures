@@ -2246,6 +2246,7 @@ function Builder.Build(creatureId: string, sizeMult: number?)
 		local ok, err = pcall(Models[def.id], H, rig, vd, s)
 		if ok then
 			built = true
+			rig.handBuilt = true
 		else
 			warn("[CreatureBuilder] SpeciesModels." .. def.id .. " failed, using fallback: " .. tostring(err))
 			for _, ch in ipairs(model:GetChildren()) do

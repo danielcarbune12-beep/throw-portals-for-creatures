@@ -122,6 +122,16 @@ check(#rigOf("BlizzardBear").feet == 4, "Blizzard Bear: four legs")
 check(rigOf("GoldGriffin").legKind == "quad", "Golden Griffin: hybrid four-legged stance")
 check(#(rigOf("Thornhog").groups.spines or {}) >= 10, "Thornhog: leaf spine rows")
 
+-- hand-built SpeciesModels must really build (the builder silently falls back if one errors)
+local Models = H.require(S .. "/SpeciesModels")
+for id in pairs(Models) do
+	for _, size in ipairs({ 0.6, 1, 1.6 }) do
+		local ok, _, r = pcall(Builder.Build, id, size)
+		check(ok and r.handBuilt == true, "hand-built model fell back: " .. id .. " x" .. size)
+		if ok then check(#r.feet > 0 or r.legKind == "none", id .. " hand-built: legs or legless") end
+	end
+end
+
 ---------------------------------------------------------------- part budgets (visible+pivot parts at size 1)
 local over = {}
 for id, n in pairs(partStats) do
