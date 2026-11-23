@@ -8,11 +8,16 @@ local function font(name, fallback)
 	return (ok and f) or fallback
 end
 local T = {
+	Header = Color3.fromRGB(239, 242, 233),
+	Timber = Color3.fromRGB(81, 61, 43),
+	Brass = Color3.fromRGB(168, 143, 92),
+	Selected = Color3.fromRGB(242, 239, 217),
+	TitleFace = Font.new("rbxasset://fonts/families/Merriweather.json", Enum.FontWeight.Bold),
 	Ink = Color3.fromRGB(27, 35, 44),
-	Panel = Color3.fromRGB(253, 253, 251),
-	Raised = Color3.fromRGB(236, 239, 242),
-	Inset = Color3.fromRGB(243, 245, 247),
-	Border = Color3.fromRGB(120, 132, 142),
+	Panel = Color3.fromRGB(249, 250, 246),
+	Raised = Color3.fromRGB(240, 242, 235),
+	Inset = Color3.fromRGB(230, 234, 225),
+	Border = Color3.fromRGB(157, 163, 148),
 	Text = Color3.fromRGB(27, 35, 44),
 	Muted = Color3.fromRGB(82, 93, 105),
 	Gold = Color3.fromRGB(148, 101, 20),

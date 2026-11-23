@@ -213,6 +213,7 @@ renderPets = function()
 		if b:IsA("TextButton") then
 			local st = b:FindFirstChildOfClass("UIStroke")
 			local chosen = b.Name == "Pet_" .. tostring(selectedUid)
+			b:SetAttribute("Selected", chosen)
 			st.Color = chosen and T.Gold or T.Border
 			st.Thickness = chosen and 2 or 1
 		end
@@ -436,6 +437,7 @@ function Panel.Init()
 		return
 	end
 	page = HUD.MakePanel("Expeditions", "Pet expedition", "", "Compass")
+	page.frame:SetAttribute("CompactHeader", true)
 	page.contextual = true
 	page.subtitle.Visible = false
 	page.title.Position = UDim2.fromOffset(58, 8)

@@ -2,15 +2,15 @@
 
 ## Overview
 
-Native Roblox GUI for a bright outdoor sanctuary. Solid white/light-stone panels use dark readable text and restrained gold trim. Opening a menu leaves the surrounding 3D world unchanged: no dark screen wash and no menu blur. C enamel navigation artwork supplies small colored accents inside the light interface.
+Native Roblox GUI for a bright outdoor sanctuary. Light limestone panels use dark readable text, a narrow oak binding and brass corner fittings. Opening a menu leaves the surrounding 3D world unchanged: no dark screen wash and no menu blur. C enamel navigation artwork supplies small colored accents inside the light interface.
 
 ## Color
 
-Ink/text #1B232C, panel #FDFDFB, raised #ECEFF2, inset #F3F5F7, border #78848E, muted #525D69, action gold #946514, trim gold #C0A163, slate accent #4B6584, information #1D637E, success #237048, danger #A7303B. Primary gold actions use white lettering. Rarity and variant text is darkened as necessary to reach 4.5:1 on the light panel. Cinematic gold remains #F1CA73 independently of interface colors.
+Ink/text #1B232C, panel #F9FAF6, raised #F0F2EB, inset #E6EAE1, border #9DA394, muted #525D69, action gold #946514, trim gold #C0A163, slate accent #4B6584, information #1D637E, success #237048, danger #A7303B. Primary gold actions use white lettering. Rarity and variant text is darkened as necessary to reach 4.5:1 on the light panel. Cinematic gold remains #F1CA73 independently of interface colors.
 
 ## Typography
 
-Builder Sans for interface text and data, with Gotham fallbacks. Body 16, secondary 14, row title 19, panel title 26; compact phone data can use 13. Native labels avoid text strokes and automatic shrinking. Long names wrap in reserved title areas.
+Merriweather appears on menu titles and item headings, matching the game's heraldic lettering. Builder Sans carries buttons, body text and data, with Gotham fallbacks. Body 16, secondary 14, row title 19, panel title 26; compact phone data can use 13. Native labels avoid text strokes and automatic shrinking. Long names wrap in reserved title areas.
 
 ## Layout
 
@@ -22,8 +22,7 @@ The three primary destinations use compact cutout artwork: pale silver wolf,
 oak/jade merchant stall and parchment compass map. Their artwork has no
 backplate, visible text or caption strip. Desktop art is 56px and compact art is
 44px before HUD scaling, inside 64px and 52px targets respectively. A silver/gold/jade cog opens
-Settings from a separate 44px control. Focus uses a gold outline. Ordinary panels
-use quiet rounded stone edges; decorative angled corner marks are removed.
+Settings from a separate 44px control. Focus uses a gold outline. Ordinary panels use squared stone edges and small brass fittings.
 Small utility symbols remain native geometry.
 
 Expeditions use an expanded desktop map/scout composition. Eight native biome
@@ -57,3 +56,16 @@ XP and personal income before the preview on narrow screens. Global bonuses rema
 part of the courtyard income shown in the HUD; creature resale still uses base value.
 
 Expedition planning suggests an idle stored scout before garden earners or followers. Explicit choices persist across biome browsing. Reward previews share the server payout function and expose the configured biome bonus. Locked routes open the biome shop. Go to table lands beside the player's own table with the panel open; dispatch is a separate action. Stored pets keep garden income intact; garden earners and followers explain their actual departure cost.
+
+
+## Sanctuary menu craft
+
+Menus use a pale stone reading surface, a narrow oak binding, restrained brass fittings, and serif display headings. The world stays visible around them. Only the menu itself receives a frame. No full-screen dark wash or blur is introduced.
+
+The shop has a native 3D merchant stall and four context-aware destinations. Actual portal geometry, a smith's hammer, a courtyard pavilion and a map table identify the destinations. Desktop uses a merchant display plus a vertical list; short screens use four direct shortcuts on one screen and keep the purse in the header. Secondary shops display the current purse before spending.
+
+The pet ledger selects an appropriate first result on desktop, places search and Place best on one row, and frames actual creature geometry instead of leaving models tiny inside oversized camera bounds. Follow and Sell are secondary actions beside one another; selling retains its confirmation and cancellation rules. Search changes select a matching pet and clear stale actions when no result remains. Stored, courtyard, following and expedition states are explicit.
+
+Short screens move the catalogue-back control into the header, fit a complete first row of inventory cards, and use readable collection rows. Names may truncate only in compact catalogue cards; the full name remains available in the detail and accessibility metadata.
+
+Open menus suspend world proximity prompts and hide floating world labels locally. Closing restores the prior prompt setting and each label's previous visibility owner. These presentation changes never change server prices, rewards, ownership or save data.

@@ -12,6 +12,8 @@
 --   * Purely visual and client-side.
 
 local RunService = game:GetService("RunService")
+local player = game:GetService("Players").LocalPlayer
+local menuSuppressed = {}
 
 local camera = workspace.CurrentCamera
 local labels = {} -- [BillboardGui] = true
@@ -19,19 +21,46 @@ local hiddenByUs = {} -- [BillboardGui] = true
 local lastSize = {} -- [BillboardGui] = Vector2
 
 local function track(d)
-	if d:IsA("BillboardGui") then labels[d] = true end
+	if d:IsA("BillboardGui") then
+		labels[d] = true
+		if player:GetAttribute("TPFC_MenuOpen") then
+			menuSuppressed[d] = { previous = d.PlayerToHideFrom }
+			d.PlayerToHideFrom = player
+		end
+	end
 end
-for _, d in ipairs(workspace:GetDescendants()) do track(d) end
+for _, d in ipairs(workspace:GetDescendants()) do
+	track(d)
+end
 workspace.DescendantAdded:Connect(track)
 workspace.DescendantRemoving:Connect(function(d)
 	if labels[d] then
-		labels[d], hiddenByUs[d], lastSize[d] = nil, nil, nil
+		labels[d], hiddenByUs[d], lastSize[d], menuSuppressed[d] = nil, nil, nil, nil
+	end
+end)
+
+-- Keep the 3D scene visible around a menu while its floating labels step back.
+-- Using PlayerToHideFrom preserves other scripts' Enabled state and decluttering.
+player:GetAttributeChangedSignal("TPFC_MenuOpen"):Connect(function()
+	local open = player:GetAttribute("TPFC_MenuOpen") == true
+	for b in labels do
+		if open and not menuSuppressed[b] then
+			menuSuppressed[b] = { previous = b.PlayerToHideFrom }
+			b.PlayerToHideFrom = player
+		elseif not open and menuSuppressed[b] then
+			if b.PlayerToHideFrom == player then
+				b.PlayerToHideFrom = menuSuppressed[b].previous
+			end
+			menuSuppressed[b] = nil
+		end
 	end
 end)
 
 local function anchorPosition(b)
 	local a = b.Adornee or b.Parent
-	if not a then return nil end
+	if not a then
+		return nil
+	end
 	local pos
 	if a:IsA("BasePart") then
 		pos = a.Position
@@ -49,7 +78,9 @@ local function overlapRatio(a, b)
 	local x = math.max(0, math.min(a.x2, b.x2) - math.max(a.x1, b.x1))
 	local y = math.max(0, math.min(a.y2, b.y2) - math.max(a.y1, b.y1))
 	local inter = x * y
-	if inter <= 0 then return 0 end
+	if inter <= 0 then
+		return 0
+	end
 	local smaller = math.min((a.x2 - a.x1) * (a.y2 - a.y1), (b.x2 - b.x1) * (b.y2 - b.y1))
 	return smaller > 0 and inter / smaller or 0
 end
@@ -57,10 +88,14 @@ end
 local acc = 0
 RunService.Heartbeat:Connect(function(dt)
 	acc += dt
-	if acc < 0.2 then return end
+	if acc < 0.2 then
+		return
+	end
 	acc = 0
 	camera = workspace.CurrentCamera or camera
-	if not camera then return end
+	if not camera then
+		return
+	end
 	local camPos = camera.CFrame.Position
 	local list = {}
 	for b in pairs(labels) do
@@ -80,15 +115,26 @@ RunService.Heartbeat:Connect(function(dt)
 					if size then
 						local hasText = false
 						for _, t in ipairs(b:GetDescendants()) do
-							if (t:IsA("TextLabel") or t:IsA("ImageLabel")) and t.Visible and (not t:IsA("TextLabel") or t.Text ~= "") then
+							if
+								(t:IsA("TextLabel") or t:IsA("ImageLabel"))
+								and t.Visible
+								and (not t:IsA("TextLabel") or t.Text ~= "")
+							then
 								hasText = true
 								break
 							end
 						end
 						if hasText then
 							table.insert(list, {
-								b = b, dist = dist, pri = b:GetAttribute("LabelPriority") or 0,
-								r = { x1 = sp.X - size.X / 2, x2 = sp.X + size.X / 2, y1 = sp.Y - size.Y / 2, y2 = sp.Y + size.Y / 2 },
+								b = b,
+								dist = dist,
+								pri = b:GetAttribute("LabelPriority") or 0,
+								r = {
+									x1 = sp.X - size.X / 2,
+									x2 = sp.X + size.X / 2,
+									y1 = sp.Y - size.Y / 2,
+									y2 = sp.Y + size.Y / 2,
+								},
 							})
 						end
 					end
@@ -97,7 +143,9 @@ RunService.Heartbeat:Connect(function(dt)
 		end
 	end
 	table.sort(list, function(a, b)
-		if a.pri ~= b.pri then return a.pri > b.pri end
+		if a.pri ~= b.pri then
+			return a.pri > b.pri
+		end
 		return a.dist < b.dist
 	end)
 	local placed = {}
@@ -126,7 +174,10 @@ RunService.Heartbeat:Connect(function(dt)
 	for b in pairs(hiddenByUs) do
 		local still = false
 		for _, e in ipairs(list) do
-			if e.b == b then still = true break end
+			if e.b == b then
+				still = true
+				break
+			end
 		end
 		if not still and b.Parent then
 			hiddenByUs[b] = nil

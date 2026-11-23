@@ -1,0 +1,17 @@
+{
+  "desktop": {
+    "failures": [],
+    "passed": 100,
+    "textOverflows": []
+  },
+  "phone": {
+    "failures": [],
+    "passed": 98,
+    "textOverflows": []
+  },
+  "tablet": {
+    "failures": [],
+    "passed": 100,
+    "textOverflows": []
+  }
+}
