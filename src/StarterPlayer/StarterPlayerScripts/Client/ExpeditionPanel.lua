@@ -12,6 +12,9 @@ local K = require(script.Parent.UIKit)
 local T = K.Theme
 local Sky = require(script.Parent.SkyforgeUI)
 local Scene = require(script.Parent.ExpeditionScene)
+local Battle = require(RS.Shared.ExpeditionBattle)
+local Fight = require(script.Parent.ExpeditionFight)
+local Mini = require(script.Parent.ExpeditionMiniMap)
 local Renderer = require(script.Parent.CreatureRenderer)
 local HUD = require(script.Parent.HUD)
 local State = require(script.Parent.ClientState)
@@ -46,6 +49,105 @@ local descriptions = {
 }
 
 local render, updateClock, updateSelection, renderPets
+local battlePlan, battleKey, fightCtx, fightView, miniMap
+
+-- One deterministic battle per saved expedition, shared by the journey map and the HUD mini-map.
+local function battlePlanFor(a)
+	if not a then
+		return nil
+	end
+	if battleKey ~= a.id then
+		local ok, plan = pcall(Battle.Plan, a)
+		battlePlan, battleKey = ok and plan or nil, a.id
+		if not ok then
+			warn("[Expedition] battle plan failed: " .. tostring(plan))
+		end
+	end
+	return battlePlan
+end
+
+-- HP bars, damage numbers and a battle log pinned over the 3D journey map.
+local function buildFightOverlay(frame, vp)
+	local function hpBar(color, w)
+		local back = K.new("Frame", {
+			Size = UDim2.fromOffset(w, 9), AnchorPoint = Vector2.new(0.5, 1),
+			BackgroundColor3 = Color3.fromRGB(30, 30, 36), Visible = false, ZIndex = 5, Parent = frame,
+		})
+		K.corner(4).Parent = back
+		local fill = K.new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = color, ZIndex = 6, Parent = back })
+		K.corner(4).Parent = fill
+		local name = K.new("TextLabel", {
+			BackgroundTransparency = 1, Size = UDim2.new(1, 60, 0, 16), Position = UDim2.new(0.5, 0, 0, -2),
+			AnchorPoint = Vector2.new(0.5, 1), TextSize = 13, Font = T.Bold, TextColor3 = Color3.new(1, 1, 1),
+			TextStrokeTransparency = 0.35, Text = "", ZIndex = 7, Parent = back,
+		})
+		return { back = back, fill = fill, name = name }
+	end
+	local strip = K.new("Frame", {
+		Name = "BattleLog", AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -8),
+		Size = UDim2.new(1, -16, 0, 28), BackgroundColor3 = Color3.fromRGB(20, 22, 28), BackgroundTransparency = 0.3,
+		ZIndex = 5, Parent = frame,
+	})
+	K.corner(8).Parent = strip
+	local log = K.new("TextLabel", {
+		BackgroundTransparency = 1, Size = UDim2.new(1, -12, 1, 0), Position = UDim2.fromOffset(6, 0),
+		TextSize = 15, Font = T.Bold, TextColor3 = Color3.new(1, 1, 1), Text = "", ZIndex = 6,
+		TextTruncate = Enum.TextTruncate.AtEnd, Parent = strip,
+	})
+	local counter = K.new("TextLabel", {
+		BackgroundTransparency = 1, Position = UDim2.fromOffset(10, 6), Size = UDim2.new(1, -20, 0, 20),
+		TextSize = 15, Font = T.Bold, TextColor3 = Color3.new(1, 1, 1), TextStrokeTransparency = 0.35,
+		TextXAlignment = Enum.TextXAlignment.Left, Text = "", ZIndex = 6, Parent = frame,
+	})
+	local popup = K.new("TextLabel", {
+		BackgroundTransparency = 1, Size = UDim2.fromOffset(120, 30), AnchorPoint = Vector2.new(0.5, 1),
+		TextSize = 24, Font = T.Bold, TextStrokeTransparency = 0.2, Text = "", Visible = false, ZIndex = 8, Parent = frame,
+	})
+	return { vp = vp, pet = hpBar(Color3.fromRGB(90, 210, 110), 64), mon = hpBar(Color3.fromRGB(235, 80, 70), 90),
+		log = log, counter = counter, popup = popup }
+end
+
+local function updateFightOverlay(view, plan, state)
+	local size = view.vp.AbsoluteSize
+	local cam = view.vp.CurrentCamera
+	local petHead, monHead = Fight.Anchors(fightCtx)
+	local function pin(bar, world, frac, text)
+		local at = Fight.Project(cam, size, world)
+		bar.back.Visible = at ~= nil
+		if at then
+			bar.back.Position = UDim2.fromOffset(at.X, at.Y)
+			bar.fill.Size = UDim2.fromScale(math.clamp(frac, 0, 1), 1)
+			bar.name.Text = text
+		end
+	end
+	pin(view.pet, petHead, state.hp / state.maxHp, "")
+	local enc = state.enc and plan.encounters[state.enc]
+	if enc and monHead then
+		pin(view.mon, monHead, state.monHp / state.monMax, enc.name)
+	else
+		view.mon.back.Visible = false
+	end
+	view.counter.Text = "Monsters defeated " .. state.cleared .. "/" .. #plan.encounters
+	view.log.Text = state.text or ""
+	local beat, phase = state.beat, state.phase or 0
+	local show = beat and (beat.who == "pet" or beat.who == "mon") and phase >= 0.45
+	view.popup.Visible = show == true
+	if show then
+		local target = beat.who == "pet" and monHead or petHead
+		local at = Fight.Project(cam, size, target)
+		view.popup.Visible = at ~= nil
+		if at then
+			local rise = (phase - 0.45) * 40
+			view.popup.Position = UDim2.fromOffset(at.X + (beat.who == "pet" and 18 or -18), at.Y - 14 - rise)
+			view.popup.Text = beat.dodged and "MISS" or ((beat.crit and "CRIT " or "") .. "-" .. beat.dmg)
+			view.popup.TextColor3 = beat.dodged and Color3.fromRGB(200, 220, 255)
+				or (beat.who == "pet" and (beat.crit and Color3.fromRGB(255, 200, 60) or Color3.new(1, 1, 1))
+					or Color3.fromRGB(255, 90, 80))
+			view.popup.TextTransparency = math.clamp((phase - 0.75) * 4, 0, 1)
+			view.popup.TextStrokeTransparency = 0.2 + 0.8 * math.clamp((phase - 0.75) * 4, 0, 1)
+		end
+	end
+end
 local function view()
 	return type(State.Data.Expeditions) == "table" and State.Data.Expeditions or nil
 end
@@ -374,10 +476,29 @@ render = function()
 			portrait(activePortrait, { c = a.creature, v = a.v }, UDim2.fromScale(1, 1))
 			clear(activeSceneFrame)
 			activeSceneModel = Scene.Build(a.world)
+			-- The scout itself fights on the map: parent it before the viewport bakes/anchors welds.
+			local okPet, petModel = pcall(Renderer.BuildPreview, a.creature, a.v)
+			if okPet and petModel then
+				petModel.Name = "Scout"
+				petModel.Parent = activeSceneModel
+			else
+				petModel = nil
+			end
 			local vp = K.viewport(activeSceneModel, UDim2.fromScale(1, 1), false)
 			vp.Name = "ActiveBiomePreview"
 			vp.Parent = activeSceneFrame
 			vp.CurrentCamera.CFrame = CFrame.lookAt(Vector3.new(-25, 21, -29), Vector3.new(0, 1, 0))
+			fightCtx, fightView = nil, nil
+			local plan = battlePlanFor(a)
+			if plan then
+				local okFight, ctx = pcall(Fight.Attach, activeSceneModel, plan, petModel, vp.CurrentCamera)
+				if okFight then
+					fightCtx = ctx
+					fightView = buildFightOverlay(activeSceneFrame, vp)
+				else
+					warn("[Expedition] battle map failed: " .. tostring(ctx))
+				end
+			end
 		end
 	else
 		if v and (not routeInitialized or not route()) then
@@ -667,6 +788,7 @@ function Panel.Init()
 	tiny.ClipsDescendants = true
 	trackerFill = K.new("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = T.Gold, Parent = tiny })
 	K.bind(tracker, Panel.Open)
+	miniMap = Mini.Create(HUD.Root.Gameplay, Panel.Open)
 	selectedHero = K.new("Frame", { Name = "SelectedScout", BackgroundTransparency = 1, Parent = right })
 	petMeta = K.text(right, "", 0, 0, -4, 22, 13, T.Muted)
 	relicHint = K.text(right, "", 0, 0, -4, 20, 13, T.Muted)
@@ -674,7 +796,7 @@ function Panel.Init()
 	rewardCaption = K.text(right, "Recovered coins", 0, 0, -4, 20, 13, T.Muted)
 	scoutCaption = K.text(right, "Choose your scout", 0, 0, -4, 22, 15, T.Text, true)
 	activeSceneFrame = K.new("Frame", { Name = "JourneyMap", BackgroundTransparency = 1, Parent = activeBox })
-	activeMapCaption = K.text(activeBox, "Your scout follows the marked route.", 0, 0, -4, 30, 14, T.Muted)
+	activeMapCaption = K.text(activeBox, "Your scout battles the biome's monsters on the way to the relic.", 0, 0, -4, 30, 14, T.Muted)
 	journeyCaption = K.text(activeBox, "Departing", 0, 0, -4, 24, 16, T.Success, true)
 	journeyLabels = {}
 	for _, text in { "01  Departure", "02  Exploration", "03  Return" } do
@@ -883,6 +1005,37 @@ function Panel.Init()
 		updateClock()
 		if HUD.IsOpen("Expeditions") then
 			updateSelection()
+		end
+	end)
+	-- Live battle: HUD mini-map whenever a scout is out, 3D fight while the panel shows the journey map.
+	local battleFailed = false
+	RunService.RenderStepped:Connect(function(dt)
+		local a = ready and activeTrip()
+		local plan = a and battlePlanFor(a)
+		local scale = HUD.Root:FindFirstChildOfClass("UIScale")
+		local rootSize = HUD.Root.AbsoluteSize / (scale and scale.Scale or 1)
+		local roomy = rootSize.Y >= 420
+		miniMap.root.Visible = plan ~= nil and roomy and not HUD.IsOpen("Expeditions")
+		if not plan or battleFailed then
+			return
+		end
+		local ok, err = pcall(function()
+			local state = Battle.At(plan, math.max(0, clockNow() - a.startedAt))
+			local now = os.clock()
+			if miniMap.root.Visible then
+				Mini.SetPlan(miniMap, plan, a.world)
+				Mini.Update(miniMap, state, now)
+			end
+			if fightCtx and fightCtx.plan == plan and HUD.IsOpen("Expeditions") and activeSceneFrame.Visible then
+				Fight.Update(fightCtx, state, now, dt)
+				if fightView then
+					updateFightOverlay(fightView, plan, state)
+				end
+			end
+		end)
+		if not ok then
+			battleFailed = true
+			warn("[Expedition] battle view stopped: " .. tostring(err))
 		end
 	end)
 	ready = true

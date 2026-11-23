@@ -5,6 +5,11 @@ local Http = game:GetService("HttpService")
 local Rules = require(RS.Shared.ExpeditionConfig)
 local Creatures = require(RS.Shared.CreatureData)
 local Planner = require(RS.Shared.ExpeditionPlanner)
+local okBattle, Battle = pcall(require, RS.Shared.ExpeditionBattle)
+if not okBattle then
+	warn("[Expedition] battle summaries disabled: " .. tostring(Battle))
+	Battle = nil
+end
 local Service = {}
 
 local MAX_REWARD = Planner.MaxReward
@@ -270,9 +275,14 @@ function Service.Claim(player, data, base, expeditionId, now)
 	data.TotalEarned = (finite(data.TotalEarned) and data.TotalEarned or 0) + active.coins
 	data.ExpeditionRelics[active.world] = true
 	data.ExpeditionCompletions = math.min(2147483647, data.ExpeditionCompletions + 1)
-	return true,
-		firstRelic and "Expedition complete. Coins and a new biome relic recovered."
-			or "Expedition complete. Coins recovered and your pet is home."
+	local text = firstRelic and "Expedition complete. Coins and a new biome relic recovered."
+		or "Expedition complete. Coins recovered and your pet is home."
+	-- Same deterministic battle the client animated; text only, never affects the payout.
+	local summary = Battle and Battle.Summary(active)
+	if summary then
+		text = ("Your pet defeated %d monsters, including the %s! %s"):format(summary.defeated, summary.boss, text)
+	end
+	return true, text
 end
 
 function Service.BuildView(data, now)
