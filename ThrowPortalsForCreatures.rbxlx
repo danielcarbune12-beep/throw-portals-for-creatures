@@ -16629,19 +16629,6 @@ local function range(x, x2, z1, z2, n, R, H, col)
 	end
 end
 
-local function cloud(pos, s)
-	-- flat warm base + a heap of round lobes on top (a cumulus, not a disc)
-	local core = K.ellipsoid(CF(pos), V3(150, 40, 100) * s, C(244, 240, 236), M.SmoothPlastic, 0.12)
-	for i = 0, 6 do
-		local a = i / 7 * PI * 2
-		local off = V3(math.cos(a) * K.r(20, 55), K.r(12, 34), math.sin(a) * K.r(10, 30)) * s
-		local d = K.r(50, 78) * s
-		K.ellipsoid(CF(pos + off), V3(d, d * 0.85, d), C(255, 255, 255), M.SmoothPlastic, 0.12)
-	end
-	core.CastShadow = false
-	K.tag(core, "TPFC_Bob", { Amp = 3, Period = K.r(18, 26), Spin = 0 })
-end
-
 ---------------------------------------------------------------- LEFT: wild
 local function leftCliff(z1, z2)
 	-- three stepped tiers climbing away from the lane; a gorge notch at z 84..108 for the waterfall
@@ -16907,12 +16894,7 @@ function O.Build(b)
 	range(1100, 1500, 450, 1050, 5, { 220, 300 }, { 400, 560 }, C(169, 200, 192))
 	range(-1450, -1800, 450, 1150, 5, { 260, 340 }, { 550, 700 }, C(195, 218, 210))
 
-	-- big soft cumulus, pushed out to the sides and the horizon
-	cloud(V3(-420, 300, 380), 1.4)
-	cloud(V3(-760, 360, 760), 1.8)
-	cloud(V3(380, 330, 520), 1.5)
-	cloud(V3(820, 400, 900), 2.0)
-	cloud(V3(-120, 420, 1100), 1.6)
+	-- The shared Terrain.Clouds sky owns cloud shape, weather and sunlight.
 
 	K.mirror = false
 	K.SetFolder(parentFolder)
@@ -20417,7 +20399,7 @@ return L
 ]]></ProtectedString></Properties></Item>
 </Item>
 </Item>
-<Item class="StarterPlayer" referent="RBX96"><Properties><string name="Name">StarterPlayer</string></Properties>
+<Item class="StarterPlayer" referent="RBX97"><Properties><string name="Name">StarterPlayer</string></Properties>
 <Item class="StarterPlayerScripts" referent="RBX66"><Properties><string name="Name">StarterPlayerScripts</string></Properties>
 <Item class="Folder" referent="RBX67"><Properties><string name="Name">Client</string></Properties>
 <Item class="ModuleScript" referent="RBX68"><Properties><string name="Name">CaughtPresentation</string><ProtectedString name="Source"><![CDATA[-- Caught card for an already confirmed catch, styled after Actions/02_Rarity_Reveal_and_Capture ("03 ADDED"):
@@ -25370,7 +25352,43 @@ RunService.Heartbeat:Connect(function(dt)
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX83"><Properties><string name="Name">Panels</string><ProtectedString name="Source"><![CDATA[-- Sanctuary shops, collection, index, customization and settings.
+<Item class="ModuleScript" referent="RBX83"><Properties><string name="Name">MovementFov</string><ProtectedString name="Source"><![CDATA[-- Reversible sprint lens offset. Cinematics release it before saving their lens.
+local Fov = {}
+local owner, offset, output
+local function close(a, b)
+	return a ~= nil and b ~= nil and math.abs(a - b) < 0.001
+end
+function Fov.Clear(camera)
+	if owner and close(owner.FieldOfView, output) then
+		owner.FieldOfView -= offset
+	end
+	owner, offset, output = nil, 0, nil
+	return camera and camera.FieldOfView
+end
+function Fov.Update(camera, target, dt)
+	if camera ~= owner then
+		Fov.Clear(camera)
+		owner = camera
+	end
+	if not camera then
+		return
+	end
+	-- A camera replacement, external zoom or cinematic may have set a new lens.
+	-- Treat that as a new base instead of subtracting an obsolete sprint offset.
+	local base = close(camera.FieldOfView, output) and (camera.FieldOfView - offset) or camera.FieldOfView
+	if not close(camera.FieldOfView, output) then
+		offset = 0
+	end
+	offset += (target - offset) * (1 - math.exp(-5 * dt))
+	if math.abs(offset) < 0.01 and target == 0 then
+		offset = 0
+	end
+	output = base + offset
+	camera.FieldOfView = output
+end
+return Fov
+]]></ProtectedString></Properties></Item>
+<Item class="ModuleScript" referent="RBX84"><Properties><string name="Name">Panels</string><ProtectedString name="Source"><![CDATA[-- Sanctuary shops, collection, index, customization and settings.
 -- All spending and ownership changes use the existing authoritative server actions.
 local RS = game:GetService("ReplicatedStorage")
 local Http = game:GetService("HttpService")
@@ -26491,7 +26509,7 @@ function Panels.Init()
 end
 return Panels
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX84"><Properties><string name="Name">Plaque</string><ProtectedString name="Source"><![CDATA[-- Plaque: the carved rarity plaque from the reveal reference sheet (Actions/02_Rarity_Reveal_and_Capture):
+<Item class="ModuleScript" referent="RBX85"><Properties><string name="Name">Plaque</string><ProtectedString name="Source"><![CDATA[-- Plaque: the carved rarity plaque from the reveal reference sheet (Actions/02_Rarity_Reveal_and_Capture):
 -- a bevelled bar with pointed diamond ends, double gold trim, small gold diamond ornaments, serif caps,
 -- and gold laurels for the showcase tiers. Pixel sized, so it works in ScreenGuis and BillboardGuis.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > Plaque (ModuleScript)
@@ -26648,7 +26666,7 @@ end
 
 return P
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX85"><Properties><string name="Name">PlayerFeel</string><ProtectedString name="Source"><![CDATA[-- PlayerFeel: how the local player's character moves and feels.
+<Item class="LocalScript" referent="RBX86"><Properties><string name="Name">PlayerFeel</string><ProtectedString name="Source"><![CDATA[-- PlayerFeel: how the local player's character moves and feels.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > PlayerFeel (LocalScript)
 --
 --   * Run: hold Left Shift (PC), press L3 (gamepad) or tap the Run button (mobile, toggles).
@@ -26670,6 +26688,7 @@ local TweenService = game:GetService("TweenService")
 
 local Settings = require(script.Parent.ClientSettings)
 local TC = require(script.Parent.ThrowController)
+local MovementFov = require(script.Parent.MovementFov)
 
 local player = Players.LocalPlayer
 
@@ -26682,7 +26701,6 @@ local char, hum, hrp
 local joints = {} -- name -> { kind, obj, rest = CFrame }
 local baseSpeed = WALK
 local lastSetSpeed
-local fovOffset = 0
 local lean, bank, headYaw, headPitch = 0, 0, 0, 0
 local lastYaw
 local stepT, idleT, shiftT, shiftDir = 0, 0, 0, 0
@@ -26696,7 +26714,7 @@ end
 
 local function bodyOwnedElsewhere()
 	if workspace:GetAttribute("TPFC_IntroPlaying") then return true end
-	if TC.Charging or TC.Submitting then return true end
+	if TC.InputBlocked or TC.SystemMenuOpen or TC.Charging or TC.Submitting then return true end
 	if TC.Phase and TC.Phase ~= "Ready" then return true end
 	local cam = workspace.CurrentCamera
 	return cam and cam.CameraType ~= Enum.CameraType.Custom
@@ -26722,6 +26740,7 @@ local function joint(partName, jointName)
 end
 
 local function bind(c)
+	MovementFov.Clear(workspace.CurrentCamera)
 	char = c
 	hum = c:WaitForChild("Humanoid", 10)
 	hrp = c:WaitForChild("HumanoidRootPart", 10)
@@ -26746,7 +26765,7 @@ local function bind(c)
 		elseif new == Enum.HumanoidStateType.Landed and fallStart and hrp then
 			local drop = fallStart - hrp.Position.Y
 			fallStart = nil
-			if drop > 7 and not Settings.ReducedMotion then
+			if drop > 7 and Settings.CameraShake and not Settings.ReducedMotion and not bodyOwnedElsewhere() then
 				-- soft camera dip on a hard landing
 				local k = math.clamp((drop - 7) / 20, 0.25, 1)
 				hum.CameraOffset = Vector3.new(0, -0.7 * k, 0)
@@ -26783,6 +26802,10 @@ if player.Character then task.spawn(bind, player.Character) end
 
 ---------------------------------------------------------------- run input
 local function sprintAction(_, state, input)
+    if UserInputService:GetFocusedTextBox() or TC.SystemMenuOpen then
+        sprintHeld = false
+        return Enum.ContextActionResult.Pass
+    end
 	if input.UserInputType == Enum.UserInputType.Touch then
 		if state == Enum.UserInputState.Begin then
 			sprintToggled = not sprintToggled
@@ -26799,7 +26822,10 @@ ContextActionService:BindAction("TPFC_Run", sprintAction, true, Enum.KeyCode.Lef
 ContextActionService:SetTitle("TPFC_Run", "Run")
 pcall(function() ContextActionService:SetPosition("TPFC_Run", UDim2.new(1, -170, 1, -150)) end)
 -- lose Shift if the window loses focus while held
-UserInputService.WindowFocusReleased:Connect(function() sprintHeld = false end)
+UserInputService.WindowFocusReleased:Connect(function()
+    sprintHeld, sprintToggled = false, false
+    ContextActionService:SetTitle("TPFC_Run", "Run")
+end)
 
 ---------------------------------------------------------------- footstep dust
 local dustFolder = Instance.new("Folder")
@@ -26843,16 +26869,13 @@ RunService.RenderStepped:Connect(function(dt)
 	hum.WalkSpeed = speed
 	lastSetSpeed = speed
 
-	-- run FOV (kept as an offset so other FOV owners aren't fought)
-	if cam and cam.CameraType == Enum.CameraType.Custom and not TC.Charging then
-		local runK = math.clamp((hrp.AssemblyLinearVelocity * Vector3.new(1, 0, 1)).Magnitude - WALK, 0, RUN - WALK) / (RUN - WALK)
-		local want = Settings.ReducedMotion and 0 or RUN_FOV_ADD * runK
-		local newOff = approach(fovOffset, want, 5, dt)
-		cam.FieldOfView += newOff - fovOffset
-		fovOffset = newOff
-	elseif fovOffset ~= 0 and cam and not TC.Charging then
-		fovOffset = 0
-	end
+    -- Sprint never bakes into the lens saved by a throw or another camera owner.
+    if cam and cam.CameraType == Enum.CameraType.Custom and not busy then
+        local runK = math.clamp((hrp.AssemblyLinearVelocity * Vector3.new(1, 0, 1)).Magnitude - WALK, 0, RUN - WALK) / (RUN - WALK)
+        MovementFov.Update(cam, Settings.ReducedMotion and 0 or RUN_FOV_ADD * runK, dt)
+    else
+        MovementFov.Clear(cam)
+    end
 
 	-- footstep dust while running on the ground
 	local planar = (hrp.AssemblyLinearVelocity * Vector3.new(1, 0, 1)).Magnitude
@@ -26959,7 +26982,7 @@ task.spawn(function()
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX86"><Properties><string name="Name">RevealTitle</string><ProtectedString name="Source"><![CDATA[-- RevealTitle: on-screen title for a creature reveal, styled after Actions/02_Rarity_Reveal_and_Capture.
+<Item class="ModuleScript" referent="RBX87"><Properties><string name="Name">RevealTitle</string><ProtectedString name="Source"><![CDATA[-- RevealTitle: on-screen title for a creature reveal, styled after Actions/02_Rarity_Reveal_and_Capture.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > RevealTitle (ModuleScript)
 --
 --   Common / Uncommon      nothing on screen: the carved plaque above the pet carries it (restrained tiers)
@@ -27275,7 +27298,7 @@ end
 
 return R
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX87"><Properties><string name="Name">SceneLighting</string><ProtectedString name="Source"><![CDATA[-- The only runtime owner of scene light, atmosphere, clouds and grading.
+<Item class="ModuleScript" referent="RBX88"><Properties><string name="Name">SceneLighting</string><ProtectedString name="Source"><![CDATA[-- The only runtime owner of scene light, atmosphere, clouds and grading.
 local Lighting = game:GetService("Lighting")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
@@ -27361,7 +27384,7 @@ function Scene.Start()
 end
 return Scene
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX88"><Properties><string name="Name">SkyforgeUI</string><ProtectedString name="Source"><![CDATA[-- Light sanctuary surfaces and large standalone navigation artwork.
+<Item class="ModuleScript" referent="RBX89"><Properties><string name="Name">SkyforgeUI</string><ProtectedString name="Source"><![CDATA[-- Light sanctuary surfaces and large standalone navigation artwork.
 local T = require(script.Parent.UITheme)
 local S = {}
 local pendingImages = {}
@@ -27558,7 +27581,7 @@ function S.Card(frame, icon)
 end
 return S
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX89"><Properties><string name="Name">Sounds</string><ProtectedString name="Source"><![CDATA[-- Restrained event audio. Built-in assets keep the game independent of uploaded audio.
+<Item class="ModuleScript" referent="RBX90"><Properties><string name="Name">Sounds</string><ProtectedString name="Source"><![CDATA[-- Restrained event audio. Built-in assets keep the game independent of uploaded audio.
 local SoundService = game:GetService("SoundService")
 local TweenService = game:GetService("TweenService")
 local Sounds = {}
@@ -27677,7 +27700,7 @@ function Sounds.Get(name)
 end
 return Sounds
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX90"><Properties><string name="Name">ThrowCinematic</string><ProtectedString name="Source"><![CDATA[-- ThrowCinematic: the throw cutscene (owner only). Full screen, no letterbox.
+<Item class="ModuleScript" referent="RBX91"><Properties><string name="Name">ThrowCinematic</string><ProtectedString name="Source"><![CDATA[-- ThrowCinematic: the throw cutscene (owner only). Full screen, no letterbox.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ThrowCinematic (ModuleScript)
 --
 -- A short film in up to four camera shots, with HARD CUTS between them (w = wind-up seconds sent
@@ -28559,7 +28582,7 @@ end
 
 return Cine
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX91"><Properties><string name="Name">ThrowController</string><ProtectedString name="Source"><![CDATA[-- ThrowController: charge meter input, held-portal + arm wind-up, the portal flight arc,
+<Item class="ModuleScript" referent="RBX92"><Properties><string name="Name">ThrowController</string><ProtectedString name="Source"><![CDATA[-- ThrowController: charge meter input, held-portal + arm wind-up, the portal flight arc,
 -- landing bounce, portal gate opening and creature reveal choreography (for ALL players' throws).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ThrowController (ModuleScript)
 
@@ -28582,6 +28605,7 @@ local Settings = require(script.Parent.ClientSettings)
 local Builder = require(Shared.CreatureBuilder)
 local Timeline = require(Shared.PresentationTimeline)
 local Cine = require(script.Parent.ThrowCinematic)
+local MovementFov = require(script.Parent.MovementFov)
 
 local TC = {}
 TC.Charging = false
@@ -28690,7 +28714,7 @@ function TC.BeginCharge(source)
 	local d = State.Data
 	if #d.Creatures >= (d.SlotsOpen or 0) + (d.StorageCap or 0) then
 		if TC.OnLaunchFailed then
-			TC.OnLaunchFailed("Your garden and storage are full. Open Menu > Pets to make room.")
+			TC.OnLaunchFailed("Your garden and storage are full. Open Pets to make room.")
 		end
 		return false
 	end
@@ -28905,6 +28929,7 @@ end
 local camFollow, camReturn = nil, nil
 local idleFov = camera.FieldOfView
 local ownsFov = false
+local closeupZoom, closeupDepth
 local function restoreCamera(saved)
 	if not saved then
 		return
@@ -28919,6 +28944,10 @@ local function restoreCamera(saved)
 end
 local function claimCamera(id, pos, duration)
 	camera = workspace.CurrentCamera or camera
+    MovementFov.Clear(camera)
+    if not camFollow and not camReturn and not aimCam and not ownsFov then
+        idleFov = camera.FieldOfView
+    end
 	local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
 	local saved = camFollow and camFollow.saved
 		or camReturn and camReturn.saved
@@ -28983,6 +29012,8 @@ function TC.StartAim(hrp)
 	if camera.CameraType ~= Enum.CameraType.Custom then
 		return
 	end
+    MovementFov.Clear(camera)
+    idleFov = camera.FieldOfView
 	aimCam = {
 		saved = {
 			type = camera.CameraType,
@@ -29214,17 +29245,31 @@ function TC.StartCloseup(id, def, pos, duration, sizeScale)
 	camFollow.radius = (7 + rc.order * 0.8) * size
 	camFollow.untilT = os.clock() + duration
 	-- (no letterbox bars: keep the full screen during the close-up too)
-	Effects.Tween(camera, 0.7, { FieldOfView = 48 }, Enum.EasingStyle.Quad)
+	if closeupZoom then
+		closeupZoom:Cancel()
+	end
+	if closeupDepth then
+		closeupDepth:Cancel()
+	end
+	closeupZoom = Effects.Tween(camera, 0.7, { FieldOfView = 48 }, Enum.EasingStyle.Quad)
 	if Effects.DOF then
 		Effects.DOF.InFocusRadius = 12
-		Effects.Tween(Effects.DOF, 0.6, { FarIntensity = 0.45 })
+		closeupDepth = Effects.Tween(Effects.DOF, 0.6, { FarIntensity = 0.45 })
 	end
 end
 
 function TC.EndCloseup()
+	if closeupZoom then
+		closeupZoom:Cancel()
+		closeupZoom = nil
+	end
+	if closeupDepth then
+		closeupDepth:Cancel()
+		closeupDepth = nil
+	end
 	Effects.Letterbox(false)
 	if Effects.DOF then
-		Effects.Tween(Effects.DOF, 0.6, { FarIntensity = 0.18 })
+		closeupDepth = Effects.Tween(Effects.DOF, 0.25, { FarIntensity = 0, NearIntensity = 0 })
 		Effects.DOF.InFocusRadius = 70
 		Effects.DOF.FocusDistance = 50
 	end
@@ -29538,7 +29583,7 @@ end)
 
 return TC
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX92"><Properties><string name="Name">UIIcons</string><ProtectedString name="Source"><![CDATA[-- Original cutout art with immediately visible native geometry while images load.
+<Item class="ModuleScript" referent="RBX93"><Properties><string name="Name">UIIcons</string><ProtectedString name="Source"><![CDATA[-- Original cutout art with immediately visible native geometry while images load.
 local T = require(script.Parent.UITheme)
 local Sky = require(script.Parent.SkyforgeUI)
 local Icons = {}
@@ -29694,7 +29739,7 @@ function Icons.Draw(name, parent, size, color, position)
 end
 return Icons
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX93"><Properties><string name="Name">UIKit</string><ProtectedString name="Source"><![CDATA[-- Native sanctuary components. No uploaded icon/font dependency.
+<Item class="ModuleScript" referent="RBX94"><Properties><string name="Name">UIKit</string><ProtectedString name="Source"><![CDATA[-- Native sanctuary components. No uploaded icon/font dependency.
 local TweenService = game:GetService("TweenService")
 local Sounds = require(script.Parent.Sounds)
 local Settings = require(script.Parent.ClientSettings)
@@ -30044,7 +30089,7 @@ end
 
 return K
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX94"><Properties><string name="Name">UITheme</string><ProtectedString name="Source"><![CDATA[-- Sanctuary UI tokens, shared by the HUD, icons and every shop.
+<Item class="ModuleScript" referent="RBX95"><Properties><string name="Name">UITheme</string><ProtectedString name="Source"><![CDATA[-- Sanctuary UI tokens, shared by the HUD, icons and every shop.
 -- Fonts: Builder Sans (Roblox's modern UI family) for text, Montserrat Black for display titles;
 -- resolved with a fallback so an older client without these enums still renders.
 local function font(name, fallback)
@@ -30104,7 +30149,7 @@ function T.Rarity(name, config)
 end
 return T
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX95"><Properties><string name="Name">WorldFx</string><ProtectedString name="Source"><![CDATA[-- WorldFx: ONE shared, staggered scheduler for environment motion on tagged map parts
+<Item class="ModuleScript" referent="RBX96"><Properties><string name="Name">WorldFx</string><ProtectedString name="Source"><![CDATA[-- WorldFx: ONE shared, staggered scheduler for environment motion on tagged map parts
 -- (no per-prop RenderStepped connections, no camera-following particles).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > WorldFx (ModuleScript)
 --
@@ -30127,6 +30172,9 @@ local RANGE = 650
 local TAGS = { "TPFC_Sway", "TPFC_Bob", "TPFC_Spin", "TPFC_Pulse", "TPFC_Glint", "TPFC_ChargeChannel", "TPFC_Rotor" }
 local items = {} -- part -> { kind, base, baseTr, phase, ... }
 local pendingModels = {} -- tagged models whose replicated pivot/geometry is still arriving
+local started, membershipDirty = false, true
+local activeItems = {}
+local ticks = 0
 WorldFx.TC = nil -- ThrowController (for charge channels), set by ClientMain
 
 local function add(kind, p)
@@ -30148,7 +30196,10 @@ local function add(kind, p)
 	local base = model and (p:GetAttribute("TPFC_AnimationBase") or p:GetPivot()) or p.CFrame
 	local seed = (base.X * 12.9898 + base.Z * 78.233) % 1
 	local rotor = kind == "TPFC_Rotor" and p:FindFirstChild("PortalRotor") or nil
+	membershipDirty = true
 	items[p] = {
+		part = p,
+		position = base.Position,
 		kind = kind,
 		base = rotor and rotor.C0 or base,
 		baseTr = not model and p.Transparency or 0,
@@ -30159,7 +30210,34 @@ local function add(kind, p)
 	}
 end
 
+local function lowQuality()
+	local q = UserSettings().GameSettings.SavedQualityLevel.Value
+	return Settings.LowVFX() or (q > 0 and q <= 3)
+end
+local function rest(p, it)
+	if it.rotor then
+		it.rotor.C0 = it.base
+	elseif it.model then
+		p:PivotTo(it.base)
+	else
+		p.CFrame = it.base
+	end
+	if not it.model then
+		p.Transparency, p.Color = it.baseTr, it.baseCol
+	end
+end
+function WorldFx.Diagnostics()
+	local count = 0
+	for _ in items do
+		count += 1
+	end
+	return { registered = count, active = #activeItems, ticks = ticks, low = lowQuality() }
+end
 function WorldFx.Start()
+	if started then
+		return
+	end
+	started = true
 	for _, t in ipairs(TAGS) do
 		for _, p in ipairs(CollectionService:GetTagged(t)) do
 			add(t, p)
@@ -30170,6 +30248,7 @@ function WorldFx.Start()
 		CollectionService:GetInstanceRemovedSignal(t):Connect(function(p)
 			items[p] = nil
 			pendingModels[p] = nil
+			membershipDirty = true
 		end)
 	end
 	local emitters = {}
@@ -30185,7 +30264,9 @@ function WorldFx.Start()
 	CollectionService:GetInstanceRemovedSignal("TPFC_EnvironmentEmitter"):Connect(function(pe)
 		emitters[pe] = nil
 	end)
-	local envAccumulator = 0
+	local envAccumulator, regionAccumulator = 1, 1
+	local lastRegionPosition
+	local lastLow
 	local acc = 0
 	RunService.Heartbeat:Connect(function(dt)
 		if workspace:GetAttribute("TPFC_IntroPlaying") then
@@ -30195,7 +30276,9 @@ function WorldFx.Start()
 		if acc < 0.05 then
 			return
 		end
+		local elapsed = acc
 		acc = 0
+		ticks += 1
 		for model, kind in pairs(pendingModels) do
 			if model.Parent and CollectionService:HasTag(model, kind) then
 				add(kind, model)
@@ -30209,7 +30292,28 @@ function WorldFx.Start()
 			return
 		end
 		local cam = camera.CFrame.Position
-		envAccumulator += 0.05
+		local low = lowQuality()
+		if low ~= lastLow then
+			envAccumulator, lastLow = 1, low
+		end
+		regionAccumulator += elapsed
+		if
+			membershipDirty
+			or regionAccumulator >= 0.5
+			or not lastRegionPosition
+			or (cam - lastRegionPosition).Magnitude > 32
+		then
+			membershipDirty, regionAccumulator, lastRegionPosition = false, 0, cam
+			table.clear(activeItems)
+			for p, it in items do
+				if not p.Parent then
+					items[p] = nil
+				elseif (it.position - cam).Magnitude <= RANGE then
+					table.insert(activeItems, it)
+				end
+			end
+		end
+		envAccumulator += elapsed
 		if envAccumulator > 0.5 then
 			envAccumulator = 0
 			for pe, rate in emitters do
@@ -30217,22 +30321,37 @@ function WorldFx.Start()
 					emitters[pe] = nil
 					continue
 				end
-				local pos = pe.Parent:IsA("BasePart") and pe.Parent.Position or cam
-				pe.Rate = (Settings.LowVFX() or (pos - cam).Magnitude > 220) and 0 or rate
+				local parent = pe.Parent
+				local pos = parent:IsA("BasePart") and parent.Position
+					or (parent:IsA("Attachment") and parent.WorldPosition)
+				if low and pe.Rate > 0 then
+					pe:Clear()
+				end
+				pe.Rate = (low or not pos or (pos - cam).Magnitude > 220) and 0 or rate
 			end
 		end
 		local motionK = Settings.ReducedMotion and 0.4 or 1
 		local tc = WorldFx.TC
 		local charging = tc and tc.Charging
 		local power = tc and tc.Power or 0
-		for p, it in pairs(items) do
+		debug.profilebegin("TPFC_EnvironmentMotion")
+		for _, it in activeItems do
+			local p = it.part
 			if not p.Parent then
 				items[p] = nil
 				continue
 			end
 			local kind = it.kind
-			local position = it.model and p:GetPivot().Position or p.Position
-			if kind ~= "TPFC_ChargeChannel" and (position - cam).Magnitude > RANGE then
+			if low and kind ~= "TPFC_ChargeChannel" then
+				if not it.sleeping then
+					rest(p, it)
+					it.sleeping = true
+				end
+				continue
+			end
+			it.sleeping = false
+			if Settings.ReducedFlashes and (kind == "TPFC_Pulse" or kind == "TPFC_Glint") then
+				p.Transparency = it.baseTr
 				continue
 			end
 			local ph = t + it.phase
@@ -30262,12 +30381,7 @@ function WorldFx.Start()
 				end
 			elseif kind == "TPFC_Rotor" then
 				if it.rotor then
-					it.rotor.C0 = it.base
-						* CFrame.Angles(
-							0,
-							0,
-							t * (p:FindFirstChild("PortalRotor"):GetAttribute("Rate") or 0.5) * motionK
-						)
+					it.rotor.C0 = it.base * CFrame.Angles(0, 0, t * (it.rotor:GetAttribute("Rate") or 0.5) * motionK)
 				end
 			elseif kind == "TPFC_Pulse" then
 				local per = p:GetAttribute("Period") or 6
@@ -30277,7 +30391,7 @@ function WorldFx.Start()
 				local k = u < 0.12 and (u / 0.12) or (u < 0.3 and 1 or (u < 0.5 and 1 - (u - 0.3) / 0.2 or 0))
 				p.Transparency = base + (peak - base) * k
 			elseif kind == "TPFC_Glint" then
-				if not Settings.LowVFX() then
+				if not low then
 					local per = p:GetAttribute("Period") or 10
 					local u = ph % per
 					local k = u < 0.15 and u / 0.15 or (u < 0.65 and 1 - (u - 0.15) / 0.5 or 0)
@@ -30287,7 +30401,7 @@ function WorldFx.Start()
 				-- energise from the player's side toward the front arch with the charge power
 				local idx = p:GetAttribute("Index") or 0
 				if charging then
-					local wave = 0.5 + 0.5 * math.sin(t * 10 - math.abs(idx) * 0.6)
+					local wave = Settings.ReducedFlashes and 0 or (0.5 + 0.5 * math.sin(t * 10 - math.abs(idx) * 0.6))
 					p.Transparency = math.clamp(0.6 - power * 0.45 - wave * 0.1, 0.05, 0.9)
 					p.Color = power >= 0.92 and Color3.fromRGB(255, 215, 90) or it.baseCol
 				elseif p.Transparency ~= it.baseTr then
@@ -30299,6 +30413,7 @@ function WorldFx.Start()
 				end
 			end
 		end
+		debug.profileend()
 	end)
 end
 

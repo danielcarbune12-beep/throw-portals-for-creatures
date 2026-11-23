@@ -1,0 +1,85 @@
+{
+  "feel": {
+    "scenery": {
+      "low": false,
+      "ticks": 95,
+      "active": 864,
+      "registered": 1049
+    },
+    "failures": [],
+    "passed": 22
+  },
+  "presentation": {
+    "physicalSigns": 17,
+    "detailParts": 1886,
+    "failures": [],
+    "passed": 1994,
+    "cursorFetch": "Success"
+  },
+  "portals": {
+    "completed": true,
+    "failures": [],
+    "passed": 114,
+    "portalRuns": [
+      {
+        "id": "Basic",
+        "seconds": 6.97,
+        "sawOrb": true,
+        "sawGate": true
+      },
+      {
+        "id": "Forest",
+        "seconds": 7.03,
+        "sawOrb": true,
+        "sawGate": true
+      },
+      {
+        "id": "Lava",
+        "seconds": 6.99,
+        "sawOrb": true,
+        "sawGate": true
+      },
+      {
+        "id": "Ice",
+        "seconds": 7.01,
+        "sawOrb": true,
+        "sawGate": true
+      },
+      {
+        "id": "Galaxy",
+        "seconds": 7.07,
+        "sawOrb": true,
+        "sawGate": true
+      },
+      {
+        "id": "Dark",
+        "seconds": 8.69,
+        "sawOrb": true,
+        "sawGate": true
+      },
+      {
+        "id": "Rainbow",
+        "seconds": 7.03,
+        "sawOrb": true,
+        "sawGate": true
+      },
+      {
+        "id": "Divine",
+        "seconds": 7.04,
+        "sawOrb": true,
+        "sawGate": true
+      },
+      {
+        "id": "Secret",
+        "seconds": 8.77,
+        "sawOrb": true,
+        "sawGate": true
+      }
+    ]
+  },
+  "worldReferences": {
+    "completed": true,
+    "passed": 66,
+    "failed": 0
+  }
+}

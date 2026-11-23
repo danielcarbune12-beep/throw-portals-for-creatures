@@ -1,6 +1,9 @@
 -- Focused real-game test for lobby navigation and all nine portal lifecycles.
 -- Opt-in Studio session only. DataService recognizes this marker and keeps all data in memory.
-if not (workspace:GetAttribute("SanctuaryTest") or workspace:FindFirstChild("SanctuaryTest")) then
+if
+	not game:GetService("RunService"):IsStudio()
+	or not (workspace:GetAttribute("SanctuaryTest") or workspace:FindFirstChild("SanctuaryTest"))
+then
 	return
 end
 local Players, RS = game:GetService("Players"), game:GetService("ReplicatedStorage")
@@ -11,6 +14,7 @@ local State, TC = require(Client.ClientState), require(Client.ThrowController)
 local Config = require(RS.Shared.Config)
 local Renderer = require(Client.CreatureRenderer)
 local HUD = require(Client.HUD)
+local MovementFov = require(Client.MovementFov)
 local passed, failures, records = 0, {}, {}
 local function check(ok, message)
 	if ok then
@@ -38,7 +42,12 @@ local ok, err = pcall(function()
 	if not State.Loaded then
 		return
 	end
+	local introDeadline = os.clock() + 35
+	while player.PlayerGui:FindFirstChild("Intro") and os.clock() < introDeadline do
+		task.wait(0.1)
+	end
 	HUD.Close()
+	admin("reset")
 	local character = player.Character or player.CharacterAdded:Wait()
 	local root = character:WaitForChild("HumanoidRootPart", 10)
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
@@ -70,6 +79,8 @@ local ok, err = pcall(function()
 		admin("forcenext", "Mossbun")
 		task.wait(0.25)
 		local before, t0 = #State.Data.Creatures, os.clock()
+		local baselineFov = workspace.CurrentCamera.FieldOfView
+		MovementFov.Update(workspace.CurrentCamera, 7, 3)
 		TC.BeginCharge()
 		task.wait(0.65)
 		check(TC.Charging, id .. " charge started")
@@ -88,12 +99,28 @@ local ok, err = pcall(function()
 			end
 			task.wait(0.1)
 		end
-		task.wait(0.9)
+		local restoreDeadline = os.clock() + 3.5
+		while
+			(TC.IsFollowing() or workspace.CurrentCamera.CameraType == Enum.CameraType.Scriptable)
+			and os.clock() < restoreDeadline
+		do
+			task.wait(0.1)
+		end
+		task.wait(0.35)
 		check(sawOrb, id .. " flight orb appeared")
 		check(sawGate, id .. " gate opened in the real throw flow")
 		check(#State.Data.Creatures == before + 1, id .. " awarded exactly one creature")
 		check(not TC.MyThrow, id .. " pending throw cleared")
 		check(workspace.CurrentCamera.CameraType ~= Enum.CameraType.Scriptable, id .. " camera restored")
+		check(
+			math.abs(workspace.CurrentCamera.FieldOfView - baselineFov) < 0.1,
+			id .. " sprint lens does not leak through the real throw lifecycle"
+		)
+		local dof = game.Lighting:FindFirstChild("TPFC_DOF")
+		check(
+			not dof or (dof.FarIntensity < 0.001 and dof.NearIntensity < 0.001),
+			id .. " closeup blur clears for gameplay"
+		)
 		local wild = 0
 		for _ in pairs(Renderer.Wild) do
 			wild += 1

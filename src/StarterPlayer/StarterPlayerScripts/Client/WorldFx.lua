@@ -21,6 +21,9 @@ local RANGE = 650
 local TAGS = { "TPFC_Sway", "TPFC_Bob", "TPFC_Spin", "TPFC_Pulse", "TPFC_Glint", "TPFC_ChargeChannel", "TPFC_Rotor" }
 local items = {} -- part -> { kind, base, baseTr, phase, ... }
 local pendingModels = {} -- tagged models whose replicated pivot/geometry is still arriving
+local started, membershipDirty = false, true
+local activeItems = {}
+local ticks = 0
 WorldFx.TC = nil -- ThrowController (for charge channels), set by ClientMain
 
 local function add(kind, p)
@@ -42,7 +45,10 @@ local function add(kind, p)
 	local base = model and (p:GetAttribute("TPFC_AnimationBase") or p:GetPivot()) or p.CFrame
 	local seed = (base.X * 12.9898 + base.Z * 78.233) % 1
 	local rotor = kind == "TPFC_Rotor" and p:FindFirstChild("PortalRotor") or nil
+	membershipDirty = true
 	items[p] = {
+		part = p,
+		position = base.Position,
 		kind = kind,
 		base = rotor and rotor.C0 or base,
 		baseTr = not model and p.Transparency or 0,
@@ -53,7 +59,34 @@ local function add(kind, p)
 	}
 end
 
+local function lowQuality()
+	local q = UserSettings().GameSettings.SavedQualityLevel.Value
+	return Settings.LowVFX() or (q > 0 and q <= 3)
+end
+local function rest(p, it)
+	if it.rotor then
+		it.rotor.C0 = it.base
+	elseif it.model then
+		p:PivotTo(it.base)
+	else
+		p.CFrame = it.base
+	end
+	if not it.model then
+		p.Transparency, p.Color = it.baseTr, it.baseCol
+	end
+end
+function WorldFx.Diagnostics()
+	local count = 0
+	for _ in items do
+		count += 1
+	end
+	return { registered = count, active = #activeItems, ticks = ticks, low = lowQuality() }
+end
 function WorldFx.Start()
+	if started then
+		return
+	end
+	started = true
 	for _, t in ipairs(TAGS) do
 		for _, p in ipairs(CollectionService:GetTagged(t)) do
 			add(t, p)
@@ -64,6 +97,7 @@ function WorldFx.Start()
 		CollectionService:GetInstanceRemovedSignal(t):Connect(function(p)
 			items[p] = nil
 			pendingModels[p] = nil
+			membershipDirty = true
 		end)
 	end
 	local emitters = {}
@@ -79,7 +113,9 @@ function WorldFx.Start()
 	CollectionService:GetInstanceRemovedSignal("TPFC_EnvironmentEmitter"):Connect(function(pe)
 		emitters[pe] = nil
 	end)
-	local envAccumulator = 0
+	local envAccumulator, regionAccumulator = 1, 1
+	local lastRegionPosition
+	local lastLow
 	local acc = 0
 	RunService.Heartbeat:Connect(function(dt)
 		if workspace:GetAttribute("TPFC_IntroPlaying") then
@@ -89,7 +125,9 @@ function WorldFx.Start()
 		if acc < 0.05 then
 			return
 		end
+		local elapsed = acc
 		acc = 0
+		ticks += 1
 		for model, kind in pairs(pendingModels) do
 			if model.Parent and CollectionService:HasTag(model, kind) then
 				add(kind, model)
@@ -103,7 +141,28 @@ function WorldFx.Start()
 			return
 		end
 		local cam = camera.CFrame.Position
-		envAccumulator += 0.05
+		local low = lowQuality()
+		if low ~= lastLow then
+			envAccumulator, lastLow = 1, low
+		end
+		regionAccumulator += elapsed
+		if
+			membershipDirty
+			or regionAccumulator >= 0.5
+			or not lastRegionPosition
+			or (cam - lastRegionPosition).Magnitude > 32
+		then
+			membershipDirty, regionAccumulator, lastRegionPosition = false, 0, cam
+			table.clear(activeItems)
+			for p, it in items do
+				if not p.Parent then
+					items[p] = nil
+				elseif (it.position - cam).Magnitude <= RANGE then
+					table.insert(activeItems, it)
+				end
+			end
+		end
+		envAccumulator += elapsed
 		if envAccumulator > 0.5 then
 			envAccumulator = 0
 			for pe, rate in emitters do
@@ -111,22 +170,37 @@ function WorldFx.Start()
 					emitters[pe] = nil
 					continue
 				end
-				local pos = pe.Parent:IsA("BasePart") and pe.Parent.Position or cam
-				pe.Rate = (Settings.LowVFX() or (pos - cam).Magnitude > 220) and 0 or rate
+				local parent = pe.Parent
+				local pos = parent:IsA("BasePart") and parent.Position
+					or (parent:IsA("Attachment") and parent.WorldPosition)
+				if low and pe.Rate > 0 then
+					pe:Clear()
+				end
+				pe.Rate = (low or not pos or (pos - cam).Magnitude > 220) and 0 or rate
 			end
 		end
 		local motionK = Settings.ReducedMotion and 0.4 or 1
 		local tc = WorldFx.TC
 		local charging = tc and tc.Charging
 		local power = tc and tc.Power or 0
-		for p, it in pairs(items) do
+		debug.profilebegin("TPFC_EnvironmentMotion")
+		for _, it in activeItems do
+			local p = it.part
 			if not p.Parent then
 				items[p] = nil
 				continue
 			end
 			local kind = it.kind
-			local position = it.model and p:GetPivot().Position or p.Position
-			if kind ~= "TPFC_ChargeChannel" and (position - cam).Magnitude > RANGE then
+			if low and kind ~= "TPFC_ChargeChannel" then
+				if not it.sleeping then
+					rest(p, it)
+					it.sleeping = true
+				end
+				continue
+			end
+			it.sleeping = false
+			if Settings.ReducedFlashes and (kind == "TPFC_Pulse" or kind == "TPFC_Glint") then
+				p.Transparency = it.baseTr
 				continue
 			end
 			local ph = t + it.phase
@@ -156,12 +230,7 @@ function WorldFx.Start()
 				end
 			elseif kind == "TPFC_Rotor" then
 				if it.rotor then
-					it.rotor.C0 = it.base
-						* CFrame.Angles(
-							0,
-							0,
-							t * (p:FindFirstChild("PortalRotor"):GetAttribute("Rate") or 0.5) * motionK
-						)
+					it.rotor.C0 = it.base * CFrame.Angles(0, 0, t * (it.rotor:GetAttribute("Rate") or 0.5) * motionK)
 				end
 			elseif kind == "TPFC_Pulse" then
 				local per = p:GetAttribute("Period") or 6
@@ -171,7 +240,7 @@ function WorldFx.Start()
 				local k = u < 0.12 and (u / 0.12) or (u < 0.3 and 1 or (u < 0.5 and 1 - (u - 0.3) / 0.2 or 0))
 				p.Transparency = base + (peak - base) * k
 			elseif kind == "TPFC_Glint" then
-				if not Settings.LowVFX() then
+				if not low then
 					local per = p:GetAttribute("Period") or 10
 					local u = ph % per
 					local k = u < 0.15 and u / 0.15 or (u < 0.65 and 1 - (u - 0.15) / 0.5 or 0)
@@ -181,7 +250,7 @@ function WorldFx.Start()
 				-- energise from the player's side toward the front arch with the charge power
 				local idx = p:GetAttribute("Index") or 0
 				if charging then
-					local wave = 0.5 + 0.5 * math.sin(t * 10 - math.abs(idx) * 0.6)
+					local wave = Settings.ReducedFlashes and 0 or (0.5 + 0.5 * math.sin(t * 10 - math.abs(idx) * 0.6))
 					p.Transparency = math.clamp(0.6 - power * 0.45 - wave * 0.1, 0.05, 0.9)
 					p.Color = power >= 0.92 and Color3.fromRGB(255, 215, 90) or it.baseCol
 				elseif p.Transparency ~= it.baseTr then
@@ -193,6 +262,7 @@ function WorldFx.Start()
 				end
 			end
 		end
+		debug.profileend()
 	end)
 end
 
