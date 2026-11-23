@@ -23156,9 +23156,20 @@ local function stepEntrance(e, dt)
 	local en, a = e.entrance, e.anim
 	en.t += dt
 	local k = math.clamp(en.t / en.dur, 0, 1)
+	-- portal charge-up: glowing silhouette in the portal, then the breakthrough (Entrances.Hold)
+	local okHold, held, k2 = pcall(Entrances.Hold, e, en, a, k, dt)
+	if okHold and held then
+		pcall(Entrances.Fx, e, en, a, k, dt)
+		a.yaw, a.targetYaw = en.yaw0, en.yaw0
+		return
+	end
+	if okHold and k2 then
+		k = k2
+	end
 	local s = e.rig.size
 	local reduced = Settings.ReducedMotion
 	local pop = (en.kind == "emerge" or en.kind == "descend" or en.kind == "resolve") and 1
+		or ((en.hold or 0) > 0 and Entrances.Pop(k))
 		or math.max(0.02, easeOut(math.min(1, k / 0.18)))
 	local kind = en.kind
 	local from, to = en.from, en.to
@@ -24482,6 +24493,8 @@ local Players = game:GetService("Players")
 local Config = require(ReplicatedStorage.Shared.Config)
 local Effects = require(script.Parent.Effects)
 local Settings = require(script.Parent.ClientSettings)
+local okSounds, Sounds = pcall(require, script.Parent.Sounds)
+if not okSounds then Sounds = nil end
 
 local E = {}
 
@@ -24682,8 +24695,8 @@ local function motif(kind, pos, fwd, col, size)
 	pcall(Effects.Motif, kind, pos, fwd, col, size)
 end
 
--- portal burst when the creature appears
-function E.Start(e, en)
+-- the element burst as the creature comes out of the portal
+local function portalBurst(e, en)
 	local el, order = en.element, en.order
 	local low = Settings.LowVFX()
 	local pal = PAL[el] or PAL.space
@@ -24708,8 +24721,161 @@ function E.Start(e, en)
 	end
 end
 
+---------------------------------------------------------------- portal charge-up and breakthrough
+-- Before its themed run, the creature gathers inside the portal as a glowing silhouette in its
+-- world's colours (shivering, pulsing, sparks on the rim), then bursts through with a flash of the
+-- portal surface and a squash-and-stretch pop. Rarer creatures hold the suspense a little longer.
+local HOLD = { 0.12, 0.12, 0.16, 0.17, 0.2, 0.22, 0, 0.22 } -- share of the entrance, by rarity order
+local NO_HOLD = { descend = true, resolve = true } -- these don't come out of the portal mouth
+local NEON = Enum.Material.Neon
+
+function E.HoldFrac(en)
+	if NO_HOLD[en.style] or en.element == "glitch" then return 0 end
+	return HOLD[en.order or 1] or 0.12
+end
+
+-- remember each visible part's look so the glow can always be undone exactly
+local function silhouette(e, en)
+	if en.orig then return end
+	en.orig = {}
+	for _, p in ipairs(e.model:GetDescendants()) do
+		if p:IsA("BasePart") and p.Transparency < 0.95 then
+			en.orig[p] = { p.Color, p.Material }
+			p.Material = NEON
+		end
+	end
+	local root = e.model.PrimaryPart or e.rig.root
+	if root then
+		local light = Instance.new("PointLight")
+		light.Color = (PAL[en.element] or PAL.space)[1]
+		light.Brightness, light.Range, light.Shadows = 0.5, 6, false
+		light.Parent = root
+		en.light = light
+	end
+end
+
+local function paint(en, color)
+	for p in pairs(en.orig) do
+		p.Color = color
+	end
+end
+
+-- f = 0 still glowing ... 1 fully back to the creature's own colours and materials
+local function restore(en, f)
+	if not en.orig then return end
+	local glow = (PAL[en.element] or PAL.space)[1]
+	for p, o in pairs(en.orig) do
+		p.Color = f >= 1 and o[1] or glow:Lerp(o[1], f)
+		if f >= 0.35 then p.Material = o[2] end
+	end
+	if f >= 1 then
+		en.orig = nil
+		if en.light then en.light:Destroy(); en.light = nil end
+	end
+end
+
+local function breakthrough(e, en, a)
+	local el, order = en.element, en.order
+	local pal = PAL[el] or PAL.space
+	local low = Settings.LowVFX()
+	local c = en.portalC
+	-- the portal surface flashes and ripples outward as the creature punches through
+	local disc = Effects.Part(Vector3.new(0.25, 3, 3), CFrame.new(c) * CFrame.Angles(0, PI / 2, 0), pal[1], NEON, 0.2)
+	disc.Shape = Enum.PartType.Cylinder
+	Effects.Tween(disc, 0.45, { Size = Vector3.new(0.1, 13, 13), Transparency = 1 }, Enum.EasingStyle.Quart)
+	task.delay(0.5, function() disc:Destroy() end)
+	if not low or order >= 4 then
+		local ring = Effects.Part(Vector3.new(0.4, 9.6, 9.6), CFrame.new(c) * CFrame.Angles(0, PI / 2, 0), pal[2], NEON, 0.35)
+		ring.Shape = Enum.PartType.Cylinder
+		Effects.Tween(ring, 0.6, { Size = Vector3.new(0.1, 16 + order, 16 + order), Transparency = 1 }, Enum.EasingStyle.Quart)
+		task.delay(0.65, function() ring:Destroy() end)
+	end
+	local mouth = Vector3.new(a.pos.X, en.y0 + 1.5 * e.rig.size, a.pos.Z)
+	Effects.Burst(mouth, seq(el), (low and 8 or 16) + order * 4, 14 + order * 2, 0.9)
+	Effects.Shockwave(Vector3.new(en.from.X, en.y0 + 0.1, en.from.Z), pal[2], 5 + order, 0.45)
+	portalBurst(e, en)
+	if en.mine and order >= 4 then Effects.Shake(0.2 + order * 0.06, 0.25) end
+	if Sounds then pcall(Sounds.PlayAt, "Whoosh", mouth, 1.25 - order * 0.04) end
+	-- the creature flashes bright and settles back into its own colours over the next moment
+	if en.orig then paint(en, pal[1]) end
+	if en.light then
+		en.light.Brightness, en.light.Range = 6, 18
+		Effects.Tween(en.light, 0.4, { Brightness = 0, Range = 8 })
+	end
+	en.restoreT = 0
+end
+
+-- Called every entrance frame before the motion. Returns held, k' where held means the creature is
+-- still charging in the portal (motion skipped) and k' is the remaining entrance remapped to 0..1.
+function E.Hold(e, en, a, k, dt)
+	local h = en.hold or 0
+	if h <= 0 then return false, k end
+	if k < h then
+		local q = k / h
+		silhouette(e, en)
+		local s = e.rig.size
+		local dir = (en.to - en.from).Unit
+		local side = Vector3.new(-dir.Z, 0, dir.X)
+		local shiver = Settings.ReducedMotion and 0 or math.sin(en.t * 70) * 0.07 * q * s
+		a.pos = en.from + dir * (0.3 + 0.9 * smooth(q)) + side * shiver
+		a.groundY = en.y0
+		a:SetScale(0.45 + 0.35 * smooth(q) + math.sin(en.t * 18) * 0.03 * q)
+		en.pulseT = (en.pulseT or 0) + dt
+		if en.pulseT >= 0.05 and en.orig then
+			en.pulseT = 0
+			local pal = PAL[en.element] or PAL.space
+			paint(en, pal[2]:Lerp(pal[1], 0.5 + 0.5 * math.sin(en.t * 16)))
+		end
+		if en.light then
+			en.light.Brightness = 0.5 + 3.5 * q
+			en.light.Range = 6 + 10 * q
+		end
+		-- sparks crackle around the portal rim while it strains
+		en.sparkT = (en.sparkT or 0) + dt
+		local every = Settings.LowVFX() and 0.24 or (en.order >= 5 and 0.07 or 0.11)
+		if en.sparkT >= every then
+			en.sparkT = 0
+			local ang = (en.t * 7.3) % (2 * PI)
+			local rim = en.portalC + Vector3.new(math.cos(ang) * 4.6, math.sin(ang) * 4.6, 0)
+			Effects.Burst(rim, seq(en.element), 3, 4, 0.45)
+		end
+		return true, 0
+	end
+	if not en.broke then
+		en.broke = true
+		breakthrough(e, en, a)
+	end
+	return false, (k - h) / (1 - h)
+end
+
+-- squash-and-stretch pop right after the breakthrough (k = remapped entrance progress)
+function E.Pop(k)
+	if k < 0.08 then return 0.8 + 0.38 * easeOut(k / 0.08) end
+	if k < 0.3 then
+		local q = (k - 0.08) / 0.22
+		return 1 + 0.18 * math.cos(q * PI * 1.5) * (1 - q)
+	end
+	return 1
+end
+
+-- portal opening glimmer when the creature appears
+function E.Start(e, en)
+	if (en.hold or 0) > 0 then
+		-- light gathers in the portal; the big burst waits for the breakthrough
+		Effects.Burst(en.portalC, seq(en.element), (Settings.LowVFX() and 4 or 8) + en.order * 2, 3, 0.7)
+		return
+	end
+	portalBurst(e, en)
+end
+
 -- trail while moving (denser for rarer creatures)
 function E.Fx(e, en, a, k, dt)
+	if en.restoreT then
+		en.restoreT += dt
+		restore(en, en.restoreT / 0.35)
+		if not en.orig then en.restoreT = nil end
+	end
+	if (en.hold or 0) > 0 and not en.broke then return end
 	if k >= 0.95 then return end
 	local low = Settings.LowVFX()
 	if low and en.order < 3 then return end
@@ -24759,6 +24925,7 @@ function E.Step(e, en, a)
 end
 
 function E.Finish(e, en)
+	restore(en, 1) -- never leave a creature glowing, whatever happened mid-entrance
 	if en.style == "phase" then E.SetVisibility(e, en, 1) end
 	if en.style == "stomp" or en.style == "descend" then
 		local pal = PAL[en.element] or PAL.space
@@ -24773,6 +24940,9 @@ function E.Prepare(e, en, def, ownerId)
 	en.order = Config.Rarities[def.rarity].order
 	local me = Players.LocalPlayer
 	en.mine = me ~= nil and ownerId == me.UserId
+	en.hold = E.HoldFrac(en)
+	-- gate centre: ThrowController opens a radius-5 ring 0.6 above the ground, 1.5 in front of `from`
+	en.portalC = Vector3.new(en.from.X, en.y0 + 5.6, en.from.Z - 1.5)
 end
 
 return E
