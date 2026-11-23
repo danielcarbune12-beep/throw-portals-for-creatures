@@ -2,15 +2,15 @@
 
 ## Overview
 
-Native Roblox GUI for a bright outdoor sanctuary. Solid white/light-stone panels use dark readable text and restrained gold trim. Opening a menu leaves the surrounding 3D world unchanged: no dark screen wash and no menu blur. C enamel navigation artwork supplies small colored accents inside the light interface.
+Native Roblox GUI for a bright outdoor sanctuary. Gatefold menus are physical medieval guild folios: carved oak, blackened iron corner straps, brass rivets and textured vellum. The bestiary adds a stitched leather binding between its leaves. Jade oak trade signs connect to a native 3D miniature of the exchange. Opening a menu leaves the surrounding 3D world unchanged: no dark screen wash and no menu blur. C enamel navigation artwork remains on the compact gameplay HUD.
 
 ## Color
 
-Ink/text #1B232C, panel #FDFDFB, raised #ECEFF2, inset #F3F5F7, border #78848E, muted #525D69, action gold #946514, trim gold #C0A163, slate accent #4B6584, information #1D637E, success #237048, danger #A7303B. Primary gold actions use white lettering. Rarity and variant text is darkened as necessary to reach 4.5:1 on the light panel. Cinematic gold remains #F1CA73 independently of interface colors.
+Ink/text #2A211B, vellum fallback #EEDBBC, raised #F6EBD7, inset #E5D2B2, border #A08B69, muted #4B4236, action gold #795113, trim gold #C0A163, jade #276557, slate accent #4B6584, information #1D637E, success #237048, danger #A7303B. Primary gold and jade actions use white lettering. Rarity and variant text is darkened as necessary to reach 4.5:1 on the parchment. Cinematic gold remains #F1CA73 independently of interface colors.
 
 ## Typography
 
-Builder Sans for interface text and data, with Gotham fallbacks. Body 16, secondary 14, row title 19, panel title 26; compact phone data can use 13. Native labels avoid text strokes and automatic shrinking. Long names wrap in reserved title areas.
+Merriweather appears on menu titles and item headings, matching the game's heraldic lettering. Builder Sans carries buttons, body text and data, with Gotham fallbacks. Body 16, secondary 14, row title 19, panel title 26; compact phone data can use 13. Native labels avoid text strokes and automatic shrinking. Long names wrap in reserved title areas.
 
 ## Layout
 
@@ -22,8 +22,7 @@ The three primary destinations use compact cutout artwork: pale silver wolf,
 oak/jade merchant stall and parchment compass map. Their artwork has no
 backplate, visible text or caption strip. Desktop art is 56px and compact art is
 44px before HUD scaling, inside 64px and 52px targets respectively. A silver/gold/jade cog opens
-Settings from a separate 44px control. Focus uses a gold outline. Ordinary panels
-use quiet rounded stone edges; decorative angled corner marks are removed.
+Settings from a separate 44px control. Focus uses a gold outline. Menu panels use carved oak edges, forged corners and parchment surfaces.
 Small utility symbols remain native geometry.
 
 Expeditions use an expanded desktop map/scout composition. Eight native biome
@@ -57,3 +56,22 @@ XP and personal income before the preview on narrow screens. Global bonuses rema
 part of the courtyard income shown in the HUD; creature resale still uses base value.
 
 Expedition planning suggests an idle stored scout before garden earners or followers. Explicit choices persist across biome browsing. Reward previews share the server payout function and expose the configured biome bonus. Locked routes open the biome shop. Go to table lands beside the player's own table with the panel open; dispatch is a separate action. Stored pets keep garden income intact; garden earners and followers explain their actual departure cost.
+
+
+## Sanctuary menu craft
+
+Menus use custom material artwork for the vellum, carved timber frame and forged corner fittings. Nine-slice scaling preserves the joinery while the writing area stretches. Corners are 42 logical pixels on desktop and 34 on compact panels. Serif headings, dark ink and quieter button surfaces remain legible against the grain. The world stays visible around them. Only the menu itself receives a frame. No full-screen dark wash or blur is introduced.
+
+The exchange is a timber workbench with an architectural cutaway of four trades on a layered survey map. The wood surface has its own carved jade and iron artwork, a textured jade header and light pinned reading slips. Actual portal geometry, a smith's hammer, a courtyard pavilion and a map table sit on the limestone model with jade banners, inlaid paths, a trade chest, coins, lanterns and rolled charts. Four jade oak signs are directly actionable buttons connected to the correct worksite by projected brass leaders. Mouse hover and controller focus mark the worksite and sign together. Text stays sharp native GUI text. Short screens replace the diorama with four pinned trade slips and direct emblems; the purse stays in the header. Secondary shops display the current purse before spending.
+
+The bestiary is an open folio with separate layered leaves. The selected creature stands on a stone plinth inside an engraved gothic specimen plate with a heraldic crest, wolf carvings, jade tabs and a wax seal. Native 3D geometry renders above this artwork. A stitched binding joins the specimen leaf and ruled roster. Roster rows carry a full portrait, name, rarity, level and location; the selected row uses a brass key and gold outline. Search and Place best share a row. Follow and Sell are secondary actions beside one another; selling retains its confirmation and cancellation rules. Search changes select a matching pet and clear stale actions when no result remains. Stored, courtyard, following and expedition states are explicit. Compact details omit the specimen illustration to keep the portrait, stats and actions together.
+
+Short screens move the catalogue-back control into the header, fit a complete first row of inventory cards, and use readable collection rows. Names may truncate only in compact catalogue cards; the full name remains available in the detail and accessibility metadata.
+
+The compact view is used below 760 logical pixels in width or 460 in panel height. A wide, short phone therefore gets the same readable catalogue/detail navigation as a narrow phone. Trade signs and the miniature have no perpetual animation; their camera and connector projection update only when layout changes. Trade geometry is native; the physical surfaces use approved artwork with a matching fallback.
+
+The medieval surface is a separately uploaded, approved image, recorded in assets/ui/medieval-guild-frame-v1.json. The original art and exact built-in generation prompt are retained alongside it. Roblox serves the texture at 1024px; slicing uses those served coordinates. Images remain visible during loading, with a matching parchment fallback underneath. A successful fetch removes the fallback border. No setting or accessibility option is blocked by loading artwork.
+
+Compact pet details combine the name, income, level and a creature portrait in one identity area. Its height adapts to the available panel height, leaving two rows of touch actions visible even on the smallest tested landscape screen. Choosing a different roster entry starts its detail at the top. The description remains available below by scrolling.
+
+Open menus suspend world proximity prompts and hide floating world labels locally. Closing restores the prior prompt setting and each label's previous visibility owner. These presentation changes never change server prices, rewards, ownership or save data.

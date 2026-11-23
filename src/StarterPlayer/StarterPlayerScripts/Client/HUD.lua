@@ -3,12 +3,15 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Input = game:GetService("UserInputService")
 local GuiService = game:GetService("GuiService")
+local Prompts = game:GetService("ProximityPromptService")
+local previousPromptState
 local RS = game:GetService("ReplicatedStorage")
 local Config = require(RS.Shared.Config)
 local Format = require(RS.Shared.Format)
 local K = require(script.Parent.UIKit)
 local T = K.Theme
 local Sky = require(script.Parent.SkyforgeUI)
+local Craft = require(script.Parent.SanctuaryUI)
 local State = require(script.Parent.ClientState)
 local Settings = require(script.Parent.ClientSettings)
 local Effects = require(script.Parent.Effects)
@@ -260,11 +263,13 @@ local layer = K.new(
 local width, height = 1280, 720
 function HUD.MakePanel(name, title, subtitle, icon)
 	local frame = K.surface(layer, name, UDim2.fromOffset(1000, 620), UDim2.fromScale(0.5, 0.5), T.Panel)
-	Sky.Trim(frame)
+	Craft.Shell(frame)
 	frame.AnchorPoint = Vector2.new(0.5, 0.5)
 	frame.Visible = false
-	K.Icon(icon or "Portal", frame, UDim2.fromOffset(28, 28), T.Gold, UDim2.fromOffset(20, 20))
-	local titleLabel = K.text(frame, title, 62, 15, -130, 35, 26, T.Text, true)
+	frame:SetAttribute("MenuKind", icon or "Portal")
+	Craft.Crest(frame, UDim2.fromOffset(28, 28), UDim2.fromOffset(20, 19), name == "Shop" and T.TrimGold or nil)
+	local titleLabel = K.text(frame, title, 62, 15, -130, 35, 26, name == "Shop" and T.OnAccent or T.Text, true)
+	titleLabel.FontFace = T.TitleFace
 	local subtitleLabel = K.text(frame, type(subtitle) == "string" and subtitle or "", 20, 60, -92, 35, 14, T.Muted)
 	local close = K.button(
 		"",
@@ -333,9 +338,12 @@ function HUD.Open(name)
 		end
 	else
 		previousFocus = GuiService.SelectedObject
+		previousPromptState = Prompts.Enabled
 	end
 	HUD.SetPanelMessage(p.name, "")
 	openPanel = p
+	Prompts.Enabled = false
+	player:SetAttribute("TPFC_MenuOpen", true)
 	if HUD.TC then
 		HUD.TC.InputBlocked = true
 	end
@@ -373,6 +381,11 @@ function HUD.Close()
 	end
 	local old = openPanel
 	openPanel = nil
+	if previousPromptState ~= nil then
+		Prompts.Enabled = previousPromptState
+	end
+	previousPromptState = nil
+	player:SetAttribute("TPFC_MenuOpen", false)
 	if HUD.TC then
 		HUD.TC.InputBlocked = false
 	end
@@ -469,7 +482,7 @@ local function rescale()
 		or UDim2.new(1, -370, 1, -182)
 	for _, p in pairs(HUD.Panels) do
 		p.frame.Size = UDim2.fromOffset(math.min(1060, width - 24), math.min(680, height - 24))
-		p.compact = p.frame.Size.X.Offset < 760
+		p.compact = p.frame.Size.X.Offset < 760 or p.frame.Size.Y.Offset < 460
 		p.title.TextSize = p.compact and 22 or 26
 		p.frame:SetAttribute("Compact", p.compact)
 		if p.layout then

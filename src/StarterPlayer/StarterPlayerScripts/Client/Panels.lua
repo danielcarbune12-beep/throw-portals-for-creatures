@@ -17,6 +17,9 @@ local State = require(script.Parent.ClientState)
 local Settings = require(script.Parent.ClientSettings)
 local Renderer = require(script.Parent.CreatureRenderer)
 local Sounds = require(script.Parent.Sounds)
+local Craft = require(script.Parent.SanctuaryUI)
+local Guild = require(script.Parent.GuildModel)
+local Exchange = require(script.Parent.ExchangeView)
 local Panels = {}
 local function request(action, arg, message)
 	if not State.Loaded then
@@ -58,6 +61,7 @@ local function heading(parent, text, order)
 		LayoutOrder = order or 0,
 		Parent = parent,
 	})
+	l.FontFace = T.TitleFace
 	return l
 end
 local function empty(parent, title, hint)
@@ -67,12 +71,17 @@ local function empty(parent, title, hint)
 	return f
 end
 local previewCache = {}
-local function petView(id, size, silhouette, material)
+local function petView(id, size, silhouette, material, pedestal)
 	local cacheKey = material and (id .. "|" .. material) or id
 	if not previewCache[cacheKey] then
 		previewCache[cacheKey] = (Renderer.BuildPreview(id, material))
 	end
-	return K.viewport(previewCache[cacheKey]:Clone(), size, false, silhouette)
+	local model = previewCache[cacheKey]:Clone()
+	if pedestal then
+		K.bakeWelds(model)
+		Guild.Pedestal(model)
+	end
+	return K.viewport(model, size, false, silhouette, true)
 end
 local function bindGrid(container, minWidth, cellHeight)
 	local g = K.new(
@@ -100,20 +109,44 @@ local function split(p)
 		T.Raised,
 		nil,
 		UDim2.new(1, -8, 0, 44),
-		{ Name = "BackToCatalogue", Position = UDim2.fromOffset(4, 0), Parent = p.content, Visible = false }
+		{ Name = "BackToCatalogue", Position = UDim2.fromOffset(4, 0), Parent = p.frame, Visible = false }
 	)
 	K.bind(back, function()
 		p.showDetail = false
 		p.layout()
 	end)
+	p.onClose = function()
+		p.showDetail = false
+	end
 	p.layout = function()
+		p.content.Position = UDim2.fromOffset(16, p.compact and 64 or 108)
+		p.contentSize = UDim2.new(1, -32, 1, p.compact and -80 or -124)
+		p.content.Size = p.contentSize - UDim2.fromOffset(0, p.feedback.Visible and 40 or 0)
+		p.title.Position = UDim2.fromOffset(62, p.compact and 8 or 15)
+		p.title.Size = UDim2.new(1, p.compact and -270 or -130, 0, p.compact and 28 or 35)
+		local link = p.frame:FindFirstChild("BackToShop") or p.frame:FindFirstChild("OpenCollection")
+		if link then
+			link.Visible = not p.compact or not p.showDetail
+			link.Size = p.compact and UDim2.fromOffset(128, 44) or UDim2.fromOffset(176, 36)
+			link.Position = p.compact and UDim2.new(1, -194, 0, 14) or UDim2.fromOffset(20, 64)
+		end
+		local wallet = p.frame:FindFirstChild("Purse")
+		if wallet then
+			wallet.Position = p.compact and UDim2.fromOffset(62, 37) or UDim2.new(1, -270, 0, 64)
+			wallet.Size = p.compact and UDim2.new(1, -280, 0, 16) or UDim2.fromOffset(210, 36)
+			wallet.TextSize = p.compact and 13 or 15
+			wallet.TextXAlignment = p.compact and Enum.TextXAlignment.Left or Enum.TextXAlignment.Right
+		end
 		if p.compact then
 			catalogue.Size = UDim2.fromScale(1, 1)
 			catalogue.Visible = not p.showDetail
-			detail.Position = UDim2.fromOffset(0, 54)
-			detail.Size = UDim2.new(1, 0, 1, -54)
+			detail.Position = UDim2.new()
+			detail.Size = UDim2.fromScale(1, 1)
 			detail.Visible = p.showDetail or false
 			back.Visible = p.showDetail or false
+			back.Size = UDim2.fromOffset(128, 44)
+			back.Position = UDim2.new(1, -194, 0, 14)
+			back.Label.Text = p.name == "Creatures" and "All pets" or "All portals"
 		else
 			catalogue.Size = UDim2.new(0.56, -8, 1, 0)
 			catalogue.Visible = true
@@ -147,7 +180,7 @@ local portalAction, portalStatus
 for i, id in ipairs(Config.PortalOrder) do
 	local def = Config.Portals[id]
 	local b = K.button("", T.Raised, nil, nil, { Name = "Portal_" .. id, LayoutOrder = i, Parent = catalogue })
-	local vp = K.viewport(Portal.BuildGate(id, 3), UDim2.new(1, -10, 0, 114), false)
+	local vp = K.viewport(Portal.BuildGate(id, 3), UDim2.new(1, -10, 0, 114), false, false, true)
 	vp.Position = UDim2.fromOffset(5, 2)
 	vp.Parent = b
 	K.text(b, def.name, 12, 119, -24, 25, 16, T.Text, true)
@@ -173,7 +206,7 @@ local function refreshPortalDetail()
 	local def = Config.Portals[selectedPortal]
 	local preview = K.surface(portalDetail, "Hero", UDim2.new(1, -12, 0, 178), nil, T.Inset)
 	preview.LayoutOrder = 1
-	local vp = K.viewport(Portal.BuildGate(selectedPortal, 4), UDim2.fromScale(1, 1), false)
+	local vp = K.viewport(Portal.BuildGate(selectedPortal, 4), UDim2.fromScale(1, 1), false, false, true)
 	vp.Parent = preview
 	heading(portalDetail, def.name, 2)
 	portalStatus =
@@ -232,6 +265,7 @@ shop.refresh = function()
 		local owned = d.OwnedPortals[id]
 		row.status.Text = equipped and "Equipped" or owned and "Owned" or "View portal"
 		row.status.TextColor3 = equipped and T.Success or T.Muted
+		row.button:SetAttribute("Selected", selectedPortal == id)
 		row.button:FindFirstChildOfClass("UIStroke").Color = selectedPortal == id and T.Gold or T.Border
 	end
 	local def = Config.Portals[selectedPortal]
@@ -312,51 +346,117 @@ end
 ---------------------------------------------------------------- Inventory
 local inv = HUD.MakePanel(
 	"Creatures",
-	"Your creatures",
+	"The bestiary",
 	"Select a creature to place it, remove it or review its sell value.",
 	"Pet"
 )
 local invCatalogue, invDetail = split(inv)
 local invSearch, best, invGrid
 local inventoryButtons = {}
+local resizeRoster
+local binding = K.new("Frame", {
+	Name = "BestiaryBinding",
+	BackgroundTransparency = 1,
+	Size = UDim2.new(0, 24, 1, -18),
+	Position = UDim2.new(0.445, -12, 0, 6),
+	Parent = inv.content,
+})
+Craft.Binding(binding)
+local function inventoryCardHeight()
+	if not inv.compact then
+		return 86
+	end
+	local scale = HUD.Root:FindFirstChildOfClass("UIScale").Scale
+	return math.clamp((invGrid and invGrid.AbsoluteSize.Y / scale or 142) - 6, 110, 136)
+end
+local leftLeaf = Craft.Page(inv.content, "SpecimenLeaf", UDim2.new(0.43, 0, 1, -6), UDim2.new())
+local rightLeaf = Craft.Page(inv.content, "RosterLeaf", UDim2.new(0.54, -4, 1, -6), UDim2.fromScale(0.46, 0))
 local inventoryLayout = inv.layout
 inv.layout = function()
 	inventoryLayout()
 	local compact = inv.compact
+	binding.Visible = not compact
+	leftLeaf.Visible, rightLeaf.Visible = not compact, not compact
+	if not compact then
+		invDetail.Position, invDetail.Size = UDim2.new(), UDim2.new(0.425, -4, 1, 0)
+		invCatalogue.Position, invCatalogue.Size = UDim2.fromScale(0.47, 0), UDim2.fromScale(0.53, 1)
+	else
+		invCatalogue.Position = UDim2.new()
+	end
+	if resizeRoster then
+		resizeRoster()
+	end
 	inv.content.Position = UDim2.fromOffset(16, compact and 64 or 108)
 	inv.contentSize = UDim2.new(1, -32, 1, compact and -80 or -124)
 	inv.content.Size = inv.contentSize - UDim2.fromOffset(0, inv.feedback.Visible and 40 or 0)
 	inv.title.Size = UDim2.new(1, compact and -270 or -130, 0, 35)
 	local collection = inv.frame:FindFirstChild("OpenCollection")
 	if collection then
-		collection.Size = compact and UDim2.fromOffset(128, 36) or UDim2.fromOffset(176, 36)
-		collection.Position = compact and UDim2.new(1, -194, 0, 18) or UDim2.fromOffset(20, 64)
+		collection.Size = compact and UDim2.fromOffset(128, 44) or UDim2.fromOffset(176, 36)
+		collection.Position = compact and UDim2.new(1, -194, 0, 14) or UDim2.fromOffset(20, 64)
 	end
 	if invSearch then
-		invSearch.Parent.Size = UDim2.new(1, compact and -152 or -12, 0, compact and 44 or 46)
-		best.Size = compact and UDim2.fromOffset(136, 44) or UDim2.new(1, -12, 0, 44)
-		best.Position = compact and UDim2.new(1, -140, 0, 4) or UDim2.fromOffset(4, 58)
-		invGrid.Position = UDim2.fromOffset(0, compact and 56 or 112)
-		invGrid.Size = UDim2.new(1, 0, 1, compact and -60 or -116)
+		invSearch.Parent.Size = UDim2.new(1, -152, 0, 44)
+		best.Size = UDim2.fromOffset(136, 44)
+		best.Position = UDim2.new(1, -140, 0, 4)
+		invGrid.Position = UDim2.fromOffset(0, 56)
+		invGrid.Size = UDim2.new(1, 0, 1, -60)
 	end
 	for _, button in pairs(inventoryButtons) do
 		local view = button:FindFirstChildWhichIsA("ViewportFrame")
 		if view then
-			view.Size = UDim2.new(1, -8, 0, compact and 64 or 108)
+			view.Size = compact and UDim2.new(1, -8, 0, inventoryCardHeight() - 46) or UDim2.fromOffset(86, 78)
+			view.Position = UDim2.fromOffset(4, 3)
 		end
 		local name, rarity, status =
 			button:FindFirstChild("PetName"), button:FindFirstChild("PetRarity"), button:FindFirstChild("PetStatus")
 		if name then
-			name.Position, name.Size =
-				UDim2.fromOffset(10, compact and 66 or 110), UDim2.new(1, -20, 0, compact and 32 or 38)
-			rarity.Position = UDim2.fromOffset(10, compact and 100 or 151)
-			status.Position = UDim2.fromOffset(10, compact and 117 or 171)
+			local thumb = inventoryCardHeight() - 46
+			name.Position = UDim2.fromOffset(compact and 10 or 102, compact and thumb + 2 or 8)
+			name.Size = UDim2.new(1, compact and -20 or -134, 0, compact and 20 or 28)
+			name.TextSize = compact and 13 or 17
+			name.TextWrapped = not compact
+			name.TextTruncate = compact and Enum.TextTruncate.AtEnd or Enum.TextTruncate.None
+			rarity.Position = UDim2.fromOffset(compact and 10 or 102, compact and thumb + 23 or 38)
+			rarity.Size = UDim2.new(1, compact and -20 or -134, 0, 18)
+			rarity.TextSize = compact and 12 or 13
+			status.Position = UDim2.fromOffset(102, 59)
+			status.Size = UDim2.new(1, -134, 0, 18)
+			status.Visible = not compact
 		end
 	end
 	local preview = invDetail:FindFirstChild("CreaturePreview")
 	if preview then
-		preview.LayoutOrder = inv.compact and 9 or 1
-		preview.Size = UDim2.new(1, -12, 0, inv.compact and 112 or 180)
+		local identityHeight = compact and math.clamp(inv.frame.Size.Y.Offset - 190, 66, 124) or 240
+		local tight = compact and identityHeight < 92
+		invDetail:FindFirstChildOfClass("UIListLayout").Padding = UDim.new(0, compact and 6 or 8)
+		local place = invDetail:FindFirstChild("PlaceCreature")
+		if place then
+			place.Size = UDim2.new(1, -12, 0, compact and 44 or 46)
+		end
+		preview.LayoutOrder = 1
+		preview.Size = UDim2.new(1, -12, 0, identityHeight)
+		local view = preview:FindFirstChildWhichIsA("ViewportFrame")
+		view.ZIndex = 3
+		view.Size = compact and UDim2.new(0.30, -4, 1, -8) or UDim2.fromScale(0.62, 0.78)
+		local plate = preview:FindFirstChild("SpecimenPlate")
+		if plate then
+			plate.Visible = not compact
+		end
+		view.Position = compact and UDim2.new(0.70, 0, 0, 4) or UDim2.fromScale(0.19, 0.15)
+		for i, name in { "PetNameHeading", "PetRates", "PetExperience" } do
+			local label = invDetail:FindFirstChild(name, true)
+			if label then
+				label.Parent = compact and preview or invDetail
+				local heights = tight and { 22, 20, 18 } or { 36, 24, 20 }
+				local offsets = tight and { 0, 24, 46 } or { 4, 46, 76 }
+				local sizes = tight and { 18, 14, 13 } or { 20, 16, 14 }
+				label.Size = compact and UDim2.new(0.68, -8, 0, heights[i])
+					or UDim2.new(1, -12, 0, i == 1 and 36 or i == 2 and 28 or 24)
+				label.TextSize = sizes[i]
+				label.Position = compact and UDim2.fromOffset(2, offsets[i]) or UDim2.new()
+			end
+		end
 	end
 end
 invSearch = K.search(invCatalogue, "Search creatures", UDim2.new(1, -12, 0, 46), UDim2.fromOffset(4, 4))
@@ -373,6 +473,13 @@ K.bind(best, function()
 	request("EquipBest", nil, "Best earners placed in your garden.")
 end)
 invGrid = scroll(invCatalogue, "Creatures", UDim2.new(1, 0, 1, -116), UDim2.fromOffset(0, 112))
+invGrid:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+	if inv.compact then
+		task.defer(inv.layout)
+	elseif resizeRoster then
+		resizeRoster()
+	end
+end)
 local selectedUid, inventoryKey, detailKey, armedUid, armToken = nil, nil, nil, nil, 0
 local function clearArm()
 	armedUid = nil
@@ -405,19 +512,28 @@ local function renderCreatureDetail()
 	detailKey = key
 	invDetail:ClearAllChildren()
 	K.pad(4).Parent = invDetail
-	list(invDetail, 10)
+	list(invDetail, 8)
 	if not entry then
-		empty(invDetail, "Choose a creature", "Throw a portal in the Launch Hall to start your collection.")
+		empty(
+			invDetail,
+			#d.Creatures > 0 and "No matching creature" or "Your ledger begins here",
+			#d.Creatures > 0 and "Clear your search to see your creatures again."
+				or "Throw a portal in the Launch Hall to start your collection."
+		)
 		return
 	end
 	local def = Data.ById[entry.c]
 	local color = T.Legible(Variants.Color(entry.s, entry.v) or T.Rarity(def.rarity, Config))
 	local entryIncome = Data.Income(entry.c) * Variants.Mult(entry.s, entry.v)
 	local level = entry.l or 1
-	local hero = K.surface(invDetail, "CreaturePreview", UDim2.new(1, -12, 0, 180), nil, T.Inset)
+	local hero = K.surface(invDetail, "CreaturePreview", UDim2.new(1, -12, 0, 240), nil, T.Panel)
+	hero.BackgroundTransparency = 1
+	hero:FindFirstChildOfClass("UIStroke").Transparency = 1
 	hero.LayoutOrder = 1
-	petView(entry.c, UDim2.fromScale(1, 1), nil, entry.v).Parent = hero
-	heading(invDetail, Variants.Prefix(entry.s, entry.v) .. def.name, 2)
+	Craft.Specimen(hero)
+	petView(entry.c, UDim2.fromScale(1, 1), nil, entry.v, true).Parent = hero
+	local petHeading = heading(invDetail, Variants.Prefix(entry.s, entry.v) .. def.name, 2)
+	petHeading.Name = "PetNameHeading"
 	K.label(
 		def.rarity
 			.. " · "
@@ -426,24 +542,24 @@ local function renderCreatureDetail()
 			.. (Variants.Mult(entry.s, entry.v) > 1 and ("  (x" .. Variants.Mult(entry.s, entry.v) .. ")") or ""),
 		UDim2.new(1, -12, 0, 28),
 		color,
-		{ TextSize = 16, LayoutOrder = 3, Parent = invDetail }
+		{
+			Name = "PetRates",
+			TextSize = 16,
+			LayoutOrder = 3,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			Parent = invDetail,
+		}
 	)
 	local xp = level >= Farm.PetMaxLevel and "Max level"
 		or (math.floor(entry.e or 0) .. " / " .. Farm.PetXpToNext(level) .. " XP")
-	K.label(
-		"Level "
-			.. level
-			.. " · "
-			.. xp
-			.. " · +"
-			.. math.floor((Farm.PetMult(level) - 1) * 100 + 0.5)
-			.. "% pet income\n"
-			.. (def.desc or "")
-			.. "\nFeed crops at your courtyard Pantry to level this pet.",
-		UDim2.new(1, -12, 0, 76),
+	local progress = K.label(
+		"Level " .. level .. " / " .. xp,
+		UDim2.new(1, -12, 0, 24),
 		T.Muted,
-		{ TextSize = 14, LayoutOrder = 4, Parent = invDetail }
+		{ TextSize = 14, LayoutOrder = 4, TextXAlignment = Enum.TextXAlignment.Left, Parent = invDetail }
 	)
+	progress.Name = "PetExperience"
+
 	local isPlaced = State.IsPlaced(entry.u)
 	local away = awayUid == entry.u
 	local place = K.button(
@@ -467,19 +583,19 @@ local function renderCreatureDetail()
 	local isEquipped = table.find(equippedList, entry.u) ~= nil
 	local buff = Config.EquipBuff[def.rarity] or { luck = 0, income = 0 }
 	local full = not isEquipped and #equippedList >= Config.EquipLimit
+	local secondary = K.new("Frame", {
+		Name = "SecondaryPetActions",
+		Size = UDim2.new(1, -12, 0, 44),
+		BackgroundTransparency = 1,
+		LayoutOrder = 6,
+		Parent = invDetail,
+	})
 	local equip = K.button(
-		away and "On expedition"
-			or isEquipped and "Unequip · following you"
-			or full and ("Equipped " .. #equippedList .. "/" .. Config.EquipLimit .. " · unequip one first")
-			or string.format(
-				"Equip · +%d%% luck, +%d%% income",
-				math.floor(buff.luck * 100 + 0.5),
-				math.floor(buff.income * 100 + 0.5)
-			),
-		isEquipped and T.Raised or T.Violet,
+		away and "On expedition" or isEquipped and "Stop following" or full and "Followers full" or "Follow me",
+		isEquipped and T.Raised or T.Jade,
 		nil,
 		UDim2.new(1, -12, 0, 46),
-		{ Name = "EquipCreature", LayoutOrder = 5, Parent = invDetail }
+		{ Name = "EquipCreature", Size = UDim2.new(0.5, -4, 1, 0), Parent = secondary }
 	)
 	K.setEnabled(equip, not away and not full)
 	K.bind(equip, function()
@@ -494,12 +610,16 @@ local function renderCreatureDetail()
 	end)
 	local sellValue = math.floor(entryIncome * Config.SellMultiplier)
 	local sell = K.button(
-		armedUid == entry.u and "Confirm sale · " .. Format.Money(sellValue)
-			or "Sell creature · " .. Format.Money(sellValue),
+		armedUid == entry.u and "Confirm · " .. Format.Money(sellValue) or "Sell · " .. Format.Money(sellValue),
 		armedUid == entry.u and T.Danger or T.Raised,
 		nil,
 		UDim2.new(1, -12, 0, 46),
-		{ Name = "SellCreature", LayoutOrder = 6, Parent = invDetail }
+		{
+			Name = "SellCreature",
+			Size = UDim2.new(0.5, -4, 1, 0),
+			Position = UDim2.fromScale(0.5, 0) + UDim2.fromOffset(4, 0),
+			Parent = secondary,
+		}
 	)
 	K.setEnabled(sell, not away)
 	K.bind(sell, function()
@@ -535,12 +655,22 @@ local function renderCreatureDetail()
 		end
 	end)
 	K.label(
-		away and "Your pet is exploring. Claim its return at the expedition table to make it available again."
-			or armedUid == entry.u and "This permanently removes " .. def.name .. ". Select Confirm sale within 4 seconds."
-			or "Selling permanently removes this creature. A second confirmation is required.",
-		UDim2.new(1, -12, 0, 60),
+		away and "Claim your pet's return at the expedition table to use it again."
+			or armedUid == entry.u and ("Permanently sell " .. def.name .. "? Confirm within 4 seconds.")
+			or string.format(
+				"Following: +%d%% luck, +%d%% income. Selling requires confirmation.",
+				math.floor(buff.luck * 100 + 0.5),
+				math.floor(buff.income * 100 + 0.5)
+			),
+		UDim2.new(1, -12, 0, 44),
 		armedUid == entry.u and T.Danger or T.Muted,
-		{ TextSize = 14, LayoutOrder = 7, Parent = invDetail }
+		{ TextSize = 13, LayoutOrder = 7, TextXAlignment = Enum.TextXAlignment.Left, Parent = invDetail }
+	)
+	K.label(
+		(def.desc or "") .. " Feed crops at your courtyard Pantry to level this pet.",
+		UDim2.new(1, -12, 0, 48),
+		T.Muted,
+		{ TextSize = 13, LayoutOrder = 8, TextXAlignment = Enum.TextXAlignment.Left, Parent = invDetail }
 	)
 	inv.layout()
 end
@@ -558,19 +688,47 @@ inv.refresh = function()
 	for _, e in ipairs(d.Creatures) do
 		table.insert(ids, e.u .. ":" .. tostring(State.IsPlaced(e.u)) .. ":" .. tostring(e.l or 1))
 	end
-	local key = table.concat(ids, ",") .. invSearch.Text:lower()
+	local key = table.concat(ids, ",")
+		.. invSearch.Text:lower()
+		.. ":"
+		.. tostring(d.Expeditions and d.Expeditions.active and d.Expeditions.active.petUid)
+		.. ":"
+		.. table.concat(d.EquippedPets or {}, ",")
 	if inventoryKey ~= key then
 		inventoryKey = key
 		invGrid:ClearAllChildren()
 		inventoryButtons = {}
-		bindGrid(invGrid, 140, function()
-			return inv.compact and 136 or 192
-		end)
+		local grid = K.new(
+			"UIGridLayout",
+			{ CellPadding = UDim2.fromOffset(8, 8), SortOrder = Enum.SortOrder.LayoutOrder, Parent = invGrid }
+		)
+		resizeRoster = function()
+			if not grid.Parent then
+				return
+			end
+			local width = invGrid.AbsoluteSize.X / HUD.Root:FindFirstChildOfClass("UIScale").Scale - 12
+			local cols = inv.compact and math.max(1, math.floor((width + 8) / 148)) or 1
+			grid.CellSize = UDim2.new(1 / cols, -(8 * (cols - 1) + 12) / cols, 0, inventoryCardHeight())
+		end
+		task.defer(resizeRoster)
 		local items = table.clone(d.Creatures)
 		table.sort(items, function(a, b)
 			return Data.Income(a.c) * Variants.Mult(a.s, a.v) * Farm.PetMult(a.l)
 				> Data.Income(b.c) * Variants.Mult(b.s, b.v) * Farm.PetMult(b.l)
 		end)
+		local firstMatch, selectionMatches
+		for _, entry in items do
+			local def = Data.ById[entry.c]
+			if def and def.name:lower():find(invSearch.Text:lower(), 1, true) then
+				firstMatch = firstMatch or entry.u
+				selectionMatches = selectionMatches or entry.u == selectedUid
+			end
+		end
+		if not selectionMatches then
+			selectedUid = firstMatch
+			clearArm()
+			detailKey = nil
+		end
 		local count = 0
 		for i, entry in ipairs(items) do
 			local def = Data.ById[entry.c]
@@ -583,6 +741,7 @@ inv.refresh = function()
 					nil,
 					{ Name = "Creature_" .. entry.u, LayoutOrder = i, Parent = invGrid }
 				)
+				Craft.Leaf(b)
 				petView(entry.c, UDim2.new(1, -8, 0, 108), nil, entry.v).Parent = b
 				local nameLabel = K.text(
 					b,
@@ -609,7 +768,11 @@ inv.refresh = function()
 				rarityLabel.Name = "PetRarity"
 				local statusLabel = K.text(
 					b,
-					State.IsPlaced(entry.u) and "In garden" or "In storage",
+					(d.Expeditions and d.Expeditions.active and d.Expeditions.active.petUid == entry.u)
+							and "On expedition"
+						or table.find(d.EquippedPets or {}, entry.u) and "Following"
+						or State.IsPlaced(entry.u) and "In courtyard"
+						or "Stored",
 					10,
 					171,
 					-20,
@@ -618,9 +781,15 @@ inv.refresh = function()
 					State.IsPlaced(entry.u) and T.Success or T.Muted
 				)
 				statusLabel.Name = "PetStatus"
+				b:SetAttribute("Rarity", def.rarity)
+				b:SetAttribute(
+					"AccessibleLabel",
+					Variants.Prefix(entry.s, entry.v) .. def.name .. ", " .. def.rarity .. ", level " .. (entry.l or 1)
+				)
 				inventoryButtons[entry.u] = b
 				K.bind(b, function()
 					clearArm()
+					invDetail.CanvasPosition = Vector2.zero
 					selectedUid = entry.u
 					detailKey = nil
 					inv.refresh()
@@ -640,7 +809,7 @@ inv.refresh = function()
 		end
 	end
 	for uid, b in pairs(inventoryButtons) do
-		b:FindFirstChildOfClass("UIStroke").Color = uid == selectedUid and T.Gold or T.Border
+		Craft.Selected(b, uid == selectedUid)
 	end
 	if selectedUid then
 		local found = false
@@ -659,6 +828,7 @@ inv.refresh = function()
 	inv.layout()
 end
 inv.onClose = function()
+	inv.showDetail = false
 	clearArm()
 	detailKey = nil
 end
@@ -687,6 +857,41 @@ local tabs = K.new("ScrollingFrame", {
 	Parent = idx.content,
 }, { K.list(Enum.FillDirection.Horizontal, 6, Enum.HorizontalAlignment.Left) })
 local idxGrid = scroll(idx.content, "Species", UDim2.new(1, 0, 1, -62), UDim2.fromOffset(0, 60))
+idx.layout = function()
+	local compact = idx.compact
+	idx.content.Position = UDim2.fromOffset(16, compact and 64 or 108)
+	idx.contentSize = UDim2.new(1, -32, 1, compact and -80 or -124)
+	idx.content.Size = idx.contentSize - UDim2.fromOffset(0, idx.feedback.Visible and 40 or 0)
+	idx.title.Size = UDim2.new(1, compact and -270 or -130, 0, 35)
+	local back = idx.frame:FindFirstChild("BackToPets")
+	if back then
+		back.Position = compact and UDim2.new(1, -194, 0, 14) or UDim2.fromOffset(20, 64)
+		back.Size = UDim2.fromOffset(compact and 128 or 176, compact and 44 or 36)
+	end
+	local grid = idxGrid:FindFirstChildOfClass("UIGridLayout")
+	if grid then
+		local scale = HUD.Root:FindFirstChildOfClass("UIScale").Scale
+		local width = idxGrid.AbsoluteSize.X / scale - 12
+		local cols = compact and 1 or math.max(1, math.floor((width + 10) / 156))
+		grid.CellSize = UDim2.new(1 / cols, -(10 * (cols - 1) + 12) / cols, 0, compact and 86 or 222)
+	end
+	for _, card in idxGrid:GetChildren() do
+		if card:IsA("GuiButton") then
+			local vp = card:FindFirstChildOfClass("ViewportFrame")
+			vp.Size = compact and UDim2.fromOffset(72, 76) or UDim2.new(1, -8, 0, 112)
+			vp.Position = compact and UDim2.fromOffset(4, 4) or UDim2.new()
+			card.SpeciesName.Position = UDim2.fromOffset(compact and 88 or 10, compact and 4 or 116)
+			card.SpeciesName.Size = UDim2.new(1, compact and -104 or -20, 0, compact and 24 or 36)
+			card.SpeciesRarity.Position = UDim2.fromOffset(compact and 88 or 10, compact and 30 or 154)
+			card.SpeciesRarity.Size = UDim2.new(1, compact and -104 or -20, 0, 20)
+			card.SpeciesOdds.Position = UDim2.fromOffset(compact and 88 or 10, compact and 55 or 178)
+			card.SpeciesOdds.Size = UDim2.new(1, compact and -104 or -20, 0, compact and 24 or 36)
+		end
+	end
+end
+idxGrid:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+	task.defer(idx.layout)
+end)
 local idxFilter = "Forest"
 local idxKey
 local idxTabs = {}
@@ -725,18 +930,21 @@ idx.refresh = function()
 	end
 	idxKey = key
 	idxGrid:ClearAllChildren()
-	bindGrid(idxGrid, 146, 222)
+	K.new(
+		"UIGridLayout",
+		{ CellPadding = UDim2.fromOffset(10, 10), SortOrder = Enum.SortOrder.LayoutOrder, Parent = idxGrid }
+	)
 	for i, def in ipairs(Data.ByWorld[idxFilter] or {}) do
 		local known = d.Discovered[def.id]
 		local b = K.button("", T.Raised, nil, nil, { Name = "Species_" .. def.id, LayoutOrder = i, Parent = idxGrid })
 		petView(def.id, UDim2.new(1, -8, 0, 112), not known).Parent = b
-		K.text(b, known and def.name or "Undiscovered", 10, 116, -20, 36, 15, T.Text, true)
-		K.text(b, def.rarity, 10, 154, -20, 20, 14, T.Rarity(def.rarity, Config))
+		K.text(b, known and def.name or "Undiscovered", 10, 116, -20, 36, 15, T.Text, true).Name = "SpeciesName"
+		K.text(b, def.rarity, 10, 154, -20, 20, 14, T.Rarity(def.rarity, Config)).Name = "SpeciesRarity"
 		local status, p = Odds.Attainable(def.id, d.EquippedPortal, (d.MaxDistance or 45) * 1.15)
 		local odds = status == "ok" and Odds.OneIn(p)
 			or status == "out_of_range" and "Out of throw range"
 			or "Different portal needed"
-		K.text(b, odds, 10, 178, -20, 36, 13, T.Muted)
+		K.text(b, odds, 10, 178, -20, 36, 13, T.Muted).Name = "SpeciesOdds"
 		K.bind(b, function()
 			HUD.SetPanelMessage(
 				"Index",
@@ -745,6 +953,7 @@ idx.refresh = function()
 			)
 		end)
 	end
+	idx.layout()
 end
 
 ---------------------------------------------------------------- Zones
@@ -802,7 +1011,7 @@ end
 ---------------------------------------------------------------- Garden shop
 local base = HUD.MakePanel(
 	"Base",
-	"Garden workshop",
+	"Courtyard workshop",
 	"Decorations appear in your garden. Floor purchases are applied immediately.",
 	"Decor"
 )
@@ -1042,35 +1251,21 @@ local function headerLink(panel, name, title, target)
 end
 headerLink(inv, "OpenCollection", "Collection", "Index")
 headerLink(idx, "BackToPets", "<  Pets", "Creatures")
-local hub = HUD.MakePanel("Shop", "Sanctuary shop", "Choose what you want to improve.", "Shop")
-K.new("UIGridLayout", {
-	CellSize = UDim2.new(0.5, -8, 0, 128),
-	CellPadding = UDim2.fromOffset(12, 12),
-	SortOrder = Enum.SortOrder.LayoutOrder,
-	Parent = hub.content,
-})
-for i, def in
-	{
-		{ "Portals", "Portal", "Portals", "Buy and equip your portal." },
-		{ "Upgrades", "Upgrade", "Upgrades", "Throw power, slots and income." },
-		{ "Courtyard", "Home", "Base", "Flooring and base details." },
-		{ "Biomes", "Compass", "Worlds", "Unlock and travel to new zones." },
-	}
-do
-	local b = K.button("", T.Raised, nil, nil, { Name = "Shop_" .. def[1], LayoutOrder = i, Parent = hub.content })
-	K.Icon(def[2], b, UDim2.fromOffset(40, 40), T.Gold, UDim2.fromOffset(14, 16))
-	b.Label.Position = UDim2.fromOffset(64, 12)
-	b.Label.Size = UDim2.new(1, -76, 0, 32)
-	b.Label.Text = def[1]
-	b.Label.TextSize = 19
-	b.Label.TextXAlignment = Enum.TextXAlignment.Left
-	K.text(b, def[4], 14, 66, -28, 48, 14, T.Muted)
-	K.bind(b, function()
-		HUD.Open(def[3])
-	end)
-end
+local hub = HUD.MakePanel("Shop", "The exchange", "", "Shop")
+Exchange.Mount(hub, HUD)
 for _, panel in { shop, upg, base, worlds } do
 	headerLink(panel, "BackToShop", "<  Shop", "Shop")
+	local wallet = K.text(panel.frame, "", 0, 64, 210, 36, 15, T.Gold, true)
+	wallet.Name = "Purse"
+	wallet.Position = UDim2.new(1, -270, 0, 64)
+	wallet.TextXAlignment = Enum.TextXAlignment.Right
+	local previous = panel.refresh
+	panel.refresh = function()
+		wallet.Text = "Purse  " .. Format.Money(State.Data.Money)
+		if previous then
+			previous()
+		end
+	end
 end
 local home = K.button("Return to courtyard", T.Raised, nil, UDim2.new(1, -12, 0, 44), {
 	Name = "ReturnHome",

@@ -1,5 +1,5 @@
 -- Sanctuary UI tokens, shared by the HUD, icons and every shop.
--- Fonts: Builder Sans (Roblox's modern UI family) for text, Montserrat Black for display titles;
+-- Fonts: Builder Sans for controls and data, Merriweather for sanctuary headings;
 -- resolved with a fallback so an older client without these enums still renders.
 local function font(name, fallback)
 	local ok, f = pcall(function()
@@ -8,14 +8,21 @@ local function font(name, fallback)
 	return (ok and f) or fallback
 end
 local T = {
-	Ink = Color3.fromRGB(27, 35, 44),
-	Panel = Color3.fromRGB(253, 253, 251),
-	Raised = Color3.fromRGB(236, 239, 242),
-	Inset = Color3.fromRGB(243, 245, 247),
-	Border = Color3.fromRGB(120, 132, 142),
-	Text = Color3.fromRGB(27, 35, 44),
-	Muted = Color3.fromRGB(82, 93, 105),
-	Gold = Color3.fromRGB(148, 101, 20),
+	Header = Color3.fromRGB(244, 232, 208),
+	StoneEdge = Color3.fromRGB(166, 143, 106),
+	Jade = Color3.fromRGB(39, 101, 87),
+	Timber = Color3.fromRGB(81, 61, 43),
+	Brass = Color3.fromRGB(168, 143, 92),
+	Selected = Color3.fromRGB(235, 216, 164),
+	TitleFace = Font.new("rbxasset://fonts/families/Merriweather.json", Enum.FontWeight.Bold),
+	Ink = Color3.fromRGB(42, 33, 27),
+	Panel = Color3.fromRGB(238, 219, 188),
+	Raised = Color3.fromRGB(246, 235, 215),
+	Inset = Color3.fromRGB(229, 210, 178),
+	Border = Color3.fromRGB(160, 139, 105),
+	Text = Color3.fromRGB(42, 33, 27),
+	Muted = Color3.fromRGB(75, 66, 54),
+	Gold = Color3.fromRGB(121, 81, 19),
 	TrimGold = Color3.fromRGB(192, 161, 99),
 	CinematicGold = Color3.fromRGB(241, 202, 115),
 	Violet = Color3.fromRGB(75, 101, 132),

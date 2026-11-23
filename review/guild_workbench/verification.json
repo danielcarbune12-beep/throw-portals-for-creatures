@@ -1,0 +1,67 @@
+{
+  "place": 129975585465401,
+  "savedVersion": 109,
+  "devices": {
+    "desktop": {
+      "failures": [],
+      "passed": 105,
+      "textOverflows": []
+    },
+    "galaxyA06": {
+      "failures": [],
+      "passed": 108,
+      "textOverflows": []
+    },
+    "iphone17Pro": {
+      "failures": [],
+      "passed": 108,
+      "textOverflows": []
+    },
+    "ipadProM5": {
+      "failures": [],
+      "passed": 105,
+      "textOverflows": []
+    }
+  },
+  "artwork": {
+    "specimenLoaded": true,
+    "modelVisible": true,
+    "plateVisible": true,
+    "modelAboveArt": true
+  },
+  "routes": [
+    {
+      "panel": "Portals",
+      "result": "true"
+    },
+    {
+      "panel": "Upgrades",
+      "result": "true"
+    },
+    {
+      "panel": "Base",
+      "result": "true"
+    },
+    {
+      "panel": "Worlds",
+      "result": "true"
+    }
+  ],
+  "focus": {
+    "focusExitRestoresTrade": true,
+    "controllerHighlightsTrade": true
+  },
+  "smallPhone": {
+    "allPetActionsVisible": true
+  },
+  "sourceParity": {
+    "checked": 92,
+    "differences": [],
+    "extra": []
+  },
+  "selene": "0 errors, 0 warnings, 0 parse errors",
+  "production": "92/92 scripts, no test markers",
+  "testBuilds": "95/95 scripts, correct markers",
+  "profileIsolation": "In-memory, saving disabled",
+  "studioEnd": "Edit, default viewport, temporary fixtures removed"
+}
