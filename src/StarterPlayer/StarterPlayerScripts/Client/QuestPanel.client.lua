@@ -2,7 +2,7 @@
 -- Location: StarterPlayer > StarterPlayerScripts > Client > QuestPanel (LocalScript)
 --
 -- Reads the server's Progress view from ClientState (Daily, Rebirths, RebirthCost, FriendsHere,
--- PotionUntil, Passes). Click the header to collapse. Boost buttons only appear for game passes /
+-- PotionUntil, Passes). The edge arrow hides/restores the tracker. Boost buttons only appear for game passes /
 -- products whose ids are set in Config.Progression (0 = not created, nothing is sold).
 
 local Players = game:GetService("Players")
@@ -86,12 +86,53 @@ bodyList.Padding = UDim.new(0, 6)
 bodyList.SortOrder = Enum.SortOrder.LayoutOrder
 bodyList.Parent = body
 
-local collapsed = false
-header.MouseButton1Click:Connect(function()
+-- Keep one small edge tab available while the entire tracker is hidden.
+local collapsed = player:GetAttribute("TPFC_QuestsCollapsed") == true
+local toggle = Instance.new("TextButton")
+toggle.Name = "QuestToggle"
+toggle.AnchorPoint = Vector2.new(1, 0)
+toggle.Size = UDim2.fromOffset(40, 40)
+toggle.BackgroundColor3 = T.Raised
+toggle.BorderSizePixel = 0
+toggle.Text = ""
+toggle.SelectionOrder = 1
+toggle.Parent = gui
+Instance.new("UICorner", toggle).CornerRadius = UDim.new(0, 8)
+local toggleRim = Instance.new("UIStroke")
+toggleRim.Color, toggleRim.Thickness = T.TrimGold, 2
+toggleRim.Parent = toggle
+local arrow = Instance.new("Frame")
+arrow.Name = "Arrow"
+arrow.BackgroundTransparency = 1
+arrow.AnchorPoint = Vector2.new(0.5, 0.5)
+arrow.Position = UDim2.fromScale(0.5, 0.5)
+arrow.Size = UDim2.fromOffset(16, 16)
+arrow.Parent = toggle
+for _, side in { -1, 1 } do
+	local arm = Instance.new("Frame")
+	arm.BorderSizePixel = 0
+	arm.BackgroundColor3 = T.Gold
+	arm.AnchorPoint = Vector2.new(0.5, 0.5)
+	arm.Position = UDim2.fromOffset(8, 8 + side * 3.5)
+	arm.Size = UDim2.fromOffset(11, 2)
+	arm.Rotation = -side * 45
+	arm.Parent = arrow
+end
+local function applyCollapsed()
+	local available = State.Data.Progress ~= nil
+	card.Visible = available and not collapsed
+	toggle.Visible = available
+	toggle.Position = UDim2.new(1, collapsed and -12 or -248, 0, 120)
+	toggle:SetAttribute("Action", collapsed and "Show daily quests" or "Hide daily quests")
+	arrow.Rotation = collapsed and 180 or 0
+end
+local function toggleQuests()
 	collapsed = not collapsed
-	body.Visible = not collapsed
-	header.Text = collapsed and "Daily quests  ▸" or "Daily quests"
-end)
+	player:SetAttribute("TPFC_QuestsCollapsed", collapsed)
+	applyCollapsed()
+end
+toggle.Activated:Connect(toggleQuests)
+header.Activated:Connect(toggleQuests)
 
 -- quest rows
 local rows = {}
@@ -189,11 +230,10 @@ end
 local function refresh()
 	local d = State.Data
 	local prog = d.Progress
+	applyCollapsed()
 	if not prog then
-		card.Visible = false
 		return
 	end
-	card.Visible = true
 	local quests = prog.Daily and prog.Daily.quests or {}
 	local doneCount = 0
 	for i, r in ipairs(rows) do
@@ -207,9 +247,7 @@ local function refresh()
 			if q.done then doneCount += 1 end
 		end
 	end
-	if not collapsed then
-		header.Text = "Daily quests  " .. doneCount .. "/" .. #quests
-	end
+	header.Text = "Daily quests  " .. doneCount .. "/" .. #quests
 	-- active luck/income sources
 	local parts = {}
 	if (prog.Rebirths or 0) > 0 then
