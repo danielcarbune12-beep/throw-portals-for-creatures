@@ -1,0 +1,101 @@
+{
+  "pureForge": {
+    "passed": 124,
+    "failed": 0
+  },
+  "studioCore": {
+    "passed": 16,
+    "failures": [],
+    "backendCompleted": true,
+    "requests": {
+      "1": {
+        "ok": false,
+        "menu": true,
+        "arg": "Advance:1",
+        "step": 1,
+        "message": "Follow the brass arrows."
+      },
+      "2": {
+        "ok": true,
+        "arg": "Advance:1",
+        "step": 2,
+        "menu": true
+      },
+      "3": {
+        "ok": false,
+        "menu": true,
+        "arg": "Advance:2",
+        "step": 2,
+        "message": "Follow the brass arrows."
+      },
+      "4": {
+        "ok": true,
+        "arg": "Advance:2",
+        "step": 3,
+        "menu": true
+      },
+      "5": {
+        "ok": true,
+        "arg": "Advance:3",
+        "step": 4,
+        "menu": true
+      },
+      "6": {
+        "ok": true,
+        "arg": "Advance:4",
+        "step": 5,
+        "menu": true
+      },
+      "7": {
+        "ok": true,
+        "arg": "Restart",
+        "step": 1,
+        "menu": true
+      },
+      "8": {
+        "ok": true,
+        "arg": "Skip",
+        "step": 5,
+        "menu": true
+      }
+    }
+  },
+  "studioUi": {
+    "passed": 12,
+    "failures": []
+  },
+  "menuVisibility": {
+    "before": {
+      "q": true,
+      "m": true
+    },
+    "previousDisabled": {
+      "q": false,
+      "m": true
+    },
+    "switched": {
+      "q": true,
+      "m": true
+    },
+    "open": {
+      "q": false,
+      "m": false
+    },
+    "closed": {
+      "q": true,
+      "m": true
+    }
+  },
+  "phone": {
+    "viewport": "705, 338",
+    "copiesBottom": 182,
+    "actionTop": 212,
+    "action": "Consume 4 · Forge Gold"
+  },
+  "entrances": {
+    "passed": 7809,
+    "failed": 0
+  },
+  "studioVersion": 127,
+  "scripts": 109
+}

@@ -22,6 +22,9 @@ Expeditions.Init()
 -- courtyard farm (crops, pantry, pet feeding/levels, bounties, daily gift); started below with Init
 local FarmService = require(script.Parent.FarmService)
 local Progression = require(script.Parent.Progression)
+local ForgeRules = require(Shared.ForgeRules)
+local KnightTutorial = require(script.Parent.KnightTutorial)
+local forgeRandom = Random.new()
 local dataOwner = setmetatable({}, { __mode = "k" }) -- [data] = player (for per-player boosts)
 
 ---------------------------------------------------------------- remotes
@@ -195,6 +198,7 @@ local function sync(player, partial)
 		return
 	end
 	local st = State[player]
+	KnightTutorial.Ensure(data)
 	SyncRE:FireClient(player, {
 		Money = data.Money,
 		Uncollected = data.Uncollected,
@@ -219,6 +223,8 @@ local function sync(player, partial)
 		EquipBuff = { equippedBuffs(data) },
 		MasteredWorlds = masteredWorlds(data),
 		Progress = Progression.View(player, data),
+		TutorialStep = data.TutorialStep,
+		LastForge = data.LastForge,
 		BaseIndex = st and st.base and st.base.index or 0,
 		Expeditions = Expeditions.BuildView(data),
 	})
@@ -348,7 +354,7 @@ ThrowRE.OnServerEvent:Connect(function(player, power, dir)
 		return
 	end
 	if freeSpace(player, data) - pendingCount(player) <= 0 then
-		notify(player, "Storage full! Upgrade storage or sell creatures.", "error")
+		notify(player, "Pets full. Manage your pets or forge matching copies in the Great Hall.", "storage_full")
 		return
 	end
 	local origin = hrp.Position
@@ -686,6 +692,36 @@ function Actions.Collect(player, data, st, throwId)
 	end
 	sync(player, true)
 	return true
+end
+
+function Actions.Tutorial(player, data, st, arg)
+	return KnightTutorial.Act(player, data, st, arg)
+end
+
+function Actions.Forge(player, data, st, json)
+	if type(json) ~= "string" or #json > 2048 then
+		return false, "Invalid forge selection."
+	end
+	local decoded, request = pcall(HttpService.JSONDecode, HttpService, json)
+	if not decoded or type(request) ~= "table" then
+		return false, "Invalid forge selection."
+	end
+	local station = ForgeRules.Stations[request.target]
+	local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	if not station or not root or (root.Position - station).Magnitude > ForgeRules.Range then
+		return false, "Visit the Gold or Ruby station inside the Great Hall."
+	end
+	local ok, message, receipt, replay = ForgeRules.Attempt(data, request, function(uid)
+		return Expeditions.IsAway(data, uid)
+	end, function()
+		return DataService.NewUid(data)
+	end, function()
+		return forgeRandom:NextNumber()
+	end)
+	if ok and not replay and receipt.uid and #data.Placed < slotsOpen(data) then
+		table.insert(data.Placed, receipt.uid)
+	end
+	return ok, message
 end
 
 function Actions.Rebirth(player, data, st)

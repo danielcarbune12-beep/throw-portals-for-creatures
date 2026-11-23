@@ -395,5 +395,6 @@ function Hub.Build(folder, textLabel)
 	perimeter()
 	garden()
 	require(script.Parent.SanctuaryDetails).Build(folder)
+	require(script.Parent.ForgeHall).Build(folder)
 end
 return Hub

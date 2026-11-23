@@ -55,6 +55,9 @@ local function defaultData()
 		Daily = {},
 		PotionUntil = 0,
 		ProcessedReceipts = {},
+		ForgeReceipts = {},
+		LastForge = {},
+		TutorialStep = 0,
 	}
 end
 

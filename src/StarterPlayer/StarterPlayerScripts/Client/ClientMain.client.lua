@@ -40,6 +40,8 @@ TC.OnThrowResult = HUD.ThrowFeedback
 HUD.Refresh()
 Feel.Start(TC, HUD)
 require(Client.ExpeditionPanel).Init()
+require(Client.ForgePanel).Init()
+require(Client.KnightGuide).Init()
 
 -- ask the server for a full data sync (retries until our save has loaded)
 task.spawn(function()

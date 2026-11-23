@@ -29,6 +29,11 @@ local scaler = K.new("UIScale", { Parent = root })
 HUD.Gui, HUD.Root = gui, root
 local world =
 	K.new("Frame", { Name = "Gameplay", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Parent = root })
+local capacityWarning = K.button("Pets full · Manage pets or visit the forge", T.Danger, nil, UDim2.fromOffset(336, 44), {
+	Name = "PetCapacityWarning", AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 12), Visible = false, Parent = world,
+})
+capacityWarning.Label.TextSize = 14
+K.bind(capacityWarning, function() HUD.Open("Creatures") end)
 local top = K.new("Frame", { Name = "Resources", BackgroundTransparency = 1, Parent = world })
 local stats = {}
 local function stat(key, icon, caption, accent)
@@ -229,6 +234,10 @@ function HUD.SetPanelMessage(name, text, color)
 	end
 end
 function HUD.Notify(text, kind)
+	if kind == "storage_full" or (kind == "error" and type(text) == "string" and text:lower():find("storage full", 1, true)) then
+		HUD.StorageFull = true
+		capacityWarning.Visible = not HUD.AnyPanelOpen()
+	end
 	if openPanel and kind == "error" then
 		HUD.SetPanelMessage(openPanel.name, text, T.Danger)
 	end
@@ -430,6 +439,7 @@ Input.InputBegan:Connect(function(i, processed)
 end)
 function HUD.Refresh()
 	local d = State.Data
+	HUD.StorageFull = State.Loaded and #d.Creatures + #(d.Carry or {}) >= (d.SlotsOpen or 0) + (d.StorageCap or 0)
 	gui:SetAttribute("DataLoaded", State.Loaded)
 	gui:SetAttribute("EquippedPortal", d.EquippedPortal)
 	gui:SetAttribute("Money", d.Money or 0)
@@ -450,6 +460,8 @@ local function rescale()
 	width, height = v.X / scale, v.Y / scale
 	local compact = Input.TouchEnabled or width < 700 or height < 580
 	HUD.Compact = compact
+	capacityWarning.Size = UDim2.fromOffset(math.min(compact and 310 or 336, width - 32), 44)
+	capacityWarning.Position = UDim2.new(0.5, 0, 0, compact and 74 or 12)
 
 	local tileW, tileH = compact and 52 or 64, compact and 52 or 64
 	local navWidth = compact and (3 * tileW + 16) or tileW
@@ -499,6 +511,7 @@ State.Changed:Connect(function(full)
 	end
 end)
 RunService.RenderStepped:Connect(function(dt)
+	capacityWarning.Visible = HUD.StorageFull == true and not HUD.AnyPanelOpen()
 	local targetMoney = State.Data.Money or 0
 	shownMoney = math.abs(targetMoney - shownMoney) < 1 and targetMoney
 		or shownMoney + (targetMoney - shownMoney) * (1 - math.exp(-18 * dt))
