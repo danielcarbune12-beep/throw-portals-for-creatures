@@ -222,6 +222,31 @@ Config.RiftStorm = { first = 300, gap = { 720, 1080 }, duration = 120, luck = 1.
 
 -- Index mastery: discovering every creature of one world adds a permanent income bonus.
 Config.IndexWorldBonus = 0.05
+
+-- Progression: daily quests, rebirth, friends, monetisation and fusion (server: Progression.lua)
+Config.Progression = {
+	QuestPool = {
+		{ id = "throw", text = "Throw %d portals", goal = { 8, 14 } },
+		{ id = "perfect", text = "Land %d perfect throws", goal = { 3, 6 } },
+		{ id = "catch", text = "Catch %d creatures", goal = { 5, 9 } },
+		{ id = "rare", text = "Catch %d Rare-or-better creature(s)", goal = { 1, 2 } },
+	},
+	QuestReward = { min = 150, incomeSeconds = 240 }, -- prize = max(min, income/s * seconds)
+	Rebirth = { baseCost = 5000000, growth = 4, incomePer = 0.25, luckPer = 0.1 },
+	Friends = { luckPer = 0.1, max = 3 },
+	-- Game pass / developer product ids. 0 = not created yet: the button stays hidden and nothing is sold.
+	-- Create them on the Creator Dashboard (Monetization) and paste the ids here.
+	Passes = { DoubleLuck = 0, DoubleIncome = 0, ExtraPet = 0 },
+	Products = { LuckPotion = 0 },
+	Potion = { luck = 2, seconds = 900 },
+	Fusion = { need = 3 },
+}
+Config.Progression.QuestById = {}
+for _, q in ipairs(Config.Progression.QuestPool) do
+	Config.Progression.QuestById[q.id] = q
+end
+-- Throw charge: one full ping-pong of the power bar takes this long (client and server must agree)
+Config.ChargePeriod = 1.5
 Config.EquipBuff = {
 	Common    = { luck = 0.03, income = 0.02 },
 	Uncommon  = { luck = 0.05, income = 0.04 },
@@ -9899,7 +9924,7 @@ return V
 ]]></ProtectedString></Properties></Item>
 </Item>
 </Item>
-<Item class="ServerScriptService" referent="RBX67"><Properties><string name="Name">ServerScriptService</string></Properties>
+<Item class="ServerScriptService" referent="RBX68"><Properties><string name="Name">ServerScriptService</string></Properties>
 <Item class="Folder" referent="RBX35"><Properties><string name="Name">Server</string></Properties>
 <Item class="ModuleScript" referent="RBX36"><Properties><string name="Name">BaseBuilder</string><ProtectedString name="Source"><![CDATA[-- BaseBuilder: builds eight Skyforge courtyards and owned decorations.
 -- Location: ServerScriptService > Server > BaseBuilder (ModuleScript)
@@ -13002,6 +13027,10 @@ local function defaultData()
 		NextUid = 1,
 		LastOnline = 0,
 		Throws = 0,
+		Rebirths = 0,
+		Daily = {},
+		PotionUntil = 0,
+		ProcessedReceipts = {},
 	}
 end
 
@@ -15081,6 +15110,8 @@ local Expeditions = require(script.Parent.ExpeditionService)
 Expeditions.Init()
 -- courtyard farm (crops, pantry, pet feeding/levels, bounties, daily gift); started below with Init
 local FarmService = require(script.Parent.FarmService)
+local Progression = require(script.Parent.Progression)
+local dataOwner = setmetatable({}, { __mode = "k" }) -- [data] = player (for per-player boosts)
 
 ---------------------------------------------------------------- remotes
 local Remotes = Instance.new("Folder")
@@ -15092,6 +15123,7 @@ local function RE(name)
 	return r
 end
 local ThrowRE = RE("Throw")
+local ChargeStartRE = RE("ChargeStart")
 local SyncRE = RE("Sync")
 local PortalThrownRE = RE("PortalThrown")
 local PortalOpenedRE = RE("PortalOpened")
@@ -15148,7 +15180,8 @@ local function equippedBuffs(data)
 	local luck, income, keep = 0, 0, {}
 	for _, uid in ipairs(data.EquippedPets or {}) do
 		local c = findCreature(data, uid)
-		if c and not Expeditions.IsAway(data, uid) and #keep < Config.EquipLimit and not table.find(keep, uid) then
+		local limit = dataOwner[data] and Progression.EquipLimit(dataOwner[data]) or Config.EquipLimit
+		if c and not Expeditions.IsAway(data, uid) and #keep < limit and not table.find(keep, uid) then
 			table.insert(keep, uid)
 			local def = CreatureData.ById[c.c]
 			local b = def and Config.EquipBuff[def.rarity]
@@ -15195,7 +15228,9 @@ local function incomePerSec(data)
 	local _, incomeBuff = equippedBuffs(data)
 	-- Well Fed (feeding at the courtyard trough): +20% for 30 minutes
 	local indexMult = 1 + #masteredWorlds(data) * Config.IndexWorldBonus
-	return total * trainingMult(data) * incomeBuff * FarmService.IncomeBuff(data) * indexMult
+	local owner = dataOwner[data]
+	local boost = Progression.RebirthIncome(data) * (owner and Progression.PassIncome(owner) or 1)
+	return total * trainingMult(data) * incomeBuff * FarmService.IncomeBuff(data) * indexMult * boost
 end
 
 local function storedCount(data)
@@ -15272,6 +15307,7 @@ local function sync(player, partial)
 		EquippedPets = data.EquippedPets or {},
 		EquipBuff = { equippedBuffs(data) },
 		MasteredWorlds = masteredWorlds(data),
+		Progress = Progression.View(player, data),
 		BaseIndex = st and st.base and st.base.index or 0,
 		Expeditions = Expeditions.BuildView(data),
 	})
@@ -15414,6 +15450,31 @@ ThrowRE.OnServerEvent:Connect(function(player, power, dir)
 	data.Throws += 1
 
 	power = math.clamp(power, 0.05, 1)
+	-- the server times the charge itself (ChargeStart -> Throw), so a client can't claim perfect throws:
+	-- the claimed power must be reachable within a small latency window of the real elapsed time
+	do
+		local function barAt(e)
+			local t = e / (Config.ChargePeriod / 2)
+			local k = t % 2
+			local q = k <= 1 and k or 2 - k
+			return 1 - (1 - q) ^ 1.6
+		end
+		local started = st.chargeStart
+		st.chargeStart = nil
+		if not started then
+			power = math.min(power, 0.9)
+		else
+			local e = now - started
+			local lo, hi = math.huge, -math.huge
+			for d = -0.15, 0.1501, 0.025 do
+				local v = barAt(math.max(0, e + d))
+				lo, hi = math.min(lo, v), math.max(hi, v)
+			end
+			if power < lo - 0.02 or power > hi + 0.02 then
+				power = math.clamp(barAt(e), 0.05, 1)
+			end
+		end
+	end
 	local flat = Vector3.new(dir.X, 0, dir.Z)
 	local side = 0
 	if flat.Magnitude > 0.1 and flat.Unit.Z > 0.2 then
@@ -15444,6 +15505,14 @@ ThrowRE.OnServerEvent:Connect(function(player, power, dir)
 	player:SetAttribute("ThrowCombo", st.combo)
 	local storm = (workspace:GetAttribute("RiftStormEnds") or 0) > os.time()
 	local luck = equippedBuffs(data) * (1 + Config.Combo.perStep * st.combo) * (storm and Config.RiftStorm.luck or 1)
+		* Progression.RebirthLuck(data) * Progression.FriendLuck(player) * Progression.PassLuck(player, data)
+	local function questPrize()
+		return math.floor(math.max(Config.Progression.QuestReward.min, incomePerSec(data) * Config.Progression.QuestReward.incomeSeconds))
+	end
+	Progression.QuestEvent(player, data, "throw", 1, questPrize, notify)
+	if perfect then
+		Progression.QuestEvent(player, data, "perfect", 1, questPrize, notify)
+	end
 	local creatureId, chance = Odds.Roll(data.EquippedPortal, worldId, realDist, luck)
 	-- pet variant: size (Big/Huge/Titan) and material (Gold/Emerald/Ruby/Diamond), rolled independently
 	local petSize, petMaterial = Variants.Roll(variantRng)
@@ -15682,7 +15751,41 @@ function Actions.Collect(player, data, st, throwId)
 	table.insert(st.carry, Variants.Key(p.creature, p.size, p.variant))
 	depositCarry(player, data, st)
 	FarmService.Event(player, "catch", 1, { rarity = CreatureData.ById[p.creature].rarity })
+	local function questPrize()
+		return math.floor(math.max(Config.Progression.QuestReward.min, incomePerSec(data) * Config.Progression.QuestReward.incomeSeconds))
+	end
+	Progression.QuestEvent(player, data, "catch", 1, questPrize, notify)
+	if Config.Rarities[CreatureData.ById[p.creature].rarity].order >= 3 then
+		Progression.QuestEvent(player, data, "rare", 1, questPrize, notify)
+	end
+	sync(player, true)
 	return true
+end
+
+function Actions.Rebirth(player, data, st)
+	return Progression.Rebirth(data)
+end
+
+function Actions.Fuse(player, data, st, uid)
+	local ok, msg = Progression.Fuse(data, uid, function(u)
+		return Expeditions.IsAway(data, u)
+	end, function()
+		return DataService.NewUid(data)
+	end)
+	if ok then
+		while #data.Placed < slotsOpen(data) do
+			local added = false
+			for _, c in ipairs(data.Creatures) do
+				if not table.find(data.Placed, c.u) and not Expeditions.IsAway(data, c.u) then
+					table.insert(data.Placed, c.u)
+					added = true
+					break
+				end
+			end
+			if not added then break end
+		end
+	end
+	return ok, msg
 end
 
 function Actions.BuyPortal(player, data, st, id)
@@ -16008,8 +16111,9 @@ function Actions.ToggleEquip(player, data, st, uid)
 	if Expeditions.IsAway(data, uid) then
 		return false, "This pet is on an expedition."
 	end
-	if #data.EquippedPets >= Config.EquipLimit then
-		return false, "You can equip up to " .. Config.EquipLimit .. " pets. Unequip one first."
+	local limit = Progression.EquipLimit(player)
+	if #data.EquippedPets >= limit then
+		return false, "You can equip up to " .. limit .. " pets. Unequip one first."
 	end
 	table.insert(data.EquippedPets, uid)
 	return true, "Pet equipped"
@@ -16136,6 +16240,12 @@ local function onPlayerAdded(player)
 		return
 	end
 	Expeditions.Ensure(data)
+	dataOwner[data] = player
+	Progression.EnsureDaily(player, data)
+	task.spawn(function()
+		Progression.LoadPasses(player)
+		if player.Parent then sync(player) end
+	end)
 	-- carry over equipment bought under the old shared-station system
 	for i = #Config.TrainingStations, 1, -1 do
 		if data.OwnedEquipment and data.OwnedEquipment[tostring(i)] then
@@ -16219,6 +16329,19 @@ task.spawn(function()
 		workspace:SetAttribute("RiftStormEnds", 0)
 		task.wait(rng:NextInteger(cfg.gap[1], cfg.gap[2]))
 	end
+end)
+
+---------------------------------------------------------------- charge timing + purchases
+ChargeStartRE.OnServerEvent:Connect(function(player)
+	local st = State[player]
+	if st then
+		st.chargeStart = os.clock()
+	end
+end)
+Progression.BindReceipts(function(player)
+	return DataService.Get(player)
+end, function(player)
+	sync(player)
 end)
 ]]></ProtectedString></Properties></Item>
 <Item class="ModuleScript" referent="RBX51"><Properties><string name="Name">HeraldicText</string><ProtectedString name="Source"><![CDATA[-- Raised, angular bronze lettering made from actual parts, not a flat font.
@@ -17528,7 +17651,252 @@ end
 
 return Loader
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX56"><Properties><string name="Name">SanctuaryArchitecture</string><ProtectedString name="Source"><![CDATA[-- Original block/wedge architecture matching Maps/00_Portal_Sanctuary_Hub.png.
+<Item class="ModuleScript" referent="RBX56"><Properties><string name="Name">Progression</string><ProtectedString name="Source"><![CDATA[-- Progression: daily quests, rebirth, friend bonus, game passes / luck potion and pet fusion.
+-- Location: ServerScriptService > Server > Progression (ModuleScript)
+--
+-- Pure server logic. GameServer owns the data and remotes and calls in here; this module never fires
+-- remotes itself (GameServer passes a `notify` callback). All numbers live in Config.Progression.
+
+local Players = game:GetService("Players")
+local MarketplaceService = game:GetService("MarketplaceService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Config = require(ReplicatedStorage.Shared.Config)
+local CreatureData = require(ReplicatedStorage.Shared.CreatureData)
+local Variants = require(ReplicatedStorage.Shared.Variants)
+
+local P = {}
+local C = Config.Progression
+
+---------------------------------------------------------------- daily quests
+local function today()
+	return math.floor(os.time() / 86400)
+end
+
+-- deterministic per player + day, so a rejoin shows the same three quests
+local function rollQuests(userId, day)
+	local rng = Random.new(userId * 7919 + day)
+	local pool = table.clone(C.QuestPool)
+	local list = {}
+	for _ = 1, math.min(3, #pool) do
+		local q = table.remove(pool, rng:NextInteger(1, #pool))
+		table.insert(list, { id = q.id, goal = rng:NextInteger(q.goal[1], q.goal[2]), progress = 0, done = false })
+	end
+	return list
+end
+
+function P.EnsureDaily(player, data)
+	local day = today()
+	if type(data.Daily) ~= "table" or data.Daily.day ~= day then
+		data.Daily = { day = day, quests = rollQuests(player.UserId, day) }
+	end
+	return data.Daily
+end
+
+-- kind: "throw" | "perfect" | "catch" | "rare" ; reward(goal) returns the coin prize
+function P.QuestEvent(player, data, kind, amount, reward, notify)
+	local daily = P.EnsureDaily(player, data)
+	local changed = false
+	for _, q in ipairs(daily.quests) do
+		if q.id == kind and not q.done then
+			q.progress = math.min(q.goal, q.progress + (amount or 1))
+			changed = true
+			if q.progress >= q.goal then
+				q.done = true
+				local prize = reward()
+				data.Money += prize
+				local def = C.QuestById[q.id]
+				notify(player, "Quest complete: " .. string.format(def.text, q.goal) .. "  +" .. require(ReplicatedStorage.Shared.Format).Money(prize), "success")
+			end
+		end
+	end
+	return changed
+end
+
+---------------------------------------------------------------- rebirth
+function P.RebirthCost(data)
+	return math.floor(C.Rebirth.baseCost * C.Rebirth.growth ^ (data.Rebirths or 0))
+end
+
+function P.Rebirth(data)
+	local cost = P.RebirthCost(data)
+	if data.Money < cost then
+		return false, "You need " .. require(ReplicatedStorage.Shared.Format).Money(cost) .. " to rebirth"
+	end
+	data.Rebirths = (data.Rebirths or 0) + 1
+	data.Money = 0
+	data.Upgrades.ThrowPower = 1
+	return true, "Rebirth " .. data.Rebirths .. "! Income ×" .. string.format("%.2f", P.RebirthIncome(data)) .. " forever"
+end
+
+function P.RebirthIncome(data)
+	return 1 + (data.Rebirths or 0) * C.Rebirth.incomePer
+end
+
+function P.RebirthLuck(data)
+	return 1 + (data.Rebirths or 0) * C.Rebirth.luckPer
+end
+
+---------------------------------------------------------------- friends in the server
+local friendCount = {} -- [player] = number of friends currently in this server
+
+local function recount()
+	local list = Players:GetPlayers()
+	for _, a in ipairs(list) do
+		local n = 0
+		for _, b in ipairs(list) do
+			if a ~= b then
+				local ok, isFriend = pcall(function() return a:IsFriendsWith(b.UserId) end)
+				if ok and isFriend then n += 1 end
+			end
+		end
+		friendCount[a] = n
+		a:SetAttribute("FriendsHere", n)
+	end
+end
+Players.PlayerAdded:Connect(function() task.delay(2, recount) end)
+Players.PlayerRemoving:Connect(function(p)
+	friendCount[p] = nil
+	task.defer(recount)
+end)
+
+function P.FriendLuck(player)
+	return 1 + math.min(C.Friends.max, friendCount[player] or 0) * C.Friends.luckPer
+end
+
+---------------------------------------------------------------- game passes + luck potion
+local owned = {} -- [player] = { [passKey] = true }
+
+function P.LoadPasses(player)
+	owned[player] = {}
+	for key, id in pairs(C.Passes) do
+		if id and id > 0 then
+			local ok, has = pcall(function() return MarketplaceService:UserOwnsGamePassAsync(player.UserId, id) end)
+			if ok and has then owned[player][key] = true end
+		end
+	end
+end
+Players.PlayerRemoving:Connect(function(p) owned[p] = nil end)
+
+MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player, passId, bought)
+	if not bought then return end
+	for key, id in pairs(C.Passes) do
+		if id == passId then
+			owned[player] = owned[player] or {}
+			owned[player][key] = true
+		end
+	end
+end)
+
+function P.HasPass(player, key)
+	return owned[player] ~= nil and owned[player][key] == true
+end
+
+function P.PassLuck(player, data)
+	local m = P.HasPass(player, "DoubleLuck") and 2 or 1
+	if (data.PotionUntil or 0) > os.time() then
+		m *= C.Potion.luck
+	end
+	return m
+end
+
+function P.PassIncome(player)
+	return P.HasPass(player, "DoubleIncome") and 2 or 1
+end
+
+function P.EquipLimit(player)
+	return Config.EquipLimit + (P.HasPass(player, "ExtraPet") and 1 or 0)
+end
+
+-- developer product receipts (luck potion). getData(player) returns the live save or nil.
+function P.BindReceipts(getData, onChanged)
+	if not (C.Products.LuckPotion and C.Products.LuckPotion > 0) then
+		return
+	end
+	MarketplaceService.ProcessReceipt = function(info)
+		local player = Players:GetPlayerByUserId(info.PlayerId)
+		local data = player and getData(player)
+		if not data then
+			return Enum.ProductPurchaseDecision.NotProcessedYet
+		end
+		data.ProcessedReceipts = data.ProcessedReceipts or {}
+		if data.ProcessedReceipts[info.PurchaseId] then
+			return Enum.ProductPurchaseDecision.PurchaseGranted
+		end
+		if info.ProductId == C.Products.LuckPotion then
+			data.PotionUntil = math.max(data.PotionUntil or 0, os.time()) + C.Potion.seconds
+			data.ProcessedReceipts[info.PurchaseId] = true
+			onChanged(player)
+			return Enum.ProductPurchaseDecision.PurchaseGranted
+		end
+		return Enum.ProductPurchaseDecision.NotProcessedYet
+	end
+end
+
+---------------------------------------------------------------- pet fusion
+-- Fuse 3 identical pets (same species, size and material) into one of the next size up.
+-- Placed/equipped copies are released first; pets away on an expedition are never used.
+local NEXT_SIZE = { [""] = "Big", Big = "Huge", Huge = "Titan" }
+
+function P.Fuse(data, uid, isAway, newUid)
+	local target
+	for _, c in ipairs(data.Creatures) do
+		if c.u == uid then target = c break end
+	end
+	if not target then return false, "Not found" end
+	local nextSize = NEXT_SIZE[target.s or ""]
+	if not nextSize then return false, "Titan is the largest size" end
+	local group = {}
+	for _, c in ipairs(data.Creatures) do
+		if c.c == target.c and (c.s or "") == (target.s or "") and (c.v or "") == (target.v or "") and not isAway(c.u) then
+			table.insert(group, c)
+		end
+	end
+	-- prefer the selected pet plus unplaced/unequipped copies
+	table.sort(group, function(a, b)
+		local function score(c)
+			if c.u == uid then return 0 end
+			local s = 1
+			if table.find(data.Placed, c.u) then s += 1 end
+			if table.find(data.EquippedPets or {}, c.u) then s += 2 end
+			return s
+		end
+		return score(a) < score(b)
+	end)
+	if #group < C.Fusion.need then
+		return false, "You need " .. C.Fusion.need .. " of the same pet to fuse (have " .. #group .. ")"
+	end
+	for i = 1, C.Fusion.need do
+		local u = group[i].u
+		for j = #data.Creatures, 1, -1 do
+			if data.Creatures[j].u == u then table.remove(data.Creatures, j) end
+		end
+		local pi = table.find(data.Placed, u)
+		if pi then table.remove(data.Placed, pi) end
+		local ei = data.EquippedPets and table.find(data.EquippedPets, u)
+		if ei then table.remove(data.EquippedPets, ei) end
+	end
+	local fused = { u = newUid(), c = target.c, s = nextSize, v = target.v }
+	table.insert(data.Creatures, fused)
+	local def = CreatureData.ById[target.c]
+	return true, "Fused into " .. Variants.Prefix(nextSize, target.v) .. (def and def.name or target.c) .. "!", fused.u
+end
+
+---------------------------------------------------------------- sync view
+function P.View(player, data)
+	return {
+		Daily = P.EnsureDaily(player, data),
+		Rebirths = data.Rebirths or 0,
+		RebirthCost = P.RebirthCost(data),
+		FriendsHere = friendCount[player] or 0,
+		PotionUntil = data.PotionUntil or 0,
+		Passes = owned[player] or {},
+	}
+end
+
+return P
+]]></ProtectedString></Properties></Item>
+<Item class="ModuleScript" referent="RBX57"><Properties><string name="Name">SanctuaryArchitecture</string><ProtectedString name="Source"><![CDATA[-- Original block/wedge architecture matching Maps/00_Portal_Sanctuary_Hub.png.
 -- Shared by the public sanctuary and the eight gardens. All decoration is non-queryable.
 local K = require(script.Parent.WorldKit)
 local Art = {}
@@ -17713,7 +18081,7 @@ function Art.Planter(cf, length, pink)
 end
 return Art
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX57"><Properties><string name="Name">SanctuaryBase</string><ProtectedString name="Source"><![CDATA[-- Skyforge Courtyard, matching the owner's approved concept2. Original plot,
+<Item class="ModuleScript" referent="RBX58"><Properties><string name="Name">SanctuaryBase</string><ProtectedString name="Source"><![CDATA[-- Skyforge Courtyard, matching the owner's approved concept2. Original plot,
 -- collection and pet-slot anchors stay compatible with saved player gardens.
 local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
 local K = require(script.Parent.WorldKit)
@@ -18142,7 +18510,7 @@ end
 
 return Base
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX58"><Properties><string name="Name">SanctuaryDetails</string><ProtectedString name="Source"><![CDATA[-- Deliberate close-up detail for the lobby. Decorative only; all gameplay paths stay clear.
+<Item class="ModuleScript" referent="RBX59"><Properties><string name="Name">SanctuaryDetails</string><ProtectedString name="Source"><![CDATA[-- Deliberate close-up detail for the lobby. Decorative only; all gameplay paths stay clear.
 local P = require(script.Parent.SanctuaryArchitecture).Palette
 local Details = {}
 local V, CF, A = Vector3.new, CFrame.new, CFrame.Angles
@@ -18366,7 +18734,7 @@ function Details.Build(start)
 end
 return Details
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX59"><Properties><string name="Name">SanctuaryHub</string><ProtectedString name="Source"><![CDATA[-- Portal Sanctuary: a composed, walkable lobby, built from the supplied hub reference.
+<Item class="ModuleScript" referent="RBX60"><Properties><string name="Name">SanctuaryHub</string><ProtectedString name="Source"><![CDATA[-- Portal Sanctuary: a composed, walkable lobby, built from the supplied hub reference.
 -- Plot centers, throw zone, collision barrier and lane direction retain their existing contracts.
 local RS = game:GetService("ReplicatedStorage")
 local Config = require(RS.Shared.Config)
@@ -18766,7 +19134,7 @@ function Hub.Build(folder, textLabel)
 end
 return Hub
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX60"><Properties><string name="Name">SkyforgeDetails</string><ProtectedString name="Source"><![CDATA[-- Small-scale craft for the approved Skyforge courtyard. No extra prompts or
+<Item class="ModuleScript" referent="RBX61"><Properties><string name="Name">SkyforgeDetails</string><ProtectedString name="Source"><![CDATA[-- Small-scale craft for the approved Skyforge courtyard. No extra prompts or
 -- physics obstacles are created here; the expedition table owns interaction.
 local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
 local P = require(script.Parent.SkyforgeStyle)
@@ -18958,7 +19326,7 @@ end
 
 return Details
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX61"><Properties><string name="Name">SkyforgeStyle</string><ProtectedString name="Source"><![CDATA[-- Approved Skyforge concept: pale stone, dark timber, violet tiled roofs and
+<Item class="ModuleScript" referent="RBX62"><Properties><string name="Name">SkyforgeStyle</string><ProtectedString name="Source"><![CDATA[-- Approved Skyforge concept: pale stone, dark timber, violet tiled roofs and
 -- small warm brass accents. Colors stay readable under the sanctuary lighting.
 local C = Color3.fromRGB
 return {
@@ -18989,7 +19357,7 @@ return {
 	lodge = { x = -18, z = 24, w = 26, d = 17, deck = 1.6, postH = 9, rise = 5.6 },
 }
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX62"><Properties><string name="Name">Waterfalls</string><ProtectedString name="Source"><![CDATA[-- Waterfalls: turns the flat water panels in the sanctuary into living waterfalls.
+<Item class="ModuleScript" referent="RBX63"><Properties><string name="Name">Waterfalls</string><ProtectedString name="Source"><![CDATA[-- Waterfalls: turns the flat water panels in the sanctuary into living waterfalls.
 -- Location: ServerScriptService > Server > Waterfalls (ModuleScript)
 --
 -- For each fall: rocks breaking the lip, a sheet of falling water streaks (particles stretched along
@@ -19170,7 +19538,7 @@ end
 
 return F
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX63"><Properties><string name="Name">WorldBuilder</string><ProtectedString name="Source"><![CDATA[-- WorldBuilder: builds ONE long map — the hub (bases + launch hall) and the 3200-stud throwing
+<Item class="ModuleScript" referent="RBX64"><Properties><string name="Name">WorldBuilder</string><ProtectedString name="Source"><![CDATA[-- WorldBuilder: builds ONE long map — the hub (bases + launch hall) and the 3200-stud throwing
 -- lane split into 8 biome zones. Each biome lives in its own module (Biome<Id>) built with the
 -- shared WorldKit; this file only orchestrates terrain, zones, markers and boundaries.
 -- Location: ServerScriptService > Server > WorldBuilder (ModuleScript)
@@ -19379,10 +19747,10 @@ end
 
 return WorldBuilder
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX64"><Properties><string name="Name">WorldHub</string><ProtectedString name="Source"><![CDATA[-- Compatibility entry point for the reference-based sanctuary lobby.
+<Item class="ModuleScript" referent="RBX65"><Properties><string name="Name">WorldHub</string><ProtectedString name="Source"><![CDATA[-- Compatibility entry point for the reference-based sanctuary lobby.
 return require(script.Parent.SanctuaryHub)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX65"><Properties><string name="Name">WorldKit</string><ProtectedString name="Source"><![CDATA[-- WorldKit: the shared blocky construction kit used by the hub and all eight biomes.
+<Item class="ModuleScript" referent="RBX66"><Properties><string name="Name">WorldKit</string><ProtectedString name="Source"><![CDATA[-- WorldKit: the shared blocky construction kit used by the hub and all eight biomes.
 -- Location: ServerScriptService > Server > WorldKit (ModuleScript)
 --
 -- CONTRACT (map brief + GameServer landing contract):
@@ -20098,7 +20466,7 @@ end
 
 return K
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX66"><Properties><string name="Name">WorldLandmarks</string><ProtectedString name="Source"><![CDATA[-- WorldLandmarks: construction kit + the hero landmarks for the hub, launch hall and all
+<Item class="ModuleScript" referent="RBX67"><Properties><string name="Name">WorldLandmarks</string><ProtectedString name="Source"><![CDATA[-- WorldLandmarks: construction kit + the hero landmarks for the hub, launch hall and all
 -- eight biomes (blocky architectural language from the map reference pack).
 -- Location: ServerScriptService > Server > WorldLandmarks (ModuleScript)
 --
@@ -20878,10 +21246,10 @@ return L
 ]]></ProtectedString></Properties></Item>
 </Item>
 </Item>
-<Item class="StarterPlayer" referent="RBX104"><Properties><string name="Name">StarterPlayer</string></Properties>
-<Item class="StarterPlayerScripts" referent="RBX68"><Properties><string name="Name">StarterPlayerScripts</string></Properties>
-<Item class="Folder" referent="RBX69"><Properties><string name="Name">Client</string></Properties>
-<Item class="ModuleScript" referent="RBX70"><Properties><string name="Name">CaughtPresentation</string><ProtectedString name="Source"><![CDATA[-- Caught card for an already confirmed catch, styled after Actions/02_Rarity_Reveal_and_Capture ("03 ADDED"):
+<Item class="StarterPlayer" referent="RBX106"><Properties><string name="Name">StarterPlayer</string></Properties>
+<Item class="StarterPlayerScripts" referent="RBX69"><Properties><string name="Name">StarterPlayerScripts</string></Properties>
+<Item class="Folder" referent="RBX70"><Properties><string name="Name">Client</string></Properties>
+<Item class="ModuleScript" referent="RBX71"><Properties><string name="Name">CaughtPresentation</string><ProtectedString name="Source"><![CDATA[-- Caught card for an already confirmed catch, styled after Actions/02_Rarity_Reveal_and_Capture ("03 ADDED"):
 -- purple card with a double gold frame and diamond crest, light rays behind the pet, the creature's name,
 -- a "CAUGHT" ribbon with laurels, an "ADDED TO PETS" plaque, then the card flies into the live Pets button.
 local RS = game:GetService("ReplicatedStorage")
@@ -21099,10 +21467,10 @@ return function(key)
 	end)
 end
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX71"><Properties><string name="Name">CinematicLook</string><ProtectedString name="Source"><![CDATA[-- One controller owns the scene, including biome and weather transitions.
+<Item class="LocalScript" referent="RBX72"><Properties><string name="Name">CinematicLook</string><ProtectedString name="Source"><![CDATA[-- One controller owns the scene, including biome and weather transitions.
 require(script.Parent.SceneLighting).Start()
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX72"><Properties><string name="Name">ClientMain</string><ProtectedString name="Source"><![CDATA[-- ClientMain: wires all client modules together.
+<Item class="LocalScript" referent="RBX73"><Properties><string name="Name">ClientMain</string><ProtectedString name="Source"><![CDATA[-- ClientMain: wires all client modules together.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ClientMain (LocalScript)
 
 local Players = game:GetService("Players")
@@ -21378,7 +21746,7 @@ task.spawn(function()
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX73"><Properties><string name="Name">ClientSettings</string><ProtectedString name="Source"><![CDATA[-- ClientSettings: presentation-only player settings (never affect odds, charge, rewards).
+<Item class="ModuleScript" referent="RBX74"><Properties><string name="Name">ClientSettings</string><ProtectedString name="Source"><![CDATA[-- ClientSettings: presentation-only player settings (never affect odds, charge, rewards).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ClientSettings (ModuleScript)
 -- Values persist for the session via player attributes; defaults are safe for everyone.
 
@@ -21414,7 +21782,7 @@ end
 
 return Settings
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX74"><Properties><string name="Name">ClientState</string><ProtectedString name="Source"><![CDATA[-- ClientState: local mirror of the player's data + change signal + request helper.
+<Item class="ModuleScript" referent="RBX75"><Properties><string name="Name">ClientState</string><ProtectedString name="Source"><![CDATA[-- ClientState: local mirror of the player's data + change signal + request helper.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ClientState (ModuleScript)
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -21454,7 +21822,7 @@ end
 
 return State
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX75"><Properties><string name="Name">CreatureRenderer</string><ProtectedString name="Source"><![CDATA[-- CreatureRenderer: renders every creature on this client — base pets of all players,
+<Item class="ModuleScript" referent="RBX76"><Properties><string name="Name">CreatureRenderer</string><ProtectedString name="Source"><![CDATA[-- CreatureRenderer: renders every creature on this client — base pets of all players,
 -- creatures being carried, and freshly revealed wild creatures. Handles species entrances,
 -- capture presentation, reactions, click-to-pet, distance LOD and previews.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > CreatureRenderer (ModuleScript)
@@ -22643,7 +23011,7 @@ end
 
 return Renderer
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX76"><Properties><string name="Name">CustomCursor</string><ProtectedString name="Source"><![CDATA[-- Ivory and brass cursor. Native pointer stays available until artwork loads.
+<Item class="LocalScript" referent="RBX77"><Properties><string name="Name">CustomCursor</string><ProtectedString name="Source"><![CDATA[-- Ivory and brass cursor. Native pointer stays available until artwork loads.
 local Input = game:GetService("UserInputService")
 local Gui = game:GetService("GuiService")
 local Run = game:GetService("RunService")
@@ -22791,7 +23159,7 @@ script.Destroying:Connect(function()
 	layer:Destroy()
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX77"><Properties><string name="Name">Effects</string><ProtectedString name="Source"><![CDATA[-- Effects: camera shake, flashes, shockwaves, particle bursts, light beams, floating text,
+<Item class="ModuleScript" referent="RBX78"><Properties><string name="Name">Effects</string><ProtectedString name="Source"><![CDATA[-- Effects: camera shake, flashes, shockwaves, particle bursts, light beams, floating text,
 -- flying-coin money effect, rarity banners and per-world lighting.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > Effects (ModuleScript)
 
@@ -23313,7 +23681,7 @@ end
 
 return Effects
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX78"><Properties><string name="Name">ExchangeView</string><ProtectedString name="Source"><![CDATA[-- Four direct trade signs linked to an architectural model of the sanctuary.
+<Item class="ModuleScript" referent="RBX79"><Properties><string name="Name">ExchangeView</string><ProtectedString name="Source"><![CDATA[-- Four direct trade signs linked to an architectural model of the sanctuary.
 local K = require(script.Parent.UIKit)
 local T = K.Theme
 local Craft = require(script.Parent.SanctuaryUI)
@@ -23546,7 +23914,7 @@ function E.Mount(hub, HUD)
 end
 return E
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX79"><Properties><string name="Name">ExpeditionPanel</string><ProtectedString name="Source"><![CDATA[-- Skyforge visual planning; all mission authority remains on the server.
+<Item class="ModuleScript" referent="RBX80"><Properties><string name="Name">ExpeditionPanel</string><ProtectedString name="Source"><![CDATA[-- Skyforge visual planning; all mission authority remains on the server.
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -24440,7 +24808,7 @@ function Panel.Init()
 end
 return Panel
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX80"><Properties><string name="Name">ExpeditionScene</string><ProtectedString name="Source"><![CDATA[-- Detailed, deterministic native biome vignettes for the expedition map.
+<Item class="ModuleScript" referent="RBX81"><Properties><string name="Name">ExpeditionScene</string><ProtectedString name="Source"><![CDATA[-- Detailed, deterministic native biome vignettes for the expedition map.
 local Config = require(game.ReplicatedStorage.Shared.Config)
 local Scene = {}
 local V, C = Vector3.new, Color3.fromRGB
@@ -24630,7 +24998,7 @@ function Scene.Build(id)
 end
 return Scene
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX81"><Properties><string name="Name">FarmClient</string><ProtectedString name="Source"><![CDATA[-- FarmClient: client side of the courtyard farm (server: FarmService).
+<Item class="LocalScript" referent="RBX82"><Properties><string name="Name">FarmClient</string><ProtectedString name="Source"><![CDATA[-- FarmClient: client side of the courtyard farm (server: FarmService).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > FarmClient (LocalScript)
 --  * Shows only YOUR courtyard's farm prompts (beds, stand, board, chest); others' stay hidden.
 --  * Updates permanent physical farm signs. No screen toasts or character message bursts.
@@ -25029,7 +25397,7 @@ FarmFx.OnClientEvent:Connect(function(kind, d)
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX82"><Properties><string name="Name">GameplayFeel</string><ProtectedString name="Source"><![CDATA[-- Quiet, state-driven feedback around the complete play loop. No extra HUD buttons.
+<Item class="ModuleScript" referent="RBX83"><Properties><string name="Name">GameplayFeel</string><ProtectedString name="Source"><![CDATA[-- Quiet, state-driven feedback around the complete play loop. No extra HUD buttons.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local RS = game:GetService("ReplicatedStorage")
@@ -25151,7 +25519,7 @@ function Feel.Money(amount, position)
 end
 return Feel
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX83"><Properties><string name="Name">GuildModel</string><ProtectedString name="Source"><![CDATA[-- An architectural model of the four sanctuary trades, made for the exchange folio.
+<Item class="ModuleScript" referent="RBX84"><Properties><string name="Name">GuildModel</string><ProtectedString name="Source"><![CDATA[-- An architectural model of the four sanctuary trades, made for the exchange folio.
 local Merchant = require(script.Parent.MerchantDisplay)
 local Portal = require(game:GetService("ReplicatedStorage").Shared.PortalBuilder)
 local K = require(script.Parent.UIKit)
@@ -25323,7 +25691,7 @@ function G.Pedestal(model)
 end
 return G
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX84"><Properties><string name="Name">HUD</string><ProtectedString name="Source"><![CDATA[-- Direct Pets, Shop and Expeditions navigation with a shared responsive panel layer.
+<Item class="ModuleScript" referent="RBX85"><Properties><string name="Name">HUD</string><ProtectedString name="Source"><![CDATA[-- Direct Pets, Shop and Expeditions navigation with a shared responsive panel layer.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Input = game:GetService("UserInputService")
@@ -25864,7 +26232,7 @@ end)
 task.defer(rescale)
 return HUD
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX85"><Properties><string name="Name">Intro</string><ProtectedString name="Source"><![CDATA[-- Intro: cinematic fly-over when you join. The camera sweeps down the whole lane (every zone),
+<Item class="ModuleScript" referent="RBX86"><Properties><string name="Name">Intro</string><ProtectedString name="Source"><![CDATA[-- Intro: cinematic fly-over when you join. The camera sweeps down the whole lane (every zone),
 -- past the Portal Launch Hall, and lands at your base while the title animates in.
 -- Click / tap / any key to skip.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > Intro (ModuleScript)
@@ -26114,7 +26482,7 @@ end
 
 return Intro
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX86"><Properties><string name="Name">LabelDeclutter</string><ProtectedString name="Source"><![CDATA[-- LabelDeclutter: keeps floating world labels (BillboardGuis) from piling on top of each other.
+<Item class="LocalScript" referent="RBX87"><Properties><string name="Name">LabelDeclutter</string><ProtectedString name="Source"><![CDATA[-- LabelDeclutter: keeps floating world labels (BillboardGuis) from piling on top of each other.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > LabelDeclutter (LocalScript)
 --
 -- Most labels are drawn at a fixed pixel size, so a label 30 studs away is as big on screen as one
@@ -26302,7 +26670,7 @@ RunService.Heartbeat:Connect(function(dt)
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX87"><Properties><string name="Name">MerchantDisplay</string><ProtectedString name="Source"><![CDATA[-- A small, actual sanctuary shop display for the menu. No image or asset dependency.
+<Item class="ModuleScript" referent="RBX88"><Properties><string name="Name">MerchantDisplay</string><ProtectedString name="Source"><![CDATA[-- A small, actual sanctuary shop display for the menu. No image or asset dependency.
 local D = {}
 local C, V, CF = Color3.fromRGB, Vector3.new, CFrame.new
 local wood, stone, brass, slate = C(88, 62, 40), C(224, 221, 206), C(178, 142, 74), C(39, 65, 69)
@@ -26413,7 +26781,7 @@ function D.Emblem(kind)
 end
 return D
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX88"><Properties><string name="Name">MomentumUI</string><ProtectedString name="Source"><![CDATA[-- MomentumUI: shows the perfect-throw streak and the server-wide Rift Storm.
+<Item class="LocalScript" referent="RBX89"><Properties><string name="Name">MomentumUI</string><ProtectedString name="Source"><![CDATA[-- MomentumUI: shows the perfect-throw streak and the server-wide Rift Storm.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > MomentumUI (LocalScript)
 --
 --   * Streak badge (bottom centre): appears after a perfect throw, "PERFECT STREAK x3 · +15% luck",
@@ -26557,7 +26925,7 @@ RunService.Heartbeat:Connect(function(dt)
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX89"><Properties><string name="Name">MovementFov</string><ProtectedString name="Source"><![CDATA[-- Reversible sprint lens offset. Cinematics release it before saving their lens.
+<Item class="ModuleScript" referent="RBX90"><Properties><string name="Name">MovementFov</string><ProtectedString name="Source"><![CDATA[-- Reversible sprint lens offset. Cinematics release it before saving their lens.
 local Fov = {}
 local owner, offset, output
 local function close(a, b)
@@ -26593,7 +26961,7 @@ function Fov.Update(camera, target, dt)
 end
 return Fov
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX90"><Properties><string name="Name">Panels</string><ProtectedString name="Source"><![CDATA[-- Sanctuary shops, collection, index, customization and settings.
+<Item class="ModuleScript" referent="RBX91"><Properties><string name="Name">Panels</string><ProtectedString name="Source"><![CDATA[-- Sanctuary shops, collection, index, customization and settings.
 -- All spending and ownership changes use the existing authoritative server actions.
 local RS = game:GetService("ReplicatedStorage")
 local Http = game:GetService("HttpService")
@@ -27099,7 +27467,7 @@ local function renderCreatureDetail()
 		key ..= ":" .. tostring(entry.l or 1) .. ":" .. tostring(entry.e or 0) .. ":" .. table.concat(
 			d.EquippedPets or {},
 			","
-		)
+		) .. ":" .. #d.Creatures
 	end
 	if detailKey == key then
 		return
@@ -27177,7 +27545,8 @@ local function renderCreatureDetail()
 	local equippedList = d.EquippedPets or {}
 	local isEquipped = table.find(equippedList, entry.u) ~= nil
 	local buff = Config.EquipBuff[def.rarity] or { luck = 0, income = 0 }
-	local full = not isEquipped and #equippedList >= Config.EquipLimit
+	local equipLimit = Config.EquipLimit + ((d.Progress and d.Progress.Passes and d.Progress.Passes.ExtraPet) and 1 or 0)
+	local full = not isEquipped and #equippedList >= equipLimit
 	local secondary = K.new("Frame", {
 		Name = "SecondaryPetActions",
 		Size = UDim2.new(1, -12, 0, 44),
@@ -27203,6 +27572,40 @@ local function renderCreatureDetail()
 			renderCreatureDetail()
 		end
 	end)
+	-- fusion: 3 identical pets (species + size + material) -> one of the next size up
+	do
+		local NEXT = { [""] = "Big", Big = "Huge", Huge = "Titan" }
+		local nextSize = NEXT[entry.s or ""]
+		local same = 0
+		for _, c in ipairs(d.Creatures) do
+			if c.c == entry.c and (c.s or "") == (entry.s or "") and (c.v or "") == (entry.v or "") then
+				same += 1
+			end
+		end
+		if nextSize then
+			local need = Config.Progression.Fusion.need
+			local fuse = K.button(
+				same >= need and ("Fuse " .. need .. " into " .. nextSize) or ("Fuse into " .. nextSize .. " · " .. same .. "/" .. need),
+				same >= need and T.Brass or T.Raised,
+				nil,
+				UDim2.new(1, -12, 0, 40),
+				{ Name = "FuseCreature", LayoutOrder = 6, Parent = invDetail }
+			)
+			fuse.Name = "ZFuseCreature" -- sorts after the follow/sell row (same LayoutOrder, name order)
+			K.setEnabled(fuse, same >= need and not away)
+			K.bind(fuse, function()
+				if same < need or away then
+					return
+				end
+				clearArm()
+				if request("Fuse", entry.u, "Pets fused.") then
+					selectedUid = nil
+					detailKey = nil
+					inv.refresh()
+				end
+			end)
+		end
+	end
 	local sellValue = math.floor(entryIncome * Config.SellMultiplier)
 	local sell = K.button(
 		armedUid == entry.u and "Confirm · " .. Format.Money(sellValue) or "Sell · " .. Format.Money(sellValue),
@@ -27910,7 +28313,7 @@ function Panels.Init()
 end
 return Panels
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX91"><Properties><string name="Name">Plaque</string><ProtectedString name="Source"><![CDATA[-- Plaque: the carved rarity plaque from the reveal reference sheet (Actions/02_Rarity_Reveal_and_Capture):
+<Item class="ModuleScript" referent="RBX92"><Properties><string name="Name">Plaque</string><ProtectedString name="Source"><![CDATA[-- Plaque: the carved rarity plaque from the reveal reference sheet (Actions/02_Rarity_Reveal_and_Capture):
 -- a bevelled bar with pointed diamond ends, double gold trim, small gold diamond ornaments, serif caps,
 -- and gold laurels for the showcase tiers. Pixel sized, so it works in ScreenGuis and BillboardGuis.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > Plaque (ModuleScript)
@@ -28067,7 +28470,7 @@ end
 
 return P
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX92"><Properties><string name="Name">PlayerFeel</string><ProtectedString name="Source"><![CDATA[-- PlayerFeel: how the local player's character moves and feels.
+<Item class="LocalScript" referent="RBX93"><Properties><string name="Name">PlayerFeel</string><ProtectedString name="Source"><![CDATA[-- PlayerFeel: how the local player's character moves and feels.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > PlayerFeel (LocalScript)
 --
 --   * Run: hold Left Shift (PC), press L3 (gamepad) or tap the Run button (mobile, toggles).
@@ -28383,7 +28786,254 @@ task.spawn(function()
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX93"><Properties><string name="Name">RevealTitle</string><ProtectedString name="Source"><![CDATA[-- RevealTitle: on-screen title for a creature reveal, styled after Actions/02_Rarity_Reveal_and_Capture.
+<Item class="LocalScript" referent="RBX94"><Properties><string name="Name">QuestPanel</string><ProtectedString name="Source"><![CDATA[-- QuestPanel: compact parchment card on the right edge with today's quests, rebirth and boosts.
+-- Location: StarterPlayer > StarterPlayerScripts > Client > QuestPanel (LocalScript)
+--
+-- Reads the server's Progress view from ClientState (Daily, Rebirths, RebirthCost, FriendsHere,
+-- PotionUntil, Passes). Click the header to collapse. Boost buttons only appear for game passes /
+-- products whose ids are set in Config.Progression (0 = not created, nothing is sold).
+
+local Players = game:GetService("Players")
+local MarketplaceService = game:GetService("MarketplaceService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Config = require(ReplicatedStorage.Shared.Config)
+local Format = require(ReplicatedStorage.Shared.Format)
+local State = require(script.Parent.ClientState)
+local T = require(script.Parent.UITheme)
+
+local player = Players.LocalPlayer
+local C = Config.Progression
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "QuestPanel"
+gui.ResetOnSpawn = false
+gui.DisplayOrder = 8
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.Parent = player:WaitForChild("PlayerGui")
+
+local card = Instance.new("Frame")
+card.Name = "Card"
+card.AnchorPoint = Vector2.new(1, 0)
+card.Position = UDim2.new(1, -12, 0, 120)
+card.Size = UDim2.fromOffset(232, 40)
+card.AutomaticSize = Enum.AutomaticSize.Y
+card.BackgroundColor3 = T.Raised
+card.BackgroundTransparency = 0.06
+card.BorderSizePixel = 0
+card.Parent = gui
+Instance.new("UICorner", card).CornerRadius = UDim.new(0, 10)
+local rim = Instance.new("UIStroke")
+rim.Color = T.TrimGold
+rim.Thickness = 2
+rim.Parent = card
+local pad = Instance.new("UIPadding")
+pad.PaddingTop, pad.PaddingBottom = UDim.new(0, 8), UDim.new(0, 10)
+pad.PaddingLeft, pad.PaddingRight = UDim.new(0, 12), UDim.new(0, 12)
+pad.Parent = card
+local list = Instance.new("UIListLayout")
+list.Padding = UDim.new(0, 6)
+list.SortOrder = Enum.SortOrder.LayoutOrder
+list.Parent = card
+
+local function label(text, h, face, color, order, parent)
+	local l = Instance.new("TextLabel")
+	l.BackgroundTransparency = 1
+	l.Size = UDim2.new(1, 0, 0, h)
+	l.FontFace = face
+	l.TextScaled = true
+	l.TextXAlignment = Enum.TextXAlignment.Left
+	l.Text = text
+	l.TextColor3 = color
+	l.LayoutOrder = order
+	l.Parent = parent or card
+	return l
+end
+local SANS = Font.fromEnum(T.Font)
+local BOLD = Font.fromEnum(T.Bold)
+
+local header = Instance.new("TextButton")
+header.BackgroundTransparency = 1
+header.Size = UDim2.new(1, 0, 0, 24)
+header.FontFace = T.TitleFace
+header.TextScaled = true
+header.TextXAlignment = Enum.TextXAlignment.Left
+header.Text = "Daily quests"
+header.TextColor3 = T.Gold
+header.LayoutOrder = 0
+header.Parent = card
+
+local body = Instance.new("Frame")
+body.BackgroundTransparency = 1
+body.Size = UDim2.new(1, 0, 0, 0)
+body.AutomaticSize = Enum.AutomaticSize.Y
+body.LayoutOrder = 1
+body.Parent = card
+local bodyList = Instance.new("UIListLayout")
+bodyList.Padding = UDim.new(0, 6)
+bodyList.SortOrder = Enum.SortOrder.LayoutOrder
+bodyList.Parent = body
+
+local collapsed = false
+header.MouseButton1Click:Connect(function()
+	collapsed = not collapsed
+	body.Visible = not collapsed
+	header.Text = collapsed and "Daily quests  ▸" or "Daily quests"
+end)
+
+-- quest rows
+local rows = {}
+for i = 1, 3 do
+	local r = Instance.new("Frame")
+	r.BackgroundTransparency = 1
+	r.Size = UDim2.new(1, 0, 0, 30)
+	r.LayoutOrder = i
+	r.Parent = body
+	local t = label("", 16, SANS, T.Text, 1, r)
+	local barBg = Instance.new("Frame")
+	barBg.Position = UDim2.new(0, 0, 0, 21)
+	barBg.Size = UDim2.new(1, 0, 0, 6)
+	barBg.BackgroundColor3 = T.Inset
+	barBg.BorderSizePixel = 0
+	barBg.Parent = r
+	Instance.new("UICorner", barBg).CornerRadius = UDim.new(1, 0)
+	local bar = Instance.new("Frame")
+	bar.Size = UDim2.fromScale(0, 1)
+	bar.BackgroundColor3 = T.Jade
+	bar.BorderSizePixel = 0
+	bar.Parent = barBg
+	Instance.new("UICorner", bar).CornerRadius = UDim.new(1, 0)
+	rows[i] = { frame = r, text = t, bar = bar }
+end
+
+local divider = Instance.new("Frame")
+divider.Size = UDim2.new(1, 0, 0, 1)
+divider.BackgroundColor3 = T.Border
+divider.BorderSizePixel = 0
+divider.LayoutOrder = 10
+divider.Parent = body
+
+local bonus = label("", 15, SANS, T.Muted, 11, body)
+
+local function button(text, order, color)
+	local b = Instance.new("TextButton")
+	b.Size = UDim2.new(1, 0, 0, 30)
+	b.BackgroundColor3 = color or T.Timber
+	b.AutoButtonColor = true
+	b.FontFace = BOLD
+	b.TextScaled = true
+	b.Text = text
+	b.TextColor3 = T.OnAccent
+	b.LayoutOrder = order
+	b.Parent = body
+	Instance.new("UICorner", b).CornerRadius = UDim.new(0, 8)
+	local p = Instance.new("UIPadding")
+	p.PaddingTop, p.PaddingBottom = UDim.new(0, 6), UDim.new(0, 6)
+	p.Parent = b
+	return b
+end
+
+local rebirthBtn = button("Rebirth", 20, T.Jade)
+local armed = false
+rebirthBtn.MouseButton1Click:Connect(function()
+	local prog = State.Data.Progress
+	if not prog or (State.Data.Money or 0) < (prog.RebirthCost or math.huge) then return end
+	if not armed then
+		armed = true
+		rebirthBtn.Text = "Confirm: reset money and throw power"
+		task.delay(4, function()
+			armed = false
+		end)
+		return
+	end
+	armed = false
+	local ok, msg = State.Request("Rebirth")
+	pcall(function() require(script.Parent.HUD).Notify(msg or (ok and "Rebirth!" or "Can't rebirth"), ok and "success" or "error") end)
+end)
+
+-- boosts: only the ones whose ids are configured
+local boosts = {}
+local BOOSTS = {
+	{ key = "DoubleLuck", text = "×2 Luck forever", kind = "pass" },
+	{ key = "DoubleIncome", text = "×2 Income forever", kind = "pass" },
+	{ key = "ExtraPet", text = "+1 pet slot", kind = "pass" },
+	{ key = "LuckPotion", text = "Luck potion · 15 min", kind = "product" },
+}
+for i, b in ipairs(BOOSTS) do
+	local id = b.kind == "pass" and C.Passes[b.key] or C.Products[b.key]
+	if id and id > 0 then
+		local btn = button(b.text, 30 + i, T.Brass)
+		btn.MouseButton1Click:Connect(function()
+			if b.kind == "pass" then
+				MarketplaceService:PromptGamePassPurchase(player, id)
+			else
+				MarketplaceService:PromptProductPurchase(player, id)
+			end
+		end)
+		boosts[b.key] = btn
+	end
+end
+
+local function refresh()
+	local d = State.Data
+	local prog = d.Progress
+	if not prog then
+		card.Visible = false
+		return
+	end
+	card.Visible = true
+	local quests = prog.Daily and prog.Daily.quests or {}
+	local doneCount = 0
+	for i, r in ipairs(rows) do
+		local q = quests[i]
+		r.frame.Visible = q ~= nil
+		if q then
+			local def = C.QuestById[q.id]
+			r.text.Text = (q.done and "✓ " or "") .. string.format(def and def.text or q.id, q.goal) .. "  " .. q.progress .. "/" .. q.goal
+			r.text.TextColor3 = q.done and T.Success or T.Text
+			r.bar.Size = UDim2.fromScale(math.clamp(q.progress / q.goal, 0, 1), 1)
+			if q.done then doneCount += 1 end
+		end
+	end
+	if not collapsed then
+		header.Text = "Daily quests  " .. doneCount .. "/" .. #quests
+	end
+	-- active luck/income sources
+	local parts = {}
+	if (prog.Rebirths or 0) > 0 then
+		table.insert(parts, "Rebirth " .. prog.Rebirths)
+	end
+	if (prog.FriendsHere or 0) > 0 then
+		table.insert(parts, math.min(C.Friends.max, prog.FriendsHere) .. " friend(s) +" .. math.floor(math.min(C.Friends.max, prog.FriendsHere) * C.Friends.luckPer * 100) .. "% luck")
+	end
+	if (prog.PotionUntil or 0) > os.time() then
+		local left = prog.PotionUntil - os.time()
+		table.insert(parts, string.format("Potion %d:%02d", math.floor(left / 60), left % 60))
+	end
+	bonus.Text = #parts > 0 and table.concat(parts, " · ") or "Play with friends for +10% luck each"
+	local cost = prog.RebirthCost or 0
+	local can = (d.Money or 0) >= cost
+	if not armed then
+		rebirthBtn.Text = can and ("Rebirth now · income ×" .. string.format("%.2f", 1 + ((prog.Rebirths or 0) + 1) * C.Rebirth.incomePer))
+			or ("Rebirth at " .. Format.Money(cost))
+	end
+	rebirthBtn.BackgroundColor3 = can and T.Jade or T.Border
+	rebirthBtn.AutoButtonColor = can
+	for key, btn in pairs(boosts) do
+		btn.Visible = not (prog.Passes and prog.Passes[key])
+	end
+end
+
+State.Changed:Connect(refresh)
+task.spawn(function()
+	while true do
+		task.wait(1)
+		refresh()
+	end
+end)
+refresh()
+]]></ProtectedString></Properties></Item>
+<Item class="ModuleScript" referent="RBX95"><Properties><string name="Name">RevealTitle</string><ProtectedString name="Source"><![CDATA[-- RevealTitle: on-screen title for a creature reveal, styled after Actions/02_Rarity_Reveal_and_Capture.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > RevealTitle (ModuleScript)
 --
 --   Common / Uncommon      nothing on screen: the carved plaque above the pet carries it (restrained tiers)
@@ -28699,7 +29349,7 @@ end
 
 return R
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX94"><Properties><string name="Name">SanctuaryUI</string><ProtectedString name="Source"><![CDATA[-- Medieval guild folios: carved oak, forged iron, vellum and a stitched binding.
+<Item class="ModuleScript" referent="RBX96"><Properties><string name="Name">SanctuaryUI</string><ProtectedString name="Source"><![CDATA[-- Medieval guild folios: carved oak, forged iron, vellum and a stitched binding.
 -- All ornament is inert. The reading surface stays light and the world stays visible.
 local T = require(script.Parent.UITheme)
 local Art = {}
@@ -28893,7 +29543,7 @@ function Art.Selected(button, selected)
 end
 return Art
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX95"><Properties><string name="Name">SceneLighting</string><ProtectedString name="Source"><![CDATA[-- The only runtime owner of scene light, atmosphere, clouds and grading.
+<Item class="ModuleScript" referent="RBX97"><Properties><string name="Name">SceneLighting</string><ProtectedString name="Source"><![CDATA[-- The only runtime owner of scene light, atmosphere, clouds and grading.
 local Lighting = game:GetService("Lighting")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
@@ -28979,7 +29629,7 @@ function Scene.Start()
 end
 return Scene
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX96"><Properties><string name="Name">SkyforgeUI</string><ProtectedString name="Source"><![CDATA[-- Light sanctuary surfaces and large standalone navigation artwork.
+<Item class="ModuleScript" referent="RBX98"><Properties><string name="Name">SkyforgeUI</string><ProtectedString name="Source"><![CDATA[-- Light sanctuary surfaces and large standalone navigation artwork.
 local T = require(script.Parent.UITheme)
 local S = {}
 local pendingImages = {}
@@ -29176,7 +29826,7 @@ function S.Card(frame, icon)
 end
 return S
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX97"><Properties><string name="Name">Sounds</string><ProtectedString name="Source"><![CDATA[-- Restrained event audio. Built-in assets keep the game independent of uploaded audio.
+<Item class="ModuleScript" referent="RBX99"><Properties><string name="Name">Sounds</string><ProtectedString name="Source"><![CDATA[-- Restrained event audio. Built-in assets keep the game independent of uploaded audio.
 local SoundService = game:GetService("SoundService")
 local TweenService = game:GetService("TweenService")
 local Sounds = {}
@@ -29295,7 +29945,7 @@ function Sounds.Get(name)
 end
 return Sounds
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX98"><Properties><string name="Name">ThrowCinematic</string><ProtectedString name="Source"><![CDATA[-- ThrowCinematic: the throw cutscene (owner only). Full screen, no letterbox.
+<Item class="ModuleScript" referent="RBX100"><Properties><string name="Name">ThrowCinematic</string><ProtectedString name="Source"><![CDATA[-- ThrowCinematic: the throw cutscene (owner only). Full screen, no letterbox.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ThrowCinematic (ModuleScript)
 --
 -- A short film in up to four camera shots, with HARD CUTS between them (w = wind-up seconds sent
@@ -30177,7 +30827,7 @@ end
 
 return Cine
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX99"><Properties><string name="Name">ThrowController</string><ProtectedString name="Source"><![CDATA[-- ThrowController: charge meter input, held-portal + arm wind-up, the portal flight arc,
+<Item class="ModuleScript" referent="RBX101"><Properties><string name="Name">ThrowController</string><ProtectedString name="Source"><![CDATA[-- ThrowController: charge meter input, held-portal + arm wind-up, the portal flight arc,
 -- landing bounce, portal gate opening and creature reveal choreography (for ALL players' throws).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ThrowController (ModuleScript)
 
@@ -30318,6 +30968,7 @@ function TC.BeginCharge(source)
 	end
 	TC.Charging, TC.Power, TC.ChargeSource, TC.Phase = true, 0, source or "Programmatic", "Charging"
 	chargeStart = os.clock()
+	pcall(function() Remotes.ChargeStart:FireServer() end) -- the server times the charge too
 	findShoulder()
 	armTarget = 1
 	heldOrb, heldRefs = PortalBuilder.BuildOrb(d.EquippedPortal, 0.5)
@@ -30395,7 +31046,7 @@ Remotes.Notify.OnClientEvent:Connect(function(_text, kind)
 end)
 
 -- Power ping-pongs so timing matters; the top 8% is the PERFECT zone
-local PERIOD = 1.5
+local PERIOD = Config.ChargePeriod or 1.5
 local perfectCueAt = -10
 RunService.RenderStepped:Connect(function(dt)
 	if TC.Charging then
@@ -31178,7 +31829,7 @@ end)
 
 return TC
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX100"><Properties><string name="Name">UIIcons</string><ProtectedString name="Source"><![CDATA[-- Original cutout art with immediately visible native geometry while images load.
+<Item class="ModuleScript" referent="RBX102"><Properties><string name="Name">UIIcons</string><ProtectedString name="Source"><![CDATA[-- Original cutout art with immediately visible native geometry while images load.
 local T = require(script.Parent.UITheme)
 local Sky = require(script.Parent.SkyforgeUI)
 local Icons = {}
@@ -31334,7 +31985,7 @@ function Icons.Draw(name, parent, size, color, position)
 end
 return Icons
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX101"><Properties><string name="Name">UIKit</string><ProtectedString name="Source"><![CDATA[-- Native sanctuary components. No uploaded icon/font dependency.
+<Item class="ModuleScript" referent="RBX103"><Properties><string name="Name">UIKit</string><ProtectedString name="Source"><![CDATA[-- Native sanctuary components. No uploaded icon/font dependency.
 local TweenService = game:GetService("TweenService")
 local Sounds = require(script.Parent.Sounds)
 local Settings = require(script.Parent.ClientSettings)
@@ -31728,7 +32379,7 @@ end
 
 return K
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX102"><Properties><string name="Name">UITheme</string><ProtectedString name="Source"><![CDATA[-- Sanctuary UI tokens, shared by the HUD, icons and every shop.
+<Item class="ModuleScript" referent="RBX104"><Properties><string name="Name">UITheme</string><ProtectedString name="Source"><![CDATA[-- Sanctuary UI tokens, shared by the HUD, icons and every shop.
 -- Fonts: Builder Sans for controls and data, Merriweather for sanctuary headings;
 -- resolved with a fallback so an older client without these enums still renders.
 local function font(name, fallback)
@@ -31795,7 +32446,7 @@ function T.Rarity(name, config)
 end
 return T
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX103"><Properties><string name="Name">WorldFx</string><ProtectedString name="Source"><![CDATA[-- WorldFx: ONE shared, staggered scheduler for environment motion on tagged map parts
+<Item class="ModuleScript" referent="RBX105"><Properties><string name="Name">WorldFx</string><ProtectedString name="Source"><![CDATA[-- WorldFx: ONE shared, staggered scheduler for environment motion on tagged map parts
 -- (no per-prop RenderStepped connections, no camera-following particles).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > WorldFx (ModuleScript)
 --

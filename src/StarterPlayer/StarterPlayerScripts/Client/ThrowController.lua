@@ -139,6 +139,7 @@ function TC.BeginCharge(source)
 	end
 	TC.Charging, TC.Power, TC.ChargeSource, TC.Phase = true, 0, source or "Programmatic", "Charging"
 	chargeStart = os.clock()
+	pcall(function() Remotes.ChargeStart:FireServer() end) -- the server times the charge too
 	findShoulder()
 	armTarget = 1
 	heldOrb, heldRefs = PortalBuilder.BuildOrb(d.EquippedPortal, 0.5)
@@ -216,7 +217,7 @@ Remotes.Notify.OnClientEvent:Connect(function(_text, kind)
 end)
 
 -- Power ping-pongs so timing matters; the top 8% is the PERFECT zone
-local PERIOD = 1.5
+local PERIOD = Config.ChargePeriod or 1.5
 local perfectCueAt = -10
 RunService.RenderStepped:Connect(function(dt)
 	if TC.Charging then

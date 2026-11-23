@@ -504,7 +504,7 @@ local function renderCreatureDetail()
 		key ..= ":" .. tostring(entry.l or 1) .. ":" .. tostring(entry.e or 0) .. ":" .. table.concat(
 			d.EquippedPets or {},
 			","
-		)
+		) .. ":" .. #d.Creatures
 	end
 	if detailKey == key then
 		return
@@ -582,7 +582,8 @@ local function renderCreatureDetail()
 	local equippedList = d.EquippedPets or {}
 	local isEquipped = table.find(equippedList, entry.u) ~= nil
 	local buff = Config.EquipBuff[def.rarity] or { luck = 0, income = 0 }
-	local full = not isEquipped and #equippedList >= Config.EquipLimit
+	local equipLimit = Config.EquipLimit + ((d.Progress and d.Progress.Passes and d.Progress.Passes.ExtraPet) and 1 or 0)
+	local full = not isEquipped and #equippedList >= equipLimit
 	local secondary = K.new("Frame", {
 		Name = "SecondaryPetActions",
 		Size = UDim2.new(1, -12, 0, 44),
@@ -608,6 +609,40 @@ local function renderCreatureDetail()
 			renderCreatureDetail()
 		end
 	end)
+	-- fusion: 3 identical pets (species + size + material) -> one of the next size up
+	do
+		local NEXT = { [""] = "Big", Big = "Huge", Huge = "Titan" }
+		local nextSize = NEXT[entry.s or ""]
+		local same = 0
+		for _, c in ipairs(d.Creatures) do
+			if c.c == entry.c and (c.s or "") == (entry.s or "") and (c.v or "") == (entry.v or "") then
+				same += 1
+			end
+		end
+		if nextSize then
+			local need = Config.Progression.Fusion.need
+			local fuse = K.button(
+				same >= need and ("Fuse " .. need .. " into " .. nextSize) or ("Fuse into " .. nextSize .. " · " .. same .. "/" .. need),
+				same >= need and T.Brass or T.Raised,
+				nil,
+				UDim2.new(1, -12, 0, 40),
+				{ Name = "FuseCreature", LayoutOrder = 6, Parent = invDetail }
+			)
+			fuse.Name = "ZFuseCreature" -- sorts after the follow/sell row (same LayoutOrder, name order)
+			K.setEnabled(fuse, same >= need and not away)
+			K.bind(fuse, function()
+				if same < need or away then
+					return
+				end
+				clearArm()
+				if request("Fuse", entry.u, "Pets fused.") then
+					selectedUid = nil
+					detailKey = nil
+					inv.refresh()
+				end
+			end)
+		end
+	end
 	local sellValue = math.floor(entryIncome * Config.SellMultiplier)
 	local sell = K.button(
 		armedUid == entry.u and "Confirm · " .. Format.Money(sellValue) or "Sell · " .. Format.Money(sellValue),

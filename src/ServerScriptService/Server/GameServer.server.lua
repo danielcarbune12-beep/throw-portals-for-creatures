@@ -21,6 +21,8 @@ local Expeditions = require(script.Parent.ExpeditionService)
 Expeditions.Init()
 -- courtyard farm (crops, pantry, pet feeding/levels, bounties, daily gift); started below with Init
 local FarmService = require(script.Parent.FarmService)
+local Progression = require(script.Parent.Progression)
+local dataOwner = setmetatable({}, { __mode = "k" }) -- [data] = player (for per-player boosts)
 
 ---------------------------------------------------------------- remotes
 local Remotes = Instance.new("Folder")
@@ -32,6 +34,7 @@ local function RE(name)
 	return r
 end
 local ThrowRE = RE("Throw")
+local ChargeStartRE = RE("ChargeStart")
 local SyncRE = RE("Sync")
 local PortalThrownRE = RE("PortalThrown")
 local PortalOpenedRE = RE("PortalOpened")
@@ -88,7 +91,8 @@ local function equippedBuffs(data)
 	local luck, income, keep = 0, 0, {}
 	for _, uid in ipairs(data.EquippedPets or {}) do
 		local c = findCreature(data, uid)
-		if c and not Expeditions.IsAway(data, uid) and #keep < Config.EquipLimit and not table.find(keep, uid) then
+		local limit = dataOwner[data] and Progression.EquipLimit(dataOwner[data]) or Config.EquipLimit
+		if c and not Expeditions.IsAway(data, uid) and #keep < limit and not table.find(keep, uid) then
 			table.insert(keep, uid)
 			local def = CreatureData.ById[c.c]
 			local b = def and Config.EquipBuff[def.rarity]
@@ -135,7 +139,9 @@ local function incomePerSec(data)
 	local _, incomeBuff = equippedBuffs(data)
 	-- Well Fed (feeding at the courtyard trough): +20% for 30 minutes
 	local indexMult = 1 + #masteredWorlds(data) * Config.IndexWorldBonus
-	return total * trainingMult(data) * incomeBuff * FarmService.IncomeBuff(data) * indexMult
+	local owner = dataOwner[data]
+	local boost = Progression.RebirthIncome(data) * (owner and Progression.PassIncome(owner) or 1)
+	return total * trainingMult(data) * incomeBuff * FarmService.IncomeBuff(data) * indexMult * boost
 end
 
 local function storedCount(data)
@@ -212,6 +218,7 @@ local function sync(player, partial)
 		EquippedPets = data.EquippedPets or {},
 		EquipBuff = { equippedBuffs(data) },
 		MasteredWorlds = masteredWorlds(data),
+		Progress = Progression.View(player, data),
 		BaseIndex = st and st.base and st.base.index or 0,
 		Expeditions = Expeditions.BuildView(data),
 	})
@@ -354,6 +361,31 @@ ThrowRE.OnServerEvent:Connect(function(player, power, dir)
 	data.Throws += 1
 
 	power = math.clamp(power, 0.05, 1)
+	-- the server times the charge itself (ChargeStart -> Throw), so a client can't claim perfect throws:
+	-- the claimed power must be reachable within a small latency window of the real elapsed time
+	do
+		local function barAt(e)
+			local t = e / (Config.ChargePeriod / 2)
+			local k = t % 2
+			local q = k <= 1 and k or 2 - k
+			return 1 - (1 - q) ^ 1.6
+		end
+		local started = st.chargeStart
+		st.chargeStart = nil
+		if not started then
+			power = math.min(power, 0.9)
+		else
+			local e = now - started
+			local lo, hi = math.huge, -math.huge
+			for d = -0.15, 0.1501, 0.025 do
+				local v = barAt(math.max(0, e + d))
+				lo, hi = math.min(lo, v), math.max(hi, v)
+			end
+			if power < lo - 0.02 or power > hi + 0.02 then
+				power = math.clamp(barAt(e), 0.05, 1)
+			end
+		end
+	end
 	local flat = Vector3.new(dir.X, 0, dir.Z)
 	local side = 0
 	if flat.Magnitude > 0.1 and flat.Unit.Z > 0.2 then
@@ -384,6 +416,14 @@ ThrowRE.OnServerEvent:Connect(function(player, power, dir)
 	player:SetAttribute("ThrowCombo", st.combo)
 	local storm = (workspace:GetAttribute("RiftStormEnds") or 0) > os.time()
 	local luck = equippedBuffs(data) * (1 + Config.Combo.perStep * st.combo) * (storm and Config.RiftStorm.luck or 1)
+		* Progression.RebirthLuck(data) * Progression.FriendLuck(player) * Progression.PassLuck(player, data)
+	local function questPrize()
+		return math.floor(math.max(Config.Progression.QuestReward.min, incomePerSec(data) * Config.Progression.QuestReward.incomeSeconds))
+	end
+	Progression.QuestEvent(player, data, "throw", 1, questPrize, notify)
+	if perfect then
+		Progression.QuestEvent(player, data, "perfect", 1, questPrize, notify)
+	end
 	local creatureId, chance = Odds.Roll(data.EquippedPortal, worldId, realDist, luck)
 	-- pet variant: size (Big/Huge/Titan) and material (Gold/Emerald/Ruby/Diamond), rolled independently
 	local petSize, petMaterial = Variants.Roll(variantRng)
@@ -622,7 +662,41 @@ function Actions.Collect(player, data, st, throwId)
 	table.insert(st.carry, Variants.Key(p.creature, p.size, p.variant))
 	depositCarry(player, data, st)
 	FarmService.Event(player, "catch", 1, { rarity = CreatureData.ById[p.creature].rarity })
+	local function questPrize()
+		return math.floor(math.max(Config.Progression.QuestReward.min, incomePerSec(data) * Config.Progression.QuestReward.incomeSeconds))
+	end
+	Progression.QuestEvent(player, data, "catch", 1, questPrize, notify)
+	if Config.Rarities[CreatureData.ById[p.creature].rarity].order >= 3 then
+		Progression.QuestEvent(player, data, "rare", 1, questPrize, notify)
+	end
+	sync(player, true)
 	return true
+end
+
+function Actions.Rebirth(player, data, st)
+	return Progression.Rebirth(data)
+end
+
+function Actions.Fuse(player, data, st, uid)
+	local ok, msg = Progression.Fuse(data, uid, function(u)
+		return Expeditions.IsAway(data, u)
+	end, function()
+		return DataService.NewUid(data)
+	end)
+	if ok then
+		while #data.Placed < slotsOpen(data) do
+			local added = false
+			for _, c in ipairs(data.Creatures) do
+				if not table.find(data.Placed, c.u) and not Expeditions.IsAway(data, c.u) then
+					table.insert(data.Placed, c.u)
+					added = true
+					break
+				end
+			end
+			if not added then break end
+		end
+	end
+	return ok, msg
 end
 
 function Actions.BuyPortal(player, data, st, id)
@@ -948,8 +1022,9 @@ function Actions.ToggleEquip(player, data, st, uid)
 	if Expeditions.IsAway(data, uid) then
 		return false, "This pet is on an expedition."
 	end
-	if #data.EquippedPets >= Config.EquipLimit then
-		return false, "You can equip up to " .. Config.EquipLimit .. " pets. Unequip one first."
+	local limit = Progression.EquipLimit(player)
+	if #data.EquippedPets >= limit then
+		return false, "You can equip up to " .. limit .. " pets. Unequip one first."
 	end
 	table.insert(data.EquippedPets, uid)
 	return true, "Pet equipped"
@@ -1076,6 +1151,12 @@ local function onPlayerAdded(player)
 		return
 	end
 	Expeditions.Ensure(data)
+	dataOwner[data] = player
+	Progression.EnsureDaily(player, data)
+	task.spawn(function()
+		Progression.LoadPasses(player)
+		if player.Parent then sync(player) end
+	end)
 	-- carry over equipment bought under the old shared-station system
 	for i = #Config.TrainingStations, 1, -1 do
 		if data.OwnedEquipment and data.OwnedEquipment[tostring(i)] then
@@ -1159,4 +1240,17 @@ task.spawn(function()
 		workspace:SetAttribute("RiftStormEnds", 0)
 		task.wait(rng:NextInteger(cfg.gap[1], cfg.gap[2]))
 	end
+end)
+
+---------------------------------------------------------------- charge timing + purchases
+ChargeStartRE.OnServerEvent:Connect(function(player)
+	local st = State[player]
+	if st then
+		st.chargeStart = os.clock()
+	end
+end)
+Progression.BindReceipts(function(player)
+	return DataService.Get(player)
+end, function(player)
+	sync(player)
 end)

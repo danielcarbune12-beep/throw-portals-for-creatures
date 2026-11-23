@@ -51,6 +51,10 @@ local function defaultData()
 		NextUid = 1,
 		LastOnline = 0,
 		Throws = 0,
+		Rebirths = 0,
+		Daily = {},
+		PotionUntil = 0,
+		ProcessedReceipts = {},
 	}
 end
 

@@ -217,6 +217,31 @@ Config.RiftStorm = { first = 300, gap = { 720, 1080 }, duration = 120, luck = 1.
 
 -- Index mastery: discovering every creature of one world adds a permanent income bonus.
 Config.IndexWorldBonus = 0.05
+
+-- Progression: daily quests, rebirth, friends, monetisation and fusion (server: Progression.lua)
+Config.Progression = {
+	QuestPool = {
+		{ id = "throw", text = "Throw %d portals", goal = { 8, 14 } },
+		{ id = "perfect", text = "Land %d perfect throws", goal = { 3, 6 } },
+		{ id = "catch", text = "Catch %d creatures", goal = { 5, 9 } },
+		{ id = "rare", text = "Catch %d Rare-or-better creature(s)", goal = { 1, 2 } },
+	},
+	QuestReward = { min = 150, incomeSeconds = 240 }, -- prize = max(min, income/s * seconds)
+	Rebirth = { baseCost = 5000000, growth = 4, incomePer = 0.25, luckPer = 0.1 },
+	Friends = { luckPer = 0.1, max = 3 },
+	-- Game pass / developer product ids. 0 = not created yet: the button stays hidden and nothing is sold.
+	-- Create them on the Creator Dashboard (Monetization) and paste the ids here.
+	Passes = { DoubleLuck = 0, DoubleIncome = 0, ExtraPet = 0 },
+	Products = { LuckPotion = 0 },
+	Potion = { luck = 2, seconds = 900 },
+	Fusion = { need = 3 },
+}
+Config.Progression.QuestById = {}
+for _, q in ipairs(Config.Progression.QuestPool) do
+	Config.Progression.QuestById[q.id] = q
+end
+-- Throw charge: one full ping-pong of the power bar takes this long (client and server must agree)
+Config.ChargePeriod = 1.5
 Config.EquipBuff = {
 	Common    = { luck = 0.03, income = 0.02 },
 	Uncommon  = { luck = 0.05, income = 0.04 },
