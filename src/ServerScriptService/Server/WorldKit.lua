@@ -124,8 +124,25 @@ function K.spot(p, color, range, brightness, angle, face)
 	return l
 end
 function K.tag(p, name, attrs)
+	if p:IsA("Model") and (name == "TPFC_Bob" or name == "TPFC_Spin") then
+		-- WorldPivot is not replicated. A physical reference must arrive before the
+		-- client animator can move the model, including when its children arrive late.
+		if not p.PrimaryPart then
+			local origin = p:GetPivot()
+			local anchor = Instance.new("Part")
+			anchor.Name, anchor.Size, anchor.CFrame = "AnimationRoot", V3(0.05, 0.05, 0.05), origin
+			anchor.Anchored, anchor.Transparency, anchor.CastShadow = true, 1, false
+			anchor.CanCollide, anchor.CanQuery, anchor.CanTouch = false, false, false
+			anchor.Parent = p
+			p.PrimaryPart = anchor
+		end
+		p:SetAttribute("TPFC_AnimationBase", p:GetPivot())
+		p:SetAttribute("TPFC_AnimationParts", #p:GetChildren())
+	end
+	for k, v in pairs(attrs or {}) do
+		p:SetAttribute(k, v)
+	end
 	CollectionService:AddTag(p, name)
-	for k, v in pairs(attrs or {}) do p:SetAttribute(k, v) end
 	return p
 end
 
@@ -665,7 +682,7 @@ function K.leafGlyph(cf, s, col)
 	K.block(cf * CF(0, 0.1 * s, -0.04), V3(0.12, 1.1, 0.12) * s, K.dark(col, 0.15), M.Limestone)
 end
 
--- faceted cone (n wedge facets sloping outward from the apex) — volcanoes, jagged peaks, crystal mounds
+-- faceted cone (n wedge facets sloping outward from the apex) â€” volcanoes, jagged peaks, crystal mounds
 function K.cone(pos, R, H, n, colA, colB, mat, collide)
 	local off = K.r(0, PI)
 	for i = 0, n - 1 do

@@ -1,0 +1,35 @@
+{
+  "generation": "Built-in image_gen",
+  "creatorUserId": "492658435",
+  "universeId": "10778324663",
+  "expectedUploadPrice": 0,
+  "assets": [
+    {
+      "file": "guild-workbench-v1.png",
+      "id": "74094136607085",
+      "sourceSize": [
+        1285,
+        1224
+      ],
+      "moderation": "Approved",
+      "universeUseGranted": true,
+      "sliceCenter": [
+        174,
+        166,
+        850,
+        809
+      ]
+    },
+    {
+      "file": "bestiary-specimen-plate-v1.png",
+      "id": "85945331623361",
+      "sourceSize": [
+        1774,
+        887
+      ],
+      "moderation": "Approved",
+      "universeUseGranted": true,
+      "scaleType": "Stretch within specimen plate"
+    }
+  ]
+}

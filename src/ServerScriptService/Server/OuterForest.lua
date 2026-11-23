@@ -70,19 +70,6 @@ local function range(x, x2, z1, z2, n, R, H, col)
 	end
 end
 
-local function cloud(pos, s)
-	-- flat warm base + a heap of round lobes on top (a cumulus, not a disc)
-	local core = K.ellipsoid(CF(pos), V3(150, 40, 100) * s, C(244, 240, 236), M.SmoothPlastic, 0.12)
-	for i = 0, 6 do
-		local a = i / 7 * PI * 2
-		local off = V3(math.cos(a) * K.r(20, 55), K.r(12, 34), math.sin(a) * K.r(10, 30)) * s
-		local d = K.r(50, 78) * s
-		K.ellipsoid(CF(pos + off), V3(d, d * 0.85, d), C(255, 255, 255), M.SmoothPlastic, 0.12)
-	end
-	core.CastShadow = false
-	K.tag(core, "TPFC_Bob", { Amp = 3, Period = K.r(18, 26), Spin = 0 })
-end
-
 ---------------------------------------------------------------- LEFT: wild
 local function leftCliff(z1, z2)
 	-- three stepped tiers climbing away from the lane; a gorge notch at z 84..108 for the waterfall
@@ -348,12 +335,7 @@ function O.Build(b)
 	range(1100, 1500, 450, 1050, 5, { 220, 300 }, { 400, 560 }, C(169, 200, 192))
 	range(-1450, -1800, 450, 1150, 5, { 260, 340 }, { 550, 700 }, C(195, 218, 210))
 
-	-- big soft cumulus, pushed out to the sides and the horizon
-	cloud(V3(-420, 300, 380), 1.4)
-	cloud(V3(-760, 360, 760), 1.8)
-	cloud(V3(380, 330, 520), 1.5)
-	cloud(V3(820, 400, 900), 2.0)
-	cloud(V3(-120, 420, 1100), 1.6)
+	-- The shared Terrain.Clouds sky owns cloud shape, weather and sunlight.
 
 	K.mirror = false
 	K.SetFolder(parentFolder)

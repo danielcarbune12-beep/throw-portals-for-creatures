@@ -5,6 +5,7 @@ local RunService = game:GetService("RunService")
 local Config = require(RS.Shared.Config)
 local Creatures = require(RS.Shared.CreatureData)
 local Rules = require(RS.Shared.ExpeditionConfig)
+local Planner = require(RS.Shared.ExpeditionPlanner)
 local Format = require(RS.Shared.Format)
 local Variants = require(RS.Shared.Variants)
 local K = require(script.Parent.UIKit)
@@ -19,6 +20,8 @@ local Panel = {}
 local player = Players.LocalPlayer
 local ready, busy = false, false
 local selectedUid, routeIndex = nil, 1
+local manualSelection, routeInitialized = false, false
+local activeHint
 local lastView, serverClock, localClock = nil, 0, 0
 local page, notice, planning, activeBox, portraits, petLabel, reward, bonus, send, claim
 local routeTitle, sceneFrame, stats, relicLink
@@ -123,20 +126,15 @@ local function goToTable()
 		return
 	end
 	busy = true
-	local ok, err = State.Request("Teleport", "Home")
+	local ok, err = State.Request("Teleport", "Expedition")
 	busy = false
 	if not ok then
-		message(err or "Could not return home.", T.Danger)
+		message(err or "Could not reach your table.", T.Danger)
 		return
 	end
-	HUD.Close()
-	task.delay(0.5, function()
-		local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-		if anchor and hum then
-			hum:MoveTo(anchor.Position + Vector3.new(0, 0, -5))
-		end
-	end)
-	HUD.Notify("Approach your map table to send or claim your pet.", "info")
+	message("")
+	updateSelection()
+	updateClock()
 end
 local function request(name, arg)
 	if busy then
@@ -159,6 +157,7 @@ local function request(name, arg)
 			HUD.Close()
 			HUD.Notify("Pet dispatched. Your timer is on the HUD.", "success")
 		else
+			routeInitialized, manualSelection = false, false
 			HUD.Notify(err or "Expedition finds claimed.", "success")
 		end
 	end
@@ -203,7 +202,7 @@ renderPets = function()
 				)
 				petForButton[b] = p
 				K.bind(b, function()
-					selectedUid = p.u
+					selectedUid, manualSelection = p.u, true
 					updateSelection()
 				end)
 			end
@@ -214,6 +213,7 @@ renderPets = function()
 		if b:IsA("TextButton") then
 			local st = b:FindFirstChildOfClass("UIStroke")
 			local chosen = b.Name == "Pet_" .. tostring(selectedUid)
+			b:SetAttribute("Selected", chosen)
 			st.Color = chosen and T.Gold or T.Border
 			st.Thickness = chosen and 2 or 1
 		end
@@ -223,38 +223,38 @@ updateSelection = function()
 	if not ready then
 		return
 	end
-	local p, r = ownedPet(), route()
+	local r = route()
+	if not manualSelection or not ownedPet() then
+		selectedUid = Planner.Suggest(State.Data, r)
+	end
+	local p = ownedPet()
 	local d = p and Creatures.ById[p.c]
+	scoutCaption.Text = manualSelection and "Your chosen scout" or "Suggested scout"
 	petLabel.Text = d and Variants.Prefix(p.s, p.v) .. d.name or "Choose a pet"
-	bonus.Text = "Income pauses while away."
+	bonus.Text = "Choose a scout for this route."
 	reward.Text = ""
 	reward.TextSize = page.premium and 28 or 20
 	if p and d and r then
-		local matched = d.world == r.world
-		local coins = math.floor(
-			(
-				r.coins
-				+ Creatures.Income(p.c)
-					* Variants.Mult(p.s, p.v)
-					* r.duration
-					* (r.incomeCoinsPerSecond or Rules.IncomeFraction)
-			) * (matched and (r.matchMultiplier or Rules.MatchingBiomeMultiplier) or 1)
-		)
-		reward.Text = Format.Money(coins) .. " coins"
-		bonus.Text = matched and "+25% biome bonus / income pauses" or "Income pauses while away."
-		bonus.TextColor3 = matched and T.Success or T.Muted
+		local quote = Planner.Quote(p, r)
+		local _, _, commitment = Planner.Commitment(State.Data, p.u)
+		reward.Text = Format.Money(quote.coins) .. " coins"
+		bonus.Text = quote.matched and ("+" .. quote.bonusPercent .. "% biome bonus / " .. commitment) or commitment
+		bonus.TextColor3 = quote.matched and T.Success or T.Muted
 		relicHint.Text = (view() and view().relics and view().relics[r.world]) and "Biome relic recovered"
 			or "First return recovers this biome's relic"
 	end
 	if r then
 		routeTitle.Text = worldName(r.world)
-		routeCaption.Text = descriptions[r.world] or "Explore the biome and recover its relic."
+		routeCaption.Text = r.unlocked and (descriptions[r.world] or "Explore the biome and recover its relic.")
+			or ("Unlock " .. worldName(r.world) .. " in the biome shop to explore here.")
 
 		stats.Text = duration(r.duration) .. "  /  " .. (r.unlocked and "Unlocked" or "Locked biome")
 		if page.frame.Size.Y.Offset < 260 then
-			stats.Text = duration(r.duration) .. " / " .. (r.unlocked and "Income pauses while away." or "Locked biome")
-			if d and d.world == r.world then
-				reward.Text ..= " (+25%)"
+			local _, status = Planner.Commitment(State.Data, p and p.u)
+			stats.Text = duration(r.duration) .. " / " .. (r.unlocked and status or "Locked biome")
+			local quote = p and Planner.Quote(p, r)
+			if quote and quote.matched then
+				reward.Text ..= " (+" .. quote.bonusPercent .. "%)"
 			end
 		end
 		if sceneId ~= r.world then
@@ -275,8 +275,13 @@ updateSelection = function()
 		end
 	end
 	relicLink.Label.Text = "Relics " .. count .. " / 8"
-	K.setButton(send, busy and "Sending..." or (not inRange() and "Go to table" or "Send pet"), T.Gold)
-	K.setEnabled(send, State.Loaded and p ~= nil and r ~= nil and r.unlocked == true and not activeTrip() and not busy)
+	K.setButton(
+		send,
+		busy and "Working..."
+			or (r and not r.unlocked and "Unlock biome" or (not inRange() and "Go to table" or "Send pet")),
+		T.Gold
+	)
+	K.setEnabled(send, State.Loaded and r ~= nil and (not r.unlocked or p ~= nil) and not activeTrip() and not busy)
 	if #(State.Data.Creatures or {}) == 0 then
 		petLabel.Text = "No pets yet"
 		reward.Text = "Catch a pet to begin."
@@ -323,6 +328,8 @@ updateClock = function()
 		label.Font = i == stage and T.Bold or T.Font
 	end
 
+	activeHint.Text = a.wasPlaced and "Claim the return to resume this pet's garden income."
+		or "Your garden keeps earning. Claim the return to use this scout again."
 	activeTime.Text = left > 0 and duration(left) .. " remaining" or "Your pet has returned"
 	activeTime.TextColor3 = left > 0 and T.Text or T.Success
 	progressFill.Size = UDim2.fromScale(pct, 1)
@@ -360,7 +367,7 @@ render = function()
 	end
 	if a then
 		activeTitle.Text = worldName(a.world)
-		activeReward.Text = Format.Money(a.coins) .. " coins" .. (a.matched and " / +25% bonus included" or "")
+		activeReward.Text = Format.Money(a.coins) .. " coins" .. (a.matched and " / biome bonus included" or "")
 		if activeKey ~= a.id then
 			activeKey = a.id
 			clear(activePortrait)
@@ -373,11 +380,9 @@ render = function()
 			vp.CurrentCamera.CFrame = CFrame.lookAt(Vector3.new(-25, 21, -29), Vector3.new(0, 1, 0))
 		end
 	else
-		if not ownedPet() then
-			selectedUid = State.Data.Creatures[1] and State.Data.Creatures[1].u
-		end
-		if not route() then
-			routeIndex = 1
+		if v and (not routeInitialized or not route()) then
+			routeIndex = Planner.DefaultRoute(v.routes, v.relics)
+			routeInitialized = true
 		end
 	end
 	updateSelection()
@@ -432,6 +437,7 @@ function Panel.Init()
 		return
 	end
 	page = HUD.MakePanel("Expeditions", "Pet expedition", "", "Compass")
+	page.frame:SetAttribute("CompactHeader", true)
 	page.contextual = true
 	page.subtitle.Visible = false
 	page.title.Position = UDim2.fromOffset(58, 8)
@@ -514,6 +520,8 @@ function Panel.Init()
 
 	petLabel = K.text(right, "", 0, 187, -4, 24, 15, T.Text, true)
 	bonus = K.text(right, "", 0, 213, -160, 22, 13, T.Muted)
+	bonus.Name = "ScoutCost"
+	reward.Name = "QuotedReward"
 	send = K.button(
 		"Send pet",
 		T.Gold,
@@ -523,7 +531,9 @@ function Panel.Init()
 	)
 	K.bind(send, function()
 		local r = route()
-		if selectedUid and r then
+		if r and not r.unlocked then
+			HUD.Open("Worlds")
+		elseif selectedUid and r then
 			request("StartExpedition", game.HttpService:JSONEncode({ route = r.id, petUid = selectedUid }))
 		end
 	end)
@@ -561,7 +571,9 @@ function Panel.Init()
 			request("ClaimExpedition", a.id)
 		end
 	end)
-	local hint = K.text(activeBox, "Pet income resumes when you claim its return.", 0, 148, -8, 38, 14, T.Muted)
+	activeHint = K.text(activeBox, "", 0, 148, -8, 38, 14, T.Muted)
+	local hint = activeHint
+	hint.Name = "ScoutCommitment"
 	hint.Position = UDim2.new(0.32, 0, 0, 148)
 	hint.Size = UDim2.new(0.68, -8, 0, 38)
 	local journal =
@@ -583,19 +595,18 @@ function Panel.Init()
 		end
 		journal.renderKey = key
 		journal.content:ClearAllChildren()
-		local grid = K.new(
-			"Frame",
-			{ Name = "RelicCollection", Size = UDim2.new(1, -8, 0, 400), BackgroundTransparency = 1, Parent = journal.content }
-		)
-		local layout = K.new(
-			"UIGridLayout",
-			{
-				CellSize = UDim2.new(0.25, -9, 0, 182),
-				CellPadding = UDim2.fromOffset(12, 12),
-				SortOrder = Enum.SortOrder.LayoutOrder,
-				Parent = grid,
-			}
-		)
+		local grid = K.new("Frame", {
+			Name = "RelicCollection",
+			Size = UDim2.new(1, -8, 0, 400),
+			BackgroundTransparency = 1,
+			Parent = journal.content,
+		})
+		local layout = K.new("UIGridLayout", {
+			CellSize = UDim2.new(0.25, -9, 0, 182),
+			CellPadding = UDim2.fromOffset(12, 12),
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Parent = grid,
+		})
 		local count = 0
 		for i, id in Rules.Order do
 			local found = view() and view().relics and view().relics[id]

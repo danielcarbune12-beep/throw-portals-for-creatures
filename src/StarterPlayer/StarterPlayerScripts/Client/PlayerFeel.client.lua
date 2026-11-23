@@ -20,6 +20,7 @@ local TweenService = game:GetService("TweenService")
 
 local Settings = require(script.Parent.ClientSettings)
 local TC = require(script.Parent.ThrowController)
+local MovementFov = require(script.Parent.MovementFov)
 
 local player = Players.LocalPlayer
 
@@ -32,7 +33,6 @@ local char, hum, hrp
 local joints = {} -- name -> { kind, obj, rest = CFrame }
 local baseSpeed = WALK
 local lastSetSpeed
-local fovOffset = 0
 local lean, bank, headYaw, headPitch = 0, 0, 0, 0
 local lastYaw
 local stepT, idleT, shiftT, shiftDir = 0, 0, 0, 0
@@ -46,7 +46,7 @@ end
 
 local function bodyOwnedElsewhere()
 	if workspace:GetAttribute("TPFC_IntroPlaying") then return true end
-	if TC.Charging or TC.Submitting then return true end
+	if TC.InputBlocked or TC.SystemMenuOpen or TC.Charging or TC.Submitting then return true end
 	if TC.Phase and TC.Phase ~= "Ready" then return true end
 	local cam = workspace.CurrentCamera
 	return cam and cam.CameraType ~= Enum.CameraType.Custom
@@ -72,6 +72,7 @@ local function joint(partName, jointName)
 end
 
 local function bind(c)
+	MovementFov.Clear(workspace.CurrentCamera)
 	char = c
 	hum = c:WaitForChild("Humanoid", 10)
 	hrp = c:WaitForChild("HumanoidRootPart", 10)
@@ -96,7 +97,7 @@ local function bind(c)
 		elseif new == Enum.HumanoidStateType.Landed and fallStart and hrp then
 			local drop = fallStart - hrp.Position.Y
 			fallStart = nil
-			if drop > 7 and not Settings.ReducedMotion then
+			if drop > 7 and Settings.CameraShake and not Settings.ReducedMotion and not bodyOwnedElsewhere() then
 				-- soft camera dip on a hard landing
 				local k = math.clamp((drop - 7) / 20, 0.25, 1)
 				hum.CameraOffset = Vector3.new(0, -0.7 * k, 0)
@@ -133,6 +134,10 @@ if player.Character then task.spawn(bind, player.Character) end
 
 ---------------------------------------------------------------- run input
 local function sprintAction(_, state, input)
+    if UserInputService:GetFocusedTextBox() or TC.SystemMenuOpen then
+        sprintHeld = false
+        return Enum.ContextActionResult.Pass
+    end
 	if input.UserInputType == Enum.UserInputType.Touch then
 		if state == Enum.UserInputState.Begin then
 			sprintToggled = not sprintToggled
@@ -149,7 +154,10 @@ ContextActionService:BindAction("TPFC_Run", sprintAction, true, Enum.KeyCode.Lef
 ContextActionService:SetTitle("TPFC_Run", "Run")
 pcall(function() ContextActionService:SetPosition("TPFC_Run", UDim2.new(1, -170, 1, -150)) end)
 -- lose Shift if the window loses focus while held
-UserInputService.WindowFocusReleased:Connect(function() sprintHeld = false end)
+UserInputService.WindowFocusReleased:Connect(function()
+    sprintHeld, sprintToggled = false, false
+    ContextActionService:SetTitle("TPFC_Run", "Run")
+end)
 
 ---------------------------------------------------------------- footstep dust
 local dustFolder = Instance.new("Folder")
@@ -193,16 +201,13 @@ RunService.RenderStepped:Connect(function(dt)
 	hum.WalkSpeed = speed
 	lastSetSpeed = speed
 
-	-- run FOV (kept as an offset so other FOV owners aren't fought)
-	if cam and cam.CameraType == Enum.CameraType.Custom and not TC.Charging then
-		local runK = math.clamp((hrp.AssemblyLinearVelocity * Vector3.new(1, 0, 1)).Magnitude - WALK, 0, RUN - WALK) / (RUN - WALK)
-		local want = Settings.ReducedMotion and 0 or RUN_FOV_ADD * runK
-		local newOff = approach(fovOffset, want, 5, dt)
-		cam.FieldOfView += newOff - fovOffset
-		fovOffset = newOff
-	elseif fovOffset ~= 0 and cam and not TC.Charging then
-		fovOffset = 0
-	end
+    -- Sprint never bakes into the lens saved by a throw or another camera owner.
+    if cam and cam.CameraType == Enum.CameraType.Custom and not busy then
+        local runK = math.clamp((hrp.AssemblyLinearVelocity * Vector3.new(1, 0, 1)).Magnitude - WALK, 0, RUN - WALK) / (RUN - WALK)
+        MovementFov.Update(cam, Settings.ReducedMotion and 0 or RUN_FOV_ADD * runK, dt)
+    else
+        MovementFov.Clear(cam)
+    end
 
 	-- footstep dust while running on the ground
 	local planar = (hrp.AssemblyLinearVelocity * Vector3.new(1, 0, 1)).Magnitude

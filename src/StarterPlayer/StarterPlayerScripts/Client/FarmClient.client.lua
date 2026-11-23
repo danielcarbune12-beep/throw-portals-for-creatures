@@ -125,21 +125,13 @@ end
 ---------------------------------------------------------------- weather (server-wide farm events)
 -- Local-only visuals: static particle fields over the lobby and courtyards (not camera-following)
 -- and a separate colour grade, so the lobby's own lighting/effects scripts are left untouched.
-local Lighting = game:GetService("Lighting")
 local okSettings, Settings = pcall(require, script.Parent:WaitForChild("ClientSettings"))
 local function lowVfx()
 	return okSettings and Settings and Settings.LowVFX and Settings.LowVFX() or false
 end
-local cc = Instance.new("ColorCorrectionEffect")
-cc.Name = "FarmWeatherCC"
-cc.Parent = Lighting
-local NEUTRAL = { Brightness = 0, Contrast = 0, Saturation = 0, TintColor = Color3.new(1, 1, 1) }
-local LOOKS = {
-	Rain = { Brightness = -0.06, Contrast = 0.02, Saturation = -0.18, TintColor = Color3.fromRGB(212, 226, 255) },
-	GoldenHour = { Brightness = 0.04, Contrast = 0.04, Saturation = 0.18, TintColor = Color3.fromRGB(255, 230, 192) },
-	Starfall = { Brightness = -0.05, Contrast = 0.06, Saturation = 0.05, TintColor = Color3.fromRGB(214, 214, 255) },
-	Aurora = { Brightness = 0.02, Contrast = 0.04, Saturation = 0.25, TintColor = Color3.fromRGB(246, 224, 255) },
-}
+-- SceneLighting composes weather into the biome grade. Farming owns only
+-- its weather geometry, so weather and scene grading cannot fight each other.
+local LOOKS={Rain=true,GoldenHour=true,Starfall=true,Aurora=true}
 local SPARK = "rbxasset://textures/particles/sparkles_main.dds"
 local weatherFolder
 
@@ -201,8 +193,6 @@ local function applyWeather(id)
 		weatherFolder = nil
 	end
 	table.clear(followers)
-	local look = (not (okSettings and Settings.ReducedFlashes) and LOOKS[id]) or NEUTRAL
-	TweenService:Create(cc, TweenInfo.new(okSettings and Settings.ReducedMotion and 0 or 3), look):Play()
 	if not LOOKS[id] or lowVfx() then
 		return
 	end
@@ -213,7 +203,7 @@ local function applyWeather(id)
 		field(CFrame.new(0, 55, 0), AREA, {
 			-- tuned in a play test: smaller/softer drops (smoke texture, 0.28) were invisible on camera
 			Texture = SPARK,
-			Rate = 2600,
+			Rate = 700,
 			Lifetime = NumberRange.new(0.75, 0.85),
 			Speed = NumberRange.new(80, 95),
 			Size = NumberSequence.new(0.75),
@@ -228,7 +218,7 @@ local function applyWeather(id)
 	elseif id == "GoldenHour" then
 		field(CFrame.new(0, 18, 0), AREA, {
 			Texture = SPARK,
-			Rate = 60,
+			Rate = 18,
 			Lifetime = NumberRange.new(5, 8),
 			Speed = NumberRange.new(1, 3),
 			Size = NumberSequence.new({
@@ -276,7 +266,7 @@ local function applyWeather(id)
 		end
 		field(CFrame.new(0, 18, 0), AREA, {
 			Texture = SPARK,
-			Rate = 50,
+			Rate = 14,
 			Lifetime = NumberRange.new(4, 7),
 			Speed = NumberRange.new(0.5, 2),
 			Size = NumberSequence.new({

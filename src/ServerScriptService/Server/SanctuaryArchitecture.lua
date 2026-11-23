@@ -31,8 +31,8 @@ function Art.Beam(a, b, width, depth, color, material)
 end
 function Art.Gable(cf, width, rise, depth, color)
 	-- Wedge high faces meet at the ridge. The older shared helper made a valley roof.
-	K.wedge(cf * CF(-width / 4, rise / 2, 0) * A(0, PI / 2, 0), V(depth, rise, width / 2), color, M.SmoothPlastic)
-	K.wedge(cf * CF(width / 4, rise / 2, 0) * A(0, -PI / 2, 0), V(depth, rise, width / 2), color, M.SmoothPlastic)
+	K.wedge(cf * CF(-width / 4, rise / 2, 0) * A(0, PI / 2, 0), V(depth, rise, width / 2), color, M.Slate).Name = "RoofSlope"
+	K.wedge(cf * CF(width / 4, rise / 2, 0) * A(0, -PI / 2, 0), V(depth, rise, width / 2), color, M.Slate).Name = "RoofSlope"
 end
 function Art.Diamond(cf, height, width, depth, color, material)
 	-- Solid planar rhombus, long axis Y; four wedges, shared styling on every crest.

@@ -1,19 +1,35 @@
--- Crisp native geometry. Every navigation icon also has a visible text label.
+-- Original cutout art with immediately visible native geometry while images load.
 local T = require(script.Parent.UITheme)
 local Sky = require(script.Parent.SkyforgeUI)
 local Icons = {}
 function Icons.Draw(name, parent, size, color, position)
-	local enamel = Sky.Icon(name, parent, size, position)
-	if enamel then
-		return enamel
+	local root = Sky.Icon(name, parent, size, position)
+	if not root then
+		root = Instance.new("Frame")
+		root.Name = "Icon_" .. name
+		root.BackgroundTransparency = 1
+		root.Size = size or UDim2.fromOffset(24, 24)
+		root.Position = position or UDim2.new()
+		root.Parent = parent
 	end
-	local root = Instance.new("Frame")
-	root.Name = "Icon_" .. name
-	root.BackgroundTransparency = 1
-	root.Size = size or UDim2.fromOffset(24, 24)
-	root.Position = position or UDim2.new()
-	root.Parent = parent
-	local col = color or T.Text
+	-- HUD owns this exact instance, including its name, size and anchor. Never
+	-- replace it when a download finishes or fails, including after a resize.
+	local fallback = Instance.new("Frame")
+	fallback.Name = "NativeArt"
+	fallback.BackgroundTransparency = 1
+	fallback.Size = UDim2.fromScale(1, 1)
+	fallback.Parent = root
+	local image = root:FindFirstChild("Enamel")
+	if image then
+		-- Leave the image visible while pending so the renderer can resolve it;
+		-- native art covers its empty surface until the texture is ready.
+		Sky.WatchImage(image, fallback)
+	end
+	if name == "Shop" then
+		name = "Bag" -- vector set calls the shop icon a bag
+	end
+	local onWorld = parent.Name:sub(1, 4) == "Nav_"
+	local col = onWorld and T.CinematicGold or color or T.Text
 	local function box(x, y, w, h, rotation, outline, round)
 		local f = Instance.new("Frame")
 		f.BorderSizePixel = 0
@@ -22,7 +38,7 @@ function Icons.Draw(name, parent, size, color, position)
 		f.Position = UDim2.fromScale(x, y)
 		f.Size = UDim2.fromScale(w, h)
 		f.Rotation = rotation or 0
-		f.Parent = root
+		f.Parent = fallback
 		if outline then
 			f.BackgroundTransparency = 1
 			local s = Instance.new("UIStroke")
@@ -34,6 +50,21 @@ function Icons.Draw(name, parent, size, color, position)
 			local r = Instance.new("UICorner")
 			r.CornerRadius = UDim.new(round, 0)
 			r.Parent = f
+		end
+		if onWorld then
+			if outline then
+				local edge = f:Clone()
+				edge.Name = "ContrastEdge"
+				edge:FindFirstChildOfClass("UIStroke").Color = T.Ink
+				edge:FindFirstChildOfClass("UIStroke").Thickness = 4
+				edge.ZIndex = 1
+				edge.Parent = fallback
+				f.ZIndex = 2
+			else
+				local edge = Instance.new("UIStroke")
+				edge.Color, edge.Thickness = T.Ink, 1.5
+				edge.Parent = f
+			end
 		end
 		return f
 	end

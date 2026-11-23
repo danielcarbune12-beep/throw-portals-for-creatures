@@ -2,7 +2,6 @@
 -- Plot centers, throw zone, collision barrier and lane direction retain their existing contracts.
 local RS = game:GetService("ReplicatedStorage")
 local Config = require(RS.Shared.Config)
-local Portals = require(RS.Shared.PortalBuilder)
 local K = require(script.Parent.WorldKit)
 local Art = require(script.Parent.SanctuaryArchitecture)
 local Hub = {}
@@ -30,7 +29,7 @@ local function arch(z, width, height, depth)
 		V(half, 2, z),
 	}
 	for i = 1, #points - 1 do
-		Art.Beam(points[i], points[i + 1], 4.6, depth, P.ivory, M.Limestone)
+		Art.Beam(points[i], points[i + 1], 4.6, depth, P.ivory, M.Limestone).Name = "ArchStone"
 		Art.Beam(
 			points[i] + V(0, 0, -depth / 2 - 0.10),
 			points[i + 1] + V(0, 0, -depth / 2 - 0.10),
@@ -57,6 +56,7 @@ local function arch(z, width, height, depth)
 	if height > 35 then
 		Art.Crystal(CF(0, height - 3, z - depth / 2 - 0.5), 2.1, 7.5, P.lilac)
 	end
+	return points
 end
 local function window(cf, w, h)
 	K.block(cf, V(w + 0.8, h + 0.8, 0.40), P.gold, M.Metal)
@@ -103,7 +103,7 @@ local function hall(folder, label)
 		Art.Banner(CF(side * (hw + 0.8), 23, back - 1.25), 12, 2.8)
 	end
 	arch(back - 0.9, 39, 39, 4.5)
-	arch(front + 1.7, 48, 31, 3.2)
+	local launchArch = arch(front + 1.7, 48, 31, 3.2)
 	local sign = K.block(CF(0, 28, back - 3.3), V(23, 2.1, 0.3), P.roof, M.SmoothPlastic)
 	label(sign, "PORTAL SANCTUARY", P.goldLight, Enum.NormalId.Front)
 	-- Compass inlay: large intentional geometric motif, quiet enough for avatars and charge feedback.
@@ -136,39 +136,39 @@ local function hall(folder, label)
 	local barrier = K.block(CF(0, 60, front), V(Config.StartHalfWidth * 2 + 40, 140, 2), P.lilac, M.ForceField, true, 1)
 	barrier.Name, barrier.CanQuery = "Barrier", true
 	K.block(CF(0, 1.4, front), V(hw * 2, 0.16, 0.25), P.lilac, M.Neon, false, 0.55).Name = "BarrierGlow"
-	local gate = Portals.BuildGate("Basic", 17.5, { sanctuary = true })
+	-- Fit the launch aperture to the stone arch's actual contour. The sky rings
+	-- are separate scenery; no second circular frame crosses the launch opening.
+	local gate = Instance.new("Model")
 	gate.Name = "SanctuaryAperture"
-	local rootCF = CF(0, 19.3, front - 0.35)
-	local solved = { [gate.PrimaryPart] = rootCF }
-	gate.PrimaryPart.CFrame = rootCF
-	local links = {}
-	for _, d in ipairs(gate:GetDescendants()) do
-		if d:IsA("Weld") then
-			links[d.Part0] = links[d.Part0] or {}
-			table.insert(links[d.Part0], d)
-		end
+	K.SetFolder(gate)
+	local root = K.block(CF(0, 1.2, front + 1.7), V(0.05, 0.05, 0.05), P.lilac, M.SmoothPlastic, false, 1)
+	root.Name, gate.PrimaryPart = "Root", root
+	local inset, offset = {}, 2.65
+	local function inward(a, b)
+		local d = b - a
+		return V(d.Y, -d.X, 0).Unit
 	end
-	local queue = { gate.PrimaryPart }
-	local n = 1
-	while queue[n] do
-		local p = queue[n]
-		for _, w in ipairs(links[p] or {}) do
-			w.Part1.CFrame = solved[p] * w.C0 * w.C1:Inverse()
-			solved[w.Part1] = w.Part1.CFrame
-			table.insert(queue, w.Part1)
-			if w.Name == "PortalRotor" then
-				K.tag(w.Part1, "TPFC_Rotor")
-			end
+	for i, point in ipairs(launchArch) do
+		local before = inward(launchArch[math.max(1, i - 1)], launchArch[math.max(2, i)])
+		local after = inward(launchArch[math.min(i, #launchArch - 1)], launchArch[math.min(i + 1, #launchArch)])
+		local miter = (before + after).Unit
+		local position = point + miter * (offset / miter:Dot(after))
+		if i == 1 or i == #launchArch then
+			position = V(position.X, 1.25, position.Z)
 		end
-		n += 1
+		inset[i] = position - V(0, 0, 1.72)
 	end
+	for i = 1, #inset - 1 do
+		local a, b = inset[i], inset[i + 1]
+		local trim = Art.Beam(a, b, 0.5, 0.18, P.goldLight, M.Metal)
+		trim.Name = "InnerMolding"
+		local energy = Art.Beam(a - V(0, 0, 0.12), b - V(0, 0, 0.12), 0.16, 0.07, P.lilac, M.Neon)
+		energy.Name, energy.Transparency = "EnergyInlay", 0.62
+		K.tag(energy, "TPFC_ChargeChannel", { Index = i })
+	end
+	gate:SetAttribute("FittedArch", true)
 	gate.Parent = folder
-	for _, p in ipairs(gate:GetDescendants()) do
-		if p:IsA("BasePart") and p.Name == "EnergyInlay" then
-			p.Transparency = 0.8
-			K.tag(p, "TPFC_ChargeChannel", { Index = p.Position.Y * 0.1 })
-		end
-	end
+	K.SetFolder(folder)
 end
 local function avenue()
 	local depth = Config.StartDepth
@@ -216,7 +216,12 @@ local function avenue()
 		K.block(CF(0, 0.27, z) * A(0, PI / 4, 0), V(10.5, 0.05, 10.5), P.ivory, M.Limestone)
 		for i = 0, 3 do
 			local a = i / 4 * PI * 2 + PI / 4
-			K.block(CF(math.sin(a) * 3.7, 0.3, z + math.cos(a) * 3.7) * A(0, a, 0), V(10.6, 0.05, 0.36), P.gold, M.Metal)
+			K.block(
+				CF(math.sin(a) * 3.7, 0.3, z + math.cos(a) * 3.7) * A(0, a, 0),
+				V(10.6, 0.05, 0.36),
+				P.gold,
+				M.Metal
+			)
 		end
 		K.block(CF(0, 0.31, z) * A(0, PI / 4, 0), V(4.2, 0.05, 4.2), P.violet, M.SmoothPlastic)
 		local core = K.block(CF(0, 0.33, z) * A(0, PI / 4, 0), V(1.8, 0.05, 1.8), P.lilac, M.Neon, false, 0.2)
@@ -224,7 +229,12 @@ local function avenue()
 		-- four gold rays from the centre
 		for i = 0, 3 do
 			local a = i / 4 * PI * 2
-			K.block(CF(math.sin(a) * 4.2, 0.31, z + math.cos(a) * 4.2) * A(0, a, 0), V(0.3, 0.05, 3.2), P.goldLight, M.Metal)
+			K.block(
+				CF(math.sin(a) * 4.2, 0.31, z + math.cos(a) * 4.2) * A(0, a, 0),
+				V(0.3, 0.05, 3.2),
+				P.goldLight,
+				M.Metal
+			)
 		end
 	end
 	-- Crystal pylons line the avenue between the courtyards: violet banner, gold collars, a floating
@@ -312,7 +322,14 @@ local function perimeter()
 		for _, z in ipairs({ -124, -278 }) do
 			K.block(CF(side * 102.6, 24, z), V(6, 1.4, 12), P.stone, M.Limestone)
 			K.block(CF(side * 102.6, 24.8, z), V(6.4, 0.3, 12.4), P.gold, M.Metal)
-			K.waterfall(V(side * 100.2, 23.4, z), 23, 8, side > 0 and PI / 2 or -PI / 2, C(150, 222, 236), C(236, 250, 255))
+			K.waterfall(
+				V(side * 100.2, 23.4, z),
+				23,
+				8,
+				side > 0 and PI / 2 or -PI / 2,
+				C(150, 222, 236),
+				C(236, 250, 255)
+			)
 			-- small enough to sit in the gap between two courtyards
 			K.vcyl(V(side * 99.8, 0.05, z), 0.5, 10, P.ivory, M.Limestone)
 			local pool = K.vcyl(V(side * 99.8, 0.2, z), 0.4, 8.6, P.water, M.Glass, false, 0.25)

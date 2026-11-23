@@ -3,6 +3,7 @@ local TweenService = game:GetService("TweenService")
 local Sounds = require(script.Parent.Sounds)
 local Settings = require(script.Parent.ClientSettings)
 local T = require(script.Parent.UITheme)
+local Craft = require(script.Parent.SanctuaryUI)
 local Icons = require(script.Parent.UIIcons)
 local Builder = require(game:GetService("ReplicatedStorage").Shared.CreatureBuilder)
 local K = { Font = T.Font, Dark = T.Ink, Panel = T.Panel, Theme = T, Icon = Icons.Draw }
@@ -104,7 +105,7 @@ function K.surface(parent, name, size, pos, color)
 		Position = pos or UDim2.new(),
 		BackgroundColor3 = color or T.Raised,
 		Parent = parent,
-	}, { K.corner(10), K.stroke(1) })
+	}, { K.corner(4), K.stroke(1) })
 end
 function K.button(text, c1, _c2, size, props)
 	local b = K.new("TextButton", {
@@ -113,7 +114,10 @@ function K.button(text, c1, _c2, size, props)
 		BackgroundColor3 = c1 or T.Raised,
 		Size = size or UDim2.fromOffset(160, 44),
 		Selectable = true,
-	}, { K.corner(8), K.stroke(1) })
+	}, { K.corner(4), K.stroke(1) })
+	if text ~= "" and not (props and props.BackgroundTransparency == 1) then
+		Craft.Button(b)
+	end
 	b:SetAttribute("Enabled", true)
 	local scale = K.new("UIScale", { Parent = b })
 	K.label(
@@ -127,8 +131,10 @@ function K.button(text, c1, _c2, size, props)
 	end
 	local function focus(on)
 		local st = b:FindFirstChildOfClass("UIStroke")
-		st.Color = on and T.Gold or T.Border
-		st.Thickness = on and 2 or 1
+		local highlighted = on or b:GetAttribute("Selected")
+		st.Color = highlighted and T.Gold or T.Border
+		st.Thickness = highlighted and 2 or 1
+		st.Transparency = b:GetAttribute("GatefoldLeaf") and (highlighted and 0 or 1) or 0
 	end
 	b.MouseEnter:Connect(function()
 		if b:GetAttribute("Enabled") then
@@ -261,7 +267,7 @@ function K.bakeWelds(model)
 end
 
 -- ViewportFrame showing a model, auto-framed, optional slow spin
-function K.viewport(model, size, spin, silhouette)
+function K.viewport(model, size, spin, silhouette, fitSubject)
 	K.bakeWelds(model)
 	local vp = K.new("ViewportFrame", {
 		Size = size or UDim2.fromScale(1, 1),
@@ -283,11 +289,49 @@ function K.viewport(model, size, spin, silhouette)
 	local r = math.max(ext.Magnitude * 0.55, 0.5)
 	local dist = r / math.tan(math.rad(cam.FieldOfView / 2))
 	local target = cf.Position
+	local visibleCorners = {}
+	if fitSubject then
+		for _, part in model:GetDescendants() do
+			if part:IsA("BasePart") and part.Transparency < 0.95 and part.Name ~= "Root" and part.Name ~= "Orbit" then
+				local mesh = part:FindFirstChildOfClass("SpecialMesh")
+				local half = part.Size * (mesh and mesh.Scale or Vector3.one) * 0.5
+				for _, x in { -1, 1 } do
+					for _, y in { -1, 1 } do
+						for _, z in { -1, 1 } do
+							table.insert(
+								visibleCorners,
+								part.CFrame:PointToWorldSpace(Vector3.new(x * half.X, y * half.Y, z * half.Z)) - target
+							)
+						end
+					end
+				end
+			end
+		end
+	end
 	local function place(a)
-		local offset = CFrame.Angles(0, a, 0) * Vector3.new(0, r * 0.35, -dist)
-		cam.CFrame = CFrame.lookAt(target + offset, target)
+		local direction = (CFrame.Angles(0, a, 0) * Vector3.new(0, 0.28, -1)).Unit
+		local framedDistance = dist
+		if fitSubject then
+			local aspect = vp.AbsoluteSize.Y > 0 and vp.AbsoluteSize.X / vp.AbsoluteSize.Y or 1
+			local tanY = math.tan(math.rad(cam.FieldOfView / 2))
+			local tanX = tanY * math.max(0.3, aspect)
+			local basis = CFrame.lookAt(target + direction, target)
+			framedDistance = 0
+			for _, point in visibleCorners do
+				local q = basis:VectorToObjectSpace(point)
+				framedDistance = math.max(framedDistance, math.abs(q.X) / tanX + q.Z, math.abs(q.Y) / tanY + q.Z)
+			end
+			framedDistance = math.max(0.5, framedDistance * 1.13)
+		end
+		cam.CFrame = CFrame.lookAt(target + direction * framedDistance, target)
 	end
 	place(0.45)
+	if fitSubject and not spin then
+		vp:SetAttribute("FitSubject", true)
+		vp:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+			place(0.45)
+		end)
+	end
 	-- Imported meshes can arrive after a static ViewportFrame's first draw.
 	-- Preload outside the UI thread, then invalidate the camera once to redraw them.
 	task.spawn(function()

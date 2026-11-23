@@ -1,0 +1,26 @@
+{
+  "assetId": "81021166448000",
+  "creatorUserId": "492658435",
+  "universeId": "10778324663",
+  "moderation": "Approved",
+  "file": "medieval-guild-frame-v1.png",
+  "sourceSize": [
+    1254,
+    1254
+  ],
+  "servedSize": [
+    1024,
+    1024
+  ],
+  "sliceCenter": [
+    172,
+    172,
+    852,
+    852
+  ],
+  "sliceScale": 0.2441860465116279,
+  "generatedWith": "Built-in image_gen",
+  "expectedUploadPrice": 0,
+  "compactSliceScale": 0.19767441860465115,
+  "universeUsePermissionGranted": true
+}

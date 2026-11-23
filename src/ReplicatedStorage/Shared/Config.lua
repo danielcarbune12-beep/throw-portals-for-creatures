@@ -75,7 +75,7 @@ end
 Config.Worlds = {
 	Forest  = { index = 1, name = "Green Forest",     cost = 0,         throwLevel = 1,  incomeMult = 1,
 		material = Enum.Material.Grass,     groundColor = Color3.fromRGB(104, 168, 70),
-		ambient = Color3.fromRGB(140, 150, 130), fog = Color3.fromRGB(190, 230, 255), fogEnd = 900, clock = 14, tint = Color3.fromRGB(255, 255, 250), atmo = Color3.fromRGB(200, 230, 255) },
+		ambient = Color3.fromRGB(140, 150, 130), fog = Color3.fromRGB(196, 214, 226), fogEnd = 900, clock = 14, tint = Color3.fromRGB(255, 250, 240), atmo = Color3.fromRGB(214, 220, 218) },
 	Volcano = { index = 2, name = "Volcano World",    cost = 3000,      throwLevel = 5,  incomeMult = 3,
 		material = Enum.Material.Asphalt,   groundColor = Color3.fromRGB(54, 46, 52),
 		ambient = Color3.fromRGB(135, 108, 100), fog = Color3.fromRGB(170, 120, 100), fogEnd = 700, clock = 15.2, tint = Color3.fromRGB(255, 238, 225), atmo = Color3.fromRGB(225, 160, 130) },
@@ -207,6 +207,41 @@ Config.CarryLimit = 4
 -- Equipped pets: up to 3 follow you and give buffs. Each pet adds its rarity's bonus:
 -- luck multiplies the odds of rarer rolls, income adds to your base income per second.
 Config.EquipLimit = 3
+
+-- Perfect streak: each consecutive perfect throw adds luck for the next roll (a missed perfect or a
+-- long pause resets it). Luck multiplies the odds of the rarer tiers, same as equipped pets.
+Config.Combo = { perStep = 0.05, max = 5, resetAfter = 60 }
+
+-- Rift Storm: a server-wide event. Every player in the server gets extra luck while it lasts.
+Config.RiftStorm = { first = 300, gap = { 720, 1080 }, duration = 120, luck = 1.5 }
+
+-- Index mastery: discovering every creature of one world adds a permanent income bonus.
+Config.IndexWorldBonus = 0.05
+
+-- Progression: daily quests, rebirth, friends, monetisation and fusion (server: Progression.lua)
+Config.Progression = {
+	QuestPool = {
+		{ id = "throw", text = "Throw %d portals", goal = { 8, 14 } },
+		{ id = "perfect", text = "Land %d perfect throws", goal = { 3, 6 } },
+		{ id = "catch", text = "Catch %d creatures", goal = { 5, 9 } },
+		{ id = "rare", text = "Catch %d Rare-or-better creature(s)", goal = { 1, 2 } },
+	},
+	QuestReward = { min = 150, incomeSeconds = 240 }, -- prize = max(min, income/s * seconds)
+	Rebirth = { baseCost = 5000000, growth = 4, incomePer = 0.25, luckPer = 0.1 },
+	Friends = { luckPer = 0.1, max = 3 },
+	-- Game pass / developer product ids. 0 = not created yet: the button stays hidden and nothing is sold.
+	-- Create them on the Creator Dashboard (Monetization) and paste the ids here.
+	Passes = { DoubleLuck = 0, DoubleIncome = 0, ExtraPet = 0 },
+	Products = { LuckPotion = 0 },
+	Potion = { luck = 2, seconds = 900 },
+	Fusion = { need = 3 },
+}
+Config.Progression.QuestById = {}
+for _, q in ipairs(Config.Progression.QuestPool) do
+	Config.Progression.QuestById[q.id] = q
+end
+-- Throw charge: one full ping-pong of the power bar takes this long (client and server must agree)
+Config.ChargePeriod = 1.5
 Config.EquipBuff = {
 	Common    = { luck = 0.03, income = 0.02 },
 	Uncommon  = { luck = 0.05, income = 0.04 },

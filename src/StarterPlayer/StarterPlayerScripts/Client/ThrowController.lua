@@ -21,6 +21,7 @@ local Settings = require(script.Parent.ClientSettings)
 local Builder = require(Shared.CreatureBuilder)
 local Timeline = require(Shared.PresentationTimeline)
 local Cine = require(script.Parent.ThrowCinematic)
+local MovementFov = require(script.Parent.MovementFov)
 
 local TC = {}
 TC.Charging = false
@@ -129,7 +130,7 @@ function TC.BeginCharge(source)
 	local d = State.Data
 	if #d.Creatures >= (d.SlotsOpen or 0) + (d.StorageCap or 0) then
 		if TC.OnLaunchFailed then
-			TC.OnLaunchFailed("Your garden and storage are full. Open Menu > Pets to make room.")
+			TC.OnLaunchFailed("Your garden and storage are full. Open Pets to make room.")
 		end
 		return false
 	end
@@ -138,6 +139,7 @@ function TC.BeginCharge(source)
 	end
 	TC.Charging, TC.Power, TC.ChargeSource, TC.Phase = true, 0, source or "Programmatic", "Charging"
 	chargeStart = os.clock()
+	pcall(function() Remotes.ChargeStart:FireServer() end) -- the server times the charge too
 	findShoulder()
 	armTarget = 1
 	heldOrb, heldRefs = PortalBuilder.BuildOrb(d.EquippedPortal, 0.5)
@@ -215,7 +217,7 @@ Remotes.Notify.OnClientEvent:Connect(function(_text, kind)
 end)
 
 -- Power ping-pongs so timing matters; the top 8% is the PERFECT zone
-local PERIOD = 1.5
+local PERIOD = Config.ChargePeriod or 1.5
 local perfectCueAt = -10
 RunService.RenderStepped:Connect(function(dt)
 	if TC.Charging then
@@ -344,6 +346,7 @@ end
 local camFollow, camReturn = nil, nil
 local idleFov = camera.FieldOfView
 local ownsFov = false
+local closeupZoom, closeupDepth
 local function restoreCamera(saved)
 	if not saved then
 		return
@@ -358,6 +361,10 @@ local function restoreCamera(saved)
 end
 local function claimCamera(id, pos, duration)
 	camera = workspace.CurrentCamera or camera
+    MovementFov.Clear(camera)
+    if not camFollow and not camReturn and not aimCam and not ownsFov then
+        idleFov = camera.FieldOfView
+    end
 	local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
 	local saved = camFollow and camFollow.saved
 		or camReturn and camReturn.saved
@@ -422,6 +429,8 @@ function TC.StartAim(hrp)
 	if camera.CameraType ~= Enum.CameraType.Custom then
 		return
 	end
+    MovementFov.Clear(camera)
+    idleFov = camera.FieldOfView
 	aimCam = {
 		saved = {
 			type = camera.CameraType,
@@ -653,17 +662,31 @@ function TC.StartCloseup(id, def, pos, duration, sizeScale)
 	camFollow.radius = (7 + rc.order * 0.8) * size
 	camFollow.untilT = os.clock() + duration
 	-- (no letterbox bars: keep the full screen during the close-up too)
-	Effects.Tween(camera, 0.7, { FieldOfView = 48 }, Enum.EasingStyle.Quad)
+	if closeupZoom then
+		closeupZoom:Cancel()
+	end
+	if closeupDepth then
+		closeupDepth:Cancel()
+	end
+	closeupZoom = Effects.Tween(camera, 0.7, { FieldOfView = 48 }, Enum.EasingStyle.Quad)
 	if Effects.DOF then
 		Effects.DOF.InFocusRadius = 12
-		Effects.Tween(Effects.DOF, 0.6, { FarIntensity = 0.45 })
+		closeupDepth = Effects.Tween(Effects.DOF, 0.6, { FarIntensity = 0.45 })
 	end
 end
 
 function TC.EndCloseup()
+	if closeupZoom then
+		closeupZoom:Cancel()
+		closeupZoom = nil
+	end
+	if closeupDepth then
+		closeupDepth:Cancel()
+		closeupDepth = nil
+	end
 	Effects.Letterbox(false)
 	if Effects.DOF then
-		Effects.Tween(Effects.DOF, 0.6, { FarIntensity = 0.18 })
+		closeupDepth = Effects.Tween(Effects.DOF, 0.25, { FarIntensity = 0, NearIntensity = 0 })
 		Effects.DOF.InFocusRadius = 70
 		Effects.DOF.FocusDistance = 50
 	end

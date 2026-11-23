@@ -25,6 +25,7 @@ return function(Service)
 	local root = Instance.new("Part")
 	root.Name, root.Anchored, root.Transparency = "HumanoidRootPart", true, 1
 	root.Position, root.Parent = Vector3.new(0, 4, 0), character
+	character.PrimaryPart = root
 	local hum = Instance.new("Humanoid")
 	hum.Parent = character
 	local anchor = Instance.new("Part")
@@ -51,6 +52,33 @@ return function(Service)
 		)
 	end
 	local ok, err = pcall(function()
+		local originalAnchor = anchor.CFrame
+		for i = 0, 7 do
+			anchor.CFrame = CFrame.new(i * 45, 2, -80) * CFrame.Angles(0, i * math.pi / 4, 0)
+			root.CFrame = CFrame.new(0, 10, 200)
+			local reached = Service.ReturnToTable(player, base)
+			check(
+				reached and (root.Position - anchor.Position).Magnitude <= Rules.TableRange,
+				"direct table travel works for courtyard rotation " .. i
+			)
+			local localPosition = anchor.CFrame:PointToObjectSpace(root.Position)
+			check(
+				math.abs(localPosition.Z - 6) < 0.01 and math.abs(localPosition.X) < 0.01,
+				"arrival stays beside the table, clear of its surface"
+			)
+		end
+		local beforeDenied = character:GetPivot()
+		base.owner = {}
+		check(
+			not Service.ReturnToTable(player, base) and character:GetPivot() == beforeDenied,
+			"table travel cannot use another courtyard"
+		)
+		base.owner = player
+		hum.Health = 0
+		check(not Service.ReturnToTable(player, base), "dead characters cannot teleport to a table")
+		hum.Health = 100
+		anchor.CFrame = originalAnchor
+		root.CFrame = originalAnchor
 		local data = profile()
 		Service.Ensure(data)
 		check(

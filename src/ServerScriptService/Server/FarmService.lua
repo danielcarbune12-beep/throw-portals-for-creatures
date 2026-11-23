@@ -22,7 +22,9 @@ local Farm = require(Shared.FarmConfig)
 local Care = require(Shared.FarmCare)
 local Format = require(Shared.Format)
 local CreatureData = require(Shared.CreatureData)
-local DataService = require(script.Parent.DataService)
+-- Geometry previews must not start the profile service or its autosave loop.
+local RunService = game:GetService("RunService")
+local DataService = RunService:IsRunning() and require(script.Parent.DataService) or nil
 local Expeditions = require(script.Parent.ExpeditionService)
 local K = require(script.Parent.WorldKit)
 local Art = require(script.Parent.SanctuaryArchitecture)
@@ -979,13 +981,15 @@ local function refreshBase(base)
 	end
 	local f = ensure(data)
 	local now = os.time()
+	local lockLabelShown = false -- one "Locked" label per farm; neighbouring plots used to stack them
 	for i, e in ipairs(farm.plots) do
 		local state, crop, left, m = plotState(data, i)
 		local mdef = m and Farm.MutationById[m]
 		local mName = mdef and ('<font color="#' .. mdef.color:ToHex() .. '">' .. m .. "</font> ") or ""
 		local stage = 0
 		if state == "locked" then
-			e.label.Text = '<font color="#DCD4C8">Locked · Farm Stand</font>'
+			e.label.Text = lockLabelShown and "" or '<font color="#DCD4C8">Locked · Farm Stand</font>'
+			lockLabelShown = true
 			e.prompt.ActionText, e.prompt.ObjectText = "Locked", "Farm Stand: R"
 			e.soil.Color = LOCKED
 		elseif state == "empty" then
@@ -1539,6 +1543,18 @@ local function worldTick(now)
 end
 
 ---------------------------------------------------------------- start
+-- Build the same physical stations in the shared Studio preview without
+-- starting weather, income, profile or remote-event loops.
+function FarmService.BuildPreview(baseBuilder)
+    assert(game:GetService("RunService"):IsStudio() and not game:GetService("RunService"):IsRunning(), "Edit-mode preview only")
+    for _, base in ipairs(baseBuilder.Bases) do
+        local prior = base.model:FindFirstChild("Farm")
+        if prior then prior:Destroy() end
+        buildBase(base)
+        task.wait()
+    end
+end
+
 function FarmService.Init(baseBuilder, h)
 	hooks = h
 	local remotes = ReplicatedStorage:WaitForChild("Remotes")
