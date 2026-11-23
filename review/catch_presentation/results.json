@@ -1,0 +1,67 @@
+{
+  "liveReview": {
+    "completed": true,
+    "menuSuppression": true,
+    "failures": [],
+    "passed": 678,
+    "runs": [
+      {
+        "id": "Mossbun",
+        "presentation": true,
+        "discovery": true,
+        "receipt": true
+      },
+      {
+        "id": "Mossbun",
+        "presentation": false,
+        "discovery": false,
+        "receipt": false
+      },
+      {
+        "id": "Acornip",
+        "presentation": true,
+        "discovery": true,
+        "receipt": true
+      },
+      {
+        "id": "Acornip",
+        "presentation": false,
+        "discovery": false,
+        "receipt": false
+      },
+      {
+        "id": "Petalfly",
+        "presentation": true,
+        "discovery": true,
+        "receipt": true
+      },
+      {
+        "id": "Petalfly",
+        "presentation": true,
+        "discovery": false,
+        "receipt": true
+      }
+    ]
+  },
+  "phoneBounds": {
+    "viewport": "705, 338",
+    "inBounds": true,
+    "size": "220, 64",
+    "position": "242.5, 196"
+  },
+  "roster": {
+    "current": {
+      "passed": 3699,
+      "failed": 25
+    },
+    "baseline": {
+      "commit": "63f7d98",
+      "passed": 3699,
+      "failed": 25
+    }
+  },
+  "entrances": {
+    "passed": 5813,
+    "failed": 0
+  }
+}

@@ -112,7 +112,7 @@ end)
 
 Remotes.MoneyFx.OnClientEvent:Connect(Feel.Money)
 
--- "CAUGHT!" card: pops up with the spinning creature, then flies into the Pets button
+-- Bestiary slips: confirmed discoveries and Rare+ only, never routine repeats.
 local caughtCard = require(Client.CaughtPresentation)
 
 -- Card queue: a card is shown only for a CONFIRMED deposit, after its capture presentation
@@ -125,16 +125,16 @@ local function pumpCards()
 		return
 	end
 	cardBusy = true
-	local id = table.remove(cardQueue, 1)
+	local receipt = table.remove(cardQueue, 1)
 	task.spawn(function()
-		pcall(caughtCard, id)
+		pcall(caughtCard, receipt.key, receipt.discovery)
 		task.wait(Timeline.CardTotal())
 		cardBusy = false
 		pumpCards()
 	end)
 end
-local function enqueueCard(id)
-	table.insert(cardQueue, id)
+local function enqueueCard(id, discovery)
+	table.insert(cardQueue, { key = id, discovery = discovery })
 	pumpCards()
 end
 Renderer.CaptureFinished.Event:Connect(function(_throwId, ownerId, creatureId)
@@ -144,17 +144,22 @@ Renderer.CaptureFinished.Event:Connect(function(_throwId, ownerId, creatureId)
 	for i, pc in ipairs(pendingCards) do
 		if pc.id == creatureId then
 			table.remove(pendingCards, i)
-			enqueueCard(pc.key or creatureId)
+			enqueueCard(pc.key or creatureId, pc.discovery)
 			return
 		end
 	end
 	table.insert(recentCaptures, { id = creatureId, t = os.clock() })
 end)
-Remotes.Deposit.OnClientEvent:Connect(function(ids)
-	for _, key in ipairs(ids) do
+Remotes.Deposit.OnClientEvent:Connect(function(ids, discoveries)
+	for index, key in ipairs(ids) do
 		-- "CreatureId" or "CreatureId|Size|Material": the card shows the full variant name
 		local id = Variants.Parse(key)
-		if CreatureData.ById[id] then
+		local discovery = discoveries and discoveries[index] == true
+		if not discoveries then
+			discovery = not (State.Data.Discovered or {})[id]
+		end
+		local def = CreatureData.ById[id]
+		if def and Timeline.ShouldPresent(def.rarity, discovery) then
 			local matched = false
 			for i, rc in ipairs(recentCaptures) do
 				if rc.id == id and os.clock() - rc.t < 6 then
@@ -164,11 +169,12 @@ Remotes.Deposit.OnClientEvent:Connect(function(ids)
 				end
 			end
 			if matched then
-				enqueueCard(key)
+				enqueueCard(key, discovery)
 			else
 				table.insert(pendingCards, {
 					id = id,
 					key = key,
+					discovery = discovery,
 					deadline = os.clock() + Timeline.CardFallback + Timeline.CaptureFor(CreatureData.ById[id].rarity),
 				})
 			end
@@ -180,7 +186,12 @@ RunService.Heartbeat:Connect(function()
 	for i = #pendingCards, 1, -1 do
 		if now > pendingCards[i].deadline then
 			local pc = table.remove(pendingCards, i)
-			enqueueCard(pc.key or pc.id)
+			enqueueCard(pc.key or pc.id, pc.discovery)
+		end
+	end
+	for i = #recentCaptures, 1, -1 do
+		if now - recentCaptures[i].t > 6 then
+			table.remove(recentCaptures, i)
 		end
 	end
 end)

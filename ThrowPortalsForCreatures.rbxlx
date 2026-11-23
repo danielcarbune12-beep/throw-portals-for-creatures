@@ -4467,6 +4467,13 @@ local Config = require(script.Parent.Config)
 
 local T = {}
 
+-- Discoveries come from the saved bestiary, not a timer or session-only flag.
+-- Rare and above earn a reveal on every catch; lower tiers earn it once per species.
+function T.ShouldPresent(rarity: string, discovery: boolean): boolean
+	local tier = Config.Rarities[rarity]
+	return (tier ~= nil and tier.order >= 3) or discovery == true
+end
+
 -- species entrance must END inside this window (seconds after PortalOpened)
 T.Entrance = { Common = 1.5, Uncommon = 1.5, Rare = 1.4, Epic = 1.4, Legendary = 2.2, Mythical = 2.4, Secret = 1.9, Divine = 2.6 }
 -- capture presentation after the server's collect event
@@ -4476,7 +4483,7 @@ T.ShowcaseMin = 0.8        -- readable full-silhouette hold between entrance and
 T.LandBounce = 0.5         -- local orb bounce before the gate opens
 T.GateOpen = 0.45
 T.GateClose = 0.35
-T.Card = { enter = 0.35, hold = 1.3, travel = 0.45, gap = 0.25 }
+T.Card = { enter = 0.16, hold = 1.2, travel = 0.16, gap = 0.15 }
 T.CardFallback = 3.0       -- if the capture visual never reports, show the card anyway
 T.CameraTimeout = 14       -- hard cap on any follow-camera claim
 -- THROW CUTSCENE: time between PortalThrown and the ball leaving the hand (you raise the portal,
@@ -16355,6 +16362,16 @@ ThrowRE.OnServerEvent:Connect(function(player, power, dir)
 		end
 		st.forceNext = nil
 	end
+	local discovery = not data.Discovered[creatureId]
+	-- Reserve the first reveal while a matching throw is in flight. Expired throws
+	-- release that reservation naturally; the saved bestiary changes only on deposit.
+	for _, pending in pairs(Pending) do
+		if pending.owner == player and pending.creature == creatureId then
+			discovery = false
+			break
+		end
+	end
+	local presentation = Timeline.ShouldPresent(CreatureData.ById[creatureId].rarity, discovery)
 	Pending[id] = {
 		owner = player,
 		creature = creatureId,
@@ -16366,7 +16383,7 @@ ThrowRE.OnServerEvent:Connect(function(player, power, dir)
 	}
 	-- throw cutscene length (rarer creature = longer, crazier wind-up); the opening waits for it
 	local rolledRarity = CreatureData.ById[creatureId].rarity
-	local windup = Timeline.WindupFor(rolledRarity)
+	local windup = presentation and Timeline.WindupFor(rolledRarity) or 0.18
 
 	PortalThrownRE:FireAllClients({
 		id = id,
@@ -16380,6 +16397,7 @@ ThrowRE.OnServerEvent:Connect(function(player, power, dir)
 		zone = worldId,
 		rarity = rolledRarity,
 		windup = windup,
+		presentation = presentation,
 	})
 	task.delay(windup + flight + 0.9, function()
 		local p = Pending[id]
@@ -16392,6 +16410,7 @@ ThrowRE.OnServerEvent:Connect(function(player, power, dir)
 			id = id,
 			owner = player.UserId,
 			creature = creatureId,
+			presentation = presentation,
 			pos = landing,
 			portal = data.EquippedPortal,
 			chance = chance,
@@ -16450,7 +16469,7 @@ local function depositCarry(player, data, st, silent)
 	if #st.carry == 0 then
 		return
 	end
-	local newOnes = {}
+	local newOnes, discoveries = {}, {}
 	for _, key in ipairs(st.carry) do
 		local cid, vs, vm = Variants.Parse(key)
 		local uid = DataService.NewUid(data)
@@ -16458,7 +16477,9 @@ local function depositCarry(player, data, st, silent)
 		if #data.Placed < slotsOpen(data) then
 			table.insert(data.Placed, uid)
 		end
-		if not data.Discovered[cid] then
+		local discovery = not data.Discovered[cid]
+		table.insert(discoveries, discovery)
+		if discovery then
 			local before = #masteredWorlds(data)
 			data.Discovered[cid] = true
 			if #masteredWorlds(data) > before and not silent then
@@ -16480,7 +16501,8 @@ local function depositCarry(player, data, st, silent)
 	st.carry = {}
 	setCarry(player)
 	if not silent then
-		DepositRE:FireClient(player, newOnes)
+		-- Parallel flags are captured before sync mutates the client's bestiary.
+		DepositRE:FireClient(player, newOnes, discoveries)
 	end
 	sync(player)
 end
@@ -22077,220 +22099,119 @@ return L
 <Item class="StarterPlayer" referent="RBX111"><Properties><string name="Name">StarterPlayer</string></Properties>
 <Item class="StarterPlayerScripts" referent="RBX71"><Properties><string name="Name">StarterPlayerScripts</string></Properties>
 <Item class="Folder" referent="RBX72"><Properties><string name="Name">Client</string></Properties>
-<Item class="ModuleScript" referent="RBX73"><Properties><string name="Name">CaughtPresentation</string><ProtectedString name="Source"><![CDATA[-- Caught card for an already confirmed catch, styled after Actions/02_Rarity_Reveal_and_Capture ("03 ADDED"):
--- purple card with a double gold frame and diamond crest, light rays behind the pet, the creature's name,
--- a "CAUGHT" ribbon with laurels, an "ADDED TO PETS" plaque, then the card flies into the live Pets button.
+<Item class="ModuleScript" referent="RBX73"><Properties><string name="Name">CaughtPresentation</string><ProtectedString name="Source"><![CDATA[-- A brief bestiary slip for discoveries and Rare+ catches. Routine catches stay quiet.
 local RS = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 local Data = require(RS.Shared.CreatureData)
-local Config = require(RS.Shared.Config)
-local Format = require(RS.Shared.Format)
 local Timeline = require(RS.Shared.PresentationTimeline)
+local Variants = require(RS.Shared.Variants)
 local K = require(script.Parent.UIKit)
-local T = K.Theme
 local HUD = require(script.Parent.HUD)
 local Renderer = require(script.Parent.CreatureRenderer)
 local Settings = require(script.Parent.ClientSettings)
 local Plaque = require(script.Parent.Plaque)
-local Variants = require(RS.Shared.Variants)
 
-local GOLD = Color3.fromRGB(232, 188, 98)
-local GOLD_HI = Color3.fromRGB(255, 234, 168)
-local PLUM = Color3.fromRGB(40, 20, 56)
-local W, H = 300, 392
-
-local function tw(o, t, props, style, dir)
-	local x = TweenService:Create(o, TweenInfo.new(Settings.ReducedMotion and 0 or t, style or Enum.EasingStyle.Quart, dir or Enum.EasingDirection.Out), props)
-	x:Play()
-	return x
-end
-
-local function frame(parent, props)
-	local f = Instance.new("Frame")
-	f.BorderSizePixel = 0
-	for k, v in pairs(props) do f[k] = v end
-	f.Parent = parent
-	return f
-end
-
-local function montserrat(weight)
-	local ok, f = pcall(function() return Font.new("rbxasset://fonts/families/Montserrat.json", weight) end)
-	return ok and f or Font.fromEnum(Enum.Font.GothamBold)
-end
-
-return function(key)
-	-- key = "CreatureId" or "CreatureId|Size|Material"
-	local id, vsize, vmat = Variants.Parse(key)
-	local vname = Variants.Prefix(vsize, vmat)
+return function(key, discovery)
+	local id, size, material = Variants.Parse(key)
 	local def = Data.ById[id]
-	if not def then
+	if not def or not Timeline.ShouldPresent(def.rarity, discovery) or HUD.AnyPanelOpen() then
 		return
 	end
-	if HUD.AnyPanelOpen() then
-		HUD.Notify("Caught " .. vname .. def.name .. ". Added to your creatures.", "success")
-		return
+	local old = HUD.Root:FindFirstChild("CatchReceipt")
+	if old then
+		old:Destroy()
 	end
-	local rarityColor = T.Rarity(def.rarity, Config)
-	local variantColor = Variants.Color(vsize, vmat)
-
-	local card = frame(HUD.Root, {
-		Name = "CatchReceipt", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.52),
-		Size = UDim2.fromOffset(W, H), BackgroundColor3 = Color3.new(1, 1, 1), ZIndex = 30,
-	})
-	Instance.new("UICorner", card).CornerRadius = UDim.new(0, 14)
-	local g = Instance.new("UIGradient")
-	g.Rotation = 90
-	g.Color = ColorSequence.new({
-		ColorSequenceKeypoint.new(0, Color3.fromRGB(196, 170, 246)),
-		ColorSequenceKeypoint.new(0.45, Color3.fromRGB(150, 104, 220)),
-		ColorSequenceKeypoint.new(1, Color3.fromRGB(86, 44, 150)),
-	})
-	g.Parent = card
-	local outer = Instance.new("UIStroke")
-	outer.Color = GOLD
-	outer.Thickness = 4
-	outer.Parent = card
-	-- inner gold hairline frame
-	local inner = frame(card, {
-		AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.new(1, -16, 1, -16),
-		BackgroundTransparency = 1, ZIndex = 31,
-	})
-	Instance.new("UICorner", inner).CornerRadius = UDim.new(0, 9)
-	local innerStroke = Instance.new("UIStroke")
-	innerStroke.Color = GOLD_HI
-	innerStroke.Thickness = 1.5
-	innerStroke.Transparency = 0.25
-	innerStroke.Parent = inner
-
-	-- light rays behind the pet, clipped to the portrait window
-	local window = frame(card, {
-		AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 58), Size = UDim2.fromOffset(W - 36, 196),
-		BackgroundTransparency = 1, ClipsDescendants = true, ZIndex = 32,
-	})
-	local rays = frame(window, {
-		AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.55), Size = UDim2.fromOffset(420, 420),
-		BackgroundTransparency = 1, ZIndex = 32,
-	})
-	for i = 1, 10 do
-		local bar = frame(rays, {
-			AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.new(0, i % 2 == 0 and 10 or 22, 1, 0),
-			Rotation = (i - 1) * 18, BackgroundColor3 = Color3.new(1, 1, 1), BackgroundTransparency = 0, ZIndex = 32,
-		})
-		local bg = Instance.new("UIGradient")
-		bg.Rotation = 90
-		bg.Transparency = NumberSequence.new({
-			NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.35, 0.9), NumberSequenceKeypoint.new(0.5, 0.55),
-			NumberSequenceKeypoint.new(0.65, 0.9), NumberSequenceKeypoint.new(1, 1),
-		})
-		bg.Parent = bar
+	local slip = Instance.new("CanvasGroup")
+	local compact = workspace.CurrentCamera.ViewportSize.Y < 480
+	local width, slipHeight = compact and 220 or 272, compact and 64 or 80
+	slip.Name = "CatchReceipt"
+	slip.AnchorPoint = Vector2.new(0.5, 1)
+	slip.Position = UDim2.new(0.5, 0, 1, -20)
+	slip.Size = UDim2.fromOffset(width, slipHeight)
+	slip.BackgroundColor3 = Color3.fromRGB(230, 220, 193)
+	slip.BorderSizePixel = 0
+	slip.GroupTransparency = Settings.ReducedMotion and 0 or 1
+	slip.ZIndex = 30
+	slip:SetAttribute("Discovery", discovery == true)
+	slip.Parent = HUD.Root
+	Instance.new("UICorner", slip).CornerRadius = UDim.new(0, 3)
+	local edge = Instance.new("UIStroke")
+	edge.Color = Color3.fromRGB(131, 108, 65)
+	edge.Thickness = 1
+	edge.Parent = slip
+	local gradient = Instance.new("UIGradient")
+	gradient.Color = ColorSequence.new(Color3.fromRGB(255, 250, 230), Color3.fromRGB(205, 191, 155))
+	gradient.Rotation = 100
+	gradient.Parent = slip
+	local portraitSize = compact and 52 or 64
+	local portrait = K.viewport(
+		Renderer.BuildPreview(id, material),
+		UDim2.fromOffset(portraitSize, portraitSize),
+		false,
+		false,
+		true
+	)
+	portrait.Position = UDim2.fromOffset(6, compact and 6 or 8)
+	portrait.ZIndex = 31
+	portrait.Parent = slip
+	local function line(name, text, y, height, sizePx, color, font)
+		local l = Instance.new("TextLabel")
+		l.Name = name
+		l.BackgroundTransparency = 1
+		local left = compact and 66 or 80
+		l.Position = UDim2.fromOffset(left, y)
+		l.Size = UDim2.new(1, -left - 12, 0, height)
+		l.Text = text
+		l.TextSize = sizePx
+		l.TextColor3 = color
+		l.FontFace = font
+		l.TextXAlignment = Enum.TextXAlignment.Left
+		l.TextTruncate = Enum.TextTruncate.AtEnd
+		l.ZIndex = 31
+		l.Parent = slip
 	end
-	local glow = frame(window, {
-		AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.58), Size = UDim2.fromOffset(200, 120),
-		BackgroundColor3 = Color3.fromRGB(255, 246, 220), BackgroundTransparency = 0.55, ZIndex = 32,
-	})
-	Instance.new("UICorner", glow).CornerRadius = UDim.new(1, 0)
-	local gg = Instance.new("UIGradient")
-	gg.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.5, 0.2), NumberSequenceKeypoint.new(1, 1) })
-	gg.Parent = glow
-
-	local vp = K.viewport(Renderer.BuildPreview(id, vmat),UDim2.fromOffset(W - 36, 196), false)
-	vp.AnchorPoint = Vector2.new(0.5, 0)
-	vp.Position = UDim2.new(0.5, 0, 0, 58)
-	vp.ZIndex = 33
-	vp.Parent = card
-
-	-- diamond crest on the top edge
-	local crest = frame(card, {
-		AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0, 0), Size = UDim2.fromOffset(34, 34), Rotation = 45,
-		BackgroundColor3 = GOLD, ZIndex = 36,
-	})
-	local cs = Instance.new("UIStroke")
-	cs.Color = GOLD_HI
-	cs.Thickness = 2
-	cs.Parent = crest
-	frame(crest, {
-		AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(16, 16),
-		BackgroundColor3 = Color3.fromRGB(120, 66, 196), ZIndex = 37,
-	})
-
-	-- name + rarity/income
-	local name = Instance.new("TextLabel")
-	name.AnchorPoint = Vector2.new(0.5, 0)
-	name.Position = UDim2.new(0.5, 0, 0, 22)
-	name.Size = UDim2.fromOffset(W - 40, 32)
-	name.BackgroundTransparency = 1
-	name.FontFace = Plaque.SerifHeavy
-	name.TextScaled = true
-	name.Text = vname .. def.name
-	name.TextColor3 = variantColor and variantColor:Lerp(Color3.new(1, 1, 1), 0.35) or Color3.new(1, 1, 1)
-	name.ZIndex = 36
-	local ns = Instance.new("UIStroke")
-	ns.Color = PLUM
-	ns.Thickness = 2
-	ns.Transparency = 0.1
-	ns.Parent = name
-	name.Parent = card
-
-	local info = Instance.new("TextLabel")
-	info.AnchorPoint = Vector2.new(0.5, 0)
-	info.Position = UDim2.new(0.5, 0, 0, 258)
-	info.Size = UDim2.fromOffset(W - 40, 18)
-	info.BackgroundTransparency = 1
-	info.FontFace = montserrat(Enum.FontWeight.Bold)
-	info.TextScaled = true
-	info.RichText = true
-	info.Text = string.format('<font color="#%s">%s</font>   ·   %s / sec', rarityColor:Lerp(Color3.new(1, 1, 1), 0.6):ToHex(), string.upper(def.rarity), Format.Money(Data.Income(id) * Variants.Mult(vsize, vmat)))
-	info.TextColor3 = Color3.new(1, 1, 1)
-	info.ZIndex = 36
-	local is = Instance.new("UIStroke")
-	is.Color = PLUM
-	is.Thickness = 1.5
-	is.Transparency = 0.2
-	is.Parent = info
-	info.Parent = card
-
-	-- CAUGHT ribbon with laurels, ADDED TO PETS plaque
-	local ribbon = Plaque.Make(card, "CAUGHT", "Caught", 214, 42, { Position = UDim2.new(0.5, 0, 0, 308), ZIndex = 37, Font = Plaque.SerifHeavy })
-	Plaque.Laurel(ribbon, -6, 21, 40, -1, GOLD, 36)
-	Plaque.Laurel(ribbon, 220, 21, 40, 1, GOLD, 36)
-	Plaque.Make(card, "ADDED TO PETS", "Ivory", 200, 32, { Position = UDim2.new(0.5, 0, 0, 356), ZIndex = 37 })
-
-	-- enter
-	local scale = Instance.new("UIScale")
-	scale.Scale = Settings.ReducedMotion and 1 or 0.7
-	scale.Parent = card
-	tw(scale, Timeline.Card.enter, { Scale = 1 }, Enum.EasingStyle.Back)
-	local spin
-	if not Settings.ReducedMotion then
-		spin = game:GetService("RunService").RenderStepped:Connect(function(dt)
-			rays.Rotation += 8 * dt
-		end)
+	line(
+		"Status",
+		discovery and "NEW SPECIES" or "ADDED TO PETS",
+		compact and 7 or 10,
+		compact and 12 or 14,
+		compact and 9 or 10,
+		Color3.fromRGB(90, 79, 51),
+		Font.fromEnum(Enum.Font.GothamBold)
+	)
+	line(
+		"PetName",
+		Variants.Prefix(size, material) .. def.name,
+		compact and 21 or 26,
+		compact and 22 or 25,
+		compact and 18 or 20,
+		Color3.fromRGB(49, 49, 39),
+		Plaque.SerifHeavy
+	)
+	line(
+		"Rarity",
+		def.rarity,
+		compact and 44 or 54,
+		compact and 13 or 15,
+		compact and 11 or 12,
+		Color3.fromRGB(77, 82, 63),
+		Font.fromEnum(Enum.Font.GothamMedium)
+	)
+	local function fade(value, duration)
+		TweenService:Create(
+			slip,
+			TweenInfo.new(Settings.ReducedMotion and 0 or duration, Enum.EasingStyle.Quad),
+			{ GroupTransparency = value }
+		):Play()
 	end
-
-	-- hold, then fly into the live Pets button
+	fade(0, Timeline.Card.enter)
 	task.delay(Timeline.Card.enter + Timeline.Card.hold, function()
-		if not card.Parent then
-			if spin then spin:Disconnect() end
+		if not slip.Parent then
 			return
 		end
-		local pets = HUD.SideButtons.Pets
-		local travel = Timeline.Card.travel or 0.45
-		if pets and pets.Visible and not Settings.ReducedMotion then
-			local rootAbs = HUD.Root.AbsolutePosition
-			local target = pets.AbsolutePosition + pets.AbsoluteSize / 2 - rootAbs
-			card.AnchorPoint = Vector2.new(0.5, 0.5)
-			tw(card, travel, { Position = UDim2.fromOffset(target.X, target.Y) }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-			tw(scale, travel, { Scale = 0.12 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-			task.delay(travel * 0.6, function()
-				if card.Parent then Plaque.Fade(card, 1, travel * 0.4, tw) end
-			end)
-		else
-			Plaque.Fade(card, 1, 0.3, tw)
-		end
-		task.delay(travel + 0.05, function()
-			if spin then spin:Disconnect() end
-			if card.Parent then card:Destroy() end
-			if pets and pets.Visible then K.pop(pets) end
+		fade(1, Timeline.Card.travel)
+		task.delay(Timeline.Card.travel, function()
+			slip:Destroy()
 		end)
 	end)
 end
@@ -22412,7 +22333,7 @@ end)
 
 Remotes.MoneyFx.OnClientEvent:Connect(Feel.Money)
 
--- "CAUGHT!" card: pops up with the spinning creature, then flies into the Pets button
+-- Bestiary slips: confirmed discoveries and Rare+ only, never routine repeats.
 local caughtCard = require(Client.CaughtPresentation)
 
 -- Card queue: a card is shown only for a CONFIRMED deposit, after its capture presentation
@@ -22425,16 +22346,16 @@ local function pumpCards()
 		return
 	end
 	cardBusy = true
-	local id = table.remove(cardQueue, 1)
+	local receipt = table.remove(cardQueue, 1)
 	task.spawn(function()
-		pcall(caughtCard, id)
+		pcall(caughtCard, receipt.key, receipt.discovery)
 		task.wait(Timeline.CardTotal())
 		cardBusy = false
 		pumpCards()
 	end)
 end
-local function enqueueCard(id)
-	table.insert(cardQueue, id)
+local function enqueueCard(id, discovery)
+	table.insert(cardQueue, { key = id, discovery = discovery })
 	pumpCards()
 end
 Renderer.CaptureFinished.Event:Connect(function(_throwId, ownerId, creatureId)
@@ -22444,17 +22365,22 @@ Renderer.CaptureFinished.Event:Connect(function(_throwId, ownerId, creatureId)
 	for i, pc in ipairs(pendingCards) do
 		if pc.id == creatureId then
 			table.remove(pendingCards, i)
-			enqueueCard(pc.key or creatureId)
+			enqueueCard(pc.key or creatureId, pc.discovery)
 			return
 		end
 	end
 	table.insert(recentCaptures, { id = creatureId, t = os.clock() })
 end)
-Remotes.Deposit.OnClientEvent:Connect(function(ids)
-	for _, key in ipairs(ids) do
+Remotes.Deposit.OnClientEvent:Connect(function(ids, discoveries)
+	for index, key in ipairs(ids) do
 		-- "CreatureId" or "CreatureId|Size|Material": the card shows the full variant name
 		local id = Variants.Parse(key)
-		if CreatureData.ById[id] then
+		local discovery = discoveries and discoveries[index] == true
+		if not discoveries then
+			discovery = not (State.Data.Discovered or {})[id]
+		end
+		local def = CreatureData.ById[id]
+		if def and Timeline.ShouldPresent(def.rarity, discovery) then
 			local matched = false
 			for i, rc in ipairs(recentCaptures) do
 				if rc.id == id and os.clock() - rc.t < 6 then
@@ -22464,11 +22390,12 @@ Remotes.Deposit.OnClientEvent:Connect(function(ids)
 				end
 			end
 			if matched then
-				enqueueCard(key)
+				enqueueCard(key, discovery)
 			else
 				table.insert(pendingCards, {
 					id = id,
 					key = key,
+					discovery = discovery,
 					deadline = os.clock() + Timeline.CardFallback + Timeline.CaptureFor(CreatureData.ById[id].rarity),
 				})
 			end
@@ -22480,7 +22407,12 @@ RunService.Heartbeat:Connect(function()
 	for i = #pendingCards, 1, -1 do
 		if now > pendingCards[i].deadline then
 			local pc = table.remove(pendingCards, i)
-			enqueueCard(pc.key or pc.id)
+			enqueueCard(pc.key or pc.id, pc.discovery)
+		end
+	end
+	for i = #recentCaptures, 1, -1 do
+		if now - recentCaptures[i].t > 6 then
+			table.remove(recentCaptures, i)
 		end
 	end
 end)
@@ -22738,21 +22670,22 @@ end
 -- Reference-sheet label above a wild pet: carved rarity plaque, serif name, small detail line.
 local function rarityTag(entry, def, sub, offsetY, displayName, nameColor)
 	local bb = Instance.new("BillboardGui")
-	bb.Size = UDim2.fromOffset(340, 104)
+	bb.Size = UDim2.fromOffset(216, 72)
 	bb.StudsOffsetWorldSpace = Vector3.new(0, offsetY, 0)
 	bb.MaxDistance = 170
 	bb.LightInfluence = 0
 	bb.AlwaysOnTop = false
 	bb.ResetOnSpawn = false
 	local style = Plaque.Styles[def.rarity] and def.rarity or "Common"
-	local plaque = Plaque.Make(bb, string.upper(def.rarity), style, 190, 30, { Position = UDim2.new(0.5, 0, 0, 18), ZIndex = 2 })
+	local plaque = Plaque.Make(bb, string.upper(def.rarity), style, 128, 21, { Position = UDim2.new(0.5, 0, 0, 12), ZIndex = 2 })
 	local name = Instance.new("TextLabel")
 	name.AnchorPoint = Vector2.new(0.5, 0)
-	name.Position = UDim2.new(0.5, 0, 0, 38)
-	name.Size = UDim2.new(1, -20, 0, 36)
+	name.Position = UDim2.new(0.5, 0, 0, 27)
+	name.Size = UDim2.new(1, -12, 0, 25)
 	name.BackgroundTransparency = 1
 	name.FontFace = Plaque.SerifHeavy
-	name.TextScaled = true
+	name.TextSize = 20
+	name.TextTruncate = Enum.TextTruncate.AtEnd
 	name.Text = displayName or def.name
 	name.TextColor3 = nameColor and nameColor:Lerp(Color3.new(1, 1, 1), 0.3) or Color3.fromRGB(255, 252, 244)
 	name.ZIndex = 5
@@ -22765,11 +22698,11 @@ local function rarityTag(entry, def, sub, offsetY, displayName, nameColor)
 	if sub and sub ~= "" then
 		local d = Instance.new("TextLabel")
 		d.AnchorPoint = Vector2.new(0.5, 0)
-		d.Position = UDim2.new(0.5, 0, 0, 76)
-		d.Size = UDim2.new(1, -40, 0, 18)
+		d.Position = UDim2.new(0.5, 0, 0, 54)
+		d.Size = UDim2.new(1, -16, 0, 15)
 		d.BackgroundTransparency = 1
 		d.FontFace = montserrat(Enum.FontWeight.SemiBold)
-		d.TextScaled = true
+		d.TextSize = 12
 		d.Text = sub
 		d.TextColor3 = Color3.fromRGB(236, 228, 246)
 		d.ZIndex = 5
@@ -22782,14 +22715,13 @@ local function rarityTag(entry, def, sub, offsetY, displayName, nameColor)
 	end
 	-- plaque drops in, name fades up
 	local sc = Instance.new("UIScale")
-	sc.Scale = 0.6
+	sc.Scale = 1
 	sc.Parent = plaque
-	softTween(sc, 0.45, { Scale = 1 }, Enum.EasingStyle.Back)
-	name.TextTransparency, st.Transparency = 1, 1
-	task.delay(0.15, function()
-		softTween(name, 0.35, { TextTransparency = 0 })
-		softTween(st, 0.35, { Transparency = 0.15 })
-	end)
+	if not Settings.ReducedMotion then
+		name.TextTransparency, st.Transparency = 1, 1
+		softTween(name, 0.16, { TextTransparency = 0 })
+		softTween(st, 0.16, { Transparency = 0.15 })
+	end
 	bb.Parent = entry.model.PrimaryPart
 	entry.tag = bb
 	return bb
@@ -23355,7 +23287,7 @@ local function stepEntrance(e, dt)
 end
 
 -- The creature appears inside the open portal (at `pos`) and comes out toward the thrower (-Z).
-function Renderer.SpawnWild(throwId, creatureId, pos, ownerId, chanceText, vsize, vmat)
+function Renderer.SpawnWild(throwId, creatureId, pos, ownerId, chanceText, vsize, vmat, presentation)
 	if wild[throwId] then
 		return wild[throwId]
 	end -- duplicate event: never two models per throw
@@ -23365,6 +23297,15 @@ function Renderer.SpawnWild(throwId, creatureId, pos, ownerId, chanceText, vsize
 	end
 	local cf = CFrame.lookAt(pos + Vector3.new(0, 0, 1.5), pos + Vector3.new(0, 0, -10))
 	local e = spawnEntry(creatureId, cf, "wild", 0, vsize, vmat)
+	e.presentation = presentation ~= false
+	e.throwId = throwId
+	e.owner = ownerId
+	if not e.presentation then
+		-- Routine catches have no reveal animation, plaque or floor rings.
+		e.anim:Teleport(CFrame.lookAt(pos + Vector3.new(0, 0, -9), pos + Vector3.new(0, 0, -10)))
+		wild[throwId] = e
+		return e
+	end
 	local prof = e.rig.profile
 	local enter = prof.enter or {}
 	-- themed entrance: motion style from the kind of animal, element FX from its world
@@ -23492,6 +23433,11 @@ function Renderer.RemoveWild(throwId, reason, collectorId)
 	wild[throwId] = nil
 	if reason ~= "collected" then
 		e.fadeT = 0
+		return
+	end
+	if e.presentation == false then
+		destroyEntry(e)
+		Renderer.CaptureFinished:Fire(e.throwId, e.owner, e.id)
 		return
 	end
 	local ok = pcall(function()
@@ -33490,8 +33436,13 @@ Remotes.PortalThrown.OnClientEvent:Connect(function(info)
 	local rinfo = info.rarity and Config.Rarities[info.rarity]
 	local tier = rinfo and rinfo.order or 1
 	local rarityColor = rinfo and rinfo.color or nil
-	if mine then
+	if mine and info.presentation ~= false then
 		TC.PlayThrowCutscene(info, windup, tier, rarityColor)
+	elseif mine then
+		-- A known low-tier catch releases immediately without a cinematic takeover.
+		if TC.EndAim then
+			TC.EndAim()
+		end
 	elseif tier >= 5 and windup > 0 and rarityColor then
 		Effects.LightBeam(info.from - Vector3.new(0, 1.5, 0), rarityColor, 80, windup) -- others see the power-up too
 	end
@@ -33523,6 +33474,7 @@ Remotes.PortalThrown.OnClientEvent:Connect(function(info)
 		end
 	end
 	local follow = mine
+		and info.presentation ~= false
 		and info.dist > 70
 		and not Settings.ReducedMotion
 		and not TC.InputBlocked
@@ -33570,7 +33522,7 @@ Remotes.PortalThrown.OnClientEvent:Connect(function(info)
 					"rbxasset://textures/particles/smoke_main.dds"
 				)
 				Effects.Shockwave(c - Vector3.new(0, 0.8, 0), Config.Portals[info.portal].color, 6, 0.4)
-				if mine then
+				if mine and info.presentation ~= false then
 					Effects.Shake(0.3, 0.14)
 				end
 				refs.trail.Enabled = false
@@ -33611,6 +33563,7 @@ Remotes.PortalOpened.OnClientEvent:Connect(function(info)
 	local rc = Config.Rarities[def.rarity]
 	local mine = info.owner == player.UserId
 	local chanceText = Odds.OneIn(info.chance)
+	local presentation = info.presentation ~= false
 	if mine then
 		TC.Phase = "Revealing"
 	end
@@ -33624,7 +33577,7 @@ Remotes.PortalOpened.OnClientEvent:Connect(function(info)
 
 	-- rarity weight: one clear accent per tier, local to the reveal (no screen-filling effects)
 	local low = Settings.LowVFX()
-	if rc.order >= 5 then
+	if presentation and rc.order >= 5 then
 		if not low then
 			Effects.LightBeam(
 				info.pos,
@@ -33639,18 +33592,20 @@ Remotes.PortalOpened.OnClientEvent:Connect(function(info)
 			Sounds.Play("Rare")
 			Effects.RarityBanner(def, chanceText)
 		end
-	elseif mine then
+	elseif presentation and mine then
 		Effects.RarityBanner(def, chanceText)
 	end
-	if not low or rc.order >= 3 then
+	if presentation and (not low or rc.order >= 3) then
 		Effects.Burst(center, rc.color, 10 + rc.order * 5, 10 + rc.order * 2, 0.8)
 	end
-	Sounds.PlayAt("Spawn", center, 1.2 - rc.order * 0.05)
+	if presentation then
+		Sounds.PlayAt("Spawn", center, 1.2 - rc.order * 0.05)
+	end
 	local vsize, vmat = info.size, info.variant
-	Renderer.SpawnWild(info.id, info.creature, info.pos, info.owner, chanceText, vsize, vmat)
+	Renderer.SpawnWild(info.id, info.creature, info.pos, info.owner, chanceText, vsize, vmat, presentation)
 	-- Big / Huge / Titan and Gold / Emerald / Ruby / Diamond get their own big callout
 	local special = vsize or vmat
-	if special and (mine or near) then
+	if presentation and special and (mine or near) then
 		local vcol = Variants.Color(vsize, vmat) or rc.color
 		local scale = Variants.Scale(vsize)
 		task.delay(0.35, function()
@@ -33675,7 +33630,7 @@ Remotes.PortalOpened.OnClientEvent:Connect(function(info)
 	end
 	if mine then
 		-- Rarity caption and world label already show the odds; avoid a third floating label.
-		if TC.InputBlocked or TC.SystemMenuOpen then
+		if not presentation or TC.InputBlocked or TC.SystemMenuOpen then
 			TC.StopFollow(true)
 		elseif (rc.order >= 3 or special) and not Settings.ReducedMotion then
 			-- a GOOD pet (or a Big/Huge/Titan/Gold/gem one): zoom in and watch it through entrance + capture

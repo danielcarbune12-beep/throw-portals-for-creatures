@@ -779,8 +779,13 @@ Remotes.PortalThrown.OnClientEvent:Connect(function(info)
 	local rinfo = info.rarity and Config.Rarities[info.rarity]
 	local tier = rinfo and rinfo.order or 1
 	local rarityColor = rinfo and rinfo.color or nil
-	if mine then
+	if mine and info.presentation ~= false then
 		TC.PlayThrowCutscene(info, windup, tier, rarityColor)
+	elseif mine then
+		-- A known low-tier catch releases immediately without a cinematic takeover.
+		if TC.EndAim then
+			TC.EndAim()
+		end
 	elseif tier >= 5 and windup > 0 and rarityColor then
 		Effects.LightBeam(info.from - Vector3.new(0, 1.5, 0), rarityColor, 80, windup) -- others see the power-up too
 	end
@@ -812,6 +817,7 @@ Remotes.PortalThrown.OnClientEvent:Connect(function(info)
 		end
 	end
 	local follow = mine
+		and info.presentation ~= false
 		and info.dist > 70
 		and not Settings.ReducedMotion
 		and not TC.InputBlocked
@@ -859,7 +865,7 @@ Remotes.PortalThrown.OnClientEvent:Connect(function(info)
 					"rbxasset://textures/particles/smoke_main.dds"
 				)
 				Effects.Shockwave(c - Vector3.new(0, 0.8, 0), Config.Portals[info.portal].color, 6, 0.4)
-				if mine then
+				if mine and info.presentation ~= false then
 					Effects.Shake(0.3, 0.14)
 				end
 				refs.trail.Enabled = false
@@ -900,6 +906,7 @@ Remotes.PortalOpened.OnClientEvent:Connect(function(info)
 	local rc = Config.Rarities[def.rarity]
 	local mine = info.owner == player.UserId
 	local chanceText = Odds.OneIn(info.chance)
+	local presentation = info.presentation ~= false
 	if mine then
 		TC.Phase = "Revealing"
 	end
@@ -913,7 +920,7 @@ Remotes.PortalOpened.OnClientEvent:Connect(function(info)
 
 	-- rarity weight: one clear accent per tier, local to the reveal (no screen-filling effects)
 	local low = Settings.LowVFX()
-	if rc.order >= 5 then
+	if presentation and rc.order >= 5 then
 		if not low then
 			Effects.LightBeam(
 				info.pos,
@@ -928,18 +935,20 @@ Remotes.PortalOpened.OnClientEvent:Connect(function(info)
 			Sounds.Play("Rare")
 			Effects.RarityBanner(def, chanceText)
 		end
-	elseif mine then
+	elseif presentation and mine then
 		Effects.RarityBanner(def, chanceText)
 	end
-	if not low or rc.order >= 3 then
+	if presentation and (not low or rc.order >= 3) then
 		Effects.Burst(center, rc.color, 10 + rc.order * 5, 10 + rc.order * 2, 0.8)
 	end
-	Sounds.PlayAt("Spawn", center, 1.2 - rc.order * 0.05)
+	if presentation then
+		Sounds.PlayAt("Spawn", center, 1.2 - rc.order * 0.05)
+	end
 	local vsize, vmat = info.size, info.variant
-	Renderer.SpawnWild(info.id, info.creature, info.pos, info.owner, chanceText, vsize, vmat)
+	Renderer.SpawnWild(info.id, info.creature, info.pos, info.owner, chanceText, vsize, vmat, presentation)
 	-- Big / Huge / Titan and Gold / Emerald / Ruby / Diamond get their own big callout
 	local special = vsize or vmat
-	if special and (mine or near) then
+	if presentation and special and (mine or near) then
 		local vcol = Variants.Color(vsize, vmat) or rc.color
 		local scale = Variants.Scale(vsize)
 		task.delay(0.35, function()
@@ -964,7 +973,7 @@ Remotes.PortalOpened.OnClientEvent:Connect(function(info)
 	end
 	if mine then
 		-- Rarity caption and world label already show the odds; avoid a third floating label.
-		if TC.InputBlocked or TC.SystemMenuOpen then
+		if not presentation or TC.InputBlocked or TC.SystemMenuOpen then
 			TC.StopFollow(true)
 		elseif (rc.order >= 3 or special) and not Settings.ReducedMotion then
 			-- a GOOD pet (or a Big/Huge/Titan/Gold/gem one): zoom in and watch it through entrance + capture

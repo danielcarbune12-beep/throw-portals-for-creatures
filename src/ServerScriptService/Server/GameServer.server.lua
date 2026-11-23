@@ -438,6 +438,16 @@ ThrowRE.OnServerEvent:Connect(function(player, power, dir)
 		end
 		st.forceNext = nil
 	end
+	local discovery = not data.Discovered[creatureId]
+	-- Reserve the first reveal while a matching throw is in flight. Expired throws
+	-- release that reservation naturally; the saved bestiary changes only on deposit.
+	for _, pending in pairs(Pending) do
+		if pending.owner == player and pending.creature == creatureId then
+			discovery = false
+			break
+		end
+	end
+	local presentation = Timeline.ShouldPresent(CreatureData.ById[creatureId].rarity, discovery)
 	Pending[id] = {
 		owner = player,
 		creature = creatureId,
@@ -449,7 +459,7 @@ ThrowRE.OnServerEvent:Connect(function(player, power, dir)
 	}
 	-- throw cutscene length (rarer creature = longer, crazier wind-up); the opening waits for it
 	local rolledRarity = CreatureData.ById[creatureId].rarity
-	local windup = Timeline.WindupFor(rolledRarity)
+	local windup = presentation and Timeline.WindupFor(rolledRarity) or 0.18
 
 	PortalThrownRE:FireAllClients({
 		id = id,
@@ -463,6 +473,7 @@ ThrowRE.OnServerEvent:Connect(function(player, power, dir)
 		zone = worldId,
 		rarity = rolledRarity,
 		windup = windup,
+		presentation = presentation,
 	})
 	task.delay(windup + flight + 0.9, function()
 		local p = Pending[id]
@@ -475,6 +486,7 @@ ThrowRE.OnServerEvent:Connect(function(player, power, dir)
 			id = id,
 			owner = player.UserId,
 			creature = creatureId,
+			presentation = presentation,
 			pos = landing,
 			portal = data.EquippedPortal,
 			chance = chance,
@@ -533,7 +545,7 @@ local function depositCarry(player, data, st, silent)
 	if #st.carry == 0 then
 		return
 	end
-	local newOnes = {}
+	local newOnes, discoveries = {}, {}
 	for _, key in ipairs(st.carry) do
 		local cid, vs, vm = Variants.Parse(key)
 		local uid = DataService.NewUid(data)
@@ -541,7 +553,9 @@ local function depositCarry(player, data, st, silent)
 		if #data.Placed < slotsOpen(data) then
 			table.insert(data.Placed, uid)
 		end
-		if not data.Discovered[cid] then
+		local discovery = not data.Discovered[cid]
+		table.insert(discoveries, discovery)
+		if discovery then
 			local before = #masteredWorlds(data)
 			data.Discovered[cid] = true
 			if #masteredWorlds(data) > before and not silent then
@@ -563,7 +577,8 @@ local function depositCarry(player, data, st, silent)
 	st.carry = {}
 	setCarry(player)
 	if not silent then
-		DepositRE:FireClient(player, newOnes)
+		-- Parallel flags are captured before sync mutates the client's bestiary.
+		DepositRE:FireClient(player, newOnes, discoveries)
 	end
 	sync(player)
 end
