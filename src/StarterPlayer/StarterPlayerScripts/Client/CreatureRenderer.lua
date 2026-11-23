@@ -572,9 +572,20 @@ local function stepEntrance(e, dt)
 	local en, a = e.entrance, e.anim
 	en.t += dt
 	local k = math.clamp(en.t / en.dur, 0, 1)
+	-- portal charge-up: glowing silhouette in the portal, then the breakthrough (Entrances.Hold)
+	local okHold, held, k2 = pcall(Entrances.Hold, e, en, a, k, dt)
+	if okHold and held then
+		pcall(Entrances.Fx, e, en, a, k, dt)
+		a.yaw, a.targetYaw = en.yaw0, en.yaw0
+		return
+	end
+	if okHold and k2 then
+		k = k2
+	end
 	local s = e.rig.size
 	local reduced = Settings.ReducedMotion
 	local pop = (en.kind == "emerge" or en.kind == "descend" or en.kind == "resolve") and 1
+		or ((en.hold or 0) > 0 and Entrances.Pop(k))
 		or math.max(0.02, easeOut(math.min(1, k / 0.18)))
 	local kind = en.kind
 	local from, to = en.from, en.to

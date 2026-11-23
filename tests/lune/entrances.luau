@@ -16,7 +16,10 @@ local check = H.check
 local calls = 0
 local function fx() calls += 1 end
 local stubs = {
-	Effects = { Burst = fx, Shockwave = fx, Motif = fx, LightBeam = fx, Shake = fx },
+	Effects = { Burst = fx, Shockwave = fx, Motif = fx, LightBeam = fx, Shake = fx,
+		Part = function(size, cf, color) calls += 1; local p = R.Instance.new("Part"); p.Size, p.CFrame, p.Color = size, cf, color; return p end,
+		Tween = function() end },
+	Sounds = { PlayAt = fx },
 	ClientSettings = { LowVFX = function() return false end, ReducedMotion = false },
 }
 local game = { GetService = function(_, name)
@@ -25,7 +28,8 @@ local game = { GetService = function(_, name)
 end }
 local env = setmetatable({
 	game = game,
-	script = { Parent = { Effects = "Effects", ClientSettings = "ClientSettings" } },
+	script = { Parent = { Effects = "Effects", ClientSettings = "ClientSettings", Sounds = "Sounds" } },
+	task = { delay = function() end }, Instance = R.Instance, Enum = R.Enum,
 	require = function(x) if x == "CONFIG" then return Config end return stubs[x] end,
 	Vector3 = R.Vector3, Color3 = R.Color3, ColorSequence = R.ColorSequence, CFrame = R.CFrame,
 }, { __index = _G })
@@ -48,18 +52,48 @@ for _, c in ipairs(CreatureData.List) do
 	E.Prepare({ rig = rig, model = model }, en, c, 1)
 	check(en.element ~= nil and en.order ~= nil, c.id .. " element/order")
 	local e = { rig = rig, model = model }
-	local a = { pos = from, groundY = 5, gaitPhase = 0, landSquash = 0, rootRoll = 0 }
+	local a = { pos = from, groundY = 5, gaitPhase = 0, landSquash = 0, rootRoll = 0, scale = 1 }
+	function a:SetScale(s) self.scale = s end
+	local looks = {}
+	for _, p in model:GetDescendants() do
+		if p:IsA("BasePart") then looks[p] = { p.Color, p.Material } end
+	end
+	local sawHold, sawGlow, maxPop = false, false, 0
 	local ok, err = pcall(function()
 		E.Start(e, en)
 		for i = 1, 60 do
+			-- mirror CreatureRenderer.stepEntrance: charge-up hold first, then the themed motion on remapped k
+			en.t += en.dur / 60
 			local k = i / 60
-			if E.Owns(style) then E.Move(e, en, a, k, 1 / 40) end
+			local held, k2 = E.Hold(e, en, a, k, en.dur / 60)
+			if held then
+				sawHold = true
+				check((a.pos - from).Magnitude < 1.6 * rig.size + 0.5, c.id .. " charges at the portal mouth")
+				check(a.scale > 0.3 and a.scale < 0.95, c.id .. " silhouette scale")
+				for p in pairs(looks) do
+					if p.Transparency < 0.95 and p.Material == R.Enum.Material.Neon then sawGlow = true end
+				end
+			else
+				k = k2
+				if en.hold > 0 then maxPop = math.max(maxPop, E.Pop(k)) end
+				if E.Owns(style) then E.Move(e, en, a, k, 1 / 40) end
+			end
 			E.Fx(e, en, a, k, 1 / 40)
 			check(finite(a.pos) and a.groundY == a.groundY, c.id .. " finite root at k=" .. k)
 		end
 		E.Finish(e, en)
 	end)
 	check(ok, c.id .. " entrance run: " .. tostring(err))
+	if en.hold > 0 then
+		check(sawHold and sawGlow, c.id .. " glowing charge-up in the portal")
+		check(en.broke == true, c.id .. " breaks through")
+		check(maxPop > 1.1, c.id .. " squash-and-stretch pop")
+	end
+	local restored = true
+	for p, o in pairs(looks) do
+		if p.Color ~= o[1] or p.Material ~= o[2] then restored = false end
+	end
+	check(restored, c.id .. " colours and materials restored after the entrance")
 	if E.Owns(style) then
 		check((a.pos - to).Magnitude < 0.05, c.id .. " ends on target (" .. style .. ")")
 		check(math.abs(a.groundY - 5) < 0.3 * rig.size + 0.05, c.id .. " ends on the ground (" .. style .. ")")
