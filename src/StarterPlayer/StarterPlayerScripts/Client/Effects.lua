@@ -205,33 +205,16 @@ function Effects.RarityBanner(def, chanceText)
 end
 
 ---------------------------------------------------------------- lighting per world
-local bloom, cc, atmo, rays
 function Effects.SetupLighting()
-	-- (Lighting.Technology can't be set by scripts; it's set to Future in the place file)
-	pcall(function()
-		Lighting.GlobalShadows = true
-		Lighting.Brightness = 3
-		Lighting.ShadowSoftness = 0.12 -- clean directional shadows
-		Lighting.EnvironmentDiffuseScale = 0.55
-		Lighting.EnvironmentSpecularScale = 0.3 -- stone/wood read matte, not plastic
-		Lighting.GeographicLatitude = 38
-		local look = require(ReplicatedStorage.Shared.SanctuaryLook)
-		Lighting.ColorShift_Top = look.sunTop
-		Lighting.ColorShift_Bottom = look.shadeBottom
-	end)
-	bloom = Lighting:FindFirstChild("TPFC_Bloom") or Instance.new("BloomEffect")
-	bloom.Name = "TPFC_Bloom"; bloom.Intensity = 0.3; bloom.Size = 22; bloom.Threshold = 1.9; bloom.Parent = Lighting
-	cc = Lighting:FindFirstChild("TPFC_CC") or Instance.new("ColorCorrectionEffect")
-	cc.Name = "TPFC_CC"; cc.Saturation = 0.06; cc.Contrast = 0.1; cc.Brightness = 0; cc.Parent = Lighting
-	rays = Lighting:FindFirstChild("TPFC_Rays") or Instance.new("SunRaysEffect")
-	rays.Name = "TPFC_Rays"; rays.Intensity = 0.05; rays.Spread = 0.6; rays.Parent = Lighting
-	atmo = Lighting:FindFirstChildOfClass("Atmosphere") or Instance.new("Atmosphere")
-	atmo.Density = 0.3; atmo.Offset = 0.16; atmo.Haze = 0.9; atmo.Glare = 0.15; atmo.Parent = Lighting
-	local dof = Lighting:FindFirstChild("TPFC_DOF") or Instance.new("DepthOfFieldEffect")
-	dof.Name = "TPFC_DOF"; dof.FarIntensity = 0; dof.FocusDistance = 50; dof.InFocusRadius = 70; dof.NearIntensity = 0; dof.Parent = Lighting
-	Effects.DOF = dof
-	Effects.SetupExtras()
-	-- vignette removed on request (clean frame edges)
+ require(ReplicatedStorage.Shared.SanctuaryLook).Apply(Lighting)
+ local dof=Lighting:FindFirstChild("TPFC_DOF") or Instance.new("DepthOfFieldEffect")
+ dof.Name="TPFC_DOF"
+ dof.FarIntensity,dof.NearIntensity,dof.FocusDistance,dof.InFocusRadius=0,0,50,70
+ dof.Parent=Lighting
+ Effects.DOF=dof
+ Effects.SetupExtras()
+ require(script.Parent.SceneLighting).Start()
+ require(script.Parent.SceneLighting).Refresh(true)
 end
 
 ---------------------------------------------------------------- cinematic vignette + letterbox bars
@@ -333,18 +316,11 @@ Settings.Changed.Event:Connect(function(key,value)
 	end
 end)
 
-local clouds, sky
+local sky
 local function setupSky()
-	pcall(function()
-		clouds = workspace.Terrain:FindFirstChildOfClass("Clouds") or Instance.new("Clouds")
-		clouds.Cover = 0.55
-		clouds.Density = 0.6
-		clouds.Color = Color3.new(1, 1, 1)
-		clouds.Parent = workspace.Terrain
-	end)
 	sky = Lighting:FindFirstChildOfClass("Sky") or Instance.new("Sky")
 	sky.StarCount = 3000
-	sky.SunAngularSize = 14
+	sky.SunAngularSize = 6.5
 	sky.MoonAngularSize = 9
 	sky.CelestialBodiesShown = true
 	sky.Parent = Lighting
@@ -534,46 +510,12 @@ function Effects.Motif(kind: string, pos: Vector3, forward: Vector3, accent: Col
 	end
 end
 
-local HUB_LOOK = require(ReplicatedStorage.Shared.SanctuaryLook)
-
--- per-zone grade + fog, restrained: lighting does the work, not bloom or saturation.
--- density/offset keep the near field crisp and let distant structures fall into soft layers.
-local LOOK = {
-	Forest  = { exposure = -0.05, sat = 0.08, contrast = 0.12, bloom = 0.3,  rays = 0.07, density = 0.33, haze = 0.9, offset = 0.14, glare = 0.2 },
-	Volcano = { exposure = -0.1,  sat = 0.08, contrast = 0.16, bloom = 0.45, rays = 0.06, density = 0.38, haze = 1.4, offset = 0.12, glare = 0.15 },
-	Frozen  = { exposure = -0.15, sat = 0.02, contrast = 0.1,  bloom = 0.3,  rays = 0.07, density = 0.36, haze = 1.1, offset = 0.14, glare = 0.25 },
-	Crystal = { exposure = -0.05, sat = 0.06, contrast = 0.14, bloom = 0.55, rays = 0.03, density = 0.34, haze = 0.8, offset = 0.14, glare = 0.1 },
-	Candy   = { exposure = -0.25, sat = 0.08, contrast = 0.08, bloom = 0.3,  rays = 0.06, density = 0.32, haze = 0.8, offset = 0.15, glare = 0.15 },
-	Space   = { exposure = 0.0,   sat = 0.06, contrast = 0.18, bloom = 0.7,  rays = 0.0,  density = 0.2,  haze = 0.4, offset = 0.1,  glare = 0.0 },
-	Shadow  = { exposure = -0.05, sat = 0.04, contrast = 0.18, bloom = 0.6,  rays = 0.0,  density = 0.4,  haze = 1.2, offset = 0.1,  glare = 0.0 },
-	Heaven  = { exposure = -0.2,  sat = 0.04, contrast = 0.08, bloom = 0.35, rays = 0.08, density = 0.34, haze = 1.1, offset = 0.15, glare = 0.3 },
-}
-
+-- SceneLighting owns all environment properties; this legacy API still drives
+-- optional species ambience and returns the current world to callers.
 function Effects.UpdateWorld(pos: Vector3)
-	local inHub = pos.Z < Config.BarrierZ
-	local id = inHub and "Hub" or Config.WorldAt(pos)
-	if not id or id == currentWorld then return currentWorld end
-	currentWorld = id
-	local W = inHub and HUB_LOOK or Config.Worlds[id]
-	applyAmbient(id)
-	if clouds then
-		local cover = ({ Hub = 0.25, Forest = 0.55, Volcano = 0.75, Frozen = 0.8, Crystal = 0.3, Candy = 0.6, Space = 0, Shadow = 0.7, Heaven = 0.9 })[id] or 0.5
-		local ccol = ({ Volcano = Color3.fromRGB(90, 60, 60), Shadow = Color3.fromRGB(70, 40, 90), Candy = Color3.fromRGB(255, 210, 235) })[id] or Color3.new(1, 1, 1)
-		tween(clouds, 2, { Cover = cover, Color = ccol })
-	end
-	-- per-zone grade (brother's LOOK) on the map-tuned sun/fog from Config; the hub keeps SanctuaryLook
-	local look = (not inHub) and (LOOK[id] or LOOK.Forest) or nil
-	-- shade fill: each zone keeps a hint of its own colour, but pulled toward a cool neutral so shadows stay
-	-- readable and nothing turns purple; occluded areas get a darker version of it
-	local NEUTRAL = Color3.fromRGB(118, 124, 138)
-	local outdoor = inHub and HUB_LOOK.ambient or W.ambient:Lerp(NEUTRAL, 0.55)
-	local indoor = inHub and HUB_LOOK.indoor or outdoor:Lerp(Color3.fromRGB(40, 42, 48), 0.45)
-	tween(Lighting, 1.5, { Ambient = indoor, OutdoorAmbient = outdoor, ClockTime = inHub and HUB_LOOK.clock or W.clock, FogColor = W.fog, Brightness = 3, ExposureCompensation = inHub and -0.15 or look.exposure })
-	if cc then tween(cc, 1.5, { TintColor = W.tint, Saturation = inHub and 0.06 or look.sat, Contrast = inHub and 0.1 or look.contrast }) end
-	if atmo then tween(atmo, 1.5, { Color = W.atmo, Decay = W.fog, Haze = inHub and HUB_LOOK.haze or look.haze, Glare = inHub and HUB_LOOK.glare or look.glare, Offset = inHub and HUB_LOOK.offset or look.offset, Density = inHub and HUB_LOOK.density or look.density }) end
-	if bloom then tween(bloom, 1.0, { Intensity = inHub and HUB_LOOK.bloom or look.bloom }) end
-	if rays then tween(rays, 1.5, { Intensity = inHub and 0.05 or look.rays }) end
-	return id
+ local id=pos.Z<Config.BarrierZ and "Hub" or Config.WorldAt(pos)
+ if id~=currentWorld then currentWorld=id;applyAmbient(id) end
+ return id
 end
 
 return Effects

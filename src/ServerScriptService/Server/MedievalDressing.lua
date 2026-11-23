@@ -276,7 +276,7 @@ local function roofDetail(root)
 	local done, n = {}, 0
 	for _, w in ipairs(root:GetDescendants()) do
 		if n >= 260 then break end
-		if w:IsA("WedgePart") and w.Transparency < 0.1 and (w.Material == Enum.Material.SmoothPlastic or w.Material == Enum.Material.Plastic)
+		if w:IsA("WedgePart") and w.Name == "RoofSlope" and w.Transparency < 0.1
 			and w.Size.X >= 3 and w.Size.Z >= 2.5 and w.Size.Y >= 0.8 then
 			local s = w.Size
 			w.Material = Enum.Material.Slate -- reads as tiles, colour kept
@@ -316,6 +316,107 @@ local function wallCourses(root)
 	end
 end
 
+-- Walkways: large flat plastic slabs read as shiny toy plastic under real lighting. Give paving its
+-- real material (colour kept): light stone -> Pavement, darker stone -> Slate. Thin trim strips,
+-- glowing inlays and metal edging are left alone.
+local function pavingMaterials(root)
+	for _, p in ipairs(root:GetDescendants()) do
+		if p:IsA("BasePart") and p.Material == Enum.Material.SmoothPlastic and p.Transparency < 0.1
+			and p.Size.Y < 1.6 and math.max(p.Size.X, p.Size.Z) > 8 and math.min(p.Size.X, p.Size.Z) > 2.5 then
+			local c = p.Color
+			local lum = c.R * 0.3 + c.G * 0.59 + c.B * 0.11
+			local sat = math.max(c.R, c.G, c.B) - math.min(c.R, c.G, c.B)
+			if sat < 0.25 then -- neutral stone tones only; coloured rugs/inlays keep their finish
+				p.Material = lum > 0.55 and Enum.Material.Pavement or Enum.Material.Slate
+			end
+		end
+	end
+end
+
+-- Animated terrain grass grows through thin paving laid on top of grass terrain. Under every flat
+-- walkway/floor piece that sits on the ground, swap the terrain grass for plain ground (blades only
+-- render on Grass), so lawns keep their grass and paths stay clean; the 4-stud terrain grid leaves a
+-- narrow worn edge along paths, which reads as foot traffic.
+local function clearGrassUnderPaving(root)
+	local terrain = workspace.Terrain
+	local n = 0
+	for _, p in ipairs(root:GetDescendants()) do
+		if p:IsA("BasePart") and p.Transparency < 0.5 and p.Size.Y < 2.5 and p.CFrame.UpVector.Y > 0.98 then
+			local cf, size = p.CFrame, p.Size
+			local half = (cf.RightVector * size.X / 2):Abs() + (cf.LookVector * size.Z / 2):Abs()
+			if math.min(half.X, half.Z) * 2 > 2 then
+				local bottom = cf.Position.Y - size.Y / 2
+				if bottom < 3 then
+					local lo = Vector3.new(cf.Position.X - half.X, bottom - 6, cf.Position.Z - half.Z)
+					local hi = Vector3.new(cf.Position.X + half.X, bottom + 2, cf.Position.Z + half.Z)
+					pcall(function()
+						terrain:ReplaceMaterial(Region3.new(lo, hi):ExpandToGrid(4), 4, Enum.Material.Grass, Enum.Material.Ground)
+					end)
+					n += 1
+				end
+			end
+		end
+	end
+	return n
+end
+
+-- Palette: the hub's cliffs and roofs were saturated lavender/violet, which reads as toy plastic
+-- under realistic light. Natural materials get natural colour (value kept, so composition holds);
+-- heraldry (fabric banners), glass, neon portal energy and small crystals keep their colour.
+local NATURAL = { [Enum.Material.Limestone] = true, [Enum.Material.Slate] = true, [Enum.Material.Rock] = true,
+	[Enum.Material.SmoothPlastic] = true, [Enum.Material.Plastic] = true, [Enum.Material.Concrete] = true,
+	[Enum.Material.Basalt] = true, [Enum.Material.Granite] = true }
+local function naturalPalette(root)
+	for _, p in ipairs(root:GetDescendants()) do
+		if p:IsA("BasePart") and p.Transparency < 0.5 and NATURAL[p.Material] then
+			local h, s, v = p.Color:ToHSV()
+			if s > 0.12 and h > 0.6 and h < 0.86 then
+				local s3 = p.Size
+				local vol = s3.X * s3.Y * s3.Z
+				-- big wedges are cliff facets, not roofs
+				local isRoof = p.Name:lower():find("roof") ~= nil
+				if isRoof then
+					-- weathered slate blue: keeps a royal hint without the candy violet
+					p.Color = Color3.fromHSV(0.61, math.min(s, 0.32), v * 0.82)
+					if p.Material == Enum.Material.SmoothPlastic or p.Material == Enum.Material.Plastic then
+						p.Material = Enum.Material.Slate
+					end
+				elseif vol > 2000 then
+					-- cliffs and big masonry: warm grey stone with a faint cool shadow tone
+					p.Color = Color3.fromHSV(0.08, 0.1, math.clamp(v * 0.9, 0.35, 0.82))
+					if p.Material == Enum.Material.SmoothPlastic or p.Material == Enum.Material.Plastic then
+						p.Material = Enum.Material.Rock
+					end
+				end
+			end
+		end
+	end
+end
+
+-- Foliage: canopies sway gently (WorldFx updates only near the camera, desynchronised periods)
+local function foliageSway(root)
+	local n = 0
+	for _, p in ipairs(root:GetDescendants()) do
+		if n >= 260 then return end
+		if p:IsA("BasePart") and p.Anchored and not CollectionService:HasTag(p, "TPFC_Sway") then
+			local nm = p.Name:lower()
+			local h, s = p.Color:ToHSV()
+			local mesh = p:FindFirstChildOfClass("SpecialMesh")
+			local rounded = p:IsA("Part") and p.Shape == Enum.PartType.Ball
+				or (mesh and mesh.MeshType == Enum.MeshType.Sphere)
+			local leafy = nm:find("leaf") or nm:find("canopy") or nm:find("foliage") or nm:find("treecrown") or nm:find("bush")
+				or (p.Material == Enum.Material.LeafyGrass)
+				or (rounded and h > 0.2 and h < 0.45 and s > 0.35 and p.Position.Y > 6)
+			if leafy and not p.CanCollide and p.Size.Magnitude > 2 and p.Size.Magnitude < 40 then
+				CollectionService:AddTag(p, "TPFC_Sway")
+				p:SetAttribute("Period", 5 + math.random() * 4)
+				p:SetAttribute("Amp", 0.012 + math.random() * 0.01)
+				n += 1
+			end
+		end
+	end
+end
+
 local function construction()
 	local roots = { workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Start"), workspace:FindFirstChild("Bases") }
 	for _, r in ipairs(roots) do
@@ -324,6 +425,10 @@ local function construction()
 			timberStraps(r)
 			roofDetail(r)
 			wallCourses(r)
+			pavingMaterials(r)
+			clearGrassUnderPaving(r)
+			naturalPalette(r)
+			foliageSway(r)
 		end
 	end
 	-- (the hall arches already carry a crystal crest at the apex, so no keystone is added there)
@@ -409,6 +514,8 @@ function D.Apply()
 	folder.Name = "MedievalDressing"
 	folder.Parent = workspace
 	folder:ClearAllChildren()
+	-- animated terrain grass (not scriptable on every Roblox build, so it is tried, not required)
+	pcall(function() workspace.Terrain.Decoration = true end)
 	local bases = workspace:FindFirstChild("Bases")
 	if bases then
 		for _, b in ipairs(bases:GetChildren()) do

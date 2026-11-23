@@ -29,7 +29,7 @@ local function arch(z, width, height, depth)
 		V(half, 2, z),
 	}
 	for i = 1, #points - 1 do
-		Art.Beam(points[i], points[i + 1], 4.6, depth, P.ivory, M.Limestone)
+		Art.Beam(points[i], points[i + 1], 4.6, depth, P.ivory, M.Limestone).Name = "ArchStone"
 		Art.Beam(
 			points[i] + V(0, 0, -depth / 2 - 0.10),
 			points[i + 1] + V(0, 0, -depth / 2 - 0.10),

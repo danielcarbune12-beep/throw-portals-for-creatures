@@ -56,12 +56,6 @@ task.spawn(function()
 end)
 BaseBuilder.BuildAll()
 WorldBuilder.BuildAll()
--- art-direction pass: signs, station props and ambient life added next to the built world (cosmetic only)
-do
-	local ok, err = pcall(function() require(script.Parent.MedievalDressing).Apply() end)
-	if not ok then warn("[MedievalDressing] " .. tostring(err)) end
-end
-
 ---------------------------------------------------------------- state
 local State = {} -- [player] = { base, carry = {ids}, lastThrow, tokens, lastTokenT, dirty }
 local Pending = {} -- [throwId] = { owner, creature, pos, opened, world }
@@ -207,6 +201,18 @@ end
 
 -- courtyard farm, Farmer Level, bounties and daily gift (in-world, see FarmService)
 FarmService.Init(BaseBuilder, { income = incomePerSec, sync = sync })
+
+-- art-direction pass: signs, station props and ambient life added next to the built world (cosmetic only)
+do
+	local ok, err = pcall(function() require(script.Parent.MedievalDressing).Apply() end)
+	if not ok then warn("[MedievalDressing] " .. tostring(err)) end
+end
+
+-- Seated stonework, physical lettering and static atmosphere anchors.
+do
+ local ok,err=pcall(function()require(script.Parent.CinematicEnvironment).Apply()end)
+ if not ok then warn("[CinematicEnvironment]",err) end
+end
 
 local function setCarry(player)
 	local st = State[player]

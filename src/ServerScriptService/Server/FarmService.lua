@@ -22,7 +22,9 @@ local Farm = require(Shared.FarmConfig)
 local Care = require(Shared.FarmCare)
 local Format = require(Shared.Format)
 local CreatureData = require(Shared.CreatureData)
-local DataService = require(script.Parent.DataService)
+-- Geometry previews must not start the profile service or its autosave loop.
+local RunService = game:GetService("RunService")
+local DataService = RunService:IsRunning() and require(script.Parent.DataService) or nil
 local Expeditions = require(script.Parent.ExpeditionService)
 local K = require(script.Parent.WorldKit)
 local Art = require(script.Parent.SanctuaryArchitecture)
@@ -1541,6 +1543,18 @@ local function worldTick(now)
 end
 
 ---------------------------------------------------------------- start
+-- Build the same physical stations in the shared Studio preview without
+-- starting weather, income, profile or remote-event loops.
+function FarmService.BuildPreview(baseBuilder)
+    assert(game:GetService("RunService"):IsStudio() and not game:GetService("RunService"):IsRunning(), "Edit-mode preview only")
+    for _, base in ipairs(baseBuilder.Bases) do
+        local prior = base.model:FindFirstChild("Farm")
+        if prior then prior:Destroy() end
+        buildBase(base)
+        task.wait()
+    end
+end
+
 function FarmService.Init(baseBuilder, h)
 	hooks = h
 	local remotes = ReplicatedStorage:WaitForChild("Remotes")

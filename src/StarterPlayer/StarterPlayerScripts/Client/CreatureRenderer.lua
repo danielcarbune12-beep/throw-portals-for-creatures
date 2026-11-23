@@ -178,6 +178,7 @@ local function caughtPlaque(pos, rarity, big)
 	bb.AlwaysOnTop = true
 	bb.LightInfluence = 0
 	bb.Parent = anchor
+	bb:SetAttribute("LabelPriority", 20)
 	local order = Config.Rarities[rarity] and Config.Rarities[rarity].order or 1
 	local style = order >= 5 and rarity or "Caught"
 	local plaque = Plaque.Make(bb, order >= 5 and (string.upper(rarity) .. " CAUGHT") or "CAUGHT", style, big and 260 or 190, big and 40 or 34,
@@ -732,6 +733,11 @@ function Renderer.SpawnWild(throwId, creatureId, pos, ownerId, chanceText, vsize
 	local mine = ownerId == player.UserId
 	local sub = (not mine) and string.format("%s  ·  %s", chanceText or "", owner and owner.DisplayName or "?") or (chanceText or "")
 	rarityTag(e, def, sub, heightFor(def, vsize) + 0.5, Variants.Prefix(vsize, vmat) .. def.name, Variants.Color(vsize, vmat))
+	-- your own catch always wins label space; other players' plaques fade out sooner
+	if e.tag then
+		e.tag:SetAttribute("LabelPriority", mine and 10 or 1)
+		e.tag.MaxDistance = mine and 110 or 70
+	end
 	if mine then
 		-- glowing floor ring marks the automatic catch spot (reference: thin gold ring, purple for Epic)
 		local center = pos + Vector3.new(0, 0.1, -9)
