@@ -1,0 +1,180 @@
+{
+  "date": "2026-11-24",
+  "placeId": 129975585465401,
+  "teamCreateVersion": 130,
+  "productionSourceParity": {
+    "localCount": 109,
+    "studioCount": 109,
+    "differences": [],
+    "extras": [],
+    "fixture": false,
+    "revision": 2
+  },
+  "geometry": {
+    "lights": 16,
+    "emitters": 6,
+    "parts": 2819
+  },
+  "runtimeTraversal": {
+    "rubyPrompt": true,
+    "open": true,
+    "result": {
+      "paths": [
+        {
+          "reached": true,
+          "name": "central avenue remains open",
+          "position": "0, 3.9281153678894043, -279.0858459472656"
+        },
+        {
+          "reached": true,
+          "name": "both courtyard approaches remain open",
+          "position": "26.939983367919922, 4.078097820281982, -236.00201416015625"
+        },
+        {
+          "reached": true,
+          "name": "Gold work bay reachable",
+          "position": "-9.675652503967285, 4.338115692138672, -240.8427734375"
+        },
+        {
+          "reached": true,
+          "name": "Ruby work bay reachable",
+          "position": "9.451745986938477, 4.338115692138672, -240.7406005859375"
+        }
+      ],
+      "failures": [],
+      "passed": 19,
+      "completed": true
+    }
+  },
+  "forgeRuleChecks": {
+    "passed": 124,
+    "failed": 0
+  },
+  "buildVerification": {
+    "productionSources": 109,
+    "testSources": 112,
+    "sanctuarySources": 112,
+    "sourceDifferences": 0
+  },
+  "rendererSamples": [
+    {
+      "Name": "TriangleComposition",
+      "Children": {
+        "1": {
+          "Name": "Opaque",
+          "Sizes": {
+            "Drawcalls": 90,
+            "Triangles": 64388
+          }
+        },
+        "2": {
+          "Name": "Transparent",
+          "Sizes": {
+            "Drawcalls": 10,
+            "Triangles": 35
+          }
+        },
+        "3": {
+          "Name": "Terrain",
+          "Sizes": {
+            "Drawcalls": 60,
+            "Triangles": 51714
+          }
+        },
+        "4": {
+          "Name": "Grass",
+          "Sizes": {
+            "Drawcalls": 34,
+            "Triangles": 81414
+          }
+        },
+        "5": {
+          "Name": "UI",
+          "Sizes": {
+            "Drawcalls": 32,
+            "Triangles": 1170
+          }
+        },
+        "6": {
+          "Name": "Cloud",
+          "Sizes": {
+            "Drawcalls": 3,
+            "Triangles": 3
+          }
+        },
+        "7": {
+          "Name": "Particles",
+          "Sizes": {
+            "Drawcalls": 1,
+            "Triangles": 134
+          }
+        }
+      },
+      "Sizes": {
+        "Drawcalls": 230,
+        "Triangles": 198858
+      }
+    },
+    {
+      "Name": "TriangleComposition",
+      "Children": {
+        "1": {
+          "Name": "Opaque",
+          "Sizes": {
+            "Drawcalls": 103,
+            "Triangles": 102504
+          }
+        },
+        "2": {
+          "Name": "Transparent",
+          "Sizes": {
+            "Drawcalls": 14,
+            "Triangles": 145
+          }
+        },
+        "3": {
+          "Name": "Terrain",
+          "Sizes": {
+            "Drawcalls": 78,
+            "Triangles": 68368
+          }
+        },
+        "4": {
+          "Name": "Grass",
+          "Sizes": {
+            "Drawcalls": 22,
+            "Triangles": 45348
+          }
+        },
+        "5": {
+          "Name": "UI",
+          "Sizes": {
+            "Drawcalls": 74,
+            "Triangles": 2298
+          }
+        },
+        "6": {
+          "Name": "Cloud",
+          "Sizes": {
+            "Drawcalls": 3,
+            "Triangles": 3
+          }
+        },
+        "7": {
+          "Name": "Particles",
+          "Sizes": {
+            "Drawcalls": 1,
+            "Triangles": 232
+          }
+        }
+      },
+      "Sizes": {
+        "Drawcalls": 295,
+        "Triangles": 218898
+      }
+    }
+  ],
+  "rendererScope": "Whole visible runtime scene around work bays. Not hall-only counts or a device FPS guarantee.",
+  "gitBaseline": "25a32dd",
+  "brotherBranches": "All published main, text-cinematic and combine-map-graphics-pets commits were already included before rebuilding."
+}

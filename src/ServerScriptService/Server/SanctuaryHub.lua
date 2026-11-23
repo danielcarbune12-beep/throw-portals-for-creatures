@@ -240,7 +240,8 @@ local function avenue()
 	-- Crystal pylons line the avenue between the courtyards: violet banner, gold collars, a floating
 	-- lilac crystal. Tall enough to give the long walk a rhythm without blocking the bases.
 	for _, side in ipairs({ -1, 1 }) do
-		for _, z in ipairs({ -100, -176, -252, -328, -404 }) do
+		-- The Great Forge owns the central approach and its lower lantern posts.
+		for _, z in ipairs({ -100, -328, -404 }) do
 			local x = side * 24.2
 			K.block(CF(x, 0.8, z), V(3.6, 1.6, 3.6), P.stone, M.Limestone, true)
 			K.block(CF(x, 1.75, z), V(3.0, 0.3, 3.0), P.gold, M.Metal)
