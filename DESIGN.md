@@ -55,3 +55,5 @@ Compact pet inventory puts search and Place best on one row and Collection in th
 header, leaving enough height for complete first-row cards. Pet details show level,
 XP and personal income before the preview on narrow screens. Global bonuses remain
 part of the courtyard income shown in the HUD; creature resale still uses base value.
+
+Expedition planning suggests an idle stored scout before garden earners or followers. Explicit choices persist across biome browsing. Reward previews share the server payout function and expose the configured biome bonus. Locked routes open the biome shop. Go to table lands beside the player's own table with the panel open; dispatch is a separate action. Stored pets keep garden income intact; garden earners and followers explain their actual departure cost.

@@ -670,6 +670,9 @@ function Actions.Teleport(player, data, st, id)
 	if not char then
 		return false, "No character"
 	end
+	if id == "Expedition" then
+		return Expeditions.ReturnToTable(player, st.base)
+	end
 	if id == "Home" then
 		if st.base then
 			char:PivotTo(st.base.spawnCF)
