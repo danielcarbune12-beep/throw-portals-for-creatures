@@ -530,6 +530,8 @@ function D.Apply()
 	-- the sanctuary as a fortified castle: battlements, towers, gatehouse (separate module, scenery only)
 	local okC, errC = pcall(function() require(script.Parent.CastleWalls).Build(workspace) end)
 	if not okC then warn("[MedievalDressing] castle: " .. tostring(errC)) end
+	local okW, errW = pcall(function() require(script.Parent.Waterfalls).Build(workspace) end)
+	if not okW then warn("[MedievalDressing] waterfalls: " .. tostring(errW)) end
 end
 
 return D
