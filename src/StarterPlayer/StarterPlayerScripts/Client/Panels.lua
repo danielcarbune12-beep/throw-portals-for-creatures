@@ -1005,6 +1005,7 @@ worlds.refresh = function()
 			.. found
 			.. "/"
 			.. total
+			.. ((total > 0 and found >= total) and (" · Mastered +" .. math.floor(Config.IndexWorldBonus * 100) .. "% income") or "")
 	end
 end
 

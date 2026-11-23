@@ -102,6 +102,27 @@ local function equippedBuffs(data)
 	return 1 + luck, 1 + income
 end
 
+-- index mastery: worlds whose every creature is discovered (each adds Config.IndexWorldBonus income)
+local function masteredWorlds(data)
+	local list = {}
+	for _, w in ipairs(Config.WorldOrder) do
+		local defs = CreatureData.ByWorld[w]
+		if defs and #defs > 0 then
+			local all = true
+			for _, c in ipairs(defs) do
+				if not data.Discovered[c.id] then
+					all = false
+					break
+				end
+			end
+			if all then
+				table.insert(list, w)
+			end
+		end
+	end
+	return list
+end
+
 local function incomePerSec(data)
 	local total = 0
 	for _, uid in ipairs(data.Placed) do
@@ -113,7 +134,8 @@ local function incomePerSec(data)
 	end
 	local _, incomeBuff = equippedBuffs(data)
 	-- Well Fed (feeding at the courtyard trough): +20% for 30 minutes
-	return total * trainingMult(data) * incomeBuff * FarmService.IncomeBuff(data)
+	local indexMult = 1 + #masteredWorlds(data) * Config.IndexWorldBonus
+	return total * trainingMult(data) * incomeBuff * FarmService.IncomeBuff(data) * indexMult
 end
 
 local function storedCount(data)
@@ -189,6 +211,7 @@ local function sync(player, partial)
 		Carry = st and st.carry or {},
 		EquippedPets = data.EquippedPets or {},
 		EquipBuff = { equippedBuffs(data) },
+		MasteredWorlds = masteredWorlds(data),
 		BaseIndex = st and st.base and st.base.index or 0,
 		Expeditions = Expeditions.BuildView(data),
 	})
@@ -348,7 +371,20 @@ ThrowRE.OnServerEvent:Connect(function(player, power, dir)
 
 	nextThrowId += 1
 	local id = nextThrowId
-	local creatureId, chance = Odds.Roll(data.EquippedPortal, worldId, realDist, (equippedBuffs(data)))
+	-- perfect streak: consecutive perfect throws build luck; a miss or a long pause resets it
+	if perfect then
+		if now - (st.lastPerfectAt or 0) > Config.Combo.resetAfter then
+			st.combo = 0
+		end
+		st.combo = math.min(Config.Combo.max, (st.combo or 0) + 1)
+		st.lastPerfectAt = now
+	else
+		st.combo = 0
+	end
+	player:SetAttribute("ThrowCombo", st.combo)
+	local storm = (workspace:GetAttribute("RiftStormEnds") or 0) > os.time()
+	local luck = equippedBuffs(data) * (1 + Config.Combo.perStep * st.combo) * (storm and Config.RiftStorm.luck or 1)
+	local creatureId, chance = Odds.Roll(data.EquippedPortal, worldId, realDist, luck)
 	-- pet variant: size (Big/Huge/Titan) and material (Gold/Emerald/Ruby/Diamond), rolled independently
 	local petSize, petMaterial = Variants.Roll(variantRng)
 	if st.forceNext then -- admin: force the next creature (optionally "Id|Size|Material")
@@ -466,7 +502,12 @@ local function depositCarry(player, data, st, silent)
 			table.insert(data.Placed, uid)
 		end
 		if not data.Discovered[cid] then
+			local before = #masteredWorlds(data)
 			data.Discovered[cid] = true
+			if #masteredWorlds(data) > before and not silent then
+				local wname = Config.Worlds[CreatureData.ById[cid].world] and Config.Worlds[CreatureData.ById[cid].world].name or "World"
+				notify(player, wname .. " index complete! +" .. math.floor(Config.IndexWorldBonus * 100) .. "% income forever", "discover")
+			end
 			local bonus = math.floor(CreatureData.Income(cid) * Config.DiscoveryBonus)
 			data.Money += bonus
 			if not silent then
@@ -1106,3 +1147,16 @@ RequestRF:SetAttribute("Ready", true)
 Actions.Sync = function(player)
 	return true
 end
+
+---------------------------------------------------------------- Rift Storm (server-wide luck event)
+task.spawn(function()
+	local cfg = Config.RiftStorm
+	local rng = Random.new()
+	task.wait(cfg.first)
+	while true do
+		workspace:SetAttribute("RiftStormEnds", os.time() + cfg.duration)
+		task.wait(cfg.duration)
+		workspace:SetAttribute("RiftStormEnds", 0)
+		task.wait(rng:NextInteger(cfg.gap[1], cfg.gap[2]))
+	end
+end)

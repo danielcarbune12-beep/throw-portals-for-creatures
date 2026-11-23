@@ -207,6 +207,16 @@ Config.CarryLimit = 4
 -- Equipped pets: up to 3 follow you and give buffs. Each pet adds its rarity's bonus:
 -- luck multiplies the odds of rarer rolls, income adds to your base income per second.
 Config.EquipLimit = 3
+
+-- Perfect streak: each consecutive perfect throw adds luck for the next roll (a missed perfect or a
+-- long pause resets it). Luck multiplies the odds of the rarer tiers, same as equipped pets.
+Config.Combo = { perStep = 0.05, max = 5, resetAfter = 60 }
+
+-- Rift Storm: a server-wide event. Every player in the server gets extra luck while it lasts.
+Config.RiftStorm = { first = 300, gap = { 720, 1080 }, duration = 120, luck = 1.5 }
+
+-- Index mastery: discovering every creature of one world adds a permanent income bonus.
+Config.IndexWorldBonus = 0.05
 Config.EquipBuff = {
 	Common    = { luck = 0.03, income = 0.02 },
 	Uncommon  = { luck = 0.05, income = 0.04 },
