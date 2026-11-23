@@ -682,7 +682,7 @@ function K.leafGlyph(cf, s, col)
 	K.block(cf * CF(0, 0.1 * s, -0.04), V3(0.12, 1.1, 0.12) * s, K.dark(col, 0.15), M.Limestone)
 end
 
--- faceted cone (n wedge facets sloping outward from the apex) — volcanoes, jagged peaks, crystal mounds
+-- faceted cone (n wedge facets sloping outward from the apex) â€” volcanoes, jagged peaks, crystal mounds
 function K.cone(pos, R, H, n, colA, colB, mat, collide)
 	local off = K.r(0, PI)
 	for i = 0, n - 1 do

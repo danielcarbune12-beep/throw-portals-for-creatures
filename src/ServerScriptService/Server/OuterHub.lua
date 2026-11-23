@@ -96,21 +96,12 @@ local function fall(top, h, w, faceYaw)
 end
 
 local function mist(x, y, z, sx, sz)
-	local p = K.ellipsoid(CF(x, y, z) * ANG(0, K.r(0, PI), 0), V3(sx, 20, sz), C(244, 242, 250), M.SmoothPlastic, 0.38)
+	local p = K.ellipsoid(CF(x, y, z) * ANG(0, K.r(0, PI), 0), V3(sx, 12, sz), C(219, 232, 233), M.SmoothPlastic, 0.91)
+	p.Name = "DistantMistBank"
 	p.CastShadow = false
 end
 
-local function cloud(pos, s)
-	local core = K.ellipsoid(CF(pos), V3(150, 40, 100) * s, C(246, 242, 250), M.SmoothPlastic, 0.12)
-	for i = 0, 6 do
-		local a = i / 7 * PI * 2
-		local d = K.r(50, 78) * s
-		K.ellipsoid(CF(pos + V3(math.cos(a) * K.r(20, 55), K.r(12, 34), math.sin(a) * K.r(10, 30)) * s), V3(d, d * 0.85, d), C(255, 255, 255), M.SmoothPlastic, 0.12)
-	end
-	core.CastShadow = false
-	K.tag(core, "TPFC_Bob", { Amp = 3, Period = K.r(18, 26), Spin = 0 })
-end
-
+-- Terrain.Clouds provides the moving sky; solid cotton-ball cloud meshes are retired.
 local function range(x1, x2, z1, z2, n, R, H, col)
 	for i = 0, n - 1 do
 		local z = z1 + (z2 - z1) * (i + K.r(0.2, 0.8)) / n
@@ -271,11 +262,6 @@ function O.Build()
 	range(-440, -780, -820, 60, 6, { 110, 160 }, { 220, 340 }, C(178, 168, 204))
 	range(-700, 700, -980, -860, 6, { 140, 200 }, { 280, 440 }, C(196, 188, 220))
 
-	cloud(V3(420, 300, -380), 1.4)
-	cloud(V3(-460, 340, -200), 1.6)
-	cloud(V3(-120, 400, -820), 1.8)
-	cloud(V3(300, 380, -760), 1.5)
-	cloud(V3(-620, 280, -560), 1.3)
 
 	K.mirror = false
 	K.SetFolder(parentFolder)

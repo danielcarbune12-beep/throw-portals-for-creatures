@@ -4,11 +4,10 @@ local RS = game:GetService("ReplicatedStorage")
 local Http = game:GetService("HttpService")
 local Rules = require(RS.Shared.ExpeditionConfig)
 local Creatures = require(RS.Shared.CreatureData)
-local variantModule = RS.Shared:FindFirstChild("Variants")
-local Variants = variantModule and require(variantModule)
+local Planner = require(RS.Shared.ExpeditionPlanner)
 local Service = {}
 
-local MAX_REWARD = 1e12
+local MAX_REWARD = Planner.MaxReward
 local MAX_DURATION = 3600
 local tuning = { duration = 1, reward = 1 }
 local initialized = false
@@ -32,11 +31,6 @@ local function getPet(data, uid)
 		end
 	end
 	return nil
-end
-
-local function petIncome(pet)
-	local multiplier = Variants and Variants.Mult(pet.s, pet.v) or 1
-	return Creatures.Income(pet.c) * multiplier
 end
 
 local function scaled(value, fallback)
@@ -178,6 +172,44 @@ local function durationFor(route)
 	return math.clamp(math.floor(route.duration * tuning.duration + 0.5), 15, MAX_DURATION)
 end
 
+local function routeView(route, data)
+	return {
+		id = route.id,
+		name = route.name,
+		world = route.world,
+		duration = durationFor(route),
+		coins = route.coins * tuning.reward,
+		incomeCoinsPerSecond = Rules.IncomeFraction * tuning.reward,
+		matchMultiplier = Rules.MatchingBiomeMultiplier,
+		unlocked = type(data.UnlockedWorlds) == "table" and data.UnlockedWorlds[route.world] == true,
+	}
+end
+
+-- A direct, server-selected destination beside the player's own table. No
+-- client coordinates, pathfinding through furniture or dispatch as a side effect.
+function Service.ReturnToTable(player, base)
+	local character = player.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	local hum = character and character:FindFirstChildOfClass("Humanoid")
+	local anchor = base and base.expeditionAnchor
+	if
+		not base
+		or base.owner ~= player
+		or not anchor
+		or not anchor.Parent
+		or not root
+		or not hum
+		or hum.Health <= 0
+	then
+		return false, "Your courtyard is not ready. Try again after spawning."
+	end
+	local at = (anchor.CFrame * CFrame.new(0, 2, 6)).Position
+	character:PivotTo(CFrame.lookAt(at, Vector3.new(anchor.Position.X, at.Y, anchor.Position.Z)))
+	root.AssemblyLinearVelocity = Vector3.zero
+	root.AssemblyAngularVelocity = Vector3.zero
+	return true
+end
+
 function Service.Start(player, data, base, routeId, petUid, now)
 	Service.Ensure(data)
 	if not nearTable(player, base) then
@@ -198,11 +230,9 @@ function Service.Start(player, data, base, routeId, petUid, now)
 		return false, "Choose a creature you own."
 	end
 	local creature = Creatures.ById[pet.c]
-	local matched = creature.world == route.world
-	local duration = durationFor(route)
-	local coins = (route.coins + petIncome(pet) * Rules.IncomeFraction * duration)
-		* (matched and Rules.MatchingBiomeMultiplier or 1)
-		* tuning.reward
+	local resolved = routeView(route, data)
+	local quote = Planner.Quote(pet, resolved)
+	local duration = resolved.duration
 	local startedAt = unix(now)
 	data.ActiveExpedition = {
 		id = Http:GenerateGUID(false),
@@ -213,8 +243,8 @@ function Service.Start(player, data, base, routeId, petUid, now)
 		world = route.world,
 		startedAt = startedAt,
 		endsAt = startedAt + duration,
-		coins = math.clamp(math.floor(coins), 0, MAX_REWARD),
-		matched = matched,
+		coins = quote.coins,
+		matched = quote.matched,
 		wasPlaced = type(data.Placed) == "table" and table.find(data.Placed, petUid) ~= nil,
 	}
 	return true, creature.name .. " departed for " .. route.name .. "."
@@ -250,16 +280,7 @@ function Service.BuildView(data, now)
 	local routes, relics = {}, {}
 	for _, id in Rules.Order do
 		local route = Rules.ById[id]
-		table.insert(routes, {
-			id = id,
-			name = route.name,
-			world = route.world,
-			duration = durationFor(route),
-			coins = route.coins * tuning.reward,
-			incomeCoinsPerSecond = Rules.IncomeFraction * tuning.reward,
-			matchMultiplier = Rules.MatchingBiomeMultiplier,
-			unlocked = type(data.UnlockedWorlds) == "table" and data.UnlockedWorlds[route.world] == true,
-		})
+		table.insert(routes, routeView(route, data))
 		if data.ExpeditionRelics[id] then
 			relics[id] = true
 		end
