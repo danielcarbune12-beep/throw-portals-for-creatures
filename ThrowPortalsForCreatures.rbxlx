@@ -20399,7 +20399,7 @@ return L
 ]]></ProtectedString></Properties></Item>
 </Item>
 </Item>
-<Item class="StarterPlayer" referent="RBX99"><Properties><string name="Name">StarterPlayer</string></Properties>
+<Item class="StarterPlayer" referent="RBX101"><Properties><string name="Name">StarterPlayer</string></Properties>
 <Item class="StarterPlayerScripts" referent="RBX66"><Properties><string name="Name">StarterPlayerScripts</string></Properties>
 <Item class="Folder" referent="RBX67"><Properties><string name="Name">Client</string></Properties>
 <Item class="ModuleScript" referent="RBX68"><Properties><string name="Name">CaughtPresentation</string><ProtectedString name="Source"><![CDATA[-- Caught card for an already confirmed catch, styled after Actions/02_Rarity_Reveal_and_Capture ("03 ADDED"):
@@ -22834,7 +22834,217 @@ end
 
 return Effects
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX76"><Properties><string name="Name">ExpeditionPanel</string><ProtectedString name="Source"><![CDATA[-- Skyforge visual planning; all mission authority remains on the server.
+<Item class="ModuleScript" referent="RBX76"><Properties><string name="Name">ExchangeView</string><ProtectedString name="Source"><![CDATA[-- Four direct trade signs linked to an architectural model of the sanctuary.
+local K = require(script.Parent.UIKit)
+local T = K.Theme
+local Craft = require(script.Parent.SanctuaryUI)
+local Guild = require(script.Parent.GuildModel)
+local Merchant = require(script.Parent.MerchantDisplay)
+local RS = game:GetService("ReplicatedStorage")
+local Portal, Config = require(RS.Shared.PortalBuilder), require(RS.Shared.Config)
+local Format, State = require(RS.Shared.Format), require(script.Parent.ClientState)
+local E = {}
+function E.Mount(hub, HUD)
+	hub.frame:SetAttribute("GatefoldExchange", true)
+	hub.content.AutomaticCanvasSize, hub.content.ScrollingEnabled = Enum.AutomaticSize.None, false
+	hub.subtitle.Visible = false
+	local stage = K.new("Frame", { Name = "TradeCourt", BackgroundTransparency = 1, Parent = hub.content })
+	local scene = K.viewport(Guild.Build(), UDim2.fromScale(1, 1), false, false, false)
+	scene.Name, scene.Parent = "ExchangeArchitecture", stage
+	scene.Ambient, scene.LightColor = Color3.fromRGB(177, 190, 181), Color3.fromRGB(255, 244, 218)
+	scene.LightDirection = Vector3.new(-0.6, -1, -0.35)
+	local updateLines
+	local function frameScene()
+		local aspect = math.max(0.5, scene.AbsoluteSize.X / math.max(1, scene.AbsoluteSize.Y))
+		local target = Vector3.new(0, 1.5, 0)
+		scene.CurrentCamera.FieldOfView = 32
+		scene.CurrentCamera.CFrame =
+			CFrame.lookAt(target + Vector3.new(0, 0.9, 1).Unit * math.max(68, 81 / aspect), target)
+		if updateLines then
+			updateLines()
+		end
+	end
+	scene:GetPropertyChangedSignal("AbsoluteSize"):Connect(frameScene)
+	task.defer(frameScene)
+	local purse = K.text(hub.frame, "", 0, 15, 210, 30, 20, T.Gold, true)
+	purse.Name = "ShopBalance"
+	local entries, names = {}, { "Forge", "Upgrades", "Courtyard", "Atlas" }
+	for i, def in
+		{
+			{ "Portals", "Portal forge", "Choose your next gate", "Portals", "Portal" },
+			{ "Upgrades", "The smithy", "Improve your reach & earnings", "Upgrades", "Upgrade" },
+			{ "Courtyard", "Courtyard works", "Shape your creature sanctuary", "Base", "Home" },
+			{ "Biomes", "The atlas", "Open the next biome", "Worlds", "Compass" },
+		}
+	do
+		local leader = K.new("Frame", {
+			Name = "TradeLeader",
+			BackgroundColor3 = T.StoneEdge,
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Parent = hub.content,
+		})
+		local node = K.new("Frame", {
+			Name = "TradeMarker",
+			BackgroundColor3 = T.Brass,
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Size = UDim2.fromOffset(6, 6),
+			Rotation = 45,
+			Parent = hub.content,
+		})
+		local button =
+			K.button("", T.Raised, nil, UDim2.fromOffset(228, 120), { Name = "Shop_" .. def[1], Parent = hub.content })
+		Craft.Leaf(button)
+		local sign = K.viewport(Guild.Sign(), UDim2.new(1, -4, 0, 48), false, false, false)
+		sign.Name, sign.Position, sign.Parent = "CarvedTradeSign", UDim2.fromOffset(2, 2), button
+		sign.Ambient, sign.LightColor, sign.LightDirection =
+			Color3.fromRGB(210, 215, 210), Color3.new(1, 1, 1), Vector3.new(-0.4, -0.4, -1)
+		sign.CurrentCamera.FieldOfView = 10
+		sign.CurrentCamera.CFrame = CFrame.lookAt(Vector3.new(0, 0, -28), Vector3.zero)
+		local title = K.text(button, def[2], 18, 10, -36, 28, 19, T.OnAccent, true)
+		title.FontFace = T.TitleFace
+		local desc = K.text(button, def[3], 14, 56, -28, 20, 13, T.Muted)
+		local status = K.text(button, "", 14, 82, -28, 28, 13, T.Gold)
+		local arrow = K.text(button, "›", 0, 10, 18, 24, 24, T.Gold, true)
+		arrow.Position = UDim2.new(1, -26, 0, 10)
+		local subject = def[5] == "Portal" and Portal.BuildGate("Forest", 2) or Merchant.Emblem(def[5])
+		local emblem = K.viewport(subject, UDim2.fromOffset(66, 78), false, false, true)
+		emblem.Name, emblem.Parent = "TradeEmblem", button
+		entries[i] = {
+			button = button,
+			title = title,
+			desc = desc,
+			status = status,
+			emblem = emblem,
+			arrow = arrow,
+			sign = sign,
+			leader = leader,
+			node = node,
+		}
+		K.bind(button, function()
+			HUD.Open(def[4])
+		end)
+		local hovered, focused = false, false
+		local function focus()
+			local on = hovered or focused
+			Craft.Selected(button, on)
+			button.BackgroundTransparency = on and 0.12 or 1
+			button:FindFirstChildOfClass("UIStroke").Transparency = on and 0 or 1
+			leader.BackgroundColor3, node.BackgroundColor3 = on and T.Gold or T.StoneEdge, on and T.Gold or T.Brass
+			local pad = scene.PreviewWorld.TheFourTrades:FindFirstChild("Pad_" .. names[i])
+			if pad then
+				pad.Color = on and Color3.fromRGB(204, 183, 116) or pad:GetAttribute("RestColor")
+			end
+		end
+		button.MouseEnter:Connect(function()
+			hovered = true
+			focus()
+		end)
+		button.MouseLeave:Connect(function()
+			hovered = false
+			focus()
+		end)
+		button.SelectionGained:Connect(function()
+			focused = true
+			focus()
+		end)
+		button.SelectionLost:Connect(function()
+			focused = false
+			focus()
+		end)
+		focus()
+	end
+	-- The connectors are projected from the SAME camera as the model, so the signs
+	-- stay attached to the right trade when UI scale or the window size changes.
+	updateLines = function()
+		if not stage.Visible then
+			return
+		end
+		local scale = HUD.Root:FindFirstChildOfClass("UIScale").Scale
+		local size = scene.AbsoluteSize
+		local tanY = math.tan(math.rad(scene.CurrentCamera.FieldOfView / 2))
+		local aspect = size.X / math.max(1, size.Y)
+		for i, ref in entries do
+			local point = scene.CurrentCamera.CFrame:PointToObjectSpace(
+				Vector3.new(i % 2 == 1 and -10 or 10, 0.5, i <= 2 and -5 or 7)
+			)
+			local x = size.X * (0.5 + point.X / (-point.Z * tanY * aspect) / 2)
+				+ stage.AbsolutePosition.X
+				- hub.content.AbsolutePosition.X
+			local y = size.Y * (0.5 - point.Y / (-point.Z * tanY) / 2)
+				+ stage.AbsolutePosition.Y
+				- hub.content.AbsolutePosition.Y
+			local b = ref.button
+			local start = b.AbsolutePosition
+				- hub.content.AbsolutePosition
+				+ Vector2.new(i % 2 == 1 and b.AbsoluteSize.X or 0, b.AbsoluteSize.Y * 0.64)
+			local delta = Vector2.new(x, y) - start
+			local center = start + delta / 2
+			ref.leader.Position, ref.leader.Size =
+				UDim2.fromOffset(center.X / scale, center.Y / scale), UDim2.fromOffset(delta.Magnitude / scale, 1)
+			ref.leader.Rotation = math.deg(math.atan2(delta.Y, delta.X))
+			ref.node.Position = UDim2.fromOffset(x / scale, y / scale)
+		end
+	end
+	hub.refresh = function()
+		purse.Text = "Purse  " .. Format.Money(State.Data.Money)
+		local owned, unlocked = 0, 0
+		for _, yes in State.Data.OwnedPortals do
+			if yes then
+				owned += 1
+			end
+		end
+		for _, yes in State.Data.UnlockedWorlds do
+			if yes then
+				unlocked += 1
+			end
+		end
+		entries[1].status.Text = owned .. " owned · " .. Config.Portals[State.Data.EquippedPortal].name
+		entries[2].status.Text = math.floor(State.Data.MaxDistance or 45) .. " m throw range"
+		entries[3].status.Text = "Floors · lanterns · furnishings"
+		entries[4].status.Text = unlocked .. " / 8 routes unlocked"
+	end
+	hub.layout = function()
+		local short = hub.compact or hub.frame.Size.Y.Offset < 520
+		hub.content.Position = UDim2.fromOffset(16, short and 66 or 84)
+		hub.contentSize = UDim2.new(1, -32, 1, short and -82 or -108)
+		hub.content.Size = hub.contentSize - UDim2.fromOffset(0, hub.feedback.Visible and 40 or 0)
+		hub.title.Position = UDim2.fromOffset(62, short and 8 or 15)
+		hub.title.Size = UDim2.new(1, short and -148 or -360, 0, short and 28 or 35)
+		purse.Position = short and UDim2.fromOffset(62, 37) or UDim2.new(1, -290, 0, 16)
+		purse.Size = short and UDim2.new(1, -145, 0, 16) or UDim2.fromOffset(212, 30)
+		purse.TextSize, purse.TextXAlignment =
+			short and 13 or 18, short and Enum.TextXAlignment.Left or Enum.TextXAlignment.Right
+		stage.Visible = not short
+		stage.Position, stage.Size = UDim2.fromScale(0.14, -0.04), UDim2.fromScale(0.72, 1.04)
+		for i, ref in entries do
+			local left, top = i % 2 == 1, i <= 2
+			if short then
+				ref.button.Position = UDim2.new(left and 0 or 0.5, left and 2 or 5, top and 0 or 0.5, top and 2 or 4)
+				ref.button.Size = UDim2.new(0.5, -9, 0.5, -8)
+			else
+				ref.button.Position = UDim2.new(left and 0 or 1, left and 4 or -232, top and 0.12 or 0.65, 0)
+				ref.button.Size = UDim2.fromOffset(228, 120)
+			end
+			ref.emblem.Visible, ref.sign.Visible, ref.leader.Visible, ref.node.Visible =
+				short, not short, not short, not short
+			ref.emblem.Position = UDim2.fromOffset(4, 8)
+			ref.emblem.Size = UDim2.fromOffset(66, math.max(56, math.min(84, hub.frame.Size.Y.Offset * 0.23)))
+			ref.title.Position = UDim2.fromOffset(short and 78 or 18, 10)
+			ref.title.Size = UDim2.new(1, short and -102 or -36, 0, 28)
+			ref.title.TextSize, ref.title.TextColor3 = short and 17 or 19, short and T.Text or T.OnAccent
+			ref.title.TextXAlignment = short and Enum.TextXAlignment.Left or Enum.TextXAlignment.Center
+			ref.desc.Visible, ref.arrow.Visible = not short, short
+			ref.status.Position = UDim2.fromOffset(short and 78 or 14, short and 42 or 82)
+			ref.status.Size = UDim2.new(1, short and -96 or -28, 0, short and 38 or 28)
+			ref.status.TextSize = short and 12 or 13
+		end
+		task.defer(frameScene)
+	end
+	return entries
+end
+return E
+]]></ProtectedString></Properties></Item>
+<Item class="ModuleScript" referent="RBX77"><Properties><string name="Name">ExpeditionPanel</string><ProtectedString name="Source"><![CDATA[-- Skyforge visual planning; all mission authority remains on the server.
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -23728,7 +23938,7 @@ function Panel.Init()
 end
 return Panel
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX77"><Properties><string name="Name">ExpeditionScene</string><ProtectedString name="Source"><![CDATA[-- Detailed, deterministic native biome vignettes for the expedition map.
+<Item class="ModuleScript" referent="RBX78"><Properties><string name="Name">ExpeditionScene</string><ProtectedString name="Source"><![CDATA[-- Detailed, deterministic native biome vignettes for the expedition map.
 local Config = require(game.ReplicatedStorage.Shared.Config)
 local Scene = {}
 local V, C = Vector3.new, Color3.fromRGB
@@ -23918,7 +24128,7 @@ function Scene.Build(id)
 end
 return Scene
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX78"><Properties><string name="Name">FarmClient</string><ProtectedString name="Source"><![CDATA[-- FarmClient: client side of the courtyard farm (server: FarmService).
+<Item class="LocalScript" referent="RBX79"><Properties><string name="Name">FarmClient</string><ProtectedString name="Source"><![CDATA[-- FarmClient: client side of the courtyard farm (server: FarmService).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > FarmClient (LocalScript)
 --  * Shows only YOUR courtyard's farm prompts (beds, stand, board, chest); others' stay hidden.
 --  * Updates permanent physical farm signs. No screen toasts or character message bursts.
@@ -24317,7 +24527,7 @@ FarmFx.OnClientEvent:Connect(function(kind, d)
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX79"><Properties><string name="Name">GameplayFeel</string><ProtectedString name="Source"><![CDATA[-- Quiet, state-driven feedback around the complete play loop. No extra HUD buttons.
+<Item class="ModuleScript" referent="RBX80"><Properties><string name="Name">GameplayFeel</string><ProtectedString name="Source"><![CDATA[-- Quiet, state-driven feedback around the complete play loop. No extra HUD buttons.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local RS = game:GetService("ReplicatedStorage")
@@ -24439,7 +24649,146 @@ function Feel.Money(amount, position)
 end
 return Feel
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX80"><Properties><string name="Name">HUD</string><ProtectedString name="Source"><![CDATA[-- Direct Pets, Shop and Expeditions navigation with a shared responsive panel layer.
+<Item class="ModuleScript" referent="RBX81"><Properties><string name="Name">GuildModel</string><ProtectedString name="Source"><![CDATA[-- An architectural model of the four sanctuary trades, made for the exchange folio.
+local Merchant = require(script.Parent.MerchantDisplay)
+local Portal = require(game:GetService("ReplicatedStorage").Shared.PortalBuilder)
+local K = require(script.Parent.UIKit)
+local Builder = require(game:GetService("ReplicatedStorage").Shared.CreatureBuilder)
+local G = {}
+local C, V, CF = Color3.fromRGB, Vector3.new, CFrame.new
+local stone, edge, jade, wood, brass =
+	C(231, 235, 223), C(155, 170, 160), C(45, 100, 82), C(90, 64, 41), C(183, 147, 78)
+local function part(parent, name, size, cf, color, material)
+	local p = Instance.new("Part")
+	p.Name, p.Size, p.CFrame, p.Color = name, size, cf, color
+	p.Material = material or Enum.Material.SmoothPlastic
+	p.Anchored, p.CanCollide, p.CanTouch, p.CanQuery = true, false, false, false
+	p.TopSurface, p.BottomSurface, p.Parent = Enum.SurfaceType.Smooth, Enum.SurfaceType.Smooth, parent
+	return p
+end
+function G.Build()
+	local m = Instance.new("Model")
+	m.Name = "TheFourTrades"
+	part(m, "CutawayFoundation", V(38, 1.6, 24), CF(0, -1.1, 0), edge, Enum.Material.Limestone)
+	part(m, "UpperTerrace", V(35, 0.65, 26), CF(0, -0.15, 0), stone, Enum.Material.Limestone)
+	part(m, "FrontThreshold", V(28, 0.7, 2), CF(0, -0.4, 13), edge, Enum.Material.Limestone)
+	part(m, "FrontStep", V(22, 0.35, 2), CF(0, -0.8, 14.7), stone, Enum.Material.Limestone)
+	-- The inlaid route meets at the split-gate seal in the centre.
+	for _, x in { -1.1, 1.1 } do
+		part(m, "InlaidRoute", V(0.13, 0.03, 22), CF(x, 0.2, 0), brass, Enum.Material.Metal)
+	end
+	for _, z in { -1.1, 1.1 } do
+		part(m, "InlaidRoute", V(32, 0.03, 0.13), CF(0, 0.2, z), brass, Enum.Material.Metal)
+	end
+	part(m, "GateSeal", V(4, 0.12, 4), CF(0, 0.28, 0) * CFrame.Angles(0, math.pi / 4, 0), jade, Enum.Material.Slate)
+	for _, x in { -0.7, 0.7 } do
+		part(m, "SealLeaves", V(0.35, 0.05, 1.7), CF(x, 0.38, 0), brass, Enum.Material.Metal)
+	end
+	local stations = {
+		{ "Forge", Portal.BuildGate("Forest", 3.5), V(-10, 0.4, -5), 1 },
+		{ "Upgrades", Merchant.Emblem("Upgrade"), V(10, 0.6, -5), 1.65 },
+		{ "Courtyard", Merchant.Emblem("Home"), V(-10, 0.6, 7), 1.25 },
+		{ "Atlas", Merchant.Emblem("Compass"), V(10, 0.6, 7), 1.15 },
+	}
+	for _, def in stations do
+		local pad = part(
+			m,
+			"Pad_" .. def[1],
+			V(10, 0.08, 9),
+			CF(def[3].X, 0.26, def[3].Z),
+			C(213, 224, 211),
+			Enum.Material.Limestone
+		)
+		pad:SetAttribute("RestColor", pad.Color)
+		local subject = def[2]
+		subject.Name = def[1]
+		subject:ScaleTo(def[4])
+		K.bakeWelds(subject)
+		local cf, size = Builder.VisualBounds(subject)
+		local offset = def[3] - Vector3.new(cf.Position.X, cf.Position.Y - size.Y / 2, cf.Position.Z)
+		subject:PivotTo(subject:GetPivot() + offset)
+		subject.Parent = m
+	end
+	for _, x in { -16.5, 16.5 } do
+		for _, z in { -10, 10 } do
+			part(m, "PierFoot", V(1.6, 0.5, 1.6), CF(x, 0.6, z), edge, Enum.Material.Limestone)
+			part(m, "OakPier", V(0.65, 3.8, 0.65), CF(x, 2.5, z), wood, Enum.Material.Wood)
+			part(m, "PierCrown", V(1.1, 0.22, 1.1), CF(x, 4.5, z), brass, Enum.Material.Metal)
+		end
+	end
+	for _, x in { -16, 16 } do
+		for i = 1, 5 do
+			part(m, "SideCoping", V(0.8, 0.7, 1.9), CF(x, 0.7, -7.5 + i * 2.4), stone, Enum.Material.Limestone)
+		end
+	end
+	for _, x in { -11, 11 } do
+		for i = 1, 3 do
+			local crate =
+				part(m, "TradeCrate", V(1.6, 1.5, 1.6), CF(x + (i - 2) * 1.75, 1, -10), wood, Enum.Material.WoodPlanks)
+			part(m, "CrateBinding", V(1.7, 0.18, 1.7), crate.CFrame, brass, Enum.Material.Metal)
+		end
+	end
+	-- Small jade flags give the model the same silhouette as the courtyard roofs.
+	for _, x in { -4, 4 } do
+		part(m, "BannerStaff", V(0.18, 7.6, 0.18), CF(x, 4.1, -10), wood, Enum.Material.Wood)
+		part(m, "GuildBanner", V(2.1, 3.5, 0.12), CF(x + 1.1, 5.6, -10), jade, Enum.Material.Fabric)
+		part(m, "BannerClasp", V(2.25, 0.15, 0.2), CF(x + 1.1, 7.4, -10), brass, Enum.Material.Metal)
+	end
+	return m
+end
+function G.Sign()
+	local m = Instance.new("Model")
+	m.Name = "GuildTradeSign"
+	part(m, "OakBack", V(22, 4.6, 0.6), CF(), wood, Enum.Material.Wood)
+	part(m, "UpperBoard", V(21, 1.9, 0.2), CF(0, 1, -0.4), jade, Enum.Material.WoodPlanks)
+	part(m, "LowerBoard", V(21, 1.9, 0.2), CF(0, -1, -0.4), jade, Enum.Material.WoodPlanks)
+	for _, x in { -10.1, 10.1 } do
+		part(m, "BrassStrap", V(0.38, 4.2, 0.24), CF(x, 0, -0.6), brass, Enum.Material.Metal)
+		for _, y in { -1.5, 1.5 } do
+			part(m, "SquareNail", V(0.6, 0.5, 0.32), CF(x, y, -0.8), wood, Enum.Material.Metal)
+		end
+	end
+	return m
+end
+function G.Pedestal(model)
+	local cf, size = Builder.VisualBounds(model)
+	local width = math.max(size.X, size.Z, size.Y * 0.65, 1)
+	local floor = cf.Position.Y - size.Y / 2
+	local center = CF(cf.Position.X, floor - width * 0.07, cf.Position.Z)
+	local p = part(
+		model,
+		"BestiaryPlinth",
+		V(width * 0.82, width * 0.11, width * 0.82),
+		center,
+		C(216, 226, 217),
+		Enum.Material.Limestone
+	)
+	p.CFrame *= CFrame.Angles(0, math.pi / 4, 0)
+	part(
+		model,
+		"PlinthInlay",
+		V(width * 0.7, width * 0.025, width * 0.7),
+		center * CF(0, width * 0.065, 0) * CFrame.Angles(0, math.pi / 4, 0),
+		stone,
+		Enum.Material.Metal
+	)
+	for _, x in { -1, 1 } do
+		for _, z in { -1, 1 } do
+			part(
+				model,
+				"PlinthKey",
+				V(width * 0.08, width * 0.018, width * 0.08),
+				center * CF(x * width * 0.32, width * 0.085, z * width * 0.32) * CFrame.Angles(0, math.pi / 4, 0),
+				brass,
+				Enum.Material.Metal
+			)
+		end
+	end
+	return model
+end
+return G
+]]></ProtectedString></Properties></Item>
+<Item class="ModuleScript" referent="RBX82"><Properties><string name="Name">HUD</string><ProtectedString name="Source"><![CDATA[-- Direct Pets, Shop and Expeditions navigation with a shared responsive panel layer.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Input = game:GetService("UserInputService")
@@ -24707,7 +25056,8 @@ function HUD.MakePanel(name, title, subtitle, icon)
 	Craft.Shell(frame)
 	frame.AnchorPoint = Vector2.new(0.5, 0.5)
 	frame.Visible = false
-	K.Icon(icon or "Portal", frame, UDim2.fromOffset(28, 28), T.Gold, UDim2.fromOffset(20, 20))
+	frame:SetAttribute("MenuKind", icon or "Portal")
+	Craft.Crest(frame, UDim2.fromOffset(28, 28), UDim2.fromOffset(20, 19))
 	local titleLabel = K.text(frame, title, 62, 15, -130, 35, 26, T.Text, true)
 	titleLabel.FontFace = T.TitleFace
 	local subtitleLabel = K.text(frame, type(subtitle) == "string" and subtitle or "", 20, 60, -92, 35, 14, T.Muted)
@@ -24922,7 +25272,7 @@ local function rescale()
 		or UDim2.new(1, -370, 1, -182)
 	for _, p in pairs(HUD.Panels) do
 		p.frame.Size = UDim2.fromOffset(math.min(1060, width - 24), math.min(680, height - 24))
-		p.compact = p.frame.Size.X.Offset < 760
+		p.compact = p.frame.Size.X.Offset < 760 or p.frame.Size.Y.Offset < 460
 		p.title.TextSize = p.compact and 22 or 26
 		p.frame:SetAttribute("Compact", p.compact)
 		if p.layout then
@@ -24979,7 +25329,7 @@ end)
 task.defer(rescale)
 return HUD
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX81"><Properties><string name="Name">Intro</string><ProtectedString name="Source"><![CDATA[-- Intro: cinematic fly-over when you join. The camera sweeps down the whole lane (every zone),
+<Item class="ModuleScript" referent="RBX83"><Properties><string name="Name">Intro</string><ProtectedString name="Source"><![CDATA[-- Intro: cinematic fly-over when you join. The camera sweeps down the whole lane (every zone),
 -- past the Portal Launch Hall, and lands at your base while the title animates in.
 -- Click / tap / any key to skip.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > Intro (ModuleScript)
@@ -25229,7 +25579,7 @@ end
 
 return Intro
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX82"><Properties><string name="Name">LabelDeclutter</string><ProtectedString name="Source"><![CDATA[-- LabelDeclutter: keeps floating world labels (BillboardGuis) from piling on top of each other.
+<Item class="LocalScript" referent="RBX84"><Properties><string name="Name">LabelDeclutter</string><ProtectedString name="Source"><![CDATA[-- LabelDeclutter: keeps floating world labels (BillboardGuis) from piling on top of each other.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > LabelDeclutter (LocalScript)
 --
 -- Most labels are drawn at a fixed pixel size, so a label 30 studs away is as big on screen as one
@@ -25417,7 +25767,7 @@ RunService.Heartbeat:Connect(function(dt)
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX83"><Properties><string name="Name">MerchantDisplay</string><ProtectedString name="Source"><![CDATA[-- A small, actual sanctuary shop display for the menu. No image or asset dependency.
+<Item class="ModuleScript" referent="RBX85"><Properties><string name="Name">MerchantDisplay</string><ProtectedString name="Source"><![CDATA[-- A small, actual sanctuary shop display for the menu. No image or asset dependency.
 local D = {}
 local C, V, CF = Color3.fromRGB, Vector3.new, CFrame.new
 local wood, stone, brass, slate = C(88, 62, 40), C(224, 221, 206), C(178, 142, 74), C(39, 65, 69)
@@ -25528,7 +25878,7 @@ function D.Emblem(kind)
 end
 return D
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX84"><Properties><string name="Name">MovementFov</string><ProtectedString name="Source"><![CDATA[-- Reversible sprint lens offset. Cinematics release it before saving their lens.
+<Item class="ModuleScript" referent="RBX86"><Properties><string name="Name">MovementFov</string><ProtectedString name="Source"><![CDATA[-- Reversible sprint lens offset. Cinematics release it before saving their lens.
 local Fov = {}
 local owner, offset, output
 local function close(a, b)
@@ -25564,7 +25914,7 @@ function Fov.Update(camera, target, dt)
 end
 return Fov
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX85"><Properties><string name="Name">Panels</string><ProtectedString name="Source"><![CDATA[-- Sanctuary shops, collection, index, customization and settings.
+<Item class="ModuleScript" referent="RBX87"><Properties><string name="Name">Panels</string><ProtectedString name="Source"><![CDATA[-- Sanctuary shops, collection, index, customization and settings.
 -- All spending and ownership changes use the existing authoritative server actions.
 local RS = game:GetService("ReplicatedStorage")
 local Http = game:GetService("HttpService")
@@ -25584,7 +25934,8 @@ local Settings = require(script.Parent.ClientSettings)
 local Renderer = require(script.Parent.CreatureRenderer)
 local Sounds = require(script.Parent.Sounds)
 local Craft = require(script.Parent.SanctuaryUI)
-local Merchant = require(script.Parent.MerchantDisplay)
+local Guild = require(script.Parent.GuildModel)
+local Exchange = require(script.Parent.ExchangeView)
 local Panels = {}
 local function request(action, arg, message)
 	if not State.Loaded then
@@ -25636,12 +25987,17 @@ local function empty(parent, title, hint)
 	return f
 end
 local previewCache = {}
-local function petView(id, size, silhouette, material)
+local function petView(id, size, silhouette, material, pedestal)
 	local cacheKey = material and (id .. "|" .. material) or id
 	if not previewCache[cacheKey] then
 		previewCache[cacheKey] = (Renderer.BuildPreview(id, material))
 	end
-	return K.viewport(previewCache[cacheKey]:Clone(), size, false, silhouette, true)
+	local model = previewCache[cacheKey]:Clone()
+	if pedestal then
+		K.bakeWelds(model)
+		Guild.Pedestal(model)
+	end
+	return K.viewport(model, size, false, silhouette, true)
 end
 local function bindGrid(container, minWidth, cellHeight)
 	local g = K.new(
@@ -25906,16 +26262,33 @@ end
 ---------------------------------------------------------------- Inventory
 local inv = HUD.MakePanel(
 	"Creatures",
-	"Creature ledger",
+	"The bestiary",
 	"Select a creature to place it, remove it or review its sell value.",
 	"Pet"
 )
 local invCatalogue, invDetail = split(inv)
 local invSearch, best, invGrid
 local inventoryButtons = {}
+local resizeRoster
+local binding = K.new("Frame", {
+	Name = "BestiaryBinding",
+	BackgroundColor3 = T.StoneEdge,
+	Size = UDim2.new(0, 1, 1, -18),
+	Position = UDim2.new(0.445, 0, 0, 6),
+	Parent = inv.content,
+})
+for _, y in { 0.15, 0.85 } do
+	K.new("Frame", {
+		Name = "FolioHinge",
+		BackgroundColor3 = T.Brass,
+		Size = UDim2.fromOffset(7, 22),
+		Position = UDim2.new(0, -3, y, -11),
+		Parent = binding,
+	})
+end
 local function inventoryCardHeight()
 	if not inv.compact then
-		return 192
+		return 86
 	end
 	local scale = HUD.Root:FindFirstChildOfClass("UIScale").Scale
 	return math.clamp((invGrid and invGrid.AbsoluteSize.Y / scale or 142) - 6, 110, 136)
@@ -25924,6 +26297,16 @@ local inventoryLayout = inv.layout
 inv.layout = function()
 	inventoryLayout()
 	local compact = inv.compact
+	binding.Visible = not compact
+	if not compact then
+		invDetail.Position, invDetail.Size = UDim2.new(), UDim2.new(0.425, -4, 1, 0)
+		invCatalogue.Position, invCatalogue.Size = UDim2.fromScale(0.47, 0), UDim2.fromScale(0.53, 1)
+	else
+		invCatalogue.Position = UDim2.new()
+	end
+	if resizeRoster then
+		resizeRoster()
+	end
 	inv.content.Position = UDim2.fromOffset(16, compact and 64 or 108)
 	inv.contentSize = UDim2.new(1, -32, 1, compact and -80 or -124)
 	inv.content.Size = inv.contentSize - UDim2.fromOffset(0, inv.feedback.Visible and 40 or 0)
@@ -25943,27 +26326,53 @@ inv.layout = function()
 	for _, button in pairs(inventoryButtons) do
 		local view = button:FindFirstChildWhichIsA("ViewportFrame")
 		if view then
-			view.Size = UDim2.new(1, -8, 0, compact and (inventoryCardHeight() - 46) or 108)
+			view.Size = compact and UDim2.new(1, -8, 0, inventoryCardHeight() - 46) or UDim2.fromOffset(86, 78)
+			view.Position = UDim2.fromOffset(4, 3)
 		end
 		local name, rarity, status =
 			button:FindFirstChild("PetName"), button:FindFirstChild("PetRarity"), button:FindFirstChild("PetStatus")
 		if name then
 			local thumb = inventoryCardHeight() - 46
-			name.Position = UDim2.fromOffset(10, compact and thumb + 2 or 110)
-			name.Size = UDim2.new(1, -20, 0, compact and 20 or 38)
-			name.TextSize = compact and 13 or 15
+			name.Position = UDim2.fromOffset(compact and 10 or 102, compact and thumb + 2 or 8)
+			name.Size = UDim2.new(1, compact and -20 or -134, 0, compact and 20 or 28)
+			name.TextSize = compact and 13 or 17
 			name.TextWrapped = not compact
 			name.TextTruncate = compact and Enum.TextTruncate.AtEnd or Enum.TextTruncate.None
-			rarity.Position = UDim2.fromOffset(10, compact and thumb + 23 or 151)
+			rarity.Position = UDim2.fromOffset(compact and 10 or 102, compact and thumb + 23 or 38)
+			rarity.Size = UDim2.new(1, compact and -20 or -134, 0, 18)
 			rarity.TextSize = compact and 12 or 13
-			status.Position = UDim2.fromOffset(10, 171)
+			status.Position = UDim2.fromOffset(102, 59)
+			status.Size = UDim2.new(1, -134, 0, 18)
 			status.Visible = not compact
 		end
 	end
 	local preview = invDetail:FindFirstChild("CreaturePreview")
 	if preview then
-		preview.LayoutOrder = inv.compact and 9 or 1
-		preview.Size = UDim2.new(1, -12, 0, inv.compact and 112 or 146)
+		local identityHeight = compact and math.clamp(inv.frame.Size.Y.Offset - 190, 66, 124) or 210
+		local tight = compact and identityHeight < 92
+		invDetail:FindFirstChildOfClass("UIListLayout").Padding = UDim.new(0, compact and 6 or 8)
+		local place = invDetail:FindFirstChild("PlaceCreature")
+		if place then
+			place.Size = UDim2.new(1, -12, 0, compact and 44 or 46)
+		end
+		preview.LayoutOrder = 1
+		preview.Size = UDim2.new(1, -12, 0, identityHeight)
+		local view = preview:FindFirstChildWhichIsA("ViewportFrame")
+		view.Size = compact and UDim2.new(0.30, -4, 1, -8) or UDim2.fromScale(1, 1)
+		view.Position = compact and UDim2.new(0.70, 0, 0, 4) or UDim2.new()
+		for i, name in { "PetNameHeading", "PetRates", "PetExperience" } do
+			local label = invDetail:FindFirstChild(name, true)
+			if label then
+				label.Parent = compact and preview or invDetail
+				local heights = tight and { 22, 20, 18 } or { 36, 24, 20 }
+				local offsets = tight and { 0, 24, 46 } or { 4, 46, 76 }
+				local sizes = tight and { 18, 14, 13 } or { 20, 16, 14 }
+				label.Size = compact and UDim2.new(0.68, -8, 0, heights[i])
+					or UDim2.new(1, -12, 0, i == 1 and 36 or i == 2 and 28 or 24)
+				label.TextSize = sizes[i]
+				label.Position = compact and UDim2.fromOffset(2, offsets[i]) or UDim2.new()
+			end
+		end
 	end
 end
 invSearch = K.search(invCatalogue, "Search creatures", UDim2.new(1, -12, 0, 46), UDim2.fromOffset(4, 4))
@@ -25983,6 +26392,8 @@ invGrid = scroll(invCatalogue, "Creatures", UDim2.new(1, 0, 1, -116), UDim2.from
 invGrid:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
 	if inv.compact then
 		task.defer(inv.layout)
+	elseif resizeRoster then
+		resizeRoster()
 	end
 end)
 local selectedUid, inventoryKey, detailKey, armedUid, armToken = nil, nil, nil, nil, 0
@@ -26031,10 +26442,13 @@ local function renderCreatureDetail()
 	local color = T.Legible(Variants.Color(entry.s, entry.v) or T.Rarity(def.rarity, Config))
 	local entryIncome = Data.Income(entry.c) * Variants.Mult(entry.s, entry.v)
 	local level = entry.l or 1
-	local hero = K.surface(invDetail, "CreaturePreview", UDim2.new(1, -12, 0, 146), nil, T.Inset)
+	local hero = K.surface(invDetail, "CreaturePreview", UDim2.new(1, -12, 0, 210), nil, T.Panel)
+	hero.BackgroundTransparency = 1
+	hero:FindFirstChildOfClass("UIStroke").Transparency = 1
 	hero.LayoutOrder = 1
-	petView(entry.c, UDim2.fromScale(1, 1), nil, entry.v).Parent = hero
-	heading(invDetail, Variants.Prefix(entry.s, entry.v) .. def.name, 2)
+	petView(entry.c, UDim2.fromScale(1, 1), nil, entry.v, true).Parent = hero
+	local petHeading = heading(invDetail, Variants.Prefix(entry.s, entry.v) .. def.name, 2)
+	petHeading.Name = "PetNameHeading"
 	K.label(
 		def.rarity
 			.. " · "
@@ -26043,7 +26457,13 @@ local function renderCreatureDetail()
 			.. (Variants.Mult(entry.s, entry.v) > 1 and ("  (x" .. Variants.Mult(entry.s, entry.v) .. ")") or ""),
 		UDim2.new(1, -12, 0, 28),
 		color,
-		{ TextSize = 16, LayoutOrder = 3, TextXAlignment = Enum.TextXAlignment.Left, Parent = invDetail }
+		{
+			Name = "PetRates",
+			TextSize = 16,
+			LayoutOrder = 3,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			Parent = invDetail,
+		}
 	)
 	local xp = level >= Farm.PetMaxLevel and "Max level"
 		or (math.floor(entry.e or 0) .. " / " .. Farm.PetXpToNext(level) .. " XP")
@@ -26193,9 +26613,19 @@ inv.refresh = function()
 		inventoryKey = key
 		invGrid:ClearAllChildren()
 		inventoryButtons = {}
-		bindGrid(invGrid, 140, function()
-			return inventoryCardHeight()
-		end)
+		local grid = K.new(
+			"UIGridLayout",
+			{ CellPadding = UDim2.fromOffset(8, 8), SortOrder = Enum.SortOrder.LayoutOrder, Parent = invGrid }
+		)
+		resizeRoster = function()
+			if not grid.Parent then
+				return
+			end
+			local width = invGrid.AbsoluteSize.X / HUD.Root:FindFirstChildOfClass("UIScale").Scale - 12
+			local cols = inv.compact and math.max(1, math.floor((width + 8) / 148)) or 1
+			grid.CellSize = UDim2.new(1 / cols, -(8 * (cols - 1) + 12) / cols, 0, inventoryCardHeight())
+		end
+		task.defer(resizeRoster)
 		local items = table.clone(d.Creatures)
 		table.sort(items, function(a, b)
 			return Data.Income(a.c) * Variants.Mult(a.s, a.v) * Farm.PetMult(a.l)
@@ -26226,6 +26656,7 @@ inv.refresh = function()
 					nil,
 					{ Name = "Creature_" .. entry.u, LayoutOrder = i, Parent = invGrid }
 				)
+				Craft.Leaf(b)
 				petView(entry.c, UDim2.new(1, -8, 0, 108), nil, entry.v).Parent = b
 				local nameLabel = K.text(
 					b,
@@ -26273,6 +26704,7 @@ inv.refresh = function()
 				inventoryButtons[entry.u] = b
 				K.bind(b, function()
 					clearArm()
+					invDetail.CanvasPosition = Vector2.zero
 					selectedUid = entry.u
 					detailKey = nil
 					inv.refresh()
@@ -26734,123 +27166,8 @@ local function headerLink(panel, name, title, target)
 end
 headerLink(inv, "OpenCollection", "Collection", "Index")
 headerLink(idx, "BackToPets", "<  Pets", "Creatures")
-local hub = HUD.MakePanel("Shop", "Sanctuary exchange", "Portals, provisions and work for your courtyard.", "Shop")
-hub.content.AutomaticCanvasSize = Enum.AutomaticSize.None
-hub.content.ScrollingEnabled = false
-local merchantSide = K.new(
-	"Frame",
-	{ Name = "MerchantDisplay", BackgroundTransparency = 1, Size = UDim2.new(0.38, -20, 1, 0), Parent = hub.content }
-)
-local display = Craft.Display(merchantSide, "StallDisplay")
-display.Size = UDim2.new(1, 0, 1, -96)
-local merchantPreview = K.viewport(Merchant.Build(), UDim2.fromScale(1, 1), false, false, true)
-merchantPreview.Name = "MerchantVignette"
-merchantPreview.Parent = display
-local purse = K.text(merchantSide, "", 0, 0, -4, 34, 25, T.Gold, true)
-purse.Name = "ShopBalance"
-purse.Position = UDim2.new(0, 0, 1, -82)
-local purseCaption = K.text(merchantSide, "Coins in your purse", 0, 0, -4, 22, 14, T.Muted)
-purseCaption.Position = UDim2.new(0, 0, 1, -46)
-local destinations = scroll(hub.content, "Merchants", UDim2.fromScale(0.62, 1), UDim2.fromScale(0.38, 0))
-local merchantList = K.list(Enum.FillDirection.Vertical, 12)
-merchantList.Parent = destinations
-local merchantGrid = K.new("UIGridLayout", {
-	CellSize = UDim2.new(0.5, -10, 0, 74),
-	CellPadding = UDim2.fromOffset(8, 8),
-	SortOrder = Enum.SortOrder.LayoutOrder,
-})
-local shopEntries = {}
-for i, def in
-	{
-		{ "Portals", "Portal", "Portals", "Portal forge", "Choose the portal for your next throw." },
-		{ "Upgrades", "Upgrade", "Upgrades", "Sanctuary upgrades", "Extend your reach and improve your earnings." },
-		{ "Courtyard", "Home", "Base", "Courtyard workshop", "Furnish the home your creatures earn for." },
-		{ "Biomes", "Compass", "Worlds", "The atlas", "See your reach, discoveries and next biome." },
-	}
-do
-	local row = K.button(
-		"",
-		T.Raised,
-		nil,
-		UDim2.new(1, -12, 0, 96),
-		{ Name = "Shop_" .. def[1], LayoutOrder = i, Parent = destinations }
-	)
-	local subject = def[2] == "Portal" and Portal.BuildGate("Forest", 2) or Merchant.Emblem(def[2])
-	local emblem = K.viewport(subject, UDim2.fromOffset(64, 72), false, false, true)
-	emblem.Name = "GuildEmblem"
-	emblem.Position = UDim2.fromOffset(8, 8)
-	emblem.Parent = row
-	local title = K.text(row, def[4], 88, 10, -140, 28, 21, T.Text, true)
-	title.FontFace = T.TitleFace
-	local desc = K.text(row, def[5], 88, 42, -134, 24, 14, T.Muted)
-	local status = K.text(row, "", 88, 70, -134, 18, 13, T.Gold)
-	local arrow = K.text(row, "›", 0, 24, 24, 38, 30, T.Gold, true)
-	arrow.Position = UDim2.new(1, -38, 0, 24)
-	shopEntries[def[1]] = { row = row, title = title, desc = desc, status = status, emblem = emblem, arrow = arrow }
-	K.bind(row, function()
-		HUD.Open(def[3])
-	end)
-end
-hub.refresh = function()
-	purse.Text = Format.Money(State.Data.Money)
-	local owned = 0
-	for _, yes in State.Data.OwnedPortals do
-		if yes then
-			owned += 1
-		end
-	end
-	shopEntries.Portals.status.Text = owned
-		.. " portals owned / "
-		.. Config.Portals[State.Data.EquippedPortal].name
-		.. " equipped"
-	shopEntries.Upgrades.status.Text = math.floor(State.Data.MaxDistance or 45) .. " m throw range"
-	shopEntries.Courtyard.status.Text = "Floors, lanterns and courtyard details"
-	local count = 0
-	for _, yes in State.Data.UnlockedWorlds do
-		if yes then
-			count += 1
-		end
-	end
-	shopEntries.Biomes.status.Text = count .. " / 8 biomes unlocked"
-end
-hub.layout = function()
-	local narrow = hub.compact
-	merchantSide.Visible = not narrow
-	hub.content.Position = UDim2.fromOffset(16, narrow and 64 or 108)
-	hub.contentSize = UDim2.new(1, -32, 1, narrow and -80 or -124)
-	hub.content.Size = hub.contentSize - UDim2.fromOffset(0, hub.feedback.Visible and 40 or 0)
-	hub.subtitle.Visible = not narrow
-	hub.title.Position = UDim2.fromOffset(62, narrow and 8 or 15)
-	hub.title.Size = UDim2.new(1, -130, 0, narrow and 28 or 35)
-	purse.Parent = narrow and hub.frame or merchantSide
-	purse.Position = narrow and UDim2.fromOffset(62, 37) or UDim2.new(0, 0, 1, -82)
-	purse.Size = narrow and UDim2.new(1, -142, 0, 16) or UDim2.new(1, -4, 0, 34)
-	purse.TextSize = narrow and 13 or 25
-	destinations.Position = narrow and UDim2.new() or UDim2.fromScale(0.38, 0)
-	destinations.Size = narrow and UDim2.fromScale(1, 1) or UDim2.fromScale(0.62, 1)
-	if narrow then
-		merchantList.Parent = nil
-		merchantGrid.Parent = destinations
-	else
-		merchantGrid.Parent = nil
-		merchantList.Parent = destinations
-	end
-	for _, entry in shopEntries do
-		entry.row.Size = UDim2.new(1, -12, 0, 96)
-		entry.title.Position = UDim2.fromOffset(narrow and 68 or 88, narrow and 7 or 10)
-		entry.title.Size = UDim2.new(1, narrow and -92 or -140, 0, narrow and 24 or 28)
-		entry.title.TextSize = narrow and 16 or 21
-		entry.desc.Visible = not narrow
-		entry.status.Position = UDim2.fromOffset(narrow and 68 or 88, narrow and 32 or 70)
-		entry.status.Size = UDim2.new(1, narrow and -92 or -134, 0, narrow and 32 or 18)
-		entry.status.TextSize = narrow and 12 or 13
-		entry.emblem.Size = UDim2.fromOffset(narrow and 56 or 64, narrow and 60 or 72)
-		entry.emblem.Position = UDim2.fromOffset(narrow and 4 or 8, narrow and 4 or 8)
-		entry.arrow.Position = UDim2.new(1, narrow and -24 or -38, 0, narrow and 18 or 24)
-		entry.arrow.Size = UDim2.fromOffset(narrow and 20 or 24, 38)
-		entry.arrow.TextSize = narrow and 24 or 30
-	end
-end
+local hub = HUD.MakePanel("Shop", "The exchange", "", "Shop")
+Exchange.Mount(hub, HUD)
 for _, panel in { shop, upg, base, worlds } do
 	headerLink(panel, "BackToShop", "<  Shop", "Shop")
 	local wallet = K.text(panel.frame, "", 0, 64, 210, 36, 15, T.Gold, true)
@@ -26912,7 +27229,7 @@ function Panels.Init()
 end
 return Panels
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX86"><Properties><string name="Name">Plaque</string><ProtectedString name="Source"><![CDATA[-- Plaque: the carved rarity plaque from the reveal reference sheet (Actions/02_Rarity_Reveal_and_Capture):
+<Item class="ModuleScript" referent="RBX88"><Properties><string name="Name">Plaque</string><ProtectedString name="Source"><![CDATA[-- Plaque: the carved rarity plaque from the reveal reference sheet (Actions/02_Rarity_Reveal_and_Capture):
 -- a bevelled bar with pointed diamond ends, double gold trim, small gold diamond ornaments, serif caps,
 -- and gold laurels for the showcase tiers. Pixel sized, so it works in ScreenGuis and BillboardGuis.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > Plaque (ModuleScript)
@@ -27069,7 +27386,7 @@ end
 
 return P
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX87"><Properties><string name="Name">PlayerFeel</string><ProtectedString name="Source"><![CDATA[-- PlayerFeel: how the local player's character moves and feels.
+<Item class="LocalScript" referent="RBX89"><Properties><string name="Name">PlayerFeel</string><ProtectedString name="Source"><![CDATA[-- PlayerFeel: how the local player's character moves and feels.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > PlayerFeel (LocalScript)
 --
 --   * Run: hold Left Shift (PC), press L3 (gamepad) or tap the Run button (mobile, toggles).
@@ -27385,7 +27702,7 @@ task.spawn(function()
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX88"><Properties><string name="Name">RevealTitle</string><ProtectedString name="Source"><![CDATA[-- RevealTitle: on-screen title for a creature reveal, styled after Actions/02_Rarity_Reveal_and_Capture.
+<Item class="ModuleScript" referent="RBX90"><Properties><string name="Name">RevealTitle</string><ProtectedString name="Source"><![CDATA[-- RevealTitle: on-screen title for a creature reveal, styled after Actions/02_Rarity_Reveal_and_Capture.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > RevealTitle (ModuleScript)
 --
 --   Common / Uncommon      nothing on screen: the carved plaque above the pet carries it (restrained tiers)
@@ -27701,8 +28018,8 @@ end
 
 return R
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX89"><Properties><string name="Name">SanctuaryUI</string><ProtectedString name="Source"><![CDATA[-- Cabinetmaker details from the sanctuary: pale stone, oak edges and brass fittings.
--- These are decoration only. They never receive input or cover the game world.
+<Item class="ModuleScript" referent="RBX91"><Properties><string name="Name">SanctuaryUI</string><ProtectedString name="Source"><![CDATA[-- Gatefold: the sanctuary's split gate, translated into an open stone folio.
+-- All ornament is inert. The reading surface stays light and the world stays visible.
 local T = require(script.Parent.UITheme)
 local Art = {}
 local function piece(parent, name, size, position, color, z)
@@ -27713,69 +28030,100 @@ local function piece(parent, name, size, position, color, z)
 	f.ZIndex, f.Parent = z or 1, parent
 	return f
 end
-local function line(parent, name, size, position, color)
-	return piece(parent, name, size, position, color)
+function Art.Crest(parent, size, position)
+	local mark = piece(parent, "GatefoldSeal", size, position, T.Panel, 3)
+	mark.BackgroundTransparency = 1
+	-- Two gate leaves around an open keyhole. Native geometry, no remote icon.
+	for _, x in { 0.17, 0.67 } do
+		piece(mark, "GateLeaf", UDim2.fromScale(0.16, 0.65), UDim2.fromScale(x, 0.23), T.Gold, 3)
+	end
+	local stone = piece(mark, "Keystone", UDim2.fromScale(0.28, 0.28), UDim2.fromScale(0.36, 0.04), T.Brass, 3)
+	stone.Rotation = 45
+	piece(mark, "Threshold", UDim2.fromScale(0.78, 0.08), UDim2.fromScale(0.11, 0.88), T.Gold, 3)
+	return mark
 end
 function Art.Shell(frame)
 	frame:SetAttribute("SanctuaryShell", true)
+	frame:SetAttribute("Gatefold", true)
 	frame.BackgroundColor3 = T.Panel
 	local edge = frame:FindFirstChildOfClass("UIStroke")
 	if edge then
-		edge.Color, edge.Thickness, edge.Transparency = T.Brass, 2, 0
+		edge.Color, edge.Thickness, edge.Transparency = T.StoneEdge, 1, 0
 	end
 	local corner = frame:FindFirstChildOfClass("UICorner")
 	if corner then
-		corner.CornerRadius = UDim.new(0, 4)
+		corner.CornerRadius = UDim.new(0, 2)
 	end
-	piece(frame, "OakBindingTop", UDim2.new(1, 12, 0, 5), UDim2.fromOffset(-6, -6), T.Timber)
-	piece(frame, "OakBindingBottom", UDim2.new(1, 12, 0, 5), UDim2.new(0, -6, 1, 1), T.Timber)
-	piece(frame, "OakBindingLeft", UDim2.new(0, 5, 1, 2), UDim2.fromOffset(-6, -1), T.Timber)
-	piece(frame, "OakBindingRight", UDim2.new(0, 5, 1, 2), UDim2.new(1, 1, 0, -1), T.Timber)
-	line(frame, "StoneLip", UDim2.new(1, -8, 0, 1), UDim2.fromOffset(4, 3), Color3.new(1, 1, 1))
-	local header = piece(frame, "StoneHeader", UDim2.new(1, -12, 0, 55), UDim2.fromOffset(6, 1), T.Header)
-	header.ZIndex = 1
-	line(header, "CarvedRule", UDim2.new(1, -16, 0, 1), UDim2.new(0, 8, 1, -1), T.Brass)
+	-- Stepped masonry and exposed brass joints follow the gate's angular profile.
 	for _, x in { 0, 1 } do
 		for _, y in { 0, 1 } do
 			local cap = piece(
 				frame,
-				"BrassCorner",
-				UDim2.fromOffset(13, 13),
-				UDim2.new(x, x == 0 and -4 or -9, y, y == 0 and -4 or -9),
-				T.Brass,
+				"GateCorner",
+				UDim2.fromOffset(22, 22),
+				UDim2.new(x, x == 0 and -7 or -15, y, y == 0 and -7 or -15),
+				T.StoneEdge,
 				3
 			)
-			line(cap, "Pin", UDim2.fromOffset(3, 3), UDim2.fromOffset(5, 5), T.Timber)
+			piece(cap, "StoneFace", UDim2.fromOffset(16, 16), UDim2.fromOffset(3, 3), T.Header, 3)
+			local nail = piece(cap, "BrassKey", UDim2.fromOffset(5, 5), UDim2.fromOffset(9, 9), T.Brass, 3)
+			nail.Rotation = 45
 		end
 	end
-	frame:GetAttributeChangedSignal("CompactHeader"):Connect(function()
-		header.Size = UDim2.new(1, -12, 0, frame:GetAttribute("CompactHeader") and 43 or 55)
-	end)
+	for _, y in { 0, 1 } do
+		piece(frame, "StoneLintel", UDim2.new(1, -34, 0, 4), UDim2.new(0, 17, y, y == 0 and -5 or 1), T.StoneEdge)
+		piece(frame, "InlaidThreshold", UDim2.fromOffset(54, 2), UDim2.new(0.5, -27, y, y == 0 and -4 or 2), T.Brass, 3)
+	end
+	local header = piece(frame, "StoneHeader", UDim2.new(1, -20, 0, 55), UDim2.fromOffset(10, 1), T.Panel)
+	piece(header, "EngravedRule", UDim2.new(1, -8, 0, 1), UDim2.new(0, 4, 1, -1), T.StoneEdge)
+	local function resize()
+		header.Size = UDim2.new(1, -20, 0, frame:GetAttribute("CompactHeader") and 43 or 55)
+	end
+	frame:GetAttributeChangedSignal("CompactHeader"):Connect(resize)
+	resize()
 end
 function Art.Button(button)
-	line(button, "PressedEdge", UDim2.new(1, -8, 0, 1), UDim2.new(0, 4, 1, -3), T.Brass)
-	local lip = line(button, "UpperEdge", UDim2.new(1, -8, 0, 1), UDim2.fromOffset(4, 3), Color3.new(1, 1, 1))
-	lip.BackgroundTransparency = 0.62
+	-- A short brass closure belongs to the folio, not a line under every word.
+	piece(button, "Clasp", UDim2.fromOffset(18, 2), UDim2.new(0.5, -9, 1, -2), T.Brass)
 end
 function Art.Display(parent, name)
 	local f = piece(parent, name or "Display", UDim2.fromScale(1, 1), UDim2.new(), T.Inset)
 	local rule = Instance.new("UIStroke")
-	rule.Color, rule.Thickness, rule.Parent = T.Border, 1, f
-	local c = Instance.new("UICorner")
-	c.CornerRadius, c.Parent = UDim.new(0, 4), f
+	rule.Color, rule.Thickness, rule.Parent = T.StoneEdge, 1, f
 	return f
+end
+function Art.Leaf(button)
+	button:SetAttribute("GatefoldLeaf", true)
+	button.BackgroundTransparency = 1
+	local edge = button:FindFirstChildOfClass("UIStroke")
+	if edge then
+		edge.Transparency = 1
+	end
+	local rule = piece(button, "LedgerRule", UDim2.new(1, -24, 0, 1), UDim2.new(0, 12, 1, -1), T.StoneEdge)
+	rule.BackgroundTransparency = 0.35
+	local seal = piece(button, "SelectionKey", UDim2.fromOffset(6, 6), UDim2.new(1, -18, 0.5, -3), T.Gold, 3)
+	seal.Rotation, seal.Visible = 45, false
+	return button
 end
 function Art.Selected(button, selected)
 	button:SetAttribute("Selected", selected)
 	local edge = button:FindFirstChildOfClass("UIStroke")
 	if edge then
 		edge.Color, edge.Thickness = selected and T.Gold or T.Border, selected and 2 or 1
+		edge.Transparency = button:GetAttribute("GatefoldLeaf") and (selected and 0 or 1) or 0
 	end
 	button.BackgroundColor3 = selected and T.Selected or T.Raised
+	if button:GetAttribute("GatefoldLeaf") then
+		button.BackgroundTransparency = selected and 0 or 1
+	end
+	local key = button:FindFirstChild("SelectionKey")
+	if key then
+		key.Visible = selected
+	end
 end
 return Art
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX90"><Properties><string name="Name">SceneLighting</string><ProtectedString name="Source"><![CDATA[-- The only runtime owner of scene light, atmosphere, clouds and grading.
+<Item class="ModuleScript" referent="RBX92"><Properties><string name="Name">SceneLighting</string><ProtectedString name="Source"><![CDATA[-- The only runtime owner of scene light, atmosphere, clouds and grading.
 local Lighting = game:GetService("Lighting")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
@@ -27861,7 +28209,7 @@ function Scene.Start()
 end
 return Scene
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX91"><Properties><string name="Name">SkyforgeUI</string><ProtectedString name="Source"><![CDATA[-- Light sanctuary surfaces and large standalone navigation artwork.
+<Item class="ModuleScript" referent="RBX93"><Properties><string name="Name">SkyforgeUI</string><ProtectedString name="Source"><![CDATA[-- Light sanctuary surfaces and large standalone navigation artwork.
 local T = require(script.Parent.UITheme)
 local S = {}
 local pendingImages = {}
@@ -28058,7 +28406,7 @@ function S.Card(frame, icon)
 end
 return S
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX92"><Properties><string name="Name">Sounds</string><ProtectedString name="Source"><![CDATA[-- Restrained event audio. Built-in assets keep the game independent of uploaded audio.
+<Item class="ModuleScript" referent="RBX94"><Properties><string name="Name">Sounds</string><ProtectedString name="Source"><![CDATA[-- Restrained event audio. Built-in assets keep the game independent of uploaded audio.
 local SoundService = game:GetService("SoundService")
 local TweenService = game:GetService("TweenService")
 local Sounds = {}
@@ -28177,7 +28525,7 @@ function Sounds.Get(name)
 end
 return Sounds
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX93"><Properties><string name="Name">ThrowCinematic</string><ProtectedString name="Source"><![CDATA[-- ThrowCinematic: the throw cutscene (owner only). Full screen, no letterbox.
+<Item class="ModuleScript" referent="RBX95"><Properties><string name="Name">ThrowCinematic</string><ProtectedString name="Source"><![CDATA[-- ThrowCinematic: the throw cutscene (owner only). Full screen, no letterbox.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ThrowCinematic (ModuleScript)
 --
 -- A short film in up to four camera shots, with HARD CUTS between them (w = wind-up seconds sent
@@ -29059,7 +29407,7 @@ end
 
 return Cine
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX94"><Properties><string name="Name">ThrowController</string><ProtectedString name="Source"><![CDATA[-- ThrowController: charge meter input, held-portal + arm wind-up, the portal flight arc,
+<Item class="ModuleScript" referent="RBX96"><Properties><string name="Name">ThrowController</string><ProtectedString name="Source"><![CDATA[-- ThrowController: charge meter input, held-portal + arm wind-up, the portal flight arc,
 -- landing bounce, portal gate opening and creature reveal choreography (for ALL players' throws).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ThrowController (ModuleScript)
 
@@ -30060,7 +30408,7 @@ end)
 
 return TC
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX95"><Properties><string name="Name">UIIcons</string><ProtectedString name="Source"><![CDATA[-- Original cutout art with immediately visible native geometry while images load.
+<Item class="ModuleScript" referent="RBX97"><Properties><string name="Name">UIIcons</string><ProtectedString name="Source"><![CDATA[-- Original cutout art with immediately visible native geometry while images load.
 local T = require(script.Parent.UITheme)
 local Sky = require(script.Parent.SkyforgeUI)
 local Icons = {}
@@ -30216,7 +30564,7 @@ function Icons.Draw(name, parent, size, color, position)
 end
 return Icons
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX96"><Properties><string name="Name">UIKit</string><ProtectedString name="Source"><![CDATA[-- Native sanctuary components. No uploaded icon/font dependency.
+<Item class="ModuleScript" referent="RBX98"><Properties><string name="Name">UIKit</string><ProtectedString name="Source"><![CDATA[-- Native sanctuary components. No uploaded icon/font dependency.
 local TweenService = game:GetService("TweenService")
 local Sounds = require(script.Parent.Sounds)
 local Settings = require(script.Parent.ClientSettings)
@@ -30352,6 +30700,7 @@ function K.button(text, c1, _c2, size, props)
 		local highlighted = on or b:GetAttribute("Selected")
 		st.Color = highlighted and T.Gold or T.Border
 		st.Thickness = highlighted and 2 or 1
+		st.Transparency = b:GetAttribute("GatefoldLeaf") and (highlighted and 0 or 1) or 0
 	end
 	b.MouseEnter:Connect(function()
 		if b:GetAttribute("Enabled") then
@@ -30609,8 +30958,8 @@ end
 
 return K
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX97"><Properties><string name="Name">UITheme</string><ProtectedString name="Source"><![CDATA[-- Sanctuary UI tokens, shared by the HUD, icons and every shop.
--- Fonts: Builder Sans (Roblox's modern UI family) for text, Montserrat Black for display titles;
+<Item class="ModuleScript" referent="RBX99"><Properties><string name="Name">UITheme</string><ProtectedString name="Source"><![CDATA[-- Sanctuary UI tokens, shared by the HUD, icons and every shop.
+-- Fonts: Builder Sans for controls and data, Merriweather for sanctuary headings;
 -- resolved with a fallback so an older client without these enums still renders.
 local function font(name, fallback)
 	local ok, f = pcall(function()
@@ -30619,7 +30968,9 @@ local function font(name, fallback)
 	return (ok and f) or fallback
 end
 local T = {
-	Header = Color3.fromRGB(239, 242, 233),
+	Header = Color3.fromRGB(237, 242, 239),
+	StoneEdge = Color3.fromRGB(186, 199, 192),
+	Jade = Color3.fromRGB(39, 101, 87),
 	Timber = Color3.fromRGB(81, 61, 43),
 	Brass = Color3.fromRGB(168, 143, 92),
 	Selected = Color3.fromRGB(242, 239, 217),
@@ -30674,7 +31025,7 @@ function T.Rarity(name, config)
 end
 return T
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX98"><Properties><string name="Name">WorldFx</string><ProtectedString name="Source"><![CDATA[-- WorldFx: ONE shared, staggered scheduler for environment motion on tagged map parts
+<Item class="ModuleScript" referent="RBX100"><Properties><string name="Name">WorldFx</string><ProtectedString name="Source"><![CDATA[-- WorldFx: ONE shared, staggered scheduler for environment motion on tagged map parts
 -- (no per-prop RenderStepped connections, no camera-following particles).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > WorldFx (ModuleScript)
 --

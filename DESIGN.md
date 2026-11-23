@@ -2,7 +2,7 @@
 
 ## Overview
 
-Native Roblox GUI for a bright outdoor sanctuary. Light limestone panels use dark readable text, a narrow oak binding and brass corner fittings. Opening a menu leaves the surrounding 3D world unchanged: no dark screen wash and no menu blur. C enamel navigation artwork supplies small colored accents inside the light interface.
+Native Roblox GUI for a bright outdoor sanctuary. The Gatefold interface borrows its stepped stone edges, split gate seal and brass joints from the sanctuary's architecture. White reading surfaces carry dark text; jade oak trade signs connect to a native 3D miniature of the exchange. Opening a menu leaves the surrounding 3D world unchanged: no dark screen wash and no menu blur. C enamel navigation artwork remains on the compact gameplay HUD.
 
 ## Color
 
@@ -60,12 +60,16 @@ Expedition planning suggests an idle stored scout before garden earners or follo
 
 ## Sanctuary menu craft
 
-Menus use a pale stone reading surface, a narrow oak binding, restrained brass fittings, and serif display headings. The world stays visible around them. Only the menu itself receives a frame. No full-screen dark wash or blur is introduced.
+Menus use a pale stone reading surface, stepped masonry corners, restrained brass joints, and serif display headings. The world stays visible around them. Only the menu itself receives a frame. No full-screen dark wash or blur is introduced.
 
-The shop has a native 3D merchant stall and four context-aware destinations. Actual portal geometry, a smith's hammer, a courtyard pavilion and a map table identify the destinations. Desktop uses a merchant display plus a vertical list; short screens use four direct shortcuts on one screen and keep the purse in the header. Secondary shops display the current purse before spending.
+The exchange is an architectural cutaway of four trades. Actual portal geometry, a smith's hammer, a courtyard pavilion and a map table sit on a terraced limestone model with jade banners and inlaid paths. Four jade oak signs are ordinary directly actionable buttons, connected to the correct worksite by projected leaders. Mouse hover and controller focus mark the corresponding worksite and sign together. Text remains sharp native GUI text over real 3D plank geometry. Short screens replace the diorama with four directly accessible trade emblems on one screen and keep the purse in the header. Secondary shops display the current purse before spending.
 
-The pet ledger selects an appropriate first result on desktop, places search and Place best on one row, and frames actual creature geometry instead of leaving models tiny inside oversized camera bounds. Follow and Sell are secondary actions beside one another; selling retains its confirmation and cancellation rules. Search changes select a matching pet and clear stale actions when no result remains. Stored, courtyard, following and expedition states are explicit.
+The bestiary is an open folio: the selected creature stands on a stepped stone plinth on the left, with a compact ruled roster on the right. A narrow binding with two brass hinges joins the leaves. Roster rows carry a full portrait, name, rarity, level and location; the selected row uses a brass key and gold outline. Search and Place best share a row. Follow and Sell are secondary actions beside one another; selling retains its confirmation and cancellation rules. Search changes select a matching pet and clear stale actions when no result remains. Stored, courtyard, following and expedition states are explicit.
 
 Short screens move the catalogue-back control into the header, fit a complete first row of inventory cards, and use readable collection rows. Names may truncate only in compact catalogue cards; the full name remains available in the detail and accessibility metadata.
+
+The compact view is used below 760 logical pixels in width or 460 in panel height. A wide, short phone therefore gets the same readable catalogue/detail navigation as a narrow phone. Trade signs and the miniature have no perpetual animation; their camera and connector projection update only when layout changes. Native geometry avoids new uploaded image dependencies.
+
+Compact pet details combine the name, income, level and a creature portrait in one identity area. Its height adapts to the available panel height, leaving two rows of touch actions visible even on the smallest tested landscape screen. Choosing a different roster entry starts its detail at the top. The description remains available below by scrolling.
 
 Open menus suspend world proximity prompts and hide floating world labels locally. Closing restores the prior prompt setting and each label's previous visibility owner. These presentation changes never change server prices, rewards, ownership or save data.

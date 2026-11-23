@@ -1,0 +1,71 @@
+{
+  "sharedPlace": 129975585465401,
+  "savedVersion": 103,
+  "scope": "Gatefold menu design",
+  "devices": {
+    "desktop": {
+      "failures": [],
+      "passed": 95,
+      "textOverflows": []
+    },
+    "iphone17Pro": {
+      "failures": [],
+      "passed": 98,
+      "textOverflows": []
+    },
+    "galaxyA06": {
+      "failures": [],
+      "passed": 98,
+      "textOverflows": []
+    },
+    "ipadProM5": {
+      "failures": [],
+      "passed": 95,
+      "textOverflows": []
+    }
+  },
+  "input": {
+    "pointer": {
+      "padChanged": true,
+      "selected": true
+    },
+    "controller": {
+      "focusExitRestoresTrade": true,
+      "controllerHighlightsTrade": true
+    },
+    "smallScreenActions": {
+      "allPetActionsVisible": true,
+      "identityHeight": 66,
+      "detailHeight": 176
+    },
+    "follow": "Stop following",
+    "routes": [
+      {
+        "panel": "Portals",
+        "opened": true
+      },
+      {
+        "panel": "Upgrades",
+        "opened": true
+      },
+      {
+        "panel": "Base",
+        "opened": true
+      },
+      {
+        "panel": "Worlds",
+        "opened": true
+      }
+    ]
+  },
+  "sourceParity": {
+    "checked": 92,
+    "differences": [],
+    "extra": []
+  },
+  "selene": "0 errors, 0 warnings, 0 parse errors",
+  "productionBuild": "92/92, no test markers",
+  "testBuilds": "95/95, correct markers",
+  "profileIsolation": "In-memory, saving disabled",
+  "studioEndState": "Edit, default viewport, temporary fixtures removed"
+}

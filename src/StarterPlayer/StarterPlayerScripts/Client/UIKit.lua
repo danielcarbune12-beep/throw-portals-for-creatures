@@ -134,6 +134,7 @@ function K.button(text, c1, _c2, size, props)
 		local highlighted = on or b:GetAttribute("Selected")
 		st.Color = highlighted and T.Gold or T.Border
 		st.Thickness = highlighted and 2 or 1
+		st.Transparency = b:GetAttribute("GatefoldLeaf") and (highlighted and 0 or 1) or 0
 	end
 	b.MouseEnter:Connect(function()
 		if b:GetAttribute("Enabled") then

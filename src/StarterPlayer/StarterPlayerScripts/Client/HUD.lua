@@ -266,7 +266,8 @@ function HUD.MakePanel(name, title, subtitle, icon)
 	Craft.Shell(frame)
 	frame.AnchorPoint = Vector2.new(0.5, 0.5)
 	frame.Visible = false
-	K.Icon(icon or "Portal", frame, UDim2.fromOffset(28, 28), T.Gold, UDim2.fromOffset(20, 20))
+	frame:SetAttribute("MenuKind", icon or "Portal")
+	Craft.Crest(frame, UDim2.fromOffset(28, 28), UDim2.fromOffset(20, 19))
 	local titleLabel = K.text(frame, title, 62, 15, -130, 35, 26, T.Text, true)
 	titleLabel.FontFace = T.TitleFace
 	local subtitleLabel = K.text(frame, type(subtitle) == "string" and subtitle or "", 20, 60, -92, 35, 14, T.Muted)
@@ -481,7 +482,7 @@ local function rescale()
 		or UDim2.new(1, -370, 1, -182)
 	for _, p in pairs(HUD.Panels) do
 		p.frame.Size = UDim2.fromOffset(math.min(1060, width - 24), math.min(680, height - 24))
-		p.compact = p.frame.Size.X.Offset < 760
+		p.compact = p.frame.Size.X.Offset < 760 or p.frame.Size.Y.Offset < 460
 		p.title.TextSize = p.compact and 22 or 26
 		p.frame:SetAttribute("Compact", p.compact)
 		if p.layout then

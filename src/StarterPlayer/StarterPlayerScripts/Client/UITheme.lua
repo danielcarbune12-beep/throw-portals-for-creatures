@@ -1,5 +1,5 @@
 -- Sanctuary UI tokens, shared by the HUD, icons and every shop.
--- Fonts: Builder Sans (Roblox's modern UI family) for text, Montserrat Black for display titles;
+-- Fonts: Builder Sans for controls and data, Merriweather for sanctuary headings;
 -- resolved with a fallback so an older client without these enums still renders.
 local function font(name, fallback)
 	local ok, f = pcall(function()
@@ -8,7 +8,9 @@ local function font(name, fallback)
 	return (ok and f) or fallback
 end
 local T = {
-	Header = Color3.fromRGB(239, 242, 233),
+	Header = Color3.fromRGB(237, 242, 239),
+	StoneEdge = Color3.fromRGB(186, 199, 192),
+	Jade = Color3.fromRGB(39, 101, 87),
 	Timber = Color3.fromRGB(81, 61, 43),
 	Brass = Color3.fromRGB(168, 143, 92),
 	Selected = Color3.fromRGB(242, 239, 217),
