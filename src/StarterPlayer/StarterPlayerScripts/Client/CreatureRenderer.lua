@@ -86,21 +86,22 @@ end
 -- Reference-sheet label above a wild pet: carved rarity plaque, serif name, small detail line.
 local function rarityTag(entry, def, sub, offsetY, displayName, nameColor)
 	local bb = Instance.new("BillboardGui")
-	bb.Size = UDim2.fromOffset(340, 104)
+	bb.Size = UDim2.fromOffset(216, 72)
 	bb.StudsOffsetWorldSpace = Vector3.new(0, offsetY, 0)
 	bb.MaxDistance = 170
 	bb.LightInfluence = 0
 	bb.AlwaysOnTop = false
 	bb.ResetOnSpawn = false
 	local style = Plaque.Styles[def.rarity] and def.rarity or "Common"
-	local plaque = Plaque.Make(bb, string.upper(def.rarity), style, 190, 30, { Position = UDim2.new(0.5, 0, 0, 18), ZIndex = 2 })
+	local plaque = Plaque.Make(bb, string.upper(def.rarity), style, 128, 21, { Position = UDim2.new(0.5, 0, 0, 12), ZIndex = 2 })
 	local name = Instance.new("TextLabel")
 	name.AnchorPoint = Vector2.new(0.5, 0)
-	name.Position = UDim2.new(0.5, 0, 0, 38)
-	name.Size = UDim2.new(1, -20, 0, 36)
+	name.Position = UDim2.new(0.5, 0, 0, 27)
+	name.Size = UDim2.new(1, -12, 0, 25)
 	name.BackgroundTransparency = 1
 	name.FontFace = Plaque.SerifHeavy
-	name.TextScaled = true
+	name.TextSize = 20
+	name.TextTruncate = Enum.TextTruncate.AtEnd
 	name.Text = displayName or def.name
 	name.TextColor3 = nameColor and nameColor:Lerp(Color3.new(1, 1, 1), 0.3) or Color3.fromRGB(255, 252, 244)
 	name.ZIndex = 5
@@ -113,11 +114,11 @@ local function rarityTag(entry, def, sub, offsetY, displayName, nameColor)
 	if sub and sub ~= "" then
 		local d = Instance.new("TextLabel")
 		d.AnchorPoint = Vector2.new(0.5, 0)
-		d.Position = UDim2.new(0.5, 0, 0, 76)
-		d.Size = UDim2.new(1, -40, 0, 18)
+		d.Position = UDim2.new(0.5, 0, 0, 54)
+		d.Size = UDim2.new(1, -16, 0, 15)
 		d.BackgroundTransparency = 1
 		d.FontFace = montserrat(Enum.FontWeight.SemiBold)
-		d.TextScaled = true
+		d.TextSize = 12
 		d.Text = sub
 		d.TextColor3 = Color3.fromRGB(236, 228, 246)
 		d.ZIndex = 5
@@ -130,14 +131,13 @@ local function rarityTag(entry, def, sub, offsetY, displayName, nameColor)
 	end
 	-- plaque drops in, name fades up
 	local sc = Instance.new("UIScale")
-	sc.Scale = 0.6
+	sc.Scale = 1
 	sc.Parent = plaque
-	softTween(sc, 0.45, { Scale = 1 }, Enum.EasingStyle.Back)
-	name.TextTransparency, st.Transparency = 1, 1
-	task.delay(0.15, function()
-		softTween(name, 0.35, { TextTransparency = 0 })
-		softTween(st, 0.35, { Transparency = 0.15 })
-	end)
+	if not Settings.ReducedMotion then
+		name.TextTransparency, st.Transparency = 1, 1
+		softTween(name, 0.16, { TextTransparency = 0 })
+		softTween(st, 0.16, { Transparency = 0.15 })
+	end
 	bb.Parent = entry.model.PrimaryPart
 	entry.tag = bb
 	return bb
@@ -703,7 +703,7 @@ local function stepEntrance(e, dt)
 end
 
 -- The creature appears inside the open portal (at `pos`) and comes out toward the thrower (-Z).
-function Renderer.SpawnWild(throwId, creatureId, pos, ownerId, chanceText, vsize, vmat)
+function Renderer.SpawnWild(throwId, creatureId, pos, ownerId, chanceText, vsize, vmat, presentation)
 	if wild[throwId] then
 		return wild[throwId]
 	end -- duplicate event: never two models per throw
@@ -713,6 +713,15 @@ function Renderer.SpawnWild(throwId, creatureId, pos, ownerId, chanceText, vsize
 	end
 	local cf = CFrame.lookAt(pos + Vector3.new(0, 0, 1.5), pos + Vector3.new(0, 0, -10))
 	local e = spawnEntry(creatureId, cf, "wild", 0, vsize, vmat)
+	e.presentation = presentation ~= false
+	e.throwId = throwId
+	e.owner = ownerId
+	if not e.presentation then
+		-- Routine catches have no reveal animation, plaque or floor rings.
+		e.anim:Teleport(CFrame.lookAt(pos + Vector3.new(0, 0, -9), pos + Vector3.new(0, 0, -10)))
+		wild[throwId] = e
+		return e
+	end
 	local prof = e.rig.profile
 	local enter = prof.enter or {}
 	-- themed entrance: motion style from the kind of animal, element FX from its world
@@ -840,6 +849,11 @@ function Renderer.RemoveWild(throwId, reason, collectorId)
 	wild[throwId] = nil
 	if reason ~= "collected" then
 		e.fadeT = 0
+		return
+	end
+	if e.presentation == false then
+		destroyEntry(e)
+		Renderer.CaptureFinished:Fire(e.throwId, e.owner, e.id)
 		return
 	end
 	local ok = pcall(function()

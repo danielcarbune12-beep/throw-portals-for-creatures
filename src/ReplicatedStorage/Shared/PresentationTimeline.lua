@@ -12,6 +12,13 @@ local Config = require(script.Parent.Config)
 
 local T = {}
 
+-- Discoveries come from the saved bestiary, not a timer or session-only flag.
+-- Rare and above earn a reveal on every catch; lower tiers earn it once per species.
+function T.ShouldPresent(rarity: string, discovery: boolean): boolean
+	local tier = Config.Rarities[rarity]
+	return (tier ~= nil and tier.order >= 3) or discovery == true
+end
+
 -- species entrance must END inside this window (seconds after PortalOpened)
 T.Entrance = { Common = 1.5, Uncommon = 1.5, Rare = 1.4, Epic = 1.4, Legendary = 2.2, Mythical = 2.4, Secret = 1.9, Divine = 2.6 }
 -- capture presentation after the server's collect event
@@ -21,7 +28,7 @@ T.ShowcaseMin = 0.8        -- readable full-silhouette hold between entrance and
 T.LandBounce = 0.5         -- local orb bounce before the gate opens
 T.GateOpen = 0.45
 T.GateClose = 0.35
-T.Card = { enter = 0.35, hold = 1.3, travel = 0.45, gap = 0.25 }
+T.Card = { enter = 0.16, hold = 1.2, travel = 0.16, gap = 0.15 }
 T.CardFallback = 3.0       -- if the capture visual never reports, show the card anyway
 T.CameraTimeout = 14       -- hard cap on any follow-camera claim
 -- THROW CUTSCENE: time between PortalThrown and the ball leaving the hand (you raise the portal,
