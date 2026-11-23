@@ -356,20 +356,12 @@ local inventoryButtons = {}
 local resizeRoster
 local binding = K.new("Frame", {
 	Name = "BestiaryBinding",
-	BackgroundColor3 = T.StoneEdge,
-	Size = UDim2.new(0, 1, 1, -18),
-	Position = UDim2.new(0.445, 0, 0, 6),
+	BackgroundTransparency = 1,
+	Size = UDim2.new(0, 24, 1, -18),
+	Position = UDim2.new(0.445, -12, 0, 6),
 	Parent = inv.content,
 })
-for _, y in { 0.15, 0.85 } do
-	K.new("Frame", {
-		Name = "FolioHinge",
-		BackgroundColor3 = T.Brass,
-		Size = UDim2.fromOffset(7, 22),
-		Position = UDim2.new(0, -3, y, -11),
-		Parent = binding,
-	})
-end
+Craft.Binding(binding)
 local function inventoryCardHeight()
 	if not inv.compact then
 		return 86
@@ -591,7 +583,7 @@ local function renderCreatureDetail()
 	})
 	local equip = K.button(
 		away and "On expedition" or isEquipped and "Stop following" or full and "Followers full" or "Follow me",
-		isEquipped and T.Raised or T.Violet,
+		isEquipped and T.Raised or T.Jade,
 		nil,
 		UDim2.new(1, -12, 0, 46),
 		{ Name = "EquipCreature", Size = UDim2.new(0.5, -4, 1, 0), Parent = secondary }

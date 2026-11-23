@@ -1,0 +1,52 @@
+{
+  "place": 129975585465401,
+  "savedVersion": 106,
+  "assetId": "81021166448000",
+  "assetModeration": "Approved",
+  "generation": "Built-in image_gen",
+  "devices": {
+    "desktop": {
+      "failures": [],
+      "passed": 105,
+      "textOverflows": []
+    },
+    "iphone17Pro": {
+      "failures": [],
+      "passed": 108,
+      "textOverflows": []
+    },
+    "galaxyA06": {
+      "failures": [],
+      "passed": 108,
+      "textOverflows": []
+    },
+    "ipadProM5": {
+      "failures": [],
+      "passed": 105,
+      "textOverflows": []
+    }
+  },
+  "smallPhone": {
+    "allPetActionsVisible": true
+  },
+  "sourceParity": {
+    "checked": 92,
+    "differences": [],
+    "extra": []
+  },
+  "contrast": {
+    "minBodyOnArt": 10.2,
+    "minSecondaryOnArt": 6.37,
+    "goldActionText": 7,
+    "jadeActionText": 6.81,
+    "minGoldOnArt": 4.527
+  },
+  "selene": "0 errors, 0 warnings, 0 parse errors",
+  "builds": {
+    "production": "92/92, no test markers",
+    "test": "95/95, correct markers"
+  },
+  "profileIsolation": "In-memory, saving disabled",
+  "studioEnd": "Edit, default viewport, temporary review fixtures removed",
+  "universeUsePermission": "Granted to universe 10778324663, asset 81021166448000"
+}

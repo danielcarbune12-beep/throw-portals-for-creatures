@@ -77,6 +77,8 @@ do
 	check(HUD.IsOpen(name) and page.frame.Visible, name .. " opens")
 	check(page.frame:GetAttribute("SanctuaryShell") == true, name .. " uses the sanctuary frame")
 	check(page.frame.BackgroundColor3 == require(Client.UITheme).Panel, name .. " keeps a light reading surface")
+	local material = page.frame:FindFirstChild("MedievalMaterial")
+	check(material and material.IsLoaded and material.ImageTransparency == 0, name .. " renders its medieval artwork")
 	check(not Prompts.Enabled, name .. " blocks world interaction behind the menu")
 	check(label.PlayerToHideFrom == player, name .. " keeps floating labels out of the menu surround")
 	check(HUD.Root.Backdrop.BackgroundTransparency == 1, name .. " has no dark screen wash")
