@@ -267,8 +267,8 @@ function HUD.MakePanel(name, title, subtitle, icon)
 	frame.AnchorPoint = Vector2.new(0.5, 0.5)
 	frame.Visible = false
 	frame:SetAttribute("MenuKind", icon or "Portal")
-	Craft.Crest(frame, UDim2.fromOffset(28, 28), UDim2.fromOffset(20, 19))
-	local titleLabel = K.text(frame, title, 62, 15, -130, 35, 26, T.Text, true)
+	Craft.Crest(frame, UDim2.fromOffset(28, 28), UDim2.fromOffset(20, 19), name == "Shop" and T.TrimGold or nil)
+	local titleLabel = K.text(frame, title, 62, 15, -130, 35, 26, name == "Shop" and T.OnAccent or T.Text, true)
 	titleLabel.FontFace = T.TitleFace
 	local subtitleLabel = K.text(frame, type(subtitle) == "string" and subtitle or "", 20, 60, -92, 35, 14, T.Muted)
 	local close = K.button(

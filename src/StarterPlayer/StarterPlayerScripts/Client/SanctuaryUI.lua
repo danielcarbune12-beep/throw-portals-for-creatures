@@ -3,6 +3,8 @@
 local T = require(script.Parent.UITheme)
 local Art = {}
 local MATERIAL = "rbxassetid://81021166448000"
+local WORKBENCH = "rbxassetid://74094136607085"
+local SPECIMEN = "rbxassetid://85945331623361"
 local Content = game:GetService("ContentProvider")
 local function piece(parent, name, size, position, color, z)
 	local f = Instance.new("Frame")
@@ -12,19 +14,22 @@ local function piece(parent, name, size, position, color, z)
 	f.ZIndex, f.Parent = z or 1, parent
 	return f
 end
-function Art.Crest(parent, size, position)
+function Art.Crest(parent, size, position, color)
+	local ink = color or T.Gold
 	local mark = piece(parent, "GatefoldSeal", size, position, T.Panel, 3)
 	mark.BackgroundTransparency = 1
 	-- Two gate leaves around an open keyhole. Native geometry, no remote icon.
 	for _, x in { 0.17, 0.67 } do
-		piece(mark, "GateLeaf", UDim2.fromScale(0.16, 0.65), UDim2.fromScale(x, 0.23), T.Gold, 3)
+		piece(mark, "GateLeaf", UDim2.fromScale(0.16, 0.65), UDim2.fromScale(x, 0.23), ink, 3)
 	end
 	local stone = piece(mark, "Keystone", UDim2.fromScale(0.28, 0.28), UDim2.fromScale(0.36, 0.04), T.Brass, 3)
 	stone.Rotation = 45
-	piece(mark, "Threshold", UDim2.fromScale(0.78, 0.08), UDim2.fromScale(0.11, 0.88), T.Gold, 3)
+	piece(mark, "Threshold", UDim2.fromScale(0.78, 0.08), UDim2.fromScale(0.11, 0.88), ink, 3)
 	return mark
 end
 function Art.Shell(frame)
+	local workbench = frame.Name == "Shop"
+	local material = workbench and WORKBENCH or MATERIAL
 	frame:SetAttribute("SanctuaryShell", true)
 	frame:SetAttribute("Gatefold", true)
 	frame:SetAttribute("MedievalBackground", true)
@@ -43,13 +48,23 @@ function Art.Shell(frame)
 	image.Name = "MedievalMaterial"
 	image.BackgroundTransparency, image.BorderSizePixel = 1, 0
 	image.Size, image.Position = UDim2.new(1, 24, 1, 24), UDim2.fromOffset(-12, -12)
-	image.Image, image.ScaleType = MATERIAL, Enum.ScaleType.Slice
+	image.Image, image.ScaleType = material, Enum.ScaleType.Slice
 	-- Roblox serves this upload at 1024px; these coordinates match that texture.
-	image.SliceCenter, image.SliceScale = Rect.new(172, 172, 852, 852), 42 / 172
+	image.SliceCenter, image.SliceScale =
+		workbench and Rect.new(174, 166, 850, 809) or Rect.new(172, 172, 852, 852), 42 / 172
 	image.Active, image.Selectable, image.ImageTransparency = false, false, 0
 	image.ZIndex, image.Parent = 1, frame
 	local header = piece(frame, "FolioHeader", UDim2.new(1, -32, 0, 55), UDim2.fromOffset(16, 1), T.Panel)
-	header.BackgroundTransparency = 1
+	header.BackgroundTransparency = workbench and 0 or 1
+	if workbench then
+		header.BackgroundColor3 = T.Jade
+		local grain = Instance.new("ImageLabel")
+		grain.Name, grain.Size, grain.BackgroundTransparency = "HeaderGrain", UDim2.fromScale(1, 1), 1
+		grain.Image, grain.ImageRectOffset, grain.ImageRectSize =
+			WORKBENCH, Vector2.new(200, 240), Vector2.new(620, 300)
+		grain.ImageColor3, grain.ImageTransparency, grain.Active, grain.Parent =
+			Color3.fromRGB(65, 110, 81), 0.45, false, header
+	end
 	local rule = piece(header, "InkRule", UDim2.new(1, -8, 0, 1), UDim2.new(0, 4, 1, -1), T.Brass)
 	rule.BackgroundTransparency = 0.45
 	local function resize()
@@ -60,7 +75,7 @@ function Art.Shell(frame)
 	frame:GetAttributeChangedSignal("Compact"):Connect(resize)
 	resize()
 	local function ready()
-		local loaded = image.IsLoaded or Content:GetAssetFetchStatus(MATERIAL) == Enum.AssetFetchStatus.Success
+		local loaded = image.IsLoaded or Content:GetAssetFetchStatus(material) == Enum.AssetFetchStatus.Success
 		frame.BackgroundTransparency = loaded and 1 or 0
 		if edge then
 			edge.Transparency = loaded and 1 or 0
@@ -68,7 +83,7 @@ function Art.Shell(frame)
 		frame:SetAttribute("MedievalMaterialReady", loaded)
 	end
 	image:GetPropertyChangedSignal("IsLoaded"):Connect(ready)
-	local fetched = Content:GetAssetFetchStatusChangedSignal(MATERIAL):Connect(ready)
+	local fetched = Content:GetAssetFetchStatusChangedSignal(material):Connect(ready)
 	image.Destroying:Connect(function()
 		fetched:Disconnect()
 	end)
@@ -81,6 +96,37 @@ function Art.Shell(frame)
 			ready()
 		end
 	end)
+end
+-- Reusable physical paper slips and specimen artwork. These never take input.
+function Art.Paper(parent, name, size, position, z)
+	local paper = Instance.new("ImageLabel")
+	paper.Name, paper.Size, paper.Position = name, size, position or UDim2.new()
+	paper.BackgroundColor3, paper.BorderSizePixel = T.Panel, 0
+	paper.Image, paper.ImageRectOffset, paper.ImageRectSize = MATERIAL, Vector2.new(172, 172), Vector2.new(680, 680)
+	paper.ZIndex, paper.Active, paper.Selectable, paper.Parent = z or 1, false, false, parent
+	return paper
+end
+function Art.Page(parent, name, size, position)
+	local page = Art.Paper(parent, name, size, position, 0)
+	local edge = Instance.new("UIStroke")
+	edge.Color, edge.Thickness, edge.Transparency, edge.Parent = T.Brass, 1, 0.4, page
+	for i = 1, 3 do
+		local leaf = piece(page, "PageLayer", UDim2.new(1, -i * 2, 0, 1), UDim2.new(0, i, 1, i), T.Brass, 0)
+		leaf.BackgroundTransparency = 0.2 + i * 0.15
+	end
+	return page
+end
+function Art.Specimen(parent)
+	local plate = Instance.new("ImageLabel")
+	plate.Name, plate.Size, plate.BackgroundTransparency = "SpecimenPlate", UDim2.fromScale(1, 1), 1
+	plate.ZIndex = 2
+	plate.Image, plate.Active, plate.Selectable, plate.Parent = SPECIMEN, false, false, parent
+	task.spawn(function()
+		pcall(function()
+			Content:PreloadAsync({ plate })
+		end)
+	end)
+	return plate
 end
 function Art.Binding(binding)
 	local leather = Color3.fromRGB(95, 62, 38)

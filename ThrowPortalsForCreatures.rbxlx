@@ -22849,6 +22849,12 @@ function E.Mount(hub, HUD)
 	hub.content.AutomaticCanvasSize, hub.content.ScrollingEnabled = Enum.AutomaticSize.None, false
 	hub.subtitle.Visible = false
 	local stage = K.new("Frame", { Name = "TradeCourt", BackgroundTransparency = 1, Parent = hub.content })
+	local backMap = Craft.Paper(stage, "FoldedMap", UDim2.fromScale(0.92, 0.92), UDim2.fromScale(0.04, 0.04))
+	backMap.Rotation = 3
+	local survey = Craft.Paper(stage, "SurveyMap", UDim2.fromScale(0.94, 0.92), UDim2.fromScale(0.03, 0.02))
+	survey.Rotation = -2
+	local mapRule = K.stroke(1, T.Brass)
+	mapRule.Transparency, mapRule.Parent = 0.35, survey
 	local scene = K.viewport(Guild.Build(), UDim2.fromScale(1, 1), false, false, false)
 	scene.Name, scene.Parent = "ExchangeArchitecture", stage
 	scene.Ambient, scene.LightColor = Color3.fromRGB(177, 190, 181), Color3.fromRGB(255, 244, 218)
@@ -22859,14 +22865,14 @@ function E.Mount(hub, HUD)
 		local target = Vector3.new(0, 1.5, 0)
 		scene.CurrentCamera.FieldOfView = 32
 		scene.CurrentCamera.CFrame =
-			CFrame.lookAt(target + Vector3.new(0, 0.9, 1).Unit * math.max(68, 81 / aspect), target)
+			CFrame.lookAt(target + Vector3.new(0, 0.9, 1).Unit * math.max(62, 76 / aspect), target)
 		if updateLines then
 			updateLines()
 		end
 	end
 	scene:GetPropertyChangedSignal("AbsoluteSize"):Connect(frameScene)
 	task.defer(frameScene)
-	local purse = K.text(hub.frame, "", 0, 15, 210, 30, 20, T.Gold, true)
+	local purse = K.text(hub.frame, "", 0, 15, 210, 30, 20, T.CinematicGold, true)
 	purse.Name = "ShopBalance"
 	local entries, names = {}, { "Forge", "Upgrades", "Courtyard", "Atlas" }
 	for i, def in
@@ -22894,6 +22900,19 @@ function E.Mount(hub, HUD)
 		local button =
 			K.button("", T.Raised, nil, UDim2.fromOffset(228, 120), { Name = "Shop_" .. def[1], Parent = hub.content })
 		Craft.Leaf(button)
+		local slip = Craft.Paper(button, "TradeSlip", UDim2.new(1, -12, 0, 68), UDim2.fromOffset(6, 48))
+		for _, x in { 0, 1 } do
+			K.new(
+				"Frame",
+				{
+					Name = "SlipPin",
+					Size = UDim2.fromOffset(4, 4),
+					Position = UDim2.new(x, x == 0 and 4 or -8, 0, 4),
+					BackgroundColor3 = T.Brass,
+					Parent = slip,
+				}
+			)
+		end
 		local sign = K.viewport(Guild.Sign(), UDim2.new(1, -4, 0, 48), false, false, false)
 		sign.Name, sign.Position, sign.Parent = "CarvedTradeSign", UDim2.fromOffset(2, 2), button
 		sign.Ambient, sign.LightColor, sign.LightDirection =
@@ -22911,6 +22930,7 @@ function E.Mount(hub, HUD)
 		emblem.Name, emblem.Parent = "TradeEmblem", button
 		entries[i] = {
 			button = button,
+			slip = slip,
 			title = title,
 			desc = desc,
 			status = status,
@@ -22929,7 +22949,8 @@ function E.Mount(hub, HUD)
 			Craft.Selected(button, on)
 			button.BackgroundTransparency = on and 0.12 or 1
 			button:FindFirstChildOfClass("UIStroke").Transparency = on and 0 or 1
-			leader.BackgroundColor3, node.BackgroundColor3 = on and T.Gold or T.StoneEdge, on and T.Gold or T.Brass
+			leader.BackgroundColor3, node.BackgroundColor3 =
+				on and T.CinematicGold or T.TrimGold, on and T.Gold or T.Brass
 			local pad = scene.PreviewWorld.TheFourTrades:FindFirstChild("Pad_" .. names[i])
 			if pad then
 				pad.Color = on and Color3.fromRGB(204, 183, 116) or pad:GetAttribute("RestColor")
@@ -23015,7 +23036,7 @@ function E.Mount(hub, HUD)
 		purse.TextSize, purse.TextXAlignment =
 			short and 13 or 18, short and Enum.TextXAlignment.Left or Enum.TextXAlignment.Right
 		stage.Visible = not short
-		stage.Position, stage.Size = UDim2.fromScale(0.14, -0.04), UDim2.fromScale(0.72, 1.04)
+		stage.Position, stage.Size = UDim2.fromScale(0.17, 0.03), UDim2.fromScale(0.66, 0.96)
 		for i, ref in entries do
 			local left, top = i % 2 == 1, i <= 2
 			if short then
@@ -23027,6 +23048,8 @@ function E.Mount(hub, HUD)
 			end
 			ref.emblem.Visible, ref.sign.Visible, ref.leader.Visible, ref.node.Visible =
 				short, not short, not short, not short
+			ref.slip.Position = short and UDim2.fromOffset(2, 2) or UDim2.fromOffset(6, 48)
+			ref.slip.Size = short and UDim2.new(1, -4, 1, -4) or UDim2.new(1, -12, 0, 68)
 			ref.emblem.Position = UDim2.fromOffset(4, 8)
 			ref.emblem.Size = UDim2.fromOffset(66, math.max(56, math.min(84, hub.frame.Size.Y.Offset * 0.23)))
 			ref.title.Position = UDim2.fromOffset(short and 78 or 18, 10)
@@ -24734,6 +24757,39 @@ function G.Build()
 		part(m, "GuildBanner", V(2.1, 3.5, 0.12), CF(x + 1.1, 5.6, -10), jade, Enum.Material.Fabric)
 		part(m, "BannerClasp", V(2.25, 0.15, 0.2), CF(x + 1.1, 7.4, -10), brass, Enum.Material.Metal)
 	end
+	-- Trade objects make the model read as a working place, rather than empty pads.
+	part(m, "TradeChest", V(3, 1.7, 2), CF(-5, 1.1, 10.5), wood, Enum.Material.WoodPlanks)
+	for _, x in { -5.9, -4.1 } do
+		part(m, "ChestStrap", V(0.2, 1.85, 2.1), CF(x, 1.1, 10.5), brass, Enum.Material.Metal)
+	end
+	part(m, "ChestLock", V(0.6, 0.65, 0.15), CF(-5, 1.35, 11.6), brass, Enum.Material.Metal)
+	for i = 1, 9 do
+		local coin = part(
+			m,
+			"PurseCoin",
+			V(0.13, 0.75, 0.75),
+			CF(3 + (i % 3) * 0.85, 0.4 + math.floor(i / 3) * 0.15, 10.3 + (i % 2) * 0.8)
+				* CFrame.Angles(0, 0, math.pi / 2),
+			brass,
+			Enum.Material.Metal
+		)
+		coin.Shape = Enum.PartType.Cylinder
+	end
+	for i = 1, 3 do
+		local chart = part(m, "RolledChart", V(3.2, 0.6, 0.6), CF(9 + i * 0.3, 0.6 + i * 0.18, 10.8 + i * 0.5), stone)
+		chart.Shape = Enum.PartType.Cylinder
+		part(m, "ChartTie", V(0.2, 0.72, 0.72), chart.CFrame, brass, Enum.Material.Metal)
+	end
+	for _, x in { -16, 16 } do
+		part(m, "LanternFoot", V(1.1, 0.15, 1.1), CF(x, 0.8, -2), brass, Enum.Material.Metal)
+		part(m, "LanternPane", V(0.65, 1, 0.65), CF(x, 1.35, -2), C(235, 198, 115))
+		part(m, "LanternCap", V(1.05, 0.18, 1.05), CF(x, 1.95, -2), wood, Enum.Material.Metal)
+		for _, dx in { -0.4, 0.4 } do
+			for _, dz in { -0.4, 0.4 } do
+				part(m, "LanternIron", V(0.1, 1.2, 0.1), CF(x + dx, 1.35, -2 + dz), wood, Enum.Material.Metal)
+			end
+		end
+	end
 	return m
 end
 function G.Sign()
@@ -25057,8 +25113,8 @@ function HUD.MakePanel(name, title, subtitle, icon)
 	frame.AnchorPoint = Vector2.new(0.5, 0.5)
 	frame.Visible = false
 	frame:SetAttribute("MenuKind", icon or "Portal")
-	Craft.Crest(frame, UDim2.fromOffset(28, 28), UDim2.fromOffset(20, 19))
-	local titleLabel = K.text(frame, title, 62, 15, -130, 35, 26, T.Text, true)
+	Craft.Crest(frame, UDim2.fromOffset(28, 28), UDim2.fromOffset(20, 19), name == "Shop" and T.TrimGold or nil)
+	local titleLabel = K.text(frame, title, 62, 15, -130, 35, 26, name == "Shop" and T.OnAccent or T.Text, true)
 	titleLabel.FontFace = T.TitleFace
 	local subtitleLabel = K.text(frame, type(subtitle) == "string" and subtitle or "", 20, 60, -92, 35, 14, T.Muted)
 	local close = K.button(
@@ -26285,11 +26341,14 @@ local function inventoryCardHeight()
 	local scale = HUD.Root:FindFirstChildOfClass("UIScale").Scale
 	return math.clamp((invGrid and invGrid.AbsoluteSize.Y / scale or 142) - 6, 110, 136)
 end
+local leftLeaf = Craft.Page(inv.content, "SpecimenLeaf", UDim2.new(0.43, 0, 1, -6), UDim2.new())
+local rightLeaf = Craft.Page(inv.content, "RosterLeaf", UDim2.new(0.54, -4, 1, -6), UDim2.fromScale(0.46, 0))
 local inventoryLayout = inv.layout
 inv.layout = function()
 	inventoryLayout()
 	local compact = inv.compact
 	binding.Visible = not compact
+	leftLeaf.Visible, rightLeaf.Visible = not compact, not compact
 	if not compact then
 		invDetail.Position, invDetail.Size = UDim2.new(), UDim2.new(0.425, -4, 1, 0)
 		invCatalogue.Position, invCatalogue.Size = UDim2.fromScale(0.47, 0), UDim2.fromScale(0.53, 1)
@@ -26340,7 +26399,7 @@ inv.layout = function()
 	end
 	local preview = invDetail:FindFirstChild("CreaturePreview")
 	if preview then
-		local identityHeight = compact and math.clamp(inv.frame.Size.Y.Offset - 190, 66, 124) or 210
+		local identityHeight = compact and math.clamp(inv.frame.Size.Y.Offset - 190, 66, 124) or 240
 		local tight = compact and identityHeight < 92
 		invDetail:FindFirstChildOfClass("UIListLayout").Padding = UDim.new(0, compact and 6 or 8)
 		local place = invDetail:FindFirstChild("PlaceCreature")
@@ -26350,8 +26409,13 @@ inv.layout = function()
 		preview.LayoutOrder = 1
 		preview.Size = UDim2.new(1, -12, 0, identityHeight)
 		local view = preview:FindFirstChildWhichIsA("ViewportFrame")
-		view.Size = compact and UDim2.new(0.30, -4, 1, -8) or UDim2.fromScale(1, 1)
-		view.Position = compact and UDim2.new(0.70, 0, 0, 4) or UDim2.new()
+		view.ZIndex = 3
+		view.Size = compact and UDim2.new(0.30, -4, 1, -8) or UDim2.fromScale(0.62, 0.78)
+		local plate = preview:FindFirstChild("SpecimenPlate")
+		if plate then
+			plate.Visible = not compact
+		end
+		view.Position = compact and UDim2.new(0.70, 0, 0, 4) or UDim2.fromScale(0.19, 0.15)
 		for i, name in { "PetNameHeading", "PetRates", "PetExperience" } do
 			local label = invDetail:FindFirstChild(name, true)
 			if label then
@@ -26434,10 +26498,11 @@ local function renderCreatureDetail()
 	local color = T.Legible(Variants.Color(entry.s, entry.v) or T.Rarity(def.rarity, Config))
 	local entryIncome = Data.Income(entry.c) * Variants.Mult(entry.s, entry.v)
 	local level = entry.l or 1
-	local hero = K.surface(invDetail, "CreaturePreview", UDim2.new(1, -12, 0, 210), nil, T.Panel)
+	local hero = K.surface(invDetail, "CreaturePreview", UDim2.new(1, -12, 0, 240), nil, T.Panel)
 	hero.BackgroundTransparency = 1
 	hero:FindFirstChildOfClass("UIStroke").Transparency = 1
 	hero.LayoutOrder = 1
+	Craft.Specimen(hero)
 	petView(entry.c, UDim2.fromScale(1, 1), nil, entry.v, true).Parent = hero
 	local petHeading = heading(invDetail, Variants.Prefix(entry.s, entry.v) .. def.name, 2)
 	petHeading.Name = "PetNameHeading"
@@ -28015,6 +28080,8 @@ return R
 local T = require(script.Parent.UITheme)
 local Art = {}
 local MATERIAL = "rbxassetid://81021166448000"
+local WORKBENCH = "rbxassetid://74094136607085"
+local SPECIMEN = "rbxassetid://85945331623361"
 local Content = game:GetService("ContentProvider")
 local function piece(parent, name, size, position, color, z)
 	local f = Instance.new("Frame")
@@ -28024,19 +28091,22 @@ local function piece(parent, name, size, position, color, z)
 	f.ZIndex, f.Parent = z or 1, parent
 	return f
 end
-function Art.Crest(parent, size, position)
+function Art.Crest(parent, size, position, color)
+	local ink = color or T.Gold
 	local mark = piece(parent, "GatefoldSeal", size, position, T.Panel, 3)
 	mark.BackgroundTransparency = 1
 	-- Two gate leaves around an open keyhole. Native geometry, no remote icon.
 	for _, x in { 0.17, 0.67 } do
-		piece(mark, "GateLeaf", UDim2.fromScale(0.16, 0.65), UDim2.fromScale(x, 0.23), T.Gold, 3)
+		piece(mark, "GateLeaf", UDim2.fromScale(0.16, 0.65), UDim2.fromScale(x, 0.23), ink, 3)
 	end
 	local stone = piece(mark, "Keystone", UDim2.fromScale(0.28, 0.28), UDim2.fromScale(0.36, 0.04), T.Brass, 3)
 	stone.Rotation = 45
-	piece(mark, "Threshold", UDim2.fromScale(0.78, 0.08), UDim2.fromScale(0.11, 0.88), T.Gold, 3)
+	piece(mark, "Threshold", UDim2.fromScale(0.78, 0.08), UDim2.fromScale(0.11, 0.88), ink, 3)
 	return mark
 end
 function Art.Shell(frame)
+	local workbench = frame.Name == "Shop"
+	local material = workbench and WORKBENCH or MATERIAL
 	frame:SetAttribute("SanctuaryShell", true)
 	frame:SetAttribute("Gatefold", true)
 	frame:SetAttribute("MedievalBackground", true)
@@ -28055,13 +28125,23 @@ function Art.Shell(frame)
 	image.Name = "MedievalMaterial"
 	image.BackgroundTransparency, image.BorderSizePixel = 1, 0
 	image.Size, image.Position = UDim2.new(1, 24, 1, 24), UDim2.fromOffset(-12, -12)
-	image.Image, image.ScaleType = MATERIAL, Enum.ScaleType.Slice
+	image.Image, image.ScaleType = material, Enum.ScaleType.Slice
 	-- Roblox serves this upload at 1024px; these coordinates match that texture.
-	image.SliceCenter, image.SliceScale = Rect.new(172, 172, 852, 852), 42 / 172
+	image.SliceCenter, image.SliceScale =
+		workbench and Rect.new(174, 166, 850, 809) or Rect.new(172, 172, 852, 852), 42 / 172
 	image.Active, image.Selectable, image.ImageTransparency = false, false, 0
 	image.ZIndex, image.Parent = 1, frame
 	local header = piece(frame, "FolioHeader", UDim2.new(1, -32, 0, 55), UDim2.fromOffset(16, 1), T.Panel)
-	header.BackgroundTransparency = 1
+	header.BackgroundTransparency = workbench and 0 or 1
+	if workbench then
+		header.BackgroundColor3 = T.Jade
+		local grain = Instance.new("ImageLabel")
+		grain.Name, grain.Size, grain.BackgroundTransparency = "HeaderGrain", UDim2.fromScale(1, 1), 1
+		grain.Image, grain.ImageRectOffset, grain.ImageRectSize =
+			WORKBENCH, Vector2.new(200, 240), Vector2.new(620, 300)
+		grain.ImageColor3, grain.ImageTransparency, grain.Active, grain.Parent =
+			Color3.fromRGB(65, 110, 81), 0.45, false, header
+	end
 	local rule = piece(header, "InkRule", UDim2.new(1, -8, 0, 1), UDim2.new(0, 4, 1, -1), T.Brass)
 	rule.BackgroundTransparency = 0.45
 	local function resize()
@@ -28072,7 +28152,7 @@ function Art.Shell(frame)
 	frame:GetAttributeChangedSignal("Compact"):Connect(resize)
 	resize()
 	local function ready()
-		local loaded = image.IsLoaded or Content:GetAssetFetchStatus(MATERIAL) == Enum.AssetFetchStatus.Success
+		local loaded = image.IsLoaded or Content:GetAssetFetchStatus(material) == Enum.AssetFetchStatus.Success
 		frame.BackgroundTransparency = loaded and 1 or 0
 		if edge then
 			edge.Transparency = loaded and 1 or 0
@@ -28080,7 +28160,7 @@ function Art.Shell(frame)
 		frame:SetAttribute("MedievalMaterialReady", loaded)
 	end
 	image:GetPropertyChangedSignal("IsLoaded"):Connect(ready)
-	local fetched = Content:GetAssetFetchStatusChangedSignal(MATERIAL):Connect(ready)
+	local fetched = Content:GetAssetFetchStatusChangedSignal(material):Connect(ready)
 	image.Destroying:Connect(function()
 		fetched:Disconnect()
 	end)
@@ -28093,6 +28173,37 @@ function Art.Shell(frame)
 			ready()
 		end
 	end)
+end
+-- Reusable physical paper slips and specimen artwork. These never take input.
+function Art.Paper(parent, name, size, position, z)
+	local paper = Instance.new("ImageLabel")
+	paper.Name, paper.Size, paper.Position = name, size, position or UDim2.new()
+	paper.BackgroundColor3, paper.BorderSizePixel = T.Panel, 0
+	paper.Image, paper.ImageRectOffset, paper.ImageRectSize = MATERIAL, Vector2.new(172, 172), Vector2.new(680, 680)
+	paper.ZIndex, paper.Active, paper.Selectable, paper.Parent = z or 1, false, false, parent
+	return paper
+end
+function Art.Page(parent, name, size, position)
+	local page = Art.Paper(parent, name, size, position, 0)
+	local edge = Instance.new("UIStroke")
+	edge.Color, edge.Thickness, edge.Transparency, edge.Parent = T.Brass, 1, 0.4, page
+	for i = 1, 3 do
+		local leaf = piece(page, "PageLayer", UDim2.new(1, -i * 2, 0, 1), UDim2.new(0, i, 1, i), T.Brass, 0)
+		leaf.BackgroundTransparency = 0.2 + i * 0.15
+	end
+	return page
+end
+function Art.Specimen(parent)
+	local plate = Instance.new("ImageLabel")
+	plate.Name, plate.Size, plate.BackgroundTransparency = "SpecimenPlate", UDim2.fromScale(1, 1), 1
+	plate.ZIndex = 2
+	plate.Image, plate.Active, plate.Selectable, plate.Parent = SPECIMEN, false, false, parent
+	task.spawn(function()
+		pcall(function()
+			Content:PreloadAsync({ plate })
+		end)
+	end)
+	return plate
 end
 function Art.Binding(binding)
 	local leather = Color3.fromRGB(95, 62, 38)

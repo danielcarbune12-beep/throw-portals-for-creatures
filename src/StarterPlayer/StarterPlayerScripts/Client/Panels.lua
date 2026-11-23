@@ -369,11 +369,14 @@ local function inventoryCardHeight()
 	local scale = HUD.Root:FindFirstChildOfClass("UIScale").Scale
 	return math.clamp((invGrid and invGrid.AbsoluteSize.Y / scale or 142) - 6, 110, 136)
 end
+local leftLeaf = Craft.Page(inv.content, "SpecimenLeaf", UDim2.new(0.43, 0, 1, -6), UDim2.new())
+local rightLeaf = Craft.Page(inv.content, "RosterLeaf", UDim2.new(0.54, -4, 1, -6), UDim2.fromScale(0.46, 0))
 local inventoryLayout = inv.layout
 inv.layout = function()
 	inventoryLayout()
 	local compact = inv.compact
 	binding.Visible = not compact
+	leftLeaf.Visible, rightLeaf.Visible = not compact, not compact
 	if not compact then
 		invDetail.Position, invDetail.Size = UDim2.new(), UDim2.new(0.425, -4, 1, 0)
 		invCatalogue.Position, invCatalogue.Size = UDim2.fromScale(0.47, 0), UDim2.fromScale(0.53, 1)
@@ -424,7 +427,7 @@ inv.layout = function()
 	end
 	local preview = invDetail:FindFirstChild("CreaturePreview")
 	if preview then
-		local identityHeight = compact and math.clamp(inv.frame.Size.Y.Offset - 190, 66, 124) or 210
+		local identityHeight = compact and math.clamp(inv.frame.Size.Y.Offset - 190, 66, 124) or 240
 		local tight = compact and identityHeight < 92
 		invDetail:FindFirstChildOfClass("UIListLayout").Padding = UDim.new(0, compact and 6 or 8)
 		local place = invDetail:FindFirstChild("PlaceCreature")
@@ -434,8 +437,13 @@ inv.layout = function()
 		preview.LayoutOrder = 1
 		preview.Size = UDim2.new(1, -12, 0, identityHeight)
 		local view = preview:FindFirstChildWhichIsA("ViewportFrame")
-		view.Size = compact and UDim2.new(0.30, -4, 1, -8) or UDim2.fromScale(1, 1)
-		view.Position = compact and UDim2.new(0.70, 0, 0, 4) or UDim2.new()
+		view.ZIndex = 3
+		view.Size = compact and UDim2.new(0.30, -4, 1, -8) or UDim2.fromScale(0.62, 0.78)
+		local plate = preview:FindFirstChild("SpecimenPlate")
+		if plate then
+			plate.Visible = not compact
+		end
+		view.Position = compact and UDim2.new(0.70, 0, 0, 4) or UDim2.fromScale(0.19, 0.15)
 		for i, name in { "PetNameHeading", "PetRates", "PetExperience" } do
 			local label = invDetail:FindFirstChild(name, true)
 			if label then
@@ -518,10 +526,11 @@ local function renderCreatureDetail()
 	local color = T.Legible(Variants.Color(entry.s, entry.v) or T.Rarity(def.rarity, Config))
 	local entryIncome = Data.Income(entry.c) * Variants.Mult(entry.s, entry.v)
 	local level = entry.l or 1
-	local hero = K.surface(invDetail, "CreaturePreview", UDim2.new(1, -12, 0, 210), nil, T.Panel)
+	local hero = K.surface(invDetail, "CreaturePreview", UDim2.new(1, -12, 0, 240), nil, T.Panel)
 	hero.BackgroundTransparency = 1
 	hero:FindFirstChildOfClass("UIStroke").Transparency = 1
 	hero.LayoutOrder = 1
+	Craft.Specimen(hero)
 	petView(entry.c, UDim2.fromScale(1, 1), nil, entry.v, true).Parent = hero
 	local petHeading = heading(invDetail, Variants.Prefix(entry.s, entry.v) .. def.name, 2)
 	petHeading.Name = "PetNameHeading"

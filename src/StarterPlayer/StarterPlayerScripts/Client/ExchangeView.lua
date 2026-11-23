@@ -13,6 +13,12 @@ function E.Mount(hub, HUD)
 	hub.content.AutomaticCanvasSize, hub.content.ScrollingEnabled = Enum.AutomaticSize.None, false
 	hub.subtitle.Visible = false
 	local stage = K.new("Frame", { Name = "TradeCourt", BackgroundTransparency = 1, Parent = hub.content })
+	local backMap = Craft.Paper(stage, "FoldedMap", UDim2.fromScale(0.92, 0.92), UDim2.fromScale(0.04, 0.04))
+	backMap.Rotation = 3
+	local survey = Craft.Paper(stage, "SurveyMap", UDim2.fromScale(0.94, 0.92), UDim2.fromScale(0.03, 0.02))
+	survey.Rotation = -2
+	local mapRule = K.stroke(1, T.Brass)
+	mapRule.Transparency, mapRule.Parent = 0.35, survey
 	local scene = K.viewport(Guild.Build(), UDim2.fromScale(1, 1), false, false, false)
 	scene.Name, scene.Parent = "ExchangeArchitecture", stage
 	scene.Ambient, scene.LightColor = Color3.fromRGB(177, 190, 181), Color3.fromRGB(255, 244, 218)
@@ -23,14 +29,14 @@ function E.Mount(hub, HUD)
 		local target = Vector3.new(0, 1.5, 0)
 		scene.CurrentCamera.FieldOfView = 32
 		scene.CurrentCamera.CFrame =
-			CFrame.lookAt(target + Vector3.new(0, 0.9, 1).Unit * math.max(68, 81 / aspect), target)
+			CFrame.lookAt(target + Vector3.new(0, 0.9, 1).Unit * math.max(62, 76 / aspect), target)
 		if updateLines then
 			updateLines()
 		end
 	end
 	scene:GetPropertyChangedSignal("AbsoluteSize"):Connect(frameScene)
 	task.defer(frameScene)
-	local purse = K.text(hub.frame, "", 0, 15, 210, 30, 20, T.Gold, true)
+	local purse = K.text(hub.frame, "", 0, 15, 210, 30, 20, T.CinematicGold, true)
 	purse.Name = "ShopBalance"
 	local entries, names = {}, { "Forge", "Upgrades", "Courtyard", "Atlas" }
 	for i, def in
@@ -58,6 +64,19 @@ function E.Mount(hub, HUD)
 		local button =
 			K.button("", T.Raised, nil, UDim2.fromOffset(228, 120), { Name = "Shop_" .. def[1], Parent = hub.content })
 		Craft.Leaf(button)
+		local slip = Craft.Paper(button, "TradeSlip", UDim2.new(1, -12, 0, 68), UDim2.fromOffset(6, 48))
+		for _, x in { 0, 1 } do
+			K.new(
+				"Frame",
+				{
+					Name = "SlipPin",
+					Size = UDim2.fromOffset(4, 4),
+					Position = UDim2.new(x, x == 0 and 4 or -8, 0, 4),
+					BackgroundColor3 = T.Brass,
+					Parent = slip,
+				}
+			)
+		end
 		local sign = K.viewport(Guild.Sign(), UDim2.new(1, -4, 0, 48), false, false, false)
 		sign.Name, sign.Position, sign.Parent = "CarvedTradeSign", UDim2.fromOffset(2, 2), button
 		sign.Ambient, sign.LightColor, sign.LightDirection =
@@ -75,6 +94,7 @@ function E.Mount(hub, HUD)
 		emblem.Name, emblem.Parent = "TradeEmblem", button
 		entries[i] = {
 			button = button,
+			slip = slip,
 			title = title,
 			desc = desc,
 			status = status,
@@ -93,7 +113,8 @@ function E.Mount(hub, HUD)
 			Craft.Selected(button, on)
 			button.BackgroundTransparency = on and 0.12 or 1
 			button:FindFirstChildOfClass("UIStroke").Transparency = on and 0 or 1
-			leader.BackgroundColor3, node.BackgroundColor3 = on and T.Gold or T.StoneEdge, on and T.Gold or T.Brass
+			leader.BackgroundColor3, node.BackgroundColor3 =
+				on and T.CinematicGold or T.TrimGold, on and T.Gold or T.Brass
 			local pad = scene.PreviewWorld.TheFourTrades:FindFirstChild("Pad_" .. names[i])
 			if pad then
 				pad.Color = on and Color3.fromRGB(204, 183, 116) or pad:GetAttribute("RestColor")
@@ -179,7 +200,7 @@ function E.Mount(hub, HUD)
 		purse.TextSize, purse.TextXAlignment =
 			short and 13 or 18, short and Enum.TextXAlignment.Left or Enum.TextXAlignment.Right
 		stage.Visible = not short
-		stage.Position, stage.Size = UDim2.fromScale(0.14, -0.04), UDim2.fromScale(0.72, 1.04)
+		stage.Position, stage.Size = UDim2.fromScale(0.17, 0.03), UDim2.fromScale(0.66, 0.96)
 		for i, ref in entries do
 			local left, top = i % 2 == 1, i <= 2
 			if short then
@@ -191,6 +212,8 @@ function E.Mount(hub, HUD)
 			end
 			ref.emblem.Visible, ref.sign.Visible, ref.leader.Visible, ref.node.Visible =
 				short, not short, not short, not short
+			ref.slip.Position = short and UDim2.fromOffset(2, 2) or UDim2.fromOffset(6, 48)
+			ref.slip.Size = short and UDim2.new(1, -4, 1, -4) or UDim2.new(1, -12, 0, 68)
 			ref.emblem.Position = UDim2.fromOffset(4, 8)
 			ref.emblem.Size = UDim2.fromOffset(66, math.max(56, math.min(84, hub.frame.Size.Y.Offset * 0.23)))
 			ref.title.Position = UDim2.fromOffset(short and 78 or 18, 10)

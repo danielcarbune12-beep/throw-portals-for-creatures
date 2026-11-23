@@ -83,6 +83,39 @@ function G.Build()
 		part(m, "GuildBanner", V(2.1, 3.5, 0.12), CF(x + 1.1, 5.6, -10), jade, Enum.Material.Fabric)
 		part(m, "BannerClasp", V(2.25, 0.15, 0.2), CF(x + 1.1, 7.4, -10), brass, Enum.Material.Metal)
 	end
+	-- Trade objects make the model read as a working place, rather than empty pads.
+	part(m, "TradeChest", V(3, 1.7, 2), CF(-5, 1.1, 10.5), wood, Enum.Material.WoodPlanks)
+	for _, x in { -5.9, -4.1 } do
+		part(m, "ChestStrap", V(0.2, 1.85, 2.1), CF(x, 1.1, 10.5), brass, Enum.Material.Metal)
+	end
+	part(m, "ChestLock", V(0.6, 0.65, 0.15), CF(-5, 1.35, 11.6), brass, Enum.Material.Metal)
+	for i = 1, 9 do
+		local coin = part(
+			m,
+			"PurseCoin",
+			V(0.13, 0.75, 0.75),
+			CF(3 + (i % 3) * 0.85, 0.4 + math.floor(i / 3) * 0.15, 10.3 + (i % 2) * 0.8)
+				* CFrame.Angles(0, 0, math.pi / 2),
+			brass,
+			Enum.Material.Metal
+		)
+		coin.Shape = Enum.PartType.Cylinder
+	end
+	for i = 1, 3 do
+		local chart = part(m, "RolledChart", V(3.2, 0.6, 0.6), CF(9 + i * 0.3, 0.6 + i * 0.18, 10.8 + i * 0.5), stone)
+		chart.Shape = Enum.PartType.Cylinder
+		part(m, "ChartTie", V(0.2, 0.72, 0.72), chart.CFrame, brass, Enum.Material.Metal)
+	end
+	for _, x in { -16, 16 } do
+		part(m, "LanternFoot", V(1.1, 0.15, 1.1), CF(x, 0.8, -2), brass, Enum.Material.Metal)
+		part(m, "LanternPane", V(0.65, 1, 0.65), CF(x, 1.35, -2), C(235, 198, 115))
+		part(m, "LanternCap", V(1.05, 0.18, 1.05), CF(x, 1.95, -2), wood, Enum.Material.Metal)
+		for _, dx in { -0.4, 0.4 } do
+			for _, dz in { -0.4, 0.4 } do
+				part(m, "LanternIron", V(0.1, 1.2, 0.1), CF(x + dx, 1.35, -2 + dz), wood, Enum.Material.Metal)
+			end
+		end
+	end
 	return m
 end
 function G.Sign()
