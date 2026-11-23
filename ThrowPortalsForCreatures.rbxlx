@@ -1,7 +1,7 @@
 <roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" version="4">
 <Item class="Workspace" referent="RBX1"><Properties><string name="Name">Workspace</string><bool name="StreamingEnabled">false</bool></Properties></Item>
 <Item class="Lighting" referent="RBX2"><Properties><string name="Name">Lighting</string><token name="Technology">4</token><token name="LightingStyle">0</token><bool name="PrioritizeLightingQuality">true</bool><bool name="GlobalShadows">true</bool></Properties></Item>
-<Item class="ReplicatedStorage" referent="RBX34"><Properties><string name="Name">ReplicatedStorage</string></Properties>
+<Item class="ReplicatedStorage" referent="RBX35"><Properties><string name="Name">ReplicatedStorage</string></Properties>
 <Item class="Folder" referent="RBX3"><Properties><string name="Name">Shared</string></Properties>
 <Item class="ModuleScript" referent="RBX4"><Properties><string name="Name">Config</string><ProtectedString name="Source"><![CDATA[-- Config: every tunable number in the game lives here.
 -- Location: ReplicatedStorage > Shared > Config (ModuleScript)
@@ -5588,7 +5588,7 @@ end
 -- (a pack that fails to load only costs its species their hand-built look, never the whole roster)
 for _, pack in ipairs({ "SpeciesModelsVolcano", "SpeciesModelsCandy", "SpeciesModelsCrystal",
 	"SpeciesModelsForest", "SpeciesModelsFrozen", "SpeciesModelsDivine",
-	"SpeciesModelsHeaven", "SpeciesModelsSecret", "SpeciesModelsShadow" }) do
+	"SpeciesModelsHeaven", "SpeciesModelsSecret", "SpeciesModelsShadow", "SpeciesModelsSpace" }) do
 	local ok, models = pcall(require, script.Parent[pack])
 	if ok and type(models) == "table" then
 		for id, fn in pairs(models) do
@@ -8610,7 +8610,496 @@ end
 
 return M
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX31"><Properties><string name="Name">SpeciesModelsVolcano</string><ProtectedString name="Source"><![CDATA[-- SpeciesModelsVolcano: hand-authored, reference-faithful models for the Volcano world
+<Item class="ModuleScript" referent="RBX31"><Properties><string name="Name">SpeciesModelsSpace</string><ProtectedString name="Source"><![CDATA[-- SpeciesModelsSpace: hand-authored, reference-faithful models for the Space world
+-- (Astro Blob, Moon Mouse, Comet Fish, Nebula Jelly, Star Whale, Nova Phoenix, Cosmic Dragon, Singularity Cat).
+-- Location: ReplicatedStorage > Shared > SpeciesModelsSpace (ModuleScript), merged into SpeciesModels.
+
+local K = require(script.Parent.ModelKit)
+local V3, CF, ANG, PI, MAT, C = K.V3, K.CF, K.ANG, K.PI, K.MAT, K.C
+local FACE, DOWN = ANG(0, PI / 2, 0), ANG(0, 0, PI)
+local FLAT = ANG(PI / 2, 0, 0)
+local SIDES = { -1, 1 }
+
+local M = {}
+
+local function line(k, parent, A, B, w, col, up)
+	local _, p = k.bar(parent, "GlowLine", A, B, w, col, MAT.Neon, nil, up, w * 0.6)
+	k.glow(p, col)
+end
+
+-- small four-point star facing -Z on `parent`: two thin crossed bars and a turned square centre (3 parts)
+local function star(k, parent, cf, size, col, mat)
+	k.b(parent, "Star", size * 0.16, size, 0.06, col, cf, mat)
+	k.b(parent, "Star", size, size * 0.16, 0.06, col, cf, mat)
+	k.b(parent, "StarCore", size * 0.32, size * 0.32, 0.07, col, cf * ANG(0, 0, PI / 4), mat)
+end
+
+---------------------------------------------------------------- ASTRO BLOB (Common)
+-- Little TV-head robot pup: mint block body on four stubby legs with dark-green feet, a dark collar
+-- with a pale square button, a pale CRT head with a dark screen showing two glowing mint eyes, pale
+-- side knobs, and two segmented antennae ending in mint cubes.
+function M.AstroBlob(H, rig, vd, s)
+	local k = K.new(H, rig, s)
+	local c = k.c
+	local M1, MD, W, WD, DK, EY = C("#7FE3B8"), C("#64CDA0"), C("#DFF3EA"), C("#C8E6D8"), C("#2F6E52"), C("#5FF0D0")
+	local BY = 1.45
+	local body = k.body(1.5, 1.15, 1.7, M1, BY)
+	k.b(body, "BackPanel", 1.1, 0.12, 1.1, MD, c(0, 0.6, 0.25))
+	for _, sd in ipairs(SIDES) do k.b(body, "SidePanel", 0.08, 0.6, 1.0, MD, c(sd * 0.76, 0.0, 0.2)) end
+	local lg = { up = { 0.55, 0.45, 0.6 }, col = M1, w2 = 0.5, d2 = 0.56, col2 = MD, paw = { 0.62, 0.3, 0.7 }, pawCol = DK }
+	k.leg(body, "LegFL", BY, -0.45, -0.45, -0.55, lg)
+	k.leg(body, "LegFR", BY, 0.45, -0.45, -0.55, lg)
+	lg.hind = true
+	k.leg(body, "LegBL", BY, -0.45, -0.45, 0.55, lg)
+	k.leg(body, "LegBR", BY, 0.45, -0.45, 0.55, lg)
+	rig.legKind = "quad"
+	k.b(body, "Collar", 1.4, 0.3, 0.6, DK, c(0, 0.5, -0.65))
+	k.b(body, "CollarButton", 0.3, 0.28, 0.08, W, c(0, 0.45, -0.98))
+
+	local head = k.head(body, 1.45, 1.15, 1.0, W, c(0, 1.2, -0.7), V3(0, -0.45, 0.25))
+	k.b(head, "Bezel", 1.25, 0.95, 0.06, WD, c(0, 0, -0.52))
+	k.b(head, "Screen", 1.05, 0.75, 0.08, DK, c(0, 0, -0.55))
+	for _, sd in ipairs(SIDES) do
+		k.eye(head, sd * 0.25, 0.02, -0.6, 0.3, 0.16, EY, 0)
+		k.b(head, "EarKnob", 0.2, 0.5, 0.5, W, c(sd * 0.82, 0.05, 0))
+		local ant = k.ear(head, sd, c(sd * 0.3, 0.58, 0.1), "antenna")
+		k.b(ant, "AntennaBase", 0.22, 0.2, 0.22, DK, c(0, 0.1, 0))
+		local p1, p2, p3 = V3(0, 0.15, 0), V3(sd * 0.25, 0.65, 0), V3(sd * 0.45, 1.05, -0.05)
+		k.bar(ant, "Antenna", p1, p2, 0.16, M1, nil, nil, V3(0, 0, 1))
+		k.b(ant, "AntennaJoint", 0.2, 0.2, 0.2, DK, c(p2.X, p2.Y, p2.Z))
+		k.bar(ant, "Antenna", p2, p3, 0.15, M1, nil, nil, V3(0, 0, 1))
+		k.b(ant, "AntennaTip", 0.3, 0.3, 0.3, M1, c(p3.X, p3.Y + 0.1, p3.Z) * ANG(0.3, 0.4, 0))
+	end
+end
+
+---------------------------------------------------------------- MOON MOUSE (Uncommon)
+-- Astronaut mouse: grey body in a white harness with pink straps and a belt buckle carrying a pink
+-- crescent moon, a white backpack, grey legs with white boots, a grey head with white muzzle, pink nose
+-- and pink eyes inside a faceted glass helmet, huge round ears (pink and white insides), and a thin
+-- segmented tail curling up to a pink-and-white tip.
+function M.MoonMouse(H, rig, vd, s)
+	local k = K.new(H, rig, s)
+	local c = k.c
+	local G, GD, W, WD, P, GL, EY = C("#B8B4C8"), C("#9E9AB2"), C("#F2F2F6"), C("#DCDCE4"), C("#F282B8"), C("#DDE8F5"), C("#FF6FB0")
+	local BY = 1.45
+	local body = k.body(1.35, 1.1, 1.6, G, BY)
+	k.b(body, "Collar", 1.45, 0.3, 0.5, W, c(0, 0.45, -0.6))
+	k.b(body, "Belt", 1.0, 0.4, 0.12, W, c(0, -0.05, -0.83))
+	k.b(body, "Buckle", 0.5, 0.32, 0.06, GD, c(0, -0.05, -0.9))
+	k.b(body, "Moon", 0.12, 0.22, 0.04, P, c(-0.04, -0.05, -0.94))
+	k.b(body, "MoonTip", 0.08, 0.08, 0.04, P, c(0.04, 0.06, -0.94))
+	k.b(body, "MoonTip", 0.08, 0.08, 0.04, P, c(0.04, -0.16, -0.94))
+	for _, sd in ipairs(SIDES) do
+		k.b(body, "Strap", 0.08, 1.15, 0.25, P, c(sd * 0.69, 0, -0.1) * ANG(0.35, 0, 0))
+		k.b(body, "StrapBuckle", 0.1, 0.25, 0.32, W, c(sd * 0.71, -0.15, -0.05))
+	end
+	local _, pack = k.b(body, "Backpack", 1.0, 0.45, 0.9, W, c(0, 0.75, 0.25))
+	k.b(pack, "PackStripe", 1.02, 0.08, 0.2, P, c(0, 0.24, 0.2))
+	local lg = { up = { 0.5, 0.45, 0.55 }, col = G, w2 = 0.44, d2 = 0.5, paw = { 0.58, 0.32, 0.7 }, pawCol = W }
+	k.leg(body, "LegFL", BY, -0.42, -0.45, -0.5, lg)
+	k.leg(body, "LegFR", BY, 0.42, -0.45, -0.5, lg)
+	lg.hind = true
+	k.leg(body, "LegBL", BY, -0.42, -0.45, 0.5, lg)
+	k.leg(body, "LegBR", BY, 0.42, -0.45, 0.5, lg)
+	rig.legKind = "quad"
+
+	local head = k.head(body, 0.95, 0.85, 0.85, G, c(0, 1.15, -0.75), V3(0, -0.4, 0.25))
+	k.b(head, "Muzzle", 0.55, 0.32, 0.25, W, c(0, -0.25, -0.5))
+	k.b(head, "Nose", 0.18, 0.12, 0.08, P, c(0, -0.15, -0.66))
+	for _, sd in ipairs(SIDES) do k.eye(head, sd * 0.22, 0.08, -0.44, 0.16, 0.18, EY, 0) end
+	-- faceted glass helmet (two crossed boxes read as an octagon)
+	k.b(head, "Helmet", 1.3, 1.2, 1.25, GL, c(0, 0.05, -0.05), MAT.Glass, 0.65)
+	k.b(head, "Helmet", 1.1, 1.3, 1.1, GL, c(0, 0.05, -0.05) * ANG(0, PI / 4, 0), MAT.Glass, 0.7)
+	for _, sd in ipairs(SIDES) do
+		local ear = k.ear(head, sd, c(sd * 0.55, 0.55, 0.15) * ANG(0, 0, -sd * 0.25), "round")
+		-- round-ish octagonal ear: two crossed rectangles
+		k.b(ear, "Ear", 1.0, 0.7, 0.18, G, c(0, 0.5, 0))
+		k.b(ear, "Ear", 0.7, 1.0, 0.18, G, c(0, 0.5, 0))
+		k.b(ear, "EarPink", 0.6, 0.35, 0.06, P, c(0, 0.68, -0.1))
+		k.b(ear, "EarWhite", 0.6, 0.3, 0.06, W, c(0, 0.36, -0.1))
+	end
+
+	local tip = k.tail(body, c(0, 0.2, 0.85), {
+		{ 0.16, 0.16, 0.35, -0.5, G }, { 0.16, 0.16, 0.35, -0.35, G }, { 0.15, 0.15, 0.35, -0.4, G }, { 0.15, 0.15, 0.32, 0.2, G }, { 0.14, 0.14, 0.3, -0.3, G } })
+	k.b(tip, "TailTip", 0.4, 0.28, 0.4, W, c(0, 0, 0.3))
+	k.b(tip, "TailTipPink", 0.42, 0.12, 0.42, P, c(0, 0.18, 0.3))
+end
+
+---------------------------------------------------------------- COMET FISH (Rare)
+-- Space shark: blue angular body with a white underside, a pointed snout with glowing yellow eyes,
+-- white gill slits, a tall dorsal fin with white and yellow insets, white pectoral fins with yellow
+-- stripes, a small ventral fin, and a segmented tail ending in a forked yellow lightning-bolt fin.
+function M.CometFish(H, rig, vd, s)
+	local k = K.new(H, rig, s)
+	local c = k.c
+	local B, BD, W, Y, EY = C("#4AA8E8"), C("#3A8AD0"), C("#F2F4F6"), C("#FFD83A"), C("#FFD83A")
+	local BY = 1.5
+	local body = k.body(1.15, 1.0, 1.7, B, BY)
+	rig.legKind = "none"
+	k.b(body, "Belly", 1.0, 0.35, 1.6, W, c(0, -0.4, 0))
+	k.b(body, "BackRidge", 0.7, 0.2, 1.4, BD, c(0, 0.55, 0.1))
+	for _, sd in ipairs(SIDES) do
+		for g = 0, 2 do k.b(body, "Gill", 0.06, 0.4, 0.08, W, c(sd * 0.58, -0.02, -0.35 + g * 0.16)) end
+	end
+	local head = k.head(body, 1.05, 0.85, 0.9, B, c(0, 0.05, -1.2), V3(0, 0, 0.4))
+	k.w(head, "Snout", 0.95, 0.55, 0.65, B, c(0, 0.08, -0.75))
+	k.w(head, "Jaw", 0.9, 0.35, 0.9, W, c(0, -0.32, -0.55) * DOWN)
+	k.b(head, "Brow", 1.0, 0.18, 0.5, BD, c(0, 0.38, -0.2))
+	for _, sd in ipairs(SIDES) do k.eye(head, sd * 0.38, 0.1, -0.46, 0.26, 0.1, EY, sd * 0.3) end
+	local _, fin = k.pv(body, "Dorsal", c(0, 0.6, 0.0))
+	k.tri(fin, "DorsalFin", 0.18, 1.2, 1.1, B, c(0, 0.55, 0.15) * ANG(0.45, 0, 0))
+	k.tri(fin, "DorsalInset", 0.2, 0.8, 0.45, W, c(0, 0.45, 0.42) * ANG(0.45, 0, 0))
+	k.tri(fin, "DorsalStripe", 0.21, 0.6, 0.18, Y, c(0, 0.4, 0.5) * ANG(0.45, 0, 0))
+	k.tri(body, "VentralFin", 0.14, 0.5, 0.45, B, c(0, -0.7, -0.35) * DOWN * ANG(0.5, 0, 0))
+	for _, sd in ipairs(SIDES) do
+		local w = k.wing(body, sd, c(sd * 0.5, -0.3, -0.35) * ANG(0, -sd * 0.5, 0))
+		k.bar(w, "Pectoral", V3(0, 0, 0), V3(sd * 1.3, -0.7, 0), 0.5, W, nil, nil, nil, 0.12)
+		k.bar(w, "PectoralStripe", V3(sd * 0.2, -0.05, -0.08), V3(sd * 1.1, -0.55, -0.08), 0.14, Y, nil, nil, nil, 0.06)
+	end
+	local segs = {}
+	for j = 1, 4 do
+		local w = 0.75 - j * 0.1
+		table.insert(segs, { w, w * 0.9, 0.55, (j % 2 == 0) and BD or B, (j == 1) and -0.05 or 0.02 })
+	end
+	local rec = k.chain(body, c(0, 0.05, 0.8), segs, { name = "Tail", kind = "spine", i = 1, amp = 0.3, freq = 2.0, lag = 0.6 })
+	for j, p in ipairs(rec.parts) do
+		local w = 0.75 - j * 0.1
+		k.b(p, "TailBelly", w * 0.8, 0.12, 0.5, Y, c(0, -w * 0.42, 0))
+		if j == 2 then k.tri(p, "TailFinlet", 0.12, 0.45, 0.35, B, c(0, w * 0.45 + 0.2, 0) * ANG(0.5, 0, 0)) end
+	end
+	-- forked lightning fin: two zigzag prongs
+	local last = rec.parts[#rec.parts]
+	for _, sd in ipairs({ -1, 1 }) do
+		local _, pr = k.pv(last, "Prong", c(0, 0, 0.25) * ANG(-sd * 0.55, 0, 0))
+		k.b(pr, "Bolt", 0.14, 0.3, 0.7, Y, c(0, 0, 0.35))
+		k.b(pr, "Bolt", 0.14, 0.3, 0.6, Y, c(0, sd * 0.25, 0.75) * ANG(sd * 0.6, 0, 0))
+		k.w(pr, "BoltTip", 0.14, 0.3, 0.55, Y, c(0, sd * 0.2, 1.25) * ANG(0, PI, 0))
+	end
+	k.w(last, "BoltCenter", 0.14, 0.3, 0.9, Y, c(0, 0, 0.75) * ANG(0, PI, 0))
+end
+
+---------------------------------------------------------------- NEBULA JELLY (Epic)
+-- Space jellyfish: a stepped purple bell with angled purple fins traced by glowing cyan slots, a dark
+-- visor with glowing cyan eyes, a skirt of eight pink plates with cyan slots, a glowing pink core below,
+-- and eight segmented purple tentacles with cyan lights and pink spike tips.
+function M.NebulaJelly(H, rig, vd, s)
+	local k = K.new(H, rig, s)
+	local c = k.c
+	local PU, PUD, PUL, PK, CY, CORE = C("#9A4AE0"), C("#7A34C0"), C("#B068F0"), C("#F07AC8"), C("#5FE8F5"), C("#FF5AD0")
+	local BY = 2.6
+	local body = k.body(2.2, 0.9, 2.0, PU, BY)
+	rig.legKind = "none"
+	k.b(body, "BellMid", 1.7, 0.5, 1.6, PUL, c(0, 0.6, 0))
+	k.b(body, "BellTop", 1.0, 0.4, 1.0, PU, c(0, 1.0, 0.05))
+	local _, slot = k.b(body, "TopSlot", 0.3, 0.42, 0.6, CY, c(0, 1.02, -0.1), MAT.Neon)
+	k.glow(slot, CY)
+	k.b(body, "Visor", 1.3, 0.32, 0.06, C("#2A1240"), c(0, 0.15, -1.02))
+	for _, sd in ipairs(SIDES) do
+		k.eye(body, sd * 0.3, 0.15, -1.06, 0.3, 0.1, CY, -sd * 0.25)
+		local _, f = k.pv(body, "Fin", c(sd * 0.95, 0.65, 0.0) * ANG(0, 0, -sd * 0.6))
+		k.tri(f, "FinBlade", 0.2, 1.2, 0.9, PU, c(0, 0.55, 0) * FACE)
+		line(k, f, V3(-sd * 0.0, 0.25, -0.12), V3(-sd * 0.0, 0.85, -0.12), 0.12, CY)
+		k.tri(body, "Horn", 0.16, 0.6, 0.4, PK, c(sd * 0.45, 1.15, -0.2) * ANG(0, 0, -sd * 0.4) * FACE)
+	end
+	-- pink skirt plates with cyan slots (open on the power move)
+	for i = 0, 7 do
+		local a = (i + 0.5) / 8 * PI * 2
+		local d = V3(math.sin(a), 0, -math.cos(a))
+		local pos = V3(0, -0.35, 0) + d * 0.95
+		local pl = k.opener(body, "Plate", CFrame.lookAt(pos * s, (pos + d) * s), V3(1, 0, 0), -0.4)
+		-- hanging panel facing outward, bottom edge flared out
+		local _, plate = k.b(pl, "SkirtPlate", 0.85, 0.65, 0.16, PK, ANG(0.4, 0, 0) * c(0, -0.28, 0))
+		local _, sl = k.b(plate, "PlateSlot", 0.5, 0.1, 0.06, CY, c(0, -0.1, -0.1), MAT.Neon)
+		k.glow(sl, CY)
+	end
+	local _, core = k.b(body, "Core", 0.85, 0.55, 0.85, CORE, c(0, -0.7, -0.1), MAT.Neon)
+	k.glow(core, CORE)
+	k.b(body, "CoreTip", 0.45, 0.35, 0.45, CORE, c(0, -1.1, -0.1), MAT.Neon)
+	-- eight tentacles (trail chains)
+	for i = 0, 7 do
+		local a = (i + 0.5) / 8 * PI * 2
+		local d = V3(math.sin(a), 0, -math.cos(a))
+		local pos = V3(0, -0.5, 0) + d * 0.6
+		local base = CFrame.lookAt(pos * s, (pos - d) * s) * ANG(1.25, 0, 0)
+		local segs = {}
+		for j = 1, 5 do table.insert(segs, { 0.24, 0.24, 0.42, (j % 2 == 0) and PUD or PU, (j == 1) and 0 or -0.06 }) end
+		local rec = k.chain(body, base, segs, { name = "Tentacle", kind = "trail", i = i + 1, amp = 0.15, freq = 1.4, lag = 0.5 })
+		for j, p in ipairs(rec.parts) do
+			if j % 2 == 1 then
+				local _, l = k.b(p, "TentacleLight", 0.08, 0.1, 0.22, CY, c(0, 0, 0) * CF(0.13 * s, 0, 0), MAT.Neon)
+				k.glow(l, CY)
+			end
+		end
+		k.spike(rec.parts[#rec.parts], "TentacleTip", 0.5, 0.28, PK, c(0, 0, 0.2) * ANG(PI / 2, 0, 0))
+	end
+end
+
+---------------------------------------------------------------- STAR WHALE (Legendary)
+-- Cosmic whale: navy body with a ridged light-blue belly, a gold stripe along each side, gold four-point
+-- stars, a glowing yellow eye, big navy pectoral fins with light-blue edges and gold stars, a small dorsal
+-- fin, a tail with horizontal flukes, and a tilted gold ring with square star gems orbiting the body.
+function M.StarWhale(H, rig, vd, s)
+	local k = K.new(H, rig, s)
+	local c = k.c
+	local DB, DBL, LB, LBD, GO, EY = C("#2A3A9A"), C("#34479F"), C("#A8C8F0"), C("#8FB4E4"), C("#F2C230"), C("#FFE45C")
+	local BY = 2.0
+	local body = k.body(2.0, 1.6, 3.0, DB, BY)
+	rig.legKind = "none"
+	for i = 0, 5 do
+		-- ridged light-blue belly filling the lower half and bulging below the navy back
+		k.b(body, "BellyRidge", 2.1 - math.abs(i - 2.5) * 0.12, 0.85, 0.44, (i % 2 == 0) and LB or LBD, c(0, -0.62, -1.2 + i * 0.48))
+		k.b(body, "BellyKeel", 1.5 - math.abs(i - 2.5) * 0.15, 0.25, 0.4, (i % 2 == 0) and LBD or LB, c(0, -1.1, -1.2 + i * 0.48))
+	end
+	k.b(body, "Head", 2.05, 1.2, 1.0, DBL, c(0, 0.15, -1.6))
+	k.w(body, "Brow", 2.05, 0.35, 0.7, DB, c(0, 0.85, -1.55))
+	for _, sd in ipairs(SIDES) do
+		k.b(body, "GoldStripe", 0.06, 0.1, 3.2, GO, c(sd * 1.03, 0.0, -0.2))
+		k.eye(body, sd * 1.04, 0.25, -1.4, 0.06, 0.12, EY, 0)
+		local _, e = k.b(body, "EyeSide", 0.08, 0.14, 0.28, EY, c(sd * 1.04, 0.25, -1.4), MAT.Neon)
+		k.glow(e, EY)
+		for i, d in ipairs({ { 0.35, -0.3, 0.45 }, { 0.3, 0.6, 0.35 }, { 0.45, 1.1, 0.3 } }) do
+			star(k, body, c(sd * 1.03, d[1], d[2]) * ANG(0, -sd * PI / 2, 0), d[3], GO)
+		end
+	end
+	k.tri(body, "Dorsal", 0.16, 0.5, 0.6, DB, c(0, 0.95, 0.6) * ANG(0.5, 0, 0))
+
+	for _, sd in ipairs(SIDES) do
+		local w = k.wing(body, sd, c(sd * 0.95, -0.35, -0.5) * ANG(0, -sd * 0.55, 0))
+		k.bar(w, "Flipper", V3(0, 0, 0), V3(sd * 2.2, -0.9, 0), 0.9, DB, nil, nil, nil, 0.16)
+		k.bar(w, "FlipperEdge", V3(sd * 0.2, -0.4, 0.02), V3(sd * 2.2, -1.25, 0.02), 0.3, LB, nil, nil, nil, 0.14)
+		k.bar(w, "FlipperGold", V3(sd * 0.2, 0.3, -0.02), V3(sd * 2.0, -0.55, -0.02), 0.08, GO, nil, nil, nil, 0.18)
+		star(k, w, c(sd * 1.3, -0.5, -0.1), 0.4, GO)
+	end
+
+	local segs = {}
+	for j = 1, 4 do
+		local w = 1.5 - j * 0.25
+		table.insert(segs, { w, w * 0.8, 0.75, (j % 2 == 0) and DBL or DB, (j == 1) and -0.1 or -0.12 })
+	end
+	local rec = k.chain(body, c(0, 0.15, 1.45), segs, { name = "Tail", kind = "fluke", i = 1, amp = 0.15, freq = 1.0, lag = 0.6 })
+	for j, p in ipairs(rec.parts) do
+		local w = 1.5 - j * 0.25
+		k.b(p, "TailBelly", w * 0.85, 0.12, 0.7, LB, c(0, -w * 0.38, 0))
+	end
+	local last = rec.parts[#rec.parts]
+	for _, sd in ipairs(SIDES) do
+		local _, fl = k.pv(last, "Fluke", c(sd * 0.2, 0, 0.3) * ANG(0, -sd * 0.5, 0))
+		k.b(fl, "FlukePlate", 1.6, 0.14, 0.75, DB, c(sd * 0.75, 0, 0.2))
+		k.b(fl, "FlukeEdge", 1.5, 0.15, 0.2, LB, c(sd * 0.75, 0, 0.6))
+		k.b(fl, "FlukeGold", 1.3, 0.16, 0.06, GO, c(sd * 0.7, 0, 0.0))
+	end
+
+	local re, rp = k.pv(body, "Ring", c(0, 0.1, 0.2) * ANG(0.35, 0, 0.5))
+	H.group(rig, "rings", re)
+	k.ring(rp, "GoldRing", FLAT, 2.0, 18, 0.18, 0.75, 0.16, GO)
+	for i = 0, 2 do
+		local a = i / 3 * PI * 2
+		local _, g = k.b(rp, "RingGem", 0.45, 0.45, 0.45, DB, k.c(math.cos(a) * 2.0, 0, math.sin(a) * 2.0))
+		k.b(g, "RingGemFrame", 0.5, 0.5, 0.2, GO, CF())
+		star(k, g, c(0, 0, -0.26), 0.3, GO)
+	end
+end
+
+---------------------------------------------------------------- NOVA PHOENIX (Legendary)
+-- Cosmic phoenix: dark-purple armoured body with pink plates and a cyan diamond, legs with cyan lines
+-- and pink talons, a purple head with a pink hooked beak and a crest of pink spikes, glowing cyan eyes,
+-- a cyan-and-pink halo over the head and another around the neck, huge layered wings (purple, pink and
+-- cyan blades), and zigzag pink and cyan lightning tail streamers.
+function M.NovaPhoenix(H, rig, vd, s)
+	local k = K.new(H, rig, s)
+	local c = k.c
+	local PU, PUD, PK, PKL, CY, EY = C("#3A1F6E"), C("#2A1550"), C("#F07AC8"), C("#F5A0DC"), C("#7FE8F5"), C("#7FF0FF")
+	local BY = 2.85
+	local body = k.body(1.15, 1.5, 1.15, PU, BY)
+	k.tri(body, "ChestPlate", 0.14, 1.1, 1.1, PK, c(0, 0.15, -0.6) * DOWN * FACE)
+	k.diamond(body, "ChestGem", 0.6, 0.38, 0.1, CY, c(0, 0.1, -0.68), MAT.Glass)
+	for _, sd in ipairs(SIDES) do k.b(body, "SidePlate", 0.1, 0.8, 0.8, PK, c(sd * 0.6, 0.1, 0.05) * ANG(0.3, 0, 0)) end
+	local lg = { up = { 0.55, 0.6, 0.65 }, col = PU, w2 = 0.32, d2 = 0.34, col2 = PUD, band = CY, paw = { 0.75, 0.22, 0.8, -0.12 }, pawCol = PK, toes = 3, toeCol = PK }
+	k.leg(body, "LegL", BY, -0.33, -0.7, 0.05, lg)
+	k.leg(body, "LegR", BY, 0.33, -0.7, 0.05, lg)
+	rig.legKind = "biped"
+
+	k.b(body, "Neck", 0.5, 0.8, 0.5, PU, c(0, 0.95, -0.25) * ANG(-0.25, 0, 0))
+	local ne, np = k.pv(body, "NeckHalo", c(0, 0.9, -0.2) * ANG(0.35, 0, 0))
+	table.insert(rig.halos, ne)
+	k.ring(np, "NeckHalo", FLAT, 0.8, 12, 0.12, 0.45, 0.12, CY)
+	local head = k.head(body, 0.72, 0.68, 0.85, PU, c(0, 1.6, -0.45), V3(0, -0.3, 0.2))
+	k.w(head, "Beak", 0.36, 0.3, 0.5, PK, c(0, -0.08, -0.65))
+	k.b(head, "BeakTip", 0.22, 0.25, 0.14, PK, c(0, -0.22, -0.86))
+	for _, sd in ipairs(SIDES) do
+		k.eye(head, sd * 0.22, 0.08, -0.43, 0.2, 0.1, EY, sd * 0.35)
+		k.tri(head, "CheekSpike", 0.1, 0.5, 0.3, PK, c(sd * 0.38, -0.05, 0.1) * ANG(0.9, 0, -sd * 0.6))
+	end
+	for _, d in ipairs({ { 0, 1.0, PK }, { -0.18, 0.75, PKL }, { 0.18, 0.75, PKL }, { -0.32, 0.55, CY }, { 0.32, 0.55, CY } }) do
+		k.tri(head, "Crest", 0.12, d[2], 0.4, d[3], c(d[1], 0.3 + d[2] * 0.4, 0.15) * ANG(0.6, 0, -d[1] * 1.2))
+	end
+	local he, hp = k.pv(head, "Halo", c(0, 0.95, 0.1))
+	table.insert(rig.halos, he)
+	k.ring(hp, "Halo", FLAT, 0.75, 14, 0.12, 0.38, 0.12, CY)
+	for i = 0, 3 do k.b(hp, "HaloPink", 0.14, 0.14, 0.45, PK, k.c(math.cos(i * PI / 2) * 0.75, 0, math.sin(i * PI / 2) * 0.75) * ANG(0, -i * PI / 2, 0)) end
+
+	for _, sd in ipairs(SIDES) do
+		local w = k.wing(body, sd, c(sd * 0.5, 0.5, 0.2))
+		k.featherWing(w, sd, { root = 0.15, z = 0.05, thick = 0.12, feathers = {
+			{ 1.25, 2.5, 0.42, PU, PK }, { 1.0, 2.9, 0.45, PK, PKL }, { 0.75, 3.1, 0.45, PU, PK }, { 0.5, 2.9, 0.45, PK, PKL },
+			{ 0.25, 2.5, 0.42, PU, PK }, { 0.0, 2.0, 0.4, PK, PK } } })
+		k.featherWing(w, sd, { root = 0.1, z = -0.05, thick = 0.13, feathers = {
+			{ 1.05, 1.6, 0.36, CY }, { 0.75, 1.7, 0.36, PUD }, { 0.45, 1.5, 0.34, CY }, { 0.15, 1.2, 0.32, PUD } } })
+	end
+
+	for i, x in ipairs({ -0.35, -0.12, 0.12, 0.35 }) do
+		local segs = {}
+		for j = 1, 6 do
+			local col = (i % 2 == 0) and ((j % 2 == 0) and CY or PK) or ((j % 2 == 0) and PK or PKL)
+			table.insert(segs, { 0.22, 0.12, 0.55, col, (j == 1) and 0.9 or -0.12, (j == 1) and x * 0.6 or ((j % 2 == 0) and 0.45 or -0.45) })
+		end
+		local rec = k.chain(body, c(x, -0.5, 0.45), segs, { name = "Streamer", kind = "trail", i = i, amp = 0.12, freq = 1.6, lag = 0.5 })
+		k.w(rec.parts[#rec.parts], "StreamerTip", 0.22, 0.12, 0.5, (i % 2 == 0) and CY or PK, c(0, 0, 0.5) * ANG(0, PI, 0))
+	end
+end
+
+---------------------------------------------------------------- COSMIC DRAGON (Mythical)
+-- Constellation dragon: purple armoured body with dark plates traced by glowing star constellations,
+-- a pink chevron and star on the chest, clawed legs with pink claws, a horned head with glowing eyes,
+-- a pink ring with square star nodes around the neck, huge bat wings with dark bones and magenta
+-- membranes carrying glowing constellations, a spiked tail with a pink ring and a star spear tip.
+function M.CosmicDragon(H, rig, vd, s)
+	local k = K.new(H, rig, s)
+	local c = k.c
+	local PU, PUD, PUL, MG, PK, NE = C("#5A2A9A"), C("#3A1A6E"), C("#7A40C0"), C("#E070E0"), C("#F07AD0"), C("#FF9AF5")
+	local function constellation(parent, pts, z, side)
+		for i = 1, #pts - 1 do line(k, parent, V3(pts[i][1] * (side or 1), pts[i][2], z), V3(pts[i + 1][1] * (side or 1), pts[i + 1][2], z), 0.05, NE) end
+		for _, p in ipairs(pts) do
+			local _, d = k.b(parent, "StarDot", 0.14, 0.14, 0.08, NE, c(p[1] * (side or 1), p[2], z), MAT.Neon)
+			k.glow(d, NE)
+		end
+	end
+	local BY = 2.4
+	local body = k.body(1.9, 1.6, 2.5, PU, BY)
+	k.b(body, "Chest", 1.7, 1.5, 0.85, PUD, c(0, 0.05, -1.15))
+	k.tri(body, "Chevron", 0.12, 0.6, 1.1, PK, c(0, -0.35, -1.6) * DOWN * FACE)
+	star(k, body, c(0, 0.25, -1.62), 0.6, NE, MAT.Neon)
+	for _, sd in ipairs(SIDES) do
+		k.b(body, "ConstellationPlate", 0.14, 1.0, 1.0, PUD, c(sd * 0.98, 0.1, 0.1) * ANG(PI / 4, 0, 0))
+		for _, seg in ipairs({ { V3(sd * 1.06, 0.45, -0.3), V3(sd * 1.06, 0.1, 0.05) }, { V3(sd * 1.06, 0.1, 0.05), V3(sd * 1.06, -0.25, -0.15) }, { V3(sd * 1.06, 0.1, 0.05), V3(sd * 1.06, 0.3, 0.45) } }) do line(k, body, seg[1], seg[2], 0.05, NE, V3(1, 0, 0)) end
+		for _, p in ipairs({ V3(sd * 1.07, 0.45, -0.3), V3(sd * 1.07, 0.1, 0.05), V3(sd * 1.07, -0.25, -0.15), V3(sd * 1.07, 0.3, 0.45) }) do local _, d = k.b(body, "StarDot", 0.08, 0.14, 0.14, NE, k.sc(CF(p)), MAT.Neon); k.glow(d, NE) end
+	end
+	for i = 0, 5 do k.tri(body, "BackSpike", 0.16, 0.6 - i * 0.04, 0.5, PK, c(0, 0.95, -0.9 + i * 0.42) * ANG(0.5, 0, 0)) end
+
+	local lf = { up = { 0.85, 0.75, 0.95 }, col = PU, w2 = 0.72, d2 = 0.8, col2 = PUL, paw = { 1.05, 0.38, 1.2, -0.1 }, pawCol = PUD, toes = 3, toeCol = PK }
+	k.leg(body, "LegFL", BY, -0.8, -0.55, -0.85, lf)
+	k.leg(body, "LegFR", BY, 0.8, -0.55, -0.85, lf)
+	lf.hind = true
+	k.leg(body, "LegBL", BY, -0.85, -0.5, 0.9, lf)
+	k.leg(body, "LegBR", BY, 0.85, -0.5, 0.9, lf)
+	rig.legKind = "quad"
+
+	k.b(body, "Neck1", 1.0, 1.0, 0.9, PU, c(0, 0.75, -1.45) * ANG(-0.5, 0, 0))
+	k.b(body, "Neck2", 0.9, 0.9, 0.85, PUL, c(0, 1.35, -1.75) * ANG(-0.3, 0, 0))
+	local re, rp = k.pv(body, "NeckRing", c(0, 1.3, -1.7) * ANG(0.5, 0, 0))
+	H.group(rig, "rings", re)
+	k.ring(rp, "PinkRing", FLAT, 1.1, 14, 0.14, 0.5, 0.14, PK)
+	for i = 0, 2 do
+		local a = i / 3 * PI * 2
+		local _, n = k.b(rp, "RingNode", 0.35, 0.35, 0.35, PUD, k.c(math.cos(a) * 1.1, 0, math.sin(a) * 1.1))
+		star(k, n, c(0, 0, -0.19), 0.24, NE, MAT.Neon)
+	end
+	local head = k.head(body, 1.1, 0.85, 1.3, PU, c(0, 2.05, -2.15), V3(0, -0.35, 0.4))
+	k.b(head, "Snout", 0.8, 0.48, 0.75, PU, c(0, -0.15, -0.95))
+	k.b(head, "Brow", 1.15, 0.22, 0.5, PUD, c(0, 0.35, -0.45))
+	local jaw = k.jb(head, "Jaw", 0.75, 0.22, 1.05, PUD, c(0, -0.48, -0.65), V3(0, 0, 0.5))
+	H.group(rig, "jaws", jaw)
+	for _, sd in ipairs(SIDES) do
+		k.eye(head, sd * 0.32, 0.12, -0.66, 0.28, 0.1, NE, sd * 0.3)
+		k.spike(head, "Horn", 1.2, 0.34, PUL, c(sd * 0.4, 0.4, 0.3) * ANG(1.0, 0, -sd * 0.35))
+		k.spike(head, "HornSmall", 0.6, 0.24, PK, c(sd * 0.52, 0.0, 0.45) * ANG(1.3, 0, -sd * 0.8))
+	end
+
+	for _, sd in ipairs(SIDES) do
+		local w = k.wing(body, sd, c(sd * 0.8, 0.65, -0.35))
+		k.batWing(w, sd, { wrist = Vector2.new(1.5, 2.3), bone = PUD, mem = MG, boneW = 0.34, cap = PU,
+			tips = { Vector2.new(4.0, 1.1), Vector2.new(3.4, -0.4), Vector2.new(2.3, -1.0), Vector2.new(1.1, -0.9) } })
+		local _, node = k.b(w, "WristNode", 0.45, 0.6, 0.35, PUD, c(sd * 1.5, 2.3, -0.05))
+		star(k, node, c(0, 0, -0.19), 0.35, NE, MAT.Neon)
+		constellation(w, { { 2.0, 1.2 }, { 2.6, 0.7 }, { 3.0, 0.9 }, { 2.7, 0.2 } }, -0.12, sd)
+		constellation(w, { { 1.6, 0.2 }, { 2.0, -0.3 }, { 2.4, -0.2 } }, -0.12, sd)
+	end
+
+	local segs = {}
+	for j = 1, 8 do
+		local w = 0.8 - j * 0.06
+		table.insert(segs, { w, w * 0.85, 0.6, (j % 2 == 0) and PUD or PU, (j == 1) and 0.3 or -0.06 })
+	end
+	local rec = k.chain(body, c(0, 0.1, 1.2), segs, { name = "Tail", kind = "spine", i = 1, amp = 0.15, freq = 1.3, lag = 0.55 })
+	for j, p in ipairs(rec.parts) do
+		local w = 0.8 - j * 0.06
+		k.tri(p, "TailSpike", 0.12, 0.42 - j * 0.02, 0.35, PK, c(0, w * 0.42 + 0.17, 0) * ANG(0.4, 0, 0))
+		if j == 6 then k.ring(p, "TailRing", CF(), w * 0.6, 8, 0.12, w * 0.5, 0.25, PK) end
+	end
+	local last = rec.parts[#rec.parts]
+	local tipRot = ANG(0, PI / 2, 0) * ANG(0, 0, PI / 2)
+	k.tri(last, "Spear", 0.14, 0.9, 0.8, PU, c(0, 0, 0.7) * tipRot)
+	star(k, last, c(0, 0.09, 0.6) * ANG(-PI / 2, 0, 0), 0.4, NE, MAT.Neon)
+end
+
+---------------------------------------------------------------- SINGULARITY CAT (Mythical)
+-- Void cat: black body with a white V on the chest and glowing purple lines, black legs with purple
+-- bands and white paws, a black head with tall ears (purple and white insides) and a single vertical
+-- glowing purple eye slit, a segmented tail curling up to three purple claw blades, and two big white
+-- and purple orbit rings circling it (one flat, one upright).
+function M.Singularity(H, rig, vd, s)
+	local k = K.new(H, rig, s)
+	local c = k.c
+	local BK, BKL, W, PU, EY = C("#1A1820"), C("#2A2832"), C("#F2F0F8"), C("#7A4AF0"), C("#B08AFF")
+	local BY = 2.0
+	local body = k.body(1.1, 1.0, 2.0, BK, BY)
+	k.tri(body, "ChestV", 0.12, 0.9, 1.0, W, c(0, -0.05, -1.02) * DOWN * FACE)
+	for _, sd in ipairs(SIDES) do
+		line(k, body, V3(sd * 0.56, 0.2, -0.8), V3(sd * 0.56, 0.2, 0.6), 0.08, PU, V3(1, 0, 0))
+		k.b(body, "HipPlate", 0.1, 0.5, 0.6, BKL, c(sd * 0.56, 0.0, 0.65))
+	end
+	local lg = { up = { 0.45, 0.75, 0.55 }, col = BK, w2 = 0.36, d2 = 0.45, band = PU, bandY = 0.2, paw = { 0.45, 0.35, 0.55 }, pawCol = W, toes = 2, toeCol = W }
+	k.leg(body, "LegFL", BY, -0.33, -0.45, -0.75, lg)
+	k.leg(body, "LegFR", BY, 0.33, -0.45, -0.75, lg)
+	lg.hind = true
+	k.leg(body, "LegBL", BY, -0.33, -0.45, 0.75, lg)
+	k.leg(body, "LegBR", BY, 0.33, -0.45, 0.75, lg)
+	rig.legKind = "quad"
+
+	local head = k.head(body, 0.8, 0.75, 0.8, BK, c(0, 0.85, -1.15), V3(0, -0.3, 0.25))
+	k.w(head, "Muzzle", 0.5, 0.32, 0.4, BKL, c(0, -0.22, -0.55))
+	k.b(head, "EyeSocket", 0.18, 0.5, 0.05, W, c(0, 0.08, -0.41))
+	k.eye(head, 0, 0.08, -0.44, 0.1, 0.4, EY, 0)
+	for _, sd in ipairs(SIDES) do
+		local ear = k.ear(head, sd, c(sd * 0.25, 0.35, 0.05) * ANG(0, 0, -sd * 0.15))
+		k.tri(ear, "Ear", 0.18, 0.95, 0.5, BK, c(0, 0.47, 0) * FACE)
+		k.tri(ear, "EarPurple", 0.06, 0.65, 0.3, PU, c(0, 0.38, -0.1) * FACE, MAT.Neon)
+		k.tri(ear, "EarWhite", 0.07, 0.35, 0.3, W, c(0, 0.15, -0.11) * FACE)
+	end
+
+	local tip = k.tail(body, c(0, 0.3, 1.05), {
+		{ 0.24, 0.24, 0.5, 0.3, BK }, { 0.24, 0.24, 0.5, -0.4, BK }, { 0.22, 0.22, 0.45, -0.6, BKL }, { 0.22, 0.22, 0.45, -0.7, BK }, { 0.2, 0.2, 0.4, -0.6, BK } })
+	for _, e in ipairs(rig.tail) do
+		local _, l = k.b(e.part, "TailLight", 0.26, 0.05, 0.08, PU, c(0, 0.13, 0), MAT.Neon)
+		k.glow(l, PU)
+	end
+	for i, a in ipairs({ -0.5, 0, 0.5 }) do
+		k.tri(tip, "Claw", 0.1, 0.8 - math.abs(a) * 0.3, 0.25, (i == 2) and W or PU, c(0, 0, 0.25) * ANG(PI / 2 - 0.4, 0, a) * c(0, 0.35, 0))
+	end
+
+	local r1, rp1 = k.pv(body, "OrbitFlat", c(0, 0.05, 0) * ANG(0.15, 0, 0))
+	H.group(rig, "rings", r1)
+	k.ring(rp1, "OrbitRing", FLAT, 1.9, 16, 0.3, 0.8, 0.12, W)
+	k.ring(rp1, "OrbitInner", FLAT, 1.6, 14, 0.12, 0.72, 0.13, PU, MAT.Neon)
+	local r2, rp2 = k.pv(body, "OrbitUp", c(0, 0.2, 0.3))
+	H.group(rig, "orbit", r2)
+	k.ring(rp2, "OrbitRing", ANG(0, PI / 2, 0), 1.6, 14, 0.25, 0.75, 0.12, W)
+	k.ring(rp2, "OrbitInner", ANG(0, PI / 2, 0), 1.35, 12, 0.1, 0.7, 0.13, PU, MAT.Neon)
+end
+
+return M
+]]></ProtectedString></Properties></Item>
+<Item class="ModuleScript" referent="RBX32"><Properties><string name="Name">SpeciesModelsVolcano</string><ProtectedString name="Source"><![CDATA[-- SpeciesModelsVolcano: hand-authored, reference-faithful models for the Volcano world
 -- (Emberpup, Magmite, Cinderchick, Obsidian Golem, Phoenix Lumen, Magma Kraken, Infernadrake, Solar Serpent).
 -- Location: ReplicatedStorage > Shared > SpeciesModelsVolcano (ModuleScript), merged into SpeciesModels.
 -- Built from the owner's character sheets (hero / front / side + idle, anticipate, power move, recover).
@@ -8638,6 +9127,10 @@ function M.Emberpup(H, rig, vd, s)
 	k.tri(body, "BibTip", 0.1, 0.55, 0.9, CR, c(0, -0.5, -1.5) * DOWN * FACE)
 	k.b(body, "Belly", 1.1, 0.2, 1.7, CR, c(0, -0.62, 0.1))
 	k.b(body, "BackRidge", 1.1, 0.16, 1.6, OD, c(0, 0.68, 0.3))
+	for _, sd in ipairs(SIDES) do
+		k.b(body, "Shoulder", 0.3, 0.95, 0.95, OD, c(sd * 0.82, 0.05, -0.85))
+		k.b(body, "Haunch", 0.3, 0.9, 0.95, OD, c(sd * 0.82, 0.05, 0.8))
+	end
 
 	local legF = { up = { 0.75, 0.6, 0.85 }, w2 = 0.6, d2 = 0.7, paw = { 0.85, 0.32, 1.0 }, col = O, pawCol = CR, toes = 3, toeCol = CRD }
 	local legH = { up = { 0.82, 0.7, 1.0 }, w2 = 0.62, d2 = 0.72, paw = { 0.85, 0.32, 1.0 }, col = O, pawCol = CR, toes = 3, toeCol = CRD, hind = true }
@@ -8652,6 +9145,7 @@ function M.Emberpup(H, rig, vd, s)
 	k.b(head, "Crown", 1.2, 0.22, 0.8, OD, c(0, 0.62, 0.15))
 	k.b(head, "Muzzle", 0.8, 0.5, 0.6, CR, c(0, -0.3, fz - 0.25))
 	k.b(head, "Jowl", 1.25, 0.32, 0.5, CR, c(0, -0.45, fz + 0.1))
+	for _, sd in ipairs(SIDES) do k.w(head, "CheekTuft", 0.35, 0.45, 0.5, O, c(sd * 0.82, -0.2, -0.05) * ANG(0, -sd * PI / 2, 0)) end
 	k.w(head, "Bridge", 0.7, 0.25, 0.45, O, c(0, 0.07, fz - 0.22))
 	k.b(head, "Nose", 0.34, 0.2, 0.16, N, c(0, -0.12, fz - 0.58))
 	k.b(head, "Mouth", 0.5, 0.05, 0.05, N, c(0, -0.47, fz - 0.56))
@@ -8700,13 +9194,13 @@ function M.Magmite(H, rig, vd, s)
 
 	local head = k.head(body, 1.2, 0.7, 0.8, BR, c(0, -0.05, -1.35), V3(0, -0.2, 0.35))
 	k.b(head, "Helmet", 1.45, 0.3, 1.0, O, c(0, 0.45, -0.05))
-	k.w(head, "Visor", 1.45, 0.3, 0.45, O, c(0, 0.45, -0.77))
+	k.w(head, "Visor", 1.4, 0.24, 0.3, O, c(0, 0.42, -0.68))
 	for _, sd in ipairs(SIDES) do
 		k.b(head, "Guard", 0.22, 0.85, 0.85, O, c(sd * 0.72, 0.05, -0.1) * ANG(0, 0, sd * 0.12))
 		k.eye(head, sd * 0.28, -0.02, -0.42, 0.3, 0.16, EY, 0)
 	end
 
-	local lg = { up = { 0.6, 0.35, 0.65 }, w2 = 0.55, d2 = 0.6, paw = { 0.85, 0.3, 0.85 }, col = BR, col2 = BRD, pawCol = O, splay = 0.35 }
+	local lg = { up = { 0.8, 0.45, 0.85 }, w2 = 0.72, d2 = 0.78, paw = { 1.0, 0.32, 1.0 }, col = BR, col2 = BRD, pawCol = O, splay = 0.45 }
 	k.leg(body, "LegFL", BY, -0.85, -0.25, -0.75, lg)
 	k.leg(body, "LegFR", BY, 0.85, -0.25, -0.75, lg)
 	lg.hind = true
@@ -8747,12 +9241,13 @@ function M.Cinderchick(H, rig, vd, s)
 	end
 
 	for _, sd in ipairs(SIDES) do
-		local w = k.wing(body, sd, c(sd * 0.68, 0.35, 0.0))
-		k.b(w, "WingCovert", 0.22, 0.75, 1.1, A, c(sd * 0.12, -0.25, 0.1))
-		k.b(w, "WingBar", 0.24, 0.16, 1.0, R, c(sd * 0.13, 0.05, 0.05))
-		for i = 1, 3 do
-			k.b(w, "Primary", 0.12, 0.26, 1.0 + i * 0.15, CR, c(sd * (0.15 + 0.03 * i), -0.55 - i * 0.16, 0.25 + i * 0.12) * ANG(-0.35, 0, 0))
-		end
+		-- folded wing held slightly out: amber covert with a red bar, a fan of long cream flight feathers below
+		local w = k.wing(body, sd, c(sd * 0.68, 0.4, 0.0) * ANG(0, -sd * 0.5, 0))
+		local _, wp = k.pv(w, "WingPlate", ANG(0, 0, -sd * 0.45))
+		k.b(wp, "WingCovert", 1.1, 0.7, 0.28, A, c(sd * 0.5, -0.1, 0))
+		k.b(wp, "WingBar", 1.0, 0.18, 0.3, R, c(sd * 0.55, 0.15, -0.02))
+		k.featherWing(wp, sd, { root = 0.35, z = 0.05, thick = 0.12, feathers = {
+			{ -0.5, 1.2, 0.34, CR }, { -0.8, 1.3, 0.34, CR }, { -1.1, 1.25, 0.32, CR }, { -1.4, 1.05, 0.3, CR } } })
 	end
 
 	local te, tp = k.pv(body, "TailFan", c(0, 0.15, 0.72) * ANG(0.75, 0, 0))
@@ -8907,10 +9402,10 @@ function M.MagmaKraken(H, rig, vd, s)
 		local pos = V3(0, 0.45, 0) + d * 0.85
 		local front = i == 0
 		local pet = k.opener(body, "Petal", CFrame.lookAt(pos * s, (pos + d) * s), V3(1, 0, 0), -0.35)
-		local h = front and 1.6 or 1.35
-		local _, plate = k.b(pet, "PetalPlate", front and 0.95 or 0.9, h, 0.24, (i % 2 == 0) and O or R, ANG(-0.5, 0, 0) * c(0, h * 0.45, 0))
+		local h = front and 2.1 or 1.85
+		local _, plate = k.b(pet, "PetalPlate", front and 1.25 or 1.15, h, 0.26, (i % 2 == 0) and O or R, ANG(-0.75, 0, 0) * c(0, h * 0.45, 0))
 		k.b(plate, "PetalStripe", 0.18, h * 0.75, 0.26, Y, c(-0.25, 0, 0))
-		if front then k.diamond(plate, "PetalGem", 0.7, 0.42, 0.1, Y, c(0, -0.05, -0.14)) end
+		if front then k.diamond(plate, "PetalGem", 1.0, 0.55, 0.1, Y, c(0, -0.05, -0.14)) end
 	end
 
 	for i = 0, 7 do
@@ -9067,11 +9562,12 @@ function M.SolarSerpent(H, rig, vd, s)
 			{ 1.1, 2.4, 0.42, W, W }, { 0.8, 2.7, 0.44, Y, Y }, { 0.5, 2.6, 0.44, W, O }, { 0.2, 2.2, 0.42, O, O }, { -0.1, 1.7, 0.4, W, W } } })
 	end
 
-	local yaws = { 0.35, 0.3, -0.25, -0.45, -0.3, 0.3, 0.45, 0.3 }
+	-- compact S on the ground: swings out to one side, back across, and curls again
+	local yaws = { 0.9, 0.55, -0.6, -0.9, -0.7, 0.5, 0.9, 0.6 }
 	local tsegs = {}
 	for j = 1, 8 do
 		local w = 1.0 - j * 0.055
-		table.insert(tsegs, { w, w * 0.92, 0.75, W, 0, yaws[j] })
+		table.insert(tsegs, { w, w * 0.92, 0.62, W, 0, yaws[j] })
 	end
 	local tail = k.chain(body, c(0, -0.04, 0.4), tsegs, { name = "Coil", kind = "spine", i = 2, amp = 0.08, freq = 1.0, lag = 0.6 })
 	for j, p in ipairs(tail.parts) do
@@ -9092,7 +9588,7 @@ end
 
 return M
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX32"><Properties><string name="Name">SpeciesProfiles</string><ProtectedString name="Source"><![CDATA[-- SpeciesProfiles: per-species VISUAL + MOTION metadata for all 74 creatures.
+<Item class="ModuleScript" referent="RBX33"><Properties><string name="Name">SpeciesProfiles</string><ProtectedString name="Source"><![CDATA[-- SpeciesProfiles: per-species VISUAL + MOTION metadata for all 74 creatures.
 -- Location: ReplicatedStorage > Shared > SpeciesProfiles (ModuleScript)
 --
 -- Identity (id, name, rarity, world, palette, economy) stays in CreatureData and is never
@@ -9796,7 +10292,7 @@ end
 
 return Profiles
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX33"><Properties><string name="Name">Variants</string><ProtectedString name="Source"><![CDATA[-- Variants: pet SIZES (Big / Huge / Titan) and MATERIALS (Gold / Emerald / Ruby / Diamond).
+<Item class="ModuleScript" referent="RBX34"><Properties><string name="Name">Variants</string><ProtectedString name="Source"><![CDATA[-- Variants: pet SIZES (Big / Huge / Titan) and MATERIALS (Gold / Emerald / Ruby / Diamond).
 -- Rolled by the server on every catch, independently of the creature itself, and saved on the
 -- creature entry ({ u, c, s = size, v = material }). Both multiply the creature's income.
 -- Shared by server (rolls, income, selling) and client (looks, names).
@@ -9924,9 +10420,9 @@ return V
 ]]></ProtectedString></Properties></Item>
 </Item>
 </Item>
-<Item class="ServerScriptService" referent="RBX68"><Properties><string name="Name">ServerScriptService</string></Properties>
-<Item class="Folder" referent="RBX35"><Properties><string name="Name">Server</string></Properties>
-<Item class="ModuleScript" referent="RBX36"><Properties><string name="Name">BaseBuilder</string><ProtectedString name="Source"><![CDATA[-- BaseBuilder: builds eight Skyforge courtyards and owned decorations.
+<Item class="ServerScriptService" referent="RBX69"><Properties><string name="Name">ServerScriptService</string></Properties>
+<Item class="Folder" referent="RBX36"><Properties><string name="Name">Server</string></Properties>
+<Item class="ModuleScript" referent="RBX37"><Properties><string name="Name">BaseBuilder</string><ProtectedString name="Source"><![CDATA[-- BaseBuilder: builds eight Skyforge courtyards and owned decorations.
 -- Location: ServerScriptService > Server > BaseBuilder (ModuleScript)
 --
 -- Open timber lodge, portal shrine, floating relic pavilion and expedition map table.
@@ -10307,7 +10803,7 @@ end
 
 return BaseBuilder
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX37"><Properties><string name="Name">BiomeCandy</string><ProtectedString name="Source"><![CDATA[-- BiomeCandy: Candy World, Z [900, 1300). Reference: roblox pets/Maps/05_Candy_Biome_Final.png (1:1 inventory).
+<Item class="ModuleScript" referent="RBX38"><Properties><string name="Name">BiomeCandy</string><ProtectedString name="Source"><![CDATA[-- BiomeCandy: Candy World, Z [900, 1300). Reference: roblox pets/Maps/05_Candy_Biome_Final.png (1:1 inventory).
 -- Authored as seen in the reference (K.mirror = true: design -X = screen-left). ONE palace, no plots/hall/houses.
 --  LEFT : CaL1 faceted chocolate cliff with icing caps, three-step chocolate waterfall + gold-edged canal ·
 --         CaL2 chunky pink candy trees · CaL3 swirl lollipops on striped sticks · CaL4 pink crystals ·
@@ -10573,7 +11069,7 @@ end
 
 return B
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX38"><Properties><string name="Name">BiomeCrystal</string><ProtectedString name="Source"><![CDATA[-- BiomeCrystal: Crystal Caves, Z [600, 900). Reference: roblox pets/Maps/04_Crystal_Biome_Final.png (1:1 inventory).
+<Item class="ModuleScript" referent="RBX39"><Properties><string name="Name">BiomeCrystal</string><ProtectedString name="Source"><![CDATA[-- BiomeCrystal: Crystal Caves, Z [600, 900). Reference: roblox pets/Maps/04_Crystal_Biome_Final.png (1:1 inventory).
 -- Authored as seen in the reference (K.mirror = true: design -X = screen-left). NO creature landmark.
 --  LEFT : CL1 giant split geode (purple shell, pale-pink quartz rim, huge cyan + violet crystal fan, stepped
 --         ledges) · CL2 turquoise mineral pool with ledges · CL3 rune monolith (dark slab, gold trim, cyan
@@ -10804,7 +11300,7 @@ end
 
 return B
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX39"><Properties><string name="Name">BiomeForest</string><ProtectedString name="Source"><![CDATA[-- BiomeForest: Green Forest, Z [0, 150). Reference: roblox pets/Maps/01_Forest_Biome.png (built 1:1 from
+<Item class="ModuleScript" referent="RBX40"><Properties><string name="Name">BiomeForest</string><ProtectedString name="Source"><![CDATA[-- BiomeForest: Green Forest, Z [0, 150). Reference: roblox pets/Maps/01_Forest_Biome.png (built 1:1 from
 -- its element inventory). Authored as seen in the reference (K.mirror = true: design -X = screen-left).
 --  LEFT : L1 big curved-trunk tree (near) · L2 vine-covered ruin arch with carved leaf panels ·
 --         L3 turquoise pool + small fall behind the arch · L4 corner bed: lilies, spotted mushrooms, ferns,
@@ -11164,7 +11660,7 @@ end
 
 return B
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX40"><Properties><string name="Name">BiomeFrozen</string><ProtectedString name="Source"><![CDATA[-- BiomeFrozen: Frozen Kingdom, Z [350, 600). Reference: roblox pets/Maps/03_Frozen_Biome.png (1:1 inventory).
+<Item class="ModuleScript" referent="RBX41"><Properties><string name="Name">BiomeFrozen</string><ProtectedString name="Source"><![CDATA[-- BiomeFrozen: Frozen Kingdom, Z [350, 600). Reference: roblox pets/Maps/03_Frozen_Biome.png (1:1 inventory).
 -- Authored as seen in the reference (K.mirror = true: design -X = screen-left).
 --  LEFT : FL1 two natural ice-rock arches with snow drapes, icicles, glowing ice · FL2 ice cave with glowing
 --         crystals + snowman (goggles, scarf, satchel) + sled and lantern · FL3 small frozen fall + pond with
@@ -11452,7 +11948,7 @@ end
 
 return B
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX41"><Properties><string name="Name">BiomeHeaven</string><ProtectedString name="Source"><![CDATA[-- BiomeHeaven: Heaven World, Z [2400, 3200). Reference: roblox pets/Maps/08_Heaven_Biome.png (1:1 inventory).
+<Item class="ModuleScript" referent="RBX42"><Properties><string name="Name">BiomeHeaven</string><ProtectedString name="Source"><![CDATA[-- BiomeHeaven: Heaven World, Z [2400, 3200). Reference: roblox pets/Maps/08_Heaven_Biome.png (1:1 inventory).
 -- Authored as seen in the reference (K.mirror = true: design -X = screen-left).
 --  LEFT : HL1 winged angel statue (hooded robe, praying hands, feathered wings, golden halo ring + star, gold-banded
 --         plinth) · HL2 cascading blue waterfalls down grassy marble tiers · HL3 green bonsai trees · HL4 cypresses ·
@@ -11733,7 +12229,7 @@ end
 
 return B
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX42"><Properties><string name="Name">BiomeShadow</string><ProtectedString name="Source"><![CDATA[-- BiomeShadow: Shadow Dimension, Z [1800, 2400). Reference: roblox pets/Maps/07_Shadow_Biome.png (1:1 inventory).
+<Item class="ModuleScript" referent="RBX43"><Properties><string name="Name">BiomeShadow</string><ProtectedString name="Source"><![CDATA[-- BiomeShadow: Shadow Dimension, Z [1800, 2400). Reference: roblox pets/Maps/07_Shadow_Biome.png (1:1 inventory).
 -- Authored as seen in the reference (K.mirror = true: design -X = screen-left).
 --  LEFT : ShL1 decorative side chasm (teal glowing veins, mist) · ShL2 twisted bare trees · ShL3 crimson plants ·
 --         ShL4 broken double-arch ruin · ShL5 red banner posts, small shrines
@@ -12020,7 +12516,7 @@ end
 
 return B
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX43"><Properties><string name="Name">BiomeSpace</string><ProtectedString name="Source"><![CDATA[-- BiomeSpace: Space Galaxy, Z [1300, 1800). Reference: roblox pets/Maps/06_Space_Biome.png (1:1 inventory).
+<Item class="ModuleScript" referent="RBX44"><Properties><string name="Name">BiomeSpace</string><ProtectedString name="Source"><![CDATA[-- BiomeSpace: Space Galaxy, Z [1300, 1800). Reference: roblox pets/Maps/06_Space_Biome.png (1:1 inventory).
 -- Authored as seen in the reference (K.mirror = true: design -X = screen-left).
 --  LEFT : SL1 observatory (ribbed stone/brass dome with an open slot + brass telescope, drum with gold bands,
 --         columned portico with blue emblem banners, wide stairs, segmented brass orbital arc, golden beacon star
@@ -12257,7 +12753,7 @@ end
 
 return B
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX44"><Properties><string name="Name">BiomeVolcano</string><ProtectedString name="Source"><![CDATA[-- BiomeVolcano: Volcano World, Z [150, 350). Reference: roblox pets/Maps/02_Volcano_Biome.png (1:1 inventory).
+<Item class="ModuleScript" referent="RBX45"><Properties><string name="Name">BiomeVolcano</string><ProtectedString name="Source"><![CDATA[-- BiomeVolcano: Volcano World, Z [150, 350). Reference: roblox pets/Maps/02_Volcano_Biome.png (1:1 inventory).
 -- Authored as seen in the reference (K.mirror = true: design -X = screen-left).
 --  LEFT : VL1 giant jagged volcano (spiky peaks, crater, smoke plume, two winding lava rivers) ·
 --         VL2 cliff lavafall into a glowing pool · VL3 hexagonal basalt column clusters with molten seams ·
@@ -12534,7 +13030,7 @@ end
 
 return B
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX45"><Properties><string name="Name">CastleWalls</string><ProtectedString name="Source"><![CDATA[-- CastleWalls: the Portal Sanctuary becomes a fortified castle courtyard.
+<Item class="ModuleScript" referent="RBX46"><Properties><string name="Name">CastleWalls</string><ProtectedString name="Source"><![CDATA[-- CastleWalls: the Portal Sanctuary becomes a fortified castle courtyard.
 -- Location: ServerScriptService > Server > CastleWalls (ModuleScript)
 --
 -- Curtain walls with a battered base, string course, wall-walk and crenellated parapets run along both
@@ -12763,7 +13259,7 @@ end
 
 return W
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX46"><Properties><string name="Name">CinematicEnvironment</string><ProtectedString name="Source"><![CDATA[-- Authored focal details and world-anchored atmosphere. No gameplay geometry is moved.
+<Item class="ModuleScript" referent="RBX47"><Properties><string name="Name">CinematicEnvironment</string><ProtectedString name="Source"><![CDATA[-- Authored focal details and world-anchored atmosphere. No gameplay geometry is moved.
 local Collection = game:GetService("CollectionService")
 local Config = require(game.ReplicatedStorage.Shared.Config)
 local Lettering = require(script.Parent.HeraldicText)
@@ -12974,7 +13470,7 @@ function E.Apply()
 end
 return E
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX47"><Properties><string name="Name">DataService</string><ProtectedString name="Source"><![CDATA[-- DataService: DataStore saving with session locking, retries, autosave and BindToClose.
+<Item class="ModuleScript" referent="RBX48"><Properties><string name="Name">DataService</string><ProtectedString name="Source"><![CDATA[-- DataService: DataStore saving with session locking, retries, autosave and BindToClose.
 -- Location: ServerScriptService > Server > DataService (ModuleScript)
 
 local DataStoreService = game:GetService("DataStoreService")
@@ -13162,7 +13658,7 @@ end)
 
 return DataService
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX48"><Properties><string name="Name">ExpeditionService</string><ProtectedString name="Source"><![CDATA[-- One saved expedition per player. Dispatch/claim never yield: identity, time,
+<Item class="ModuleScript" referent="RBX49"><Properties><string name="Name">ExpeditionService</string><ProtectedString name="Source"><![CDATA[-- One saved expedition per player. Dispatch/claim never yield: identity, time,
 -- ownership and rewards are resolved on the server and a claim consumes its ID.
 local RS = game:GetService("ReplicatedStorage")
 local Http = game:GetService("HttpService")
@@ -13460,7 +13956,7 @@ end
 
 return Service
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX49"><Properties><string name="Name">FarmService</string><ProtectedString name="Source"><![CDATA[-- FarmService: the courtyard farm and the long-term grind around it.
+<Item class="ModuleScript" referent="RBX50"><Properties><string name="Name">FarmService</string><ProtectedString name="Source"><![CDATA[-- FarmService: the courtyard farm and the long-term grind around it.
 -- Location: ServerScriptService > Server > FarmService (ModuleScript), started by GameServer.
 --
 --  * Six planter beds per courtyard (3 free, 3 bought). Crops grow on os.time(), so they keep growing
@@ -15087,7 +15583,7 @@ end
 
 return FarmService
 ]]></ProtectedString></Properties></Item>
-<Item class="Script" referent="RBX50"><Properties><string name="Name">GameServer</string><ProtectedString name="Source"><![CDATA[-- GameServer: authoritative game logic (throwing, rolling, collecting, income, shop, upgrades).
+<Item class="Script" referent="RBX51"><Properties><string name="Name">GameServer</string><ProtectedString name="Source"><![CDATA[-- GameServer: authoritative game logic (throwing, rolling, collecting, income, shop, upgrades).
 -- Location: ServerScriptService > Server > GameServer (Script)
 -- The client only sends *requests*; every price, cooldown, distance and roll is decided here.
 
@@ -16344,7 +16840,7 @@ end, function(player)
 	sync(player)
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX51"><Properties><string name="Name">HeraldicText</string><ProtectedString name="Source"><![CDATA[-- Raised, angular bronze lettering made from actual parts, not a flat font.
+<Item class="ModuleScript" referent="RBX52"><Properties><string name="Name">HeraldicText</string><ProtectedString name="Source"><![CDATA[-- Raised, angular bronze lettering made from actual parts, not a flat font.
 local Text = {}
 -- Normalized pen strokes; deliberately open counters stay readable at distance.
 local glyphs = {
@@ -16440,7 +16936,7 @@ function Text.Build(board, word, maxHeight)
 end
 return Text
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX52"><Properties><string name="Name">MedievalDressing</string><ProtectedString name="Source"><![CDATA[-- MedievalDressing: art-direction pass that runs after the hub, courtyards and lane are built.
+<Item class="ModuleScript" referent="RBX53"><Properties><string name="Name">MedievalDressing</string><ProtectedString name="Source"><![CDATA[-- MedievalDressing: art-direction pass that runs after the hub, courtyards and lane are built.
 -- Location: ServerScriptService > Server > MedievalDressing (ModuleScript)
 --
 -- It never rebuilds anyone else's geometry. It finds existing landmarks by name and adds purposeful,
@@ -16978,7 +17474,7 @@ end
 
 return D
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX53"><Properties><string name="Name">OuterForest</string><ProtectedString name="Source"><![CDATA[-- OuterForest: the world OUTSIDE the Forest lane, from the outer-world design canvas (sheet "01 Forest").
+<Item class="ModuleScript" referent="RBX54"><Properties><string name="Name">OuterForest</string><ProtectedString name="Source"><![CDATA[-- OuterForest: the world OUTSIDE the Forest lane, from the outer-world design canvas (sheet "01 Forest").
 -- The lane module (BiomeForest) owns |X| < ~130; this owns |X| >= 130 out to the skyline.
 -- Authored in design coordinates with K.mirror = true (design -X = screen-left from the hall camera).
 --  LEFT  (wild):  terraced overgrown cliff + root spills + high-ledge waterfall into a gorge pool,
@@ -17323,7 +17819,7 @@ end
 
 return O
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX54"><Properties><string name="Name">OuterHub</string><ProtectedString name="Source"><![CDATA[-- OuterHub: the world OUTSIDE the Portal Sanctuary walls (|X| > ~120 and Z < -470), from the
+<Item class="ModuleScript" referent="RBX55"><Properties><string name="Name">OuterHub</string><ProtectedString name="Source"><![CDATA[-- OuterHub: the world OUTSIDE the Portal Sanctuary walls (|X| > ~120 and Z < -470), from the
 -- outer-world design canvas (sheet "00 Hub") and Maps/00_Portal_Sanctuary_Hub.png. The lobby itself
 -- (SanctuaryHub) is untouched. World coordinates, no mirror: viewer-left down the lane is world +X.
 --  LEFT  (+X): lilac crags just past the walls, a stepped cliff with a two-step waterfall, flowering
@@ -17594,7 +18090,7 @@ end
 
 return O
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX55"><Properties><string name="Name">PetMeshLoader</string><ProtectedString name="Source"><![CDATA[-- PetMeshLoader: builds ReplicatedStorage.PetMeshes/<CreatureId>/<role> MeshPart templates from the
+<Item class="ModuleScript" referent="RBX56"><Properties><string name="Name">PetMeshLoader</string><ProtectedString name="Source"><![CDATA[-- PetMeshLoader: builds ReplicatedStorage.PetMeshes/<CreatureId>/<role> MeshPart templates from the
 -- asset ids in PetMeshManifest, so the client CreatureBuilder can use sculpted meshes.
 -- Location: ServerScriptService > Server > PetMeshLoader (ModuleScript)
 -- If a mesh can't be created (offline, permissions), that species simply keeps the procedural model.
@@ -17651,7 +18147,7 @@ end
 
 return Loader
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX56"><Properties><string name="Name">Progression</string><ProtectedString name="Source"><![CDATA[-- Progression: daily quests, rebirth, friend bonus, game passes / luck potion and pet fusion.
+<Item class="ModuleScript" referent="RBX57"><Properties><string name="Name">Progression</string><ProtectedString name="Source"><![CDATA[-- Progression: daily quests, rebirth, friend bonus, game passes / luck potion and pet fusion.
 -- Location: ServerScriptService > Server > Progression (ModuleScript)
 --
 -- Pure server logic. GameServer owns the data and remotes and calls in here; this module never fires
@@ -17896,7 +18392,7 @@ end
 
 return P
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX57"><Properties><string name="Name">SanctuaryArchitecture</string><ProtectedString name="Source"><![CDATA[-- Original block/wedge architecture matching Maps/00_Portal_Sanctuary_Hub.png.
+<Item class="ModuleScript" referent="RBX58"><Properties><string name="Name">SanctuaryArchitecture</string><ProtectedString name="Source"><![CDATA[-- Original block/wedge architecture matching Maps/00_Portal_Sanctuary_Hub.png.
 -- Shared by the public sanctuary and the eight gardens. All decoration is non-queryable.
 local K = require(script.Parent.WorldKit)
 local Art = {}
@@ -18081,7 +18577,7 @@ function Art.Planter(cf, length, pink)
 end
 return Art
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX58"><Properties><string name="Name">SanctuaryBase</string><ProtectedString name="Source"><![CDATA[-- Skyforge Courtyard, matching the owner's approved concept2. Original plot,
+<Item class="ModuleScript" referent="RBX59"><Properties><string name="Name">SanctuaryBase</string><ProtectedString name="Source"><![CDATA[-- Skyforge Courtyard, matching the owner's approved concept2. Original plot,
 -- collection and pet-slot anchors stay compatible with saved player gardens.
 local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
 local K = require(script.Parent.WorldKit)
@@ -18510,7 +19006,7 @@ end
 
 return Base
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX59"><Properties><string name="Name">SanctuaryDetails</string><ProtectedString name="Source"><![CDATA[-- Deliberate close-up detail for the lobby. Decorative only; all gameplay paths stay clear.
+<Item class="ModuleScript" referent="RBX60"><Properties><string name="Name">SanctuaryDetails</string><ProtectedString name="Source"><![CDATA[-- Deliberate close-up detail for the lobby. Decorative only; all gameplay paths stay clear.
 local P = require(script.Parent.SanctuaryArchitecture).Palette
 local Details = {}
 local V, CF, A = Vector3.new, CFrame.new, CFrame.Angles
@@ -18734,7 +19230,7 @@ function Details.Build(start)
 end
 return Details
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX60"><Properties><string name="Name">SanctuaryHub</string><ProtectedString name="Source"><![CDATA[-- Portal Sanctuary: a composed, walkable lobby, built from the supplied hub reference.
+<Item class="ModuleScript" referent="RBX61"><Properties><string name="Name">SanctuaryHub</string><ProtectedString name="Source"><![CDATA[-- Portal Sanctuary: a composed, walkable lobby, built from the supplied hub reference.
 -- Plot centers, throw zone, collision barrier and lane direction retain their existing contracts.
 local RS = game:GetService("ReplicatedStorage")
 local Config = require(RS.Shared.Config)
@@ -19134,7 +19630,7 @@ function Hub.Build(folder, textLabel)
 end
 return Hub
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX61"><Properties><string name="Name">SkyforgeDetails</string><ProtectedString name="Source"><![CDATA[-- Small-scale craft for the approved Skyforge courtyard. No extra prompts or
+<Item class="ModuleScript" referent="RBX62"><Properties><string name="Name">SkyforgeDetails</string><ProtectedString name="Source"><![CDATA[-- Small-scale craft for the approved Skyforge courtyard. No extra prompts or
 -- physics obstacles are created here; the expedition table owns interaction.
 local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
 local P = require(script.Parent.SkyforgeStyle)
@@ -19326,7 +19822,7 @@ end
 
 return Details
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX62"><Properties><string name="Name">SkyforgeStyle</string><ProtectedString name="Source"><![CDATA[-- Approved Skyforge concept: pale stone, dark timber, violet tiled roofs and
+<Item class="ModuleScript" referent="RBX63"><Properties><string name="Name">SkyforgeStyle</string><ProtectedString name="Source"><![CDATA[-- Approved Skyforge concept: pale stone, dark timber, violet tiled roofs and
 -- small warm brass accents. Colors stay readable under the sanctuary lighting.
 local C = Color3.fromRGB
 return {
@@ -19357,7 +19853,7 @@ return {
 	lodge = { x = -18, z = 24, w = 26, d = 17, deck = 1.6, postH = 9, rise = 5.6 },
 }
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX63"><Properties><string name="Name">Waterfalls</string><ProtectedString name="Source"><![CDATA[-- Waterfalls: turns the flat water panels in the sanctuary into living waterfalls.
+<Item class="ModuleScript" referent="RBX64"><Properties><string name="Name">Waterfalls</string><ProtectedString name="Source"><![CDATA[-- Waterfalls: turns the flat water panels in the sanctuary into living waterfalls.
 -- Location: ServerScriptService > Server > Waterfalls (ModuleScript)
 --
 -- For each fall: rocks breaking the lip, a sheet of falling water streaks (particles stretched along
@@ -19538,7 +20034,7 @@ end
 
 return F
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX64"><Properties><string name="Name">WorldBuilder</string><ProtectedString name="Source"><![CDATA[-- WorldBuilder: builds ONE long map — the hub (bases + launch hall) and the 3200-stud throwing
+<Item class="ModuleScript" referent="RBX65"><Properties><string name="Name">WorldBuilder</string><ProtectedString name="Source"><![CDATA[-- WorldBuilder: builds ONE long map — the hub (bases + launch hall) and the 3200-stud throwing
 -- lane split into 8 biome zones. Each biome lives in its own module (Biome<Id>) built with the
 -- shared WorldKit; this file only orchestrates terrain, zones, markers and boundaries.
 -- Location: ServerScriptService > Server > WorldBuilder (ModuleScript)
@@ -19747,10 +20243,10 @@ end
 
 return WorldBuilder
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX65"><Properties><string name="Name">WorldHub</string><ProtectedString name="Source"><![CDATA[-- Compatibility entry point for the reference-based sanctuary lobby.
+<Item class="ModuleScript" referent="RBX66"><Properties><string name="Name">WorldHub</string><ProtectedString name="Source"><![CDATA[-- Compatibility entry point for the reference-based sanctuary lobby.
 return require(script.Parent.SanctuaryHub)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX66"><Properties><string name="Name">WorldKit</string><ProtectedString name="Source"><![CDATA[-- WorldKit: the shared blocky construction kit used by the hub and all eight biomes.
+<Item class="ModuleScript" referent="RBX67"><Properties><string name="Name">WorldKit</string><ProtectedString name="Source"><![CDATA[-- WorldKit: the shared blocky construction kit used by the hub and all eight biomes.
 -- Location: ServerScriptService > Server > WorldKit (ModuleScript)
 --
 -- CONTRACT (map brief + GameServer landing contract):
@@ -20466,7 +20962,7 @@ end
 
 return K
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX67"><Properties><string name="Name">WorldLandmarks</string><ProtectedString name="Source"><![CDATA[-- WorldLandmarks: construction kit + the hero landmarks for the hub, launch hall and all
+<Item class="ModuleScript" referent="RBX68"><Properties><string name="Name">WorldLandmarks</string><ProtectedString name="Source"><![CDATA[-- WorldLandmarks: construction kit + the hero landmarks for the hub, launch hall and all
 -- eight biomes (blocky architectural language from the map reference pack).
 -- Location: ServerScriptService > Server > WorldLandmarks (ModuleScript)
 --
@@ -21246,10 +21742,10 @@ return L
 ]]></ProtectedString></Properties></Item>
 </Item>
 </Item>
-<Item class="StarterPlayer" referent="RBX106"><Properties><string name="Name">StarterPlayer</string></Properties>
-<Item class="StarterPlayerScripts" referent="RBX69"><Properties><string name="Name">StarterPlayerScripts</string></Properties>
-<Item class="Folder" referent="RBX70"><Properties><string name="Name">Client</string></Properties>
-<Item class="ModuleScript" referent="RBX71"><Properties><string name="Name">CaughtPresentation</string><ProtectedString name="Source"><![CDATA[-- Caught card for an already confirmed catch, styled after Actions/02_Rarity_Reveal_and_Capture ("03 ADDED"):
+<Item class="StarterPlayer" referent="RBX108"><Properties><string name="Name">StarterPlayer</string></Properties>
+<Item class="StarterPlayerScripts" referent="RBX70"><Properties><string name="Name">StarterPlayerScripts</string></Properties>
+<Item class="Folder" referent="RBX71"><Properties><string name="Name">Client</string></Properties>
+<Item class="ModuleScript" referent="RBX72"><Properties><string name="Name">CaughtPresentation</string><ProtectedString name="Source"><![CDATA[-- Caught card for an already confirmed catch, styled after Actions/02_Rarity_Reveal_and_Capture ("03 ADDED"):
 -- purple card with a double gold frame and diamond crest, light rays behind the pet, the creature's name,
 -- a "CAUGHT" ribbon with laurels, an "ADDED TO PETS" plaque, then the card flies into the live Pets button.
 local RS = game:GetService("ReplicatedStorage")
@@ -21467,10 +21963,10 @@ return function(key)
 	end)
 end
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX72"><Properties><string name="Name">CinematicLook</string><ProtectedString name="Source"><![CDATA[-- One controller owns the scene, including biome and weather transitions.
+<Item class="LocalScript" referent="RBX73"><Properties><string name="Name">CinematicLook</string><ProtectedString name="Source"><![CDATA[-- One controller owns the scene, including biome and weather transitions.
 require(script.Parent.SceneLighting).Start()
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX73"><Properties><string name="Name">ClientMain</string><ProtectedString name="Source"><![CDATA[-- ClientMain: wires all client modules together.
+<Item class="LocalScript" referent="RBX74"><Properties><string name="Name">ClientMain</string><ProtectedString name="Source"><![CDATA[-- ClientMain: wires all client modules together.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ClientMain (LocalScript)
 
 local Players = game:GetService("Players")
@@ -21746,7 +22242,7 @@ task.spawn(function()
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX74"><Properties><string name="Name">ClientSettings</string><ProtectedString name="Source"><![CDATA[-- ClientSettings: presentation-only player settings (never affect odds, charge, rewards).
+<Item class="ModuleScript" referent="RBX75"><Properties><string name="Name">ClientSettings</string><ProtectedString name="Source"><![CDATA[-- ClientSettings: presentation-only player settings (never affect odds, charge, rewards).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ClientSettings (ModuleScript)
 -- Values persist for the session via player attributes; defaults are safe for everyone.
 
@@ -21782,7 +22278,7 @@ end
 
 return Settings
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX75"><Properties><string name="Name">ClientState</string><ProtectedString name="Source"><![CDATA[-- ClientState: local mirror of the player's data + change signal + request helper.
+<Item class="ModuleScript" referent="RBX76"><Properties><string name="Name">ClientState</string><ProtectedString name="Source"><![CDATA[-- ClientState: local mirror of the player's data + change signal + request helper.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ClientState (ModuleScript)
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -21822,7 +22318,7 @@ end
 
 return State
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX76"><Properties><string name="Name">CreatureRenderer</string><ProtectedString name="Source"><![CDATA[-- CreatureRenderer: renders every creature on this client — base pets of all players,
+<Item class="ModuleScript" referent="RBX77"><Properties><string name="Name">CreatureRenderer</string><ProtectedString name="Source"><![CDATA[-- CreatureRenderer: renders every creature on this client — base pets of all players,
 -- creatures being carried, and freshly revealed wild creatures. Handles species entrances,
 -- capture presentation, reactions, click-to-pet, distance LOD and previews.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > CreatureRenderer (ModuleScript)
@@ -21845,6 +22341,7 @@ local Format = require(Shared.Format)
 local Variants = require(Shared.Variants)
 local Farm = require(Shared.FarmConfig) -- pet levels from feeding (PetMult) for the name tags
 local Effects = require(script.Parent.Effects)
+local Entrances = require(script.Parent.Entrances) -- themed portal entrances (motion style + element FX)
 local Sounds = require(script.Parent.Sounds)
 local Settings = require(script.Parent.ClientSettings)
 local Plaque = require(script.Parent.Plaque)
@@ -22387,6 +22884,7 @@ local function finishEntrance(e)
 			p.LocalTransparencyModifier = 0
 		end
 	end
+	pcall(Entrances.Finish, e, en)
 	rarityFinish(e, en)
 end
 
@@ -22400,7 +22898,9 @@ local function stepEntrance(e, dt)
 		or math.max(0.02, easeOut(math.min(1, k / 0.18)))
 	local kind = en.kind
 	local from, to = en.from, en.to
-	if kind == "hops" then
+	if Entrances.Move(e, en, a, k, dt) then
+		-- themed motion style (pounce / swoop / soar / swim / flutter / phase / bounce / scuttle / stride)
+	elseif kind == "hops" then
 		local n = en.hops
 		local q = k * n
 		local hop = math.min(math.floor(q), n - 1)
@@ -22503,6 +23003,7 @@ local function stepEntrance(e, dt)
 		if stepIdx ~= en.lastStep then
 			en.lastStep = stepIdx
 			a.landSquash = 1
+			pcall(Entrances.Step, e, en, a)
 			if e.owner == player.UserId and Config.Rarities[CreatureData.ById[e.id].rarity].order >= 5 then
 				Effects.Shake(0.4, 0.12)
 			end
@@ -22511,6 +23012,7 @@ local function stepEntrance(e, dt)
 	if kind ~= "emerge" then
 		a:SetScale(pop)
 	end
+	pcall(Entrances.Fx, e, en, a, k, dt)
 	if kind ~= "spiral" and kind ~= "peek" then
 		a.yaw = en.yaw0
 	end
@@ -22533,11 +23035,15 @@ function Renderer.SpawnWild(throwId, creatureId, pos, ownerId, chanceText, vsize
 	local e = spawnEntry(creatureId, cf, "wild", 0, vsize, vmat)
 	local prof = e.rig.profile
 	local enter = prof.enter or {}
-	local kind = enter.kind or MOVE_ENTRANCE[def.move] or "walk"
+	-- themed entrance: motion style from the kind of animal, element FX from its world
+	local okStyle, style = pcall(Entrances.Style, def, prof, e.rig, enter.kind)
+	if not okStyle then style = enter.kind or MOVE_ENTRANCE[def.move] or "walk" end
+	local kind = style
 	local _, yaw0 = cf:ToEulerAnglesYXZ()
 	local dur = Timeline.EntranceFor(def.rarity)
 	e.entrance = {
 		kind = kind,
+		style = style,
 		t = 0,
 		dur = dur,
 		from = pos + Vector3.new(0, 0, 1.5),
@@ -22549,6 +23055,8 @@ function Renderer.SpawnWild(throwId, creatureId, pos, ownerId, chanceText, vsize
 		peeks = enter.peeks or 1,
 		side = (throwId % 2 == 0) and 1 or -1,
 	}
+	pcall(Entrances.Prepare, e, e.entrance, def, ownerId)
+	pcall(Entrances.Start, e, e.entrance)
 	e.anim:SetScale(kind == "emerge" and 0.35 or 0.02)
 	e.anim:PlayAccent("enter", dur)
 	e.throwId = throwId
@@ -23011,7 +23519,7 @@ end
 
 return Renderer
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX77"><Properties><string name="Name">CustomCursor</string><ProtectedString name="Source"><![CDATA[-- Ivory and brass cursor. Native pointer stays available until artwork loads.
+<Item class="LocalScript" referent="RBX78"><Properties><string name="Name">CustomCursor</string><ProtectedString name="Source"><![CDATA[-- Ivory and brass cursor. Native pointer stays available until artwork loads.
 local Input = game:GetService("UserInputService")
 local Gui = game:GetService("GuiService")
 local Run = game:GetService("RunService")
@@ -23159,7 +23667,7 @@ script.Destroying:Connect(function()
 	layer:Destroy()
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX78"><Properties><string name="Name">Effects</string><ProtectedString name="Source"><![CDATA[-- Effects: camera shake, flashes, shockwaves, particle bursts, light beams, floating text,
+<Item class="ModuleScript" referent="RBX79"><Properties><string name="Name">Effects</string><ProtectedString name="Source"><![CDATA[-- Effects: camera shake, flashes, shockwaves, particle bursts, light beams, floating text,
 -- flying-coin money effect, rarity banners and per-world lighting.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > Effects (ModuleScript)
 
@@ -23681,7 +24189,317 @@ end
 
 return Effects
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX79"><Properties><string name="Name">ExchangeView</string><ProtectedString name="Source"><![CDATA[-- Four direct trade signs linked to an architectural model of the sanctuary.
+<Item class="ModuleScript" referent="RBX80"><Properties><string name="Name">Entrances</string><ProtectedString name="Source"><![CDATA[-- Entrances: themed portal entrances for freshly revealed wild creatures.
+-- Location: StarterPlayerScripts > Client > Entrances (ModuleScript), used by CreatureRenderer.
+--
+-- Each creature gets a MOTION STYLE from what kind of animal it is (cats pounce, dragons swoop in and
+-- land with a quake, birds soar, fish and jellies swim, moths flutter, golems stomp, ghosts phase in,
+-- angels descend in light, bunnies bounce, beetles scuttle, big legendary beasts stride) and an
+-- ELEMENT from its world (fire, ice, leaf, candy, crystal, space, shadow, holy, glitch) that colours
+-- the portal burst, the trail it leaves and the landing.
+-- Presentation only: positions/timings stay inside the rarity entrance window (PresentationTimeline).
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local Config = require(ReplicatedStorage.Shared.Config)
+local Effects = require(script.Parent.Effects)
+local Settings = require(script.Parent.ClientSettings)
+
+local E = {}
+
+local PI = math.pi
+local function clamp01(k) return math.clamp(k, 0, 1) end
+local function smooth(k) k = clamp01(k); return k * k * (3 - 2 * k) end
+local function easeOut(k) k = clamp01(k); return 1 - (1 - k) ^ 3 end
+
+---------------------------------------------------------------- elements
+local ELEMENT_BY_WORLD = { Volcano = "fire", Frozen = "ice", Forest = "leaf", Candy = "candy", Crystal = "crystal",
+	Space = "space", Shadow = "shadow", Heaven = "holy" }
+local RGB = Color3.fromRGB
+local PAL = {
+	fire = { RGB(255, 205, 70), RGB(255, 90, 30) },
+	ice = { RGB(240, 252, 255), RGB(130, 200, 255) },
+	leaf = { RGB(160, 235, 110), RGB(60, 165, 70) },
+	candy = { RGB(255, 140, 205), RGB(120, 225, 255) },
+	crystal = { RGB(225, 185, 255), RGB(120, 235, 255) },
+	space = { RGB(255, 255, 255), RGB(170, 120, 255) },
+	shadow = { RGB(160, 90, 235), RGB(40, 12, 60) },
+	holy = { RGB(255, 244, 190), RGB(255, 205, 80) },
+	glitch = { RGB(0, 255, 200), RGB(255, 0, 170) },
+}
+-- Effects.Motif kinds used for the portal burst and the trail of each element
+local OPEN = { fire = "ashSwirl", ice = "snowflakeRing", leaf = "leaves2", candy = "petals", crystal = "prismArcs",
+	space = "constellation", shadow = "rift", holy = "helix" }
+local TRAIL = { fire = "ember", ice = "snowflakes", leaf = "leaf", candy = "wrapper", crystal = "glint", space = "mote",
+	shadow = "shadowMotes", holy = "glint" }
+local DUST = "rbxasset://textures/particles/smoke_main.dds"
+
+function E.Element(def)
+	if def.rarity == "Secret" then return "glitch" end
+	if def.rarity == "Divine" then return "holy" end
+	return ELEMENT_BY_WORLD[def.world] or "space"
+end
+
+---------------------------------------------------------------- motion styles
+-- species-specific picks where the anatomy rule would miss the character
+local OVERRIDE = {
+	PhoenixLumen = "rebirth", NovaPhoenix = "rebirth",
+	SolarSerpent = "slither", AmethystEel = "swim", MagmaKraken = "swim", NebulaJelly = "swim",
+	Pegasus = "soar", GoldGriffin = "soar", CottonCandyCloud = "soar", Infinity = "soar",
+	Solaris = "descend", ThroneAngel = "descend", Seraphling = "descend",
+	Snowpuff = "bounce", Gumdrop = "bounce", Gemmy = "bounce", Magmite = "scuttle", QuartzBeetle = "scuttle",
+	TheWatcher = "phase", VoidWisp = "phase",
+}
+-- styles that drive root motion here; others fall back to the renderer's existing kinds
+local OWN = { pounce = true, swoop = true, soar = true, rebirth = true, swim = true, flutter = true, phase = true,
+	bounce = true, scuttle = true, stride = true }
+-- renderer kinds kept as they are when a profile already picked them on purpose
+local KEEP = { roll = true, peek = true, resolve = true }
+
+function E.Style(def, prof, rig, profileKind)
+	if profileKind and KEEP[profileKind] then return profileKind end
+	if OVERRIDE[def.id] then return OVERRIDE[def.id] end
+	if def.rarity == "Secret" then return "resolve" end
+	local gait, body, legs = prof.gait, def.body, rig.legKind
+	local order = Config.Rarities[def.rarity].order
+	if body == "golem" or gait == "heavy" then return (legs == "none") and "descend" or "stomp" end
+	if gait == "slither" then return "slither" end
+	if body == "dragon" then return "swoop" end
+	if gait == "swim" or body == "fish" then return "swim" end
+	if legs == "bug6" then return (gait == "fly" or gait == "hover") and "flutter" or "scuttle" end
+	if legs == "none" then
+		if def.world == "Heaven" or def.rarity == "Divine" then return "descend" end
+		return "phase"
+	end
+	if gait == "fly" or gait == "hover" then
+		if body == "bird" or legs == "quad" then return "soar" end
+		return "flutter"
+	end
+	if gait == "hop" then return "bounce" end
+	if gait == "float" then return "soar" end
+	if order >= 5 then return "stride" end
+	return "pounce"
+end
+
+function E.Owns(style) return OWN[style] == true end
+
+---------------------------------------------------------------- per-frame root motion
+-- returns true when the style drove the motion (renderer then skips its own kinds)
+function E.Move(e, en, a, k, dt)
+	local st = en.style
+	if not OWN[st] then return false end
+	local s = e.rig.size
+	local from, to = en.from, en.to
+	local dir = (to - from).Unit
+	local side = Vector3.new(-dir.Z, 0, dir.X)
+	local y0 = en.y0
+	local reduced = Settings.ReducedMotion
+	if st == "pounce" then
+		-- crouch at the portal mouth, spring out in a long arc, skid to a stop
+		if k < 0.28 then
+			a.pos = from
+			a.groundY = y0 - math.sin(k / 0.28 * PI * 0.5) * 0.15 * s
+		elseif k < 0.8 then
+			local q = (k - 0.28) / 0.52
+			a.pos = from:Lerp(to + dir * 0.9, easeOut(q))
+			a.groundY = y0 + math.sin(q * PI) * (reduced and 1.6 or 3.6) * s
+		else
+			if not en.landed then en.landed = true; a.landSquash = 1; E.Land(e, en, a, "skid") end
+			a.pos = (to + dir * 0.9):Lerp(to, smooth((k - 0.8) / 0.2))
+			a.groundY = y0
+			if not en.skidFx and k > 0.83 then en.skidFx = true; E.Dust(en, a.pos, 6) end
+		end
+	elseif st == "swoop" then
+		-- burst out climbing, sweep a wide loop overhead, drop in for a heavy landing
+		local q = clamp01(k / 0.9)
+		local r = (1 - q) * (reduced and 1.2 or 3.4) * s
+		a.pos = from:Lerp(to, easeOut(q)) + side * math.sin(q * PI * 2) * r
+		a.groundY = y0 + math.sin(q * PI) * (reduced and 3 or 7.5) * s
+		if k >= 0.9 then
+			a.pos, a.groundY = to, y0
+			if not en.landed then en.landed = true; a.landSquash = 1; E.Land(e, en, a, "quake") end
+		end
+	elseif st == "soar" or st == "rebirth" then
+		-- (rebirth: a flame/star pillar erupts in the portal first, then the bird bursts out of it)
+		local t0 = (st == "rebirth") and 0.2 or 0
+		if k < t0 then
+			a.pos, a.groundY = from, y0 + (k / t0) * 1.5 * s
+		else
+			local q = (k - t0) / (1 - t0)
+			a.pos = from:Lerp(to, easeOut(q)) + side * math.sin(q * PI * 2) * (1 - q) * 1.4 * s
+			a.groundY = y0 + (math.sin(q * PI) * (reduced and 2 or 4.8) + (st == "rebirth" and (1 - q) * 1.5 or 0)) * s
+			if q > 0.92 and not en.landed then en.landed = true; E.Land(e, en, a, "soft") end
+		end
+	elseif st == "swim" then
+		-- undulating swim out of the portal, rolling with each stroke
+		a.pos = from:Lerp(to, smooth(k)) + side * math.sin(k * PI * 3) * (1 - k) * 1.3 * s
+		a.groundY = y0 + math.sin(k * PI * 2) * (1 - k) * 0.7 * s
+		a.rootRoll = math.sin(k * PI * 3) * (1 - k) * (reduced and 0.05 or 0.28)
+		a.gaitPhase += dt * 2.5
+		if k > 0.9 and not en.landed then en.landed = true; E.Land(e, en, a, "splash") end
+	elseif st == "flutter" then
+		-- jittery zigzag flight with a fast bob
+		a.pos = from:Lerp(to, easeOut(k)) + side * math.sin(k * PI * 5) * (1 - k) * 1.5 * s
+		a.groundY = y0 + (math.sin(k * PI) * 2.4 + math.sin(k * PI * 9) * 0.35) * s * (1 - k * 0.3)
+		if k > 0.9 and not en.landed then en.landed = true; E.Land(e, en, a, "soft") end
+	elseif st == "phase" then
+		-- drifts out while fading in, flickering like a signal locking on
+		a.pos = from:Lerp(to, smooth(k))
+		a.groundY = y0 + math.sin(k * PI) * 1.0 * s
+		local vis = smooth(k / 0.65)
+		if k < 0.65 and math.floor(k * 30) % 4 == 0 then vis = vis * 0.4 end
+		E.SetVisibility(e, en, vis)
+		if k > 0.9 and not en.landed then en.landed = true; E.Land(e, en, a, "soft") end
+	elseif st == "bounce" then
+		-- four springy hops, each a little lower, with a puff on every landing
+		local n = 4
+		local q = k * n
+		local hop = math.min(math.floor(q), n - 1)
+		local frac = q - hop
+		a.pos = from:Lerp(to, smooth(k))
+		a.groundY = y0 + math.sin(frac * PI) * (n - hop) / n * (reduced and 1.4 or 2.8) * s
+		if hop ~= en.lastHop then
+			en.lastHop = hop
+			if hop > 0 then a.landSquash = 1; E.Dust(en, a.pos, 4) end
+		end
+		if k > 0.97 and not en.landed then en.landed = true; E.Land(e, en, a, "soft") end
+	elseif st == "scuttle" then
+		-- quick skittering zig-zag run
+		a.pos = from:Lerp(to, smooth(k)) + side * math.sin(k * PI * 10) * (1 - k) * 0.35 * s
+		a.gaitPhase += dt * 4
+		if math.floor(k * 8) ~= en.lastDust then en.lastDust = math.floor(k * 8); E.Dust(en, a.pos, 2) end
+		if k > 0.95 and not en.landed then en.landed = true; E.Land(e, en, a, "soft") end
+	elseif st == "stride" then
+		-- slow majestic walk out of the light, a flourish when it plants its feet
+		a.pos = from:Lerp(to, smooth(k / 0.85))
+		a.gaitPhase += dt * 1.3
+		if k > 0.85 and not en.landed then en.landed = true; a.landSquash = 1; E.Land(e, en, a, "flourish") end
+	end
+	return true
+end
+
+-- LocalTransparencyModifier on every visible part (phase-in)
+function E.SetVisibility(e, en, vis)
+	if not en.parts then
+		en.parts = {}
+		for _, p in ipairs(e.model:GetDescendants()) do
+			if p:IsA("BasePart") and p.Transparency < 0.95 then table.insert(en.parts, p) end
+		end
+	end
+	local m = 1 - clamp01(vis)
+	for _, p in ipairs(en.parts) do p.LocalTransparencyModifier = m end
+end
+
+---------------------------------------------------------------- effects
+local function seq(el) local p = PAL[el] or PAL.space; return ColorSequence.new(p[1], p[2]) end
+
+function E.Dust(en, pos, n)
+	if Settings.LowVFX() and en.order < 4 then return end
+	local col = (en.element == "fire") and RGB(120, 90, 80) or ((en.element == "ice") and RGB(235, 248, 255) or RGB(225, 215, 200))
+	Effects.Burst(pos + Vector3.new(0, 0.2, 0), ColorSequence.new(col), n or 4, 4, 0.9, DUST)
+end
+
+local function motif(kind, pos, fwd, col, size)
+	if not kind then return end
+	pcall(Effects.Motif, kind, pos, fwd, col, size)
+end
+
+-- portal burst when the creature appears
+function E.Start(e, en)
+	local el, order = en.element, en.order
+	local low = Settings.LowVFX()
+	local pal = PAL[el] or PAL.space
+	local up = Vector3.new(0, 1.5, 0)
+	local fwd = (en.to - en.from).Unit
+	local size = math.clamp(e.rig.size, 0.8, 2)
+	if el == "glitch" then
+		Effects.Burst(en.from + up, seq(el), low and 10 or 22, 12, 0.6)
+		return
+	end
+	Effects.Burst(en.from + up, seq(el), (low and 6 or 12) + order * 3, 8 + order, 0.7)
+	motif(OPEN[el], en.from + up, fwd, pal[2], size)
+	if en.style == "rebirth" then
+		Effects.LightBeam(en.from, pal[2], 12, 1.0)
+		Effects.Burst(en.from + Vector3.new(0, 3, 0), seq(el), low and 14 or 34, 14, 1.0)
+	elseif en.style == "descend" then
+		Effects.LightBeam(en.to, pal[1], 18, en.dur)
+	elseif en.style == "swoop" and order >= 5 then
+		Effects.Shockwave(en.from + Vector3.new(0, 0.2, 0), pal[2], 6 + order, 0.6)
+	elseif en.style == "phase" then
+		motif("shadowMotes", en.from + up, fwd, pal[1], size)
+	end
+end
+
+-- trail while moving (denser for rarer creatures)
+function E.Fx(e, en, a, k, dt)
+	if k >= 0.95 then return end
+	local low = Settings.LowVFX()
+	if low and en.order < 3 then return end
+	local every = (en.order >= 5) and 0.1 or ((en.order >= 3) and 0.16 or 0.26)
+	if low then every *= 2 end
+	en.trailT = (en.trailT or 0) + dt
+	if en.trailT < every then return end
+	en.trailT = 0
+	local pos = Vector3.new(a.pos.X, a.groundY + 1.2 * e.rig.size, a.pos.Z)
+	if en.element == "glitch" then
+		Effects.Burst(pos, seq("glitch"), 3, 5, 0.35)
+	else
+		local pal = PAL[en.element] or PAL.space
+		motif(TRAIL[en.element], pos, (en.to - en.from).Unit, pal[2], math.clamp(e.rig.size * 0.7, 0.6, 1.4))
+	end
+end
+
+-- landing accents per style
+function E.Land(e, en, a, how)
+	local el, order = en.element, en.order
+	local pal = PAL[el] or PAL.space
+	local pos = Vector3.new(a.pos.X, en.y0 + 0.1, a.pos.Z)
+	if how == "quake" then
+		Effects.Shockwave(pos, pal[2], 10 + order * 2, 0.7)
+		Effects.Burst(pos + Vector3.new(0, 1, 0), seq(el), 20 + order * 4, 14, 1.0)
+		E.Dust(en, pos, 10)
+		if en.mine then Effects.Shake(0.5 + order * 0.08, 0.35) end
+	elseif how == "skid" then
+		Effects.Shockwave(pos, pal[1], 4 + order, 0.45)
+		E.Dust(en, pos, 6)
+	elseif how == "splash" then
+		Effects.Shockwave(pos + Vector3.new(0, 1, 0), pal[1], 5 + order, 0.5)
+		motif((el == "space") and "starburst" or "bubble", pos + Vector3.new(0, 1.5, 0), (en.to - en.from).Unit, pal[2], 1)
+	elseif how == "flourish" then
+		Effects.Shockwave(pos, pal[2], 7 + order, 0.6)
+		Effects.Burst(pos + Vector3.new(0, 2, 0), seq(el), 16 + order * 4, 10, 0.8)
+	else -- soft
+		Effects.Shockwave(pos, pal[1], 3 + order * 0.8, 0.4)
+	end
+end
+
+-- stomping golems: dust + small quake on every step (called by the renderer's stomp kind)
+function E.Step(e, en, a)
+	E.Dust(en, a.pos, 5)
+	local pal = PAL[en.element] or PAL.space
+	Effects.Shockwave(Vector3.new(a.pos.X, en.y0 + 0.1, a.pos.Z), pal[2], 3 + en.order * 0.5, 0.35)
+end
+
+function E.Finish(e, en)
+	if en.style == "phase" then E.SetVisibility(e, en, 1) end
+	if en.style == "stomp" or en.style == "descend" then
+		local pal = PAL[en.element] or PAL.space
+		Effects.Shockwave(Vector3.new(en.to.X, en.y0 + 0.1, en.to.Z), pal[2], 8 + en.order, 0.6)
+		if en.mine and en.style == "stomp" and en.order >= 4 then Effects.Shake(0.4, 0.25) end
+	end
+end
+
+-- set up the per-throw fields the renderer stores on the entrance record
+function E.Prepare(e, en, def, ownerId)
+	en.element = E.Element(def)
+	en.order = Config.Rarities[def.rarity].order
+	local me = Players.LocalPlayer
+	en.mine = me ~= nil and ownerId == me.UserId
+end
+
+return E
+]]></ProtectedString></Properties></Item>
+<Item class="ModuleScript" referent="RBX81"><Properties><string name="Name">ExchangeView</string><ProtectedString name="Source"><![CDATA[-- Four direct trade signs linked to an architectural model of the sanctuary.
 local K = require(script.Parent.UIKit)
 local T = K.Theme
 local Craft = require(script.Parent.SanctuaryUI)
@@ -23914,7 +24732,7 @@ function E.Mount(hub, HUD)
 end
 return E
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX80"><Properties><string name="Name">ExpeditionPanel</string><ProtectedString name="Source"><![CDATA[-- Skyforge visual planning; all mission authority remains on the server.
+<Item class="ModuleScript" referent="RBX82"><Properties><string name="Name">ExpeditionPanel</string><ProtectedString name="Source"><![CDATA[-- Skyforge visual planning; all mission authority remains on the server.
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -24808,7 +25626,7 @@ function Panel.Init()
 end
 return Panel
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX81"><Properties><string name="Name">ExpeditionScene</string><ProtectedString name="Source"><![CDATA[-- Detailed, deterministic native biome vignettes for the expedition map.
+<Item class="ModuleScript" referent="RBX83"><Properties><string name="Name">ExpeditionScene</string><ProtectedString name="Source"><![CDATA[-- Detailed, deterministic native biome vignettes for the expedition map.
 local Config = require(game.ReplicatedStorage.Shared.Config)
 local Scene = {}
 local V, C = Vector3.new, Color3.fromRGB
@@ -24998,7 +25816,7 @@ function Scene.Build(id)
 end
 return Scene
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX82"><Properties><string name="Name">FarmClient</string><ProtectedString name="Source"><![CDATA[-- FarmClient: client side of the courtyard farm (server: FarmService).
+<Item class="LocalScript" referent="RBX84"><Properties><string name="Name">FarmClient</string><ProtectedString name="Source"><![CDATA[-- FarmClient: client side of the courtyard farm (server: FarmService).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > FarmClient (LocalScript)
 --  * Shows only YOUR courtyard's farm prompts (beds, stand, board, chest); others' stay hidden.
 --  * Updates permanent physical farm signs. No screen toasts or character message bursts.
@@ -25397,7 +26215,7 @@ FarmFx.OnClientEvent:Connect(function(kind, d)
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX83"><Properties><string name="Name">GameplayFeel</string><ProtectedString name="Source"><![CDATA[-- Quiet, state-driven feedback around the complete play loop. No extra HUD buttons.
+<Item class="ModuleScript" referent="RBX85"><Properties><string name="Name">GameplayFeel</string><ProtectedString name="Source"><![CDATA[-- Quiet, state-driven feedback around the complete play loop. No extra HUD buttons.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local RS = game:GetService("ReplicatedStorage")
@@ -25519,7 +26337,7 @@ function Feel.Money(amount, position)
 end
 return Feel
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX84"><Properties><string name="Name">GuildModel</string><ProtectedString name="Source"><![CDATA[-- An architectural model of the four sanctuary trades, made for the exchange folio.
+<Item class="ModuleScript" referent="RBX86"><Properties><string name="Name">GuildModel</string><ProtectedString name="Source"><![CDATA[-- An architectural model of the four sanctuary trades, made for the exchange folio.
 local Merchant = require(script.Parent.MerchantDisplay)
 local Portal = require(game:GetService("ReplicatedStorage").Shared.PortalBuilder)
 local K = require(script.Parent.UIKit)
@@ -25691,7 +26509,7 @@ function G.Pedestal(model)
 end
 return G
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX85"><Properties><string name="Name">HUD</string><ProtectedString name="Source"><![CDATA[-- Direct Pets, Shop and Expeditions navigation with a shared responsive panel layer.
+<Item class="ModuleScript" referent="RBX87"><Properties><string name="Name">HUD</string><ProtectedString name="Source"><![CDATA[-- Direct Pets, Shop and Expeditions navigation with a shared responsive panel layer.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Input = game:GetService("UserInputService")
@@ -26232,7 +27050,7 @@ end)
 task.defer(rescale)
 return HUD
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX86"><Properties><string name="Name">Intro</string><ProtectedString name="Source"><![CDATA[-- Intro: cinematic fly-over when you join. The camera sweeps down the whole lane (every zone),
+<Item class="ModuleScript" referent="RBX88"><Properties><string name="Name">Intro</string><ProtectedString name="Source"><![CDATA[-- Intro: cinematic fly-over when you join. The camera sweeps down the whole lane (every zone),
 -- past the Portal Launch Hall, and lands at your base while the title animates in.
 -- Click / tap / any key to skip.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > Intro (ModuleScript)
@@ -26482,7 +27300,7 @@ end
 
 return Intro
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX87"><Properties><string name="Name">LabelDeclutter</string><ProtectedString name="Source"><![CDATA[-- LabelDeclutter: keeps floating world labels (BillboardGuis) from piling on top of each other.
+<Item class="LocalScript" referent="RBX89"><Properties><string name="Name">LabelDeclutter</string><ProtectedString name="Source"><![CDATA[-- LabelDeclutter: keeps floating world labels (BillboardGuis) from piling on top of each other.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > LabelDeclutter (LocalScript)
 --
 -- Most labels are drawn at a fixed pixel size, so a label 30 studs away is as big on screen as one
@@ -26670,7 +27488,7 @@ RunService.Heartbeat:Connect(function(dt)
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX88"><Properties><string name="Name">MerchantDisplay</string><ProtectedString name="Source"><![CDATA[-- A small, actual sanctuary shop display for the menu. No image or asset dependency.
+<Item class="ModuleScript" referent="RBX90"><Properties><string name="Name">MerchantDisplay</string><ProtectedString name="Source"><![CDATA[-- A small, actual sanctuary shop display for the menu. No image or asset dependency.
 local D = {}
 local C, V, CF = Color3.fromRGB, Vector3.new, CFrame.new
 local wood, stone, brass, slate = C(88, 62, 40), C(224, 221, 206), C(178, 142, 74), C(39, 65, 69)
@@ -26781,7 +27599,7 @@ function D.Emblem(kind)
 end
 return D
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX89"><Properties><string name="Name">MomentumUI</string><ProtectedString name="Source"><![CDATA[-- MomentumUI: shows the perfect-throw streak and the server-wide Rift Storm.
+<Item class="LocalScript" referent="RBX91"><Properties><string name="Name">MomentumUI</string><ProtectedString name="Source"><![CDATA[-- MomentumUI: shows the perfect-throw streak and the server-wide Rift Storm.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > MomentumUI (LocalScript)
 --
 --   * Streak badge (bottom centre): appears after a perfect throw, "PERFECT STREAK x3 · +15% luck",
@@ -26925,7 +27743,7 @@ RunService.Heartbeat:Connect(function(dt)
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX90"><Properties><string name="Name">MovementFov</string><ProtectedString name="Source"><![CDATA[-- Reversible sprint lens offset. Cinematics release it before saving their lens.
+<Item class="ModuleScript" referent="RBX92"><Properties><string name="Name">MovementFov</string><ProtectedString name="Source"><![CDATA[-- Reversible sprint lens offset. Cinematics release it before saving their lens.
 local Fov = {}
 local owner, offset, output
 local function close(a, b)
@@ -26961,7 +27779,7 @@ function Fov.Update(camera, target, dt)
 end
 return Fov
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX91"><Properties><string name="Name">Panels</string><ProtectedString name="Source"><![CDATA[-- Sanctuary shops, collection, index, customization and settings.
+<Item class="ModuleScript" referent="RBX93"><Properties><string name="Name">Panels</string><ProtectedString name="Source"><![CDATA[-- Sanctuary shops, collection, index, customization and settings.
 -- All spending and ownership changes use the existing authoritative server actions.
 local RS = game:GetService("ReplicatedStorage")
 local Http = game:GetService("HttpService")
@@ -28313,7 +29131,7 @@ function Panels.Init()
 end
 return Panels
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX92"><Properties><string name="Name">Plaque</string><ProtectedString name="Source"><![CDATA[-- Plaque: the carved rarity plaque from the reveal reference sheet (Actions/02_Rarity_Reveal_and_Capture):
+<Item class="ModuleScript" referent="RBX94"><Properties><string name="Name">Plaque</string><ProtectedString name="Source"><![CDATA[-- Plaque: the carved rarity plaque from the reveal reference sheet (Actions/02_Rarity_Reveal_and_Capture):
 -- a bevelled bar with pointed diamond ends, double gold trim, small gold diamond ornaments, serif caps,
 -- and gold laurels for the showcase tiers. Pixel sized, so it works in ScreenGuis and BillboardGuis.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > Plaque (ModuleScript)
@@ -28470,7 +29288,7 @@ end
 
 return P
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX93"><Properties><string name="Name">PlayerFeel</string><ProtectedString name="Source"><![CDATA[-- PlayerFeel: how the local player's character moves and feels.
+<Item class="LocalScript" referent="RBX95"><Properties><string name="Name">PlayerFeel</string><ProtectedString name="Source"><![CDATA[-- PlayerFeel: how the local player's character moves and feels.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > PlayerFeel (LocalScript)
 --
 --   * Run: hold Left Shift (PC), press L3 (gamepad) or tap the Run button (mobile, toggles).
@@ -28786,7 +29604,7 @@ task.spawn(function()
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX94"><Properties><string name="Name">QuestPanel</string><ProtectedString name="Source"><![CDATA[-- QuestPanel: compact parchment card on the right edge with today's quests, rebirth and boosts.
+<Item class="LocalScript" referent="RBX96"><Properties><string name="Name">QuestPanel</string><ProtectedString name="Source"><![CDATA[-- QuestPanel: compact parchment card on the right edge with today's quests, rebirth and boosts.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > QuestPanel (LocalScript)
 --
 -- Reads the server's Progress view from ClientState (Daily, Rebirths, RebirthCost, FriendsHere,
@@ -29033,7 +29851,7 @@ task.spawn(function()
 end)
 refresh()
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX95"><Properties><string name="Name">RevealTitle</string><ProtectedString name="Source"><![CDATA[-- RevealTitle: on-screen title for a creature reveal, styled after Actions/02_Rarity_Reveal_and_Capture.
+<Item class="ModuleScript" referent="RBX97"><Properties><string name="Name">RevealTitle</string><ProtectedString name="Source"><![CDATA[-- RevealTitle: on-screen title for a creature reveal, styled after Actions/02_Rarity_Reveal_and_Capture.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > RevealTitle (ModuleScript)
 --
 --   Common / Uncommon      nothing on screen: the carved plaque above the pet carries it (restrained tiers)
@@ -29349,7 +30167,7 @@ end
 
 return R
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX96"><Properties><string name="Name">SanctuaryUI</string><ProtectedString name="Source"><![CDATA[-- Medieval guild folios: carved oak, forged iron, vellum and a stitched binding.
+<Item class="ModuleScript" referent="RBX98"><Properties><string name="Name">SanctuaryUI</string><ProtectedString name="Source"><![CDATA[-- Medieval guild folios: carved oak, forged iron, vellum and a stitched binding.
 -- All ornament is inert. The reading surface stays light and the world stays visible.
 local T = require(script.Parent.UITheme)
 local Art = {}
@@ -29543,7 +30361,7 @@ function Art.Selected(button, selected)
 end
 return Art
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX97"><Properties><string name="Name">SceneLighting</string><ProtectedString name="Source"><![CDATA[-- The only runtime owner of scene light, atmosphere, clouds and grading.
+<Item class="ModuleScript" referent="RBX99"><Properties><string name="Name">SceneLighting</string><ProtectedString name="Source"><![CDATA[-- The only runtime owner of scene light, atmosphere, clouds and grading.
 local Lighting = game:GetService("Lighting")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
@@ -29629,7 +30447,7 @@ function Scene.Start()
 end
 return Scene
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX98"><Properties><string name="Name">SkyforgeUI</string><ProtectedString name="Source"><![CDATA[-- Light sanctuary surfaces and large standalone navigation artwork.
+<Item class="ModuleScript" referent="RBX100"><Properties><string name="Name">SkyforgeUI</string><ProtectedString name="Source"><![CDATA[-- Light sanctuary surfaces and large standalone navigation artwork.
 local T = require(script.Parent.UITheme)
 local S = {}
 local pendingImages = {}
@@ -29826,7 +30644,7 @@ function S.Card(frame, icon)
 end
 return S
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX99"><Properties><string name="Name">Sounds</string><ProtectedString name="Source"><![CDATA[-- Restrained event audio. Built-in assets keep the game independent of uploaded audio.
+<Item class="ModuleScript" referent="RBX101"><Properties><string name="Name">Sounds</string><ProtectedString name="Source"><![CDATA[-- Restrained event audio. Built-in assets keep the game independent of uploaded audio.
 local SoundService = game:GetService("SoundService")
 local TweenService = game:GetService("TweenService")
 local Sounds = {}
@@ -29945,7 +30763,7 @@ function Sounds.Get(name)
 end
 return Sounds
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX100"><Properties><string name="Name">ThrowCinematic</string><ProtectedString name="Source"><![CDATA[-- ThrowCinematic: the throw cutscene (owner only). Full screen, no letterbox.
+<Item class="ModuleScript" referent="RBX102"><Properties><string name="Name">ThrowCinematic</string><ProtectedString name="Source"><![CDATA[-- ThrowCinematic: the throw cutscene (owner only). Full screen, no letterbox.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ThrowCinematic (ModuleScript)
 --
 -- A short film in up to four camera shots, with HARD CUTS between them (w = wind-up seconds sent
@@ -30827,7 +31645,7 @@ end
 
 return Cine
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX101"><Properties><string name="Name">ThrowController</string><ProtectedString name="Source"><![CDATA[-- ThrowController: charge meter input, held-portal + arm wind-up, the portal flight arc,
+<Item class="ModuleScript" referent="RBX103"><Properties><string name="Name">ThrowController</string><ProtectedString name="Source"><![CDATA[-- ThrowController: charge meter input, held-portal + arm wind-up, the portal flight arc,
 -- landing bounce, portal gate opening and creature reveal choreography (for ALL players' throws).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ThrowController (ModuleScript)
 
@@ -31829,7 +32647,7 @@ end)
 
 return TC
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX102"><Properties><string name="Name">UIIcons</string><ProtectedString name="Source"><![CDATA[-- Original cutout art with immediately visible native geometry while images load.
+<Item class="ModuleScript" referent="RBX104"><Properties><string name="Name">UIIcons</string><ProtectedString name="Source"><![CDATA[-- Original cutout art with immediately visible native geometry while images load.
 local T = require(script.Parent.UITheme)
 local Sky = require(script.Parent.SkyforgeUI)
 local Icons = {}
@@ -31985,7 +32803,7 @@ function Icons.Draw(name, parent, size, color, position)
 end
 return Icons
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX103"><Properties><string name="Name">UIKit</string><ProtectedString name="Source"><![CDATA[-- Native sanctuary components. No uploaded icon/font dependency.
+<Item class="ModuleScript" referent="RBX105"><Properties><string name="Name">UIKit</string><ProtectedString name="Source"><![CDATA[-- Native sanctuary components. No uploaded icon/font dependency.
 local TweenService = game:GetService("TweenService")
 local Sounds = require(script.Parent.Sounds)
 local Settings = require(script.Parent.ClientSettings)
@@ -32379,7 +33197,7 @@ end
 
 return K
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX104"><Properties><string name="Name">UITheme</string><ProtectedString name="Source"><![CDATA[-- Sanctuary UI tokens, shared by the HUD, icons and every shop.
+<Item class="ModuleScript" referent="RBX106"><Properties><string name="Name">UITheme</string><ProtectedString name="Source"><![CDATA[-- Sanctuary UI tokens, shared by the HUD, icons and every shop.
 -- Fonts: Builder Sans for controls and data, Merriweather for sanctuary headings;
 -- resolved with a fallback so an older client without these enums still renders.
 local function font(name, fallback)
@@ -32446,7 +33264,7 @@ function T.Rarity(name, config)
 end
 return T
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX105"><Properties><string name="Name">WorldFx</string><ProtectedString name="Source"><![CDATA[-- WorldFx: ONE shared, staggered scheduler for environment motion on tagged map parts
+<Item class="ModuleScript" referent="RBX107"><Properties><string name="Name">WorldFx</string><ProtectedString name="Source"><![CDATA[-- WorldFx: ONE shared, staggered scheduler for environment motion on tagged map parts
 -- (no per-prop RenderStepped connections, no camera-following particles).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > WorldFx (ModuleScript)
 --
