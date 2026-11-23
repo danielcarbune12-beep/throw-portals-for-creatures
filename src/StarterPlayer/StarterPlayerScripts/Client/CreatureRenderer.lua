@@ -21,6 +21,7 @@ local Format = require(Shared.Format)
 local Variants = require(Shared.Variants)
 local Farm = require(Shared.FarmConfig) -- pet levels from feeding (PetMult) for the name tags
 local Effects = require(script.Parent.Effects)
+local Entrances = require(script.Parent.Entrances) -- themed portal entrances (motion style + element FX)
 local Sounds = require(script.Parent.Sounds)
 local Settings = require(script.Parent.ClientSettings)
 local Plaque = require(script.Parent.Plaque)
@@ -562,6 +563,7 @@ local function finishEntrance(e)
 			p.LocalTransparencyModifier = 0
 		end
 	end
+	pcall(Entrances.Finish, e, en)
 	rarityFinish(e, en)
 end
 
@@ -575,7 +577,9 @@ local function stepEntrance(e, dt)
 		or math.max(0.02, easeOut(math.min(1, k / 0.18)))
 	local kind = en.kind
 	local from, to = en.from, en.to
-	if kind == "hops" then
+	if Entrances.Move(e, en, a, k, dt) then
+		-- themed motion style (pounce / swoop / soar / swim / flutter / phase / bounce / scuttle / stride)
+	elseif kind == "hops" then
 		local n = en.hops
 		local q = k * n
 		local hop = math.min(math.floor(q), n - 1)
@@ -678,6 +682,7 @@ local function stepEntrance(e, dt)
 		if stepIdx ~= en.lastStep then
 			en.lastStep = stepIdx
 			a.landSquash = 1
+			pcall(Entrances.Step, e, en, a)
 			if e.owner == player.UserId and Config.Rarities[CreatureData.ById[e.id].rarity].order >= 5 then
 				Effects.Shake(0.4, 0.12)
 			end
@@ -686,6 +691,7 @@ local function stepEntrance(e, dt)
 	if kind ~= "emerge" then
 		a:SetScale(pop)
 	end
+	pcall(Entrances.Fx, e, en, a, k, dt)
 	if kind ~= "spiral" and kind ~= "peek" then
 		a.yaw = en.yaw0
 	end
@@ -708,11 +714,15 @@ function Renderer.SpawnWild(throwId, creatureId, pos, ownerId, chanceText, vsize
 	local e = spawnEntry(creatureId, cf, "wild", 0, vsize, vmat)
 	local prof = e.rig.profile
 	local enter = prof.enter or {}
-	local kind = enter.kind or MOVE_ENTRANCE[def.move] or "walk"
+	-- themed entrance: motion style from the kind of animal, element FX from its world
+	local okStyle, style = pcall(Entrances.Style, def, prof, e.rig, enter.kind)
+	if not okStyle then style = enter.kind or MOVE_ENTRANCE[def.move] or "walk" end
+	local kind = style
 	local _, yaw0 = cf:ToEulerAnglesYXZ()
 	local dur = Timeline.EntranceFor(def.rarity)
 	e.entrance = {
 		kind = kind,
+		style = style,
 		t = 0,
 		dur = dur,
 		from = pos + Vector3.new(0, 0, 1.5),
@@ -724,6 +734,8 @@ function Renderer.SpawnWild(throwId, creatureId, pos, ownerId, chanceText, vsize
 		peeks = enter.peeks or 1,
 		side = (throwId % 2 == 0) and 1 or -1,
 	}
+	pcall(Entrances.Prepare, e, e.entrance, def, ownerId)
+	pcall(Entrances.Start, e, e.entrance)
 	e.anim:SetScale(kind == "emerge" and 0.35 or 0.02)
 	e.anim:PlayAccent("enter", dur)
 	e.throwId = throwId

@@ -26,6 +26,10 @@ function M.Emberpup(H, rig, vd, s)
 	k.tri(body, "BibTip", 0.1, 0.55, 0.9, CR, c(0, -0.5, -1.5) * DOWN * FACE)
 	k.b(body, "Belly", 1.1, 0.2, 1.7, CR, c(0, -0.62, 0.1))
 	k.b(body, "BackRidge", 1.1, 0.16, 1.6, OD, c(0, 0.68, 0.3))
+	for _, sd in ipairs(SIDES) do
+		k.b(body, "Shoulder", 0.3, 0.95, 0.95, OD, c(sd * 0.82, 0.05, -0.85))
+		k.b(body, "Haunch", 0.3, 0.9, 0.95, OD, c(sd * 0.82, 0.05, 0.8))
+	end
 
 	local legF = { up = { 0.75, 0.6, 0.85 }, w2 = 0.6, d2 = 0.7, paw = { 0.85, 0.32, 1.0 }, col = O, pawCol = CR, toes = 3, toeCol = CRD }
 	local legH = { up = { 0.82, 0.7, 1.0 }, w2 = 0.62, d2 = 0.72, paw = { 0.85, 0.32, 1.0 }, col = O, pawCol = CR, toes = 3, toeCol = CRD, hind = true }
@@ -40,6 +44,7 @@ function M.Emberpup(H, rig, vd, s)
 	k.b(head, "Crown", 1.2, 0.22, 0.8, OD, c(0, 0.62, 0.15))
 	k.b(head, "Muzzle", 0.8, 0.5, 0.6, CR, c(0, -0.3, fz - 0.25))
 	k.b(head, "Jowl", 1.25, 0.32, 0.5, CR, c(0, -0.45, fz + 0.1))
+	for _, sd in ipairs(SIDES) do k.w(head, "CheekTuft", 0.35, 0.45, 0.5, O, c(sd * 0.82, -0.2, -0.05) * ANG(0, -sd * PI / 2, 0)) end
 	k.w(head, "Bridge", 0.7, 0.25, 0.45, O, c(0, 0.07, fz - 0.22))
 	k.b(head, "Nose", 0.34, 0.2, 0.16, N, c(0, -0.12, fz - 0.58))
 	k.b(head, "Mouth", 0.5, 0.05, 0.05, N, c(0, -0.47, fz - 0.56))
@@ -88,13 +93,13 @@ function M.Magmite(H, rig, vd, s)
 
 	local head = k.head(body, 1.2, 0.7, 0.8, BR, c(0, -0.05, -1.35), V3(0, -0.2, 0.35))
 	k.b(head, "Helmet", 1.45, 0.3, 1.0, O, c(0, 0.45, -0.05))
-	k.w(head, "Visor", 1.45, 0.3, 0.45, O, c(0, 0.45, -0.77))
+	k.w(head, "Visor", 1.4, 0.24, 0.3, O, c(0, 0.42, -0.68))
 	for _, sd in ipairs(SIDES) do
 		k.b(head, "Guard", 0.22, 0.85, 0.85, O, c(sd * 0.72, 0.05, -0.1) * ANG(0, 0, sd * 0.12))
 		k.eye(head, sd * 0.28, -0.02, -0.42, 0.3, 0.16, EY, 0)
 	end
 
-	local lg = { up = { 0.6, 0.35, 0.65 }, w2 = 0.55, d2 = 0.6, paw = { 0.85, 0.3, 0.85 }, col = BR, col2 = BRD, pawCol = O, splay = 0.35 }
+	local lg = { up = { 0.8, 0.45, 0.85 }, w2 = 0.72, d2 = 0.78, paw = { 1.0, 0.32, 1.0 }, col = BR, col2 = BRD, pawCol = O, splay = 0.45 }
 	k.leg(body, "LegFL", BY, -0.85, -0.25, -0.75, lg)
 	k.leg(body, "LegFR", BY, 0.85, -0.25, -0.75, lg)
 	lg.hind = true
@@ -135,12 +140,13 @@ function M.Cinderchick(H, rig, vd, s)
 	end
 
 	for _, sd in ipairs(SIDES) do
-		local w = k.wing(body, sd, c(sd * 0.68, 0.35, 0.0))
-		k.b(w, "WingCovert", 0.22, 0.75, 1.1, A, c(sd * 0.12, -0.25, 0.1))
-		k.b(w, "WingBar", 0.24, 0.16, 1.0, R, c(sd * 0.13, 0.05, 0.05))
-		for i = 1, 3 do
-			k.b(w, "Primary", 0.12, 0.26, 1.0 + i * 0.15, CR, c(sd * (0.15 + 0.03 * i), -0.55 - i * 0.16, 0.25 + i * 0.12) * ANG(-0.35, 0, 0))
-		end
+		-- folded wing held slightly out: amber covert with a red bar, a fan of long cream flight feathers below
+		local w = k.wing(body, sd, c(sd * 0.68, 0.4, 0.0) * ANG(0, -sd * 0.5, 0))
+		local _, wp = k.pv(w, "WingPlate", ANG(0, 0, -sd * 0.45))
+		k.b(wp, "WingCovert", 1.1, 0.7, 0.28, A, c(sd * 0.5, -0.1, 0))
+		k.b(wp, "WingBar", 1.0, 0.18, 0.3, R, c(sd * 0.55, 0.15, -0.02))
+		k.featherWing(wp, sd, { root = 0.35, z = 0.05, thick = 0.12, feathers = {
+			{ -0.5, 1.2, 0.34, CR }, { -0.8, 1.3, 0.34, CR }, { -1.1, 1.25, 0.32, CR }, { -1.4, 1.05, 0.3, CR } } })
 	end
 
 	local te, tp = k.pv(body, "TailFan", c(0, 0.15, 0.72) * ANG(0.75, 0, 0))
@@ -295,10 +301,10 @@ function M.MagmaKraken(H, rig, vd, s)
 		local pos = V3(0, 0.45, 0) + d * 0.85
 		local front = i == 0
 		local pet = k.opener(body, "Petal", CFrame.lookAt(pos * s, (pos + d) * s), V3(1, 0, 0), -0.35)
-		local h = front and 1.6 or 1.35
-		local _, plate = k.b(pet, "PetalPlate", front and 0.95 or 0.9, h, 0.24, (i % 2 == 0) and O or R, ANG(-0.5, 0, 0) * c(0, h * 0.45, 0))
+		local h = front and 2.1 or 1.85
+		local _, plate = k.b(pet, "PetalPlate", front and 1.25 or 1.15, h, 0.26, (i % 2 == 0) and O or R, ANG(-0.75, 0, 0) * c(0, h * 0.45, 0))
 		k.b(plate, "PetalStripe", 0.18, h * 0.75, 0.26, Y, c(-0.25, 0, 0))
-		if front then k.diamond(plate, "PetalGem", 0.7, 0.42, 0.1, Y, c(0, -0.05, -0.14)) end
+		if front then k.diamond(plate, "PetalGem", 1.0, 0.55, 0.1, Y, c(0, -0.05, -0.14)) end
 	end
 
 	for i = 0, 7 do
@@ -455,11 +461,12 @@ function M.SolarSerpent(H, rig, vd, s)
 			{ 1.1, 2.4, 0.42, W, W }, { 0.8, 2.7, 0.44, Y, Y }, { 0.5, 2.6, 0.44, W, O }, { 0.2, 2.2, 0.42, O, O }, { -0.1, 1.7, 0.4, W, W } } })
 	end
 
-	local yaws = { 0.35, 0.3, -0.25, -0.45, -0.3, 0.3, 0.45, 0.3 }
+	-- compact S on the ground: swings out to one side, back across, and curls again
+	local yaws = { 0.9, 0.55, -0.6, -0.9, -0.7, 0.5, 0.9, 0.6 }
 	local tsegs = {}
 	for j = 1, 8 do
 		local w = 1.0 - j * 0.055
-		table.insert(tsegs, { w, w * 0.92, 0.75, W, 0, yaws[j] })
+		table.insert(tsegs, { w, w * 0.92, 0.62, W, 0, yaws[j] })
 	end
 	local tail = k.chain(body, c(0, -0.04, 0.4), tsegs, { name = "Coil", kind = "spine", i = 2, amp = 0.08, freq = 1.0, lag = 0.6 })
 	for j, p in ipairs(tail.parts) do

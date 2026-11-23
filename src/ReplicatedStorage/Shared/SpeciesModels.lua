@@ -157,7 +157,7 @@ end
 -- (a pack that fails to load only costs its species their hand-built look, never the whole roster)
 for _, pack in ipairs({ "SpeciesModelsVolcano", "SpeciesModelsCandy", "SpeciesModelsCrystal",
 	"SpeciesModelsForest", "SpeciesModelsFrozen", "SpeciesModelsDivine",
-	"SpeciesModelsHeaven", "SpeciesModelsSecret", "SpeciesModelsShadow" }) do
+	"SpeciesModelsHeaven", "SpeciesModelsSecret", "SpeciesModelsShadow", "SpeciesModelsSpace" }) do
 	local ok, models = pcall(require, script.Parent[pack])
 	if ok and type(models) == "table" then
 		for id, fn in pairs(models) do
