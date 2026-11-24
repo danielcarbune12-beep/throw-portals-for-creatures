@@ -200,25 +200,46 @@ local function portrait(parent, pet, size, reveal)
 		TextSize = 12,
 		Parent = parent,
 	})
+	local alive, shown = true, false
+	local readyConnection
+	local function show()
+		if not alive or shown or not vp.Parent then
+			return
+		end
+		shown = true
+		if readyConnection then
+			readyConnection:Disconnect()
+			readyConnection = nil
+		end
+		vp.ImageTransparency = 0
+		if reveal and page.frame.Visible then
+			K.Motion.Enter(vp, UDim2.new(), UDim2.fromOffset(0, 4))
+		end
+		if loading.Parent then
+			loading:Destroy()
+		end
+	end
 	vp.Destroying:Connect(function()
+		alive = false
+		if readyConnection then
+			readyConnection:Disconnect()
+			readyConnection = nil
+		end
 		if loading.Parent then
 			loading:Destroy()
 		end
 	end)
-	task.spawn(function()
-		pcall(function()
-			game:GetService("ContentProvider"):PreloadAsync({ m })
-		end)
-		if vp.Parent then
-			vp.ImageTransparency = 0
-			if reveal and page.frame.Visible then
-				K.Motion.Enter(vp, UDim2.new(), UDim2.fromOffset(0, 4))
-			end
-			if loading.Parent then
-				loading:Destroy()
-			end
+	readyConnection = vp:GetAttributeChangedSignal("PreviewReady"):Connect(function()
+		if vp:GetAttribute("PreviewReady") then
+			show()
 		end
 	end)
+	if vp:GetAttribute("PreviewReady") then
+		show()
+	end
+	-- UIKit owns the one preload. Slow optional assets must not leave the native
+	-- geometry behind an invisible image or keep a loading label forever.
+	task.delay(0.8, show)
 	return vp
 end
 local function clear(parent)

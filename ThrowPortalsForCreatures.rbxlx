@@ -27248,25 +27248,46 @@ local function portrait(parent, pet, size, reveal)
 		TextSize = 12,
 		Parent = parent,
 	})
+	local alive, shown = true, false
+	local readyConnection
+	local function show()
+		if not alive or shown or not vp.Parent then
+			return
+		end
+		shown = true
+		if readyConnection then
+			readyConnection:Disconnect()
+			readyConnection = nil
+		end
+		vp.ImageTransparency = 0
+		if reveal and page.frame.Visible then
+			K.Motion.Enter(vp, UDim2.new(), UDim2.fromOffset(0, 4))
+		end
+		if loading.Parent then
+			loading:Destroy()
+		end
+	end
 	vp.Destroying:Connect(function()
+		alive = false
+		if readyConnection then
+			readyConnection:Disconnect()
+			readyConnection = nil
+		end
 		if loading.Parent then
 			loading:Destroy()
 		end
 	end)
-	task.spawn(function()
-		pcall(function()
-			game:GetService("ContentProvider"):PreloadAsync({ m })
-		end)
-		if vp.Parent then
-			vp.ImageTransparency = 0
-			if reveal and page.frame.Visible then
-				K.Motion.Enter(vp, UDim2.new(), UDim2.fromOffset(0, 4))
-			end
-			if loading.Parent then
-				loading:Destroy()
-			end
+	readyConnection = vp:GetAttributeChangedSignal("PreviewReady"):Connect(function()
+		if vp:GetAttribute("PreviewReady") then
+			show()
 		end
 	end)
+	if vp:GetAttribute("PreviewReady") then
+		show()
+	end
+	-- UIKit owns the one preload. Slow optional assets must not leave the native
+	-- geometry behind an invisible image or keep a loading label forever.
+	task.delay(0.8, show)
 	return vp
 end
 local function clear(parent)
@@ -37091,9 +37112,17 @@ function K.viewport(model, size, spin, silhouette, fitSubject)
 	end
 	-- Imported meshes can arrive after a static ViewportFrame's first draw.
 	-- Preload outside the UI thread, then invalidate the camera once to redraw them.
+	local destroyed = false
+	local gone = vp.Destroying:Connect(function()
+		destroyed = true
+	end)
 	task.spawn(function()
 		local inTree = false
 		for _ = 1, 30 do
+			if destroyed then
+				gone:Disconnect()
+				return
+			end
 			if vp:IsDescendantOf(game) then
 				inTree = true
 				break
@@ -37101,6 +37130,7 @@ function K.viewport(model, size, spin, silhouette, fitSubject)
 			task.wait(0.05)
 		end
 		if not inTree then
+			gone:Disconnect()
 			return
 		end
 		local hasMesh = false
@@ -37115,9 +37145,11 @@ function K.viewport(model, size, spin, silhouette, fitSubject)
 				game:GetService("ContentProvider"):PreloadAsync({ model })
 			end)
 		end
-		if vp.Parent and cam.Parent then
+		if not destroyed and vp.Parent and cam.Parent then
 			cam.CFrame = cam.CFrame * CFrame.new(0.001, 0, 0)
+			vp:SetAttribute("PreviewReady", true)
 		end
+		gone:Disconnect()
 	end)
 	if spin then
 		vp:SetAttribute("Spin", true)

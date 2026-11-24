@@ -211,7 +211,34 @@ H.check(
 	screen.popup.Visible and screen.popup.Text == "CRIT -5",
 	"normal motion restores contained battle damage numbers"
 )
-local loads, entrances, jobs, preloadFailure = 0, 0, {}, false
+local function signal()
+	local listeners = {}
+	return {
+		Connect = function(_, fn)
+			local connection = {}
+			listeners[connection] = fn
+			function connection:Disconnect()
+				listeners[self] = nil
+			end
+			return connection
+		end,
+		Fire = function()
+			for connection, fn in table.clone(listeners) do
+				if listeners[connection] then
+					fn()
+				end
+			end
+		end,
+		Count = function()
+			local n = 0
+			for _ in listeners do
+				n += 1
+			end
+			return n
+		end,
+	}
+end
+local entrances, timers, loadingLabels, alreadyReady = 0, {}, {}, false
 local portraitPage = { frame = { Visible = true } }
 local makePortrait = luau.load(between("local function portrait(", "\nlocal function clear(") .. "\nreturn portrait", {
 	environment = setmetatable({
@@ -225,15 +252,24 @@ local makePortrait = luau.load(between("local function portrait(", "\nlocal func
 		},
 		K = {
 			viewport = function()
-				return { Destroying = { Connect = function() end } }
+				local vp = { Destroying = signal(), readySignal = signal(), ready = alreadyReady }
+				function vp:GetAttribute()
+					return self.ready
+				end
+				function vp:GetAttributeChangedSignal()
+					return self.readySignal
+				end
+				return vp
 			end,
 			label = function()
-				return {
+				local label = {
 					Parent = true,
 					Destroy = function(self)
 						self.Parent = nil
 					end,
 				}
+				table.insert(loadingLabels, label)
+				return label
 			end,
 			Motion = {
 				Enter = function()
@@ -242,45 +278,61 @@ local makePortrait = luau.load(between("local function portrait(", "\nlocal func
 			},
 		},
 		task = {
-			spawn = function(fn)
-				table.insert(jobs, fn)
+			delay = function(seconds, fn)
+				table.insert(timers, { seconds = seconds, run = fn })
 			end,
 		},
 		game = {
 			GetService = function()
-				return {
-					PreloadAsync = function()
-						loads += 1
-						if preloadFailure then
-							error("simulated asset delay/failure")
-						end
-					end,
-				}
+				error("Portrait must not issue duplicate preloads")
 			end,
 		},
 	}, { __index = _G }),
 })()
+local function ready(vp)
+	vp.ready = true
+	vp.readySignal:Fire()
+end
 local scout = makePortrait({}, { c = "Mossbun" }, H.roblox.UDim2.fromScale(1, 1), true)
-H.check(scout.ImageTransparency == 1 and entrances == 0, "scout entrance waits for its actual portrait to load")
-jobs[1]()
-H.check(scout.ImageTransparency == 0 and entrances == 1 and loads == 1, "loaded scout reveals and animates together")
-makePortrait({}, { c = "Mossbun" }, H.roblox.UDim2.fromScale(1, 1), false)
-jobs[2]()
-H.check(entrances == 1, "scrolling catalogue portraits do not play repetitive entrance animations")
-makePortrait({}, { c = "Mossbun" }, H.roblox.UDim2.fromScale(1, 1), true)
+H.check(scout.ImageTransparency == 1 and entrances == 0, "portrait waits for shared viewport readiness")
+ready(scout)
+H.check(scout.ImageTransparency == 0 and entrances == 1, "shared readiness reveals and animates scout once")
+H.check(
+	scout.readySignal:Count() == 0 and not loadingLabels[1].Parent,
+	"revealed portrait releases readiness listener and loading label"
+)
+timers[1].run()
+H.check(entrances == 1, "fallback timer cannot replay an already revealed portrait")
+local catalogue = makePortrait({}, { c = "Mossbun" }, H.roblox.UDim2.fromScale(1, 1), false)
+ready(catalogue)
+H.check(entrances == 1 and catalogue.ImageTransparency == 0, "catalogue portraits stay static")
+local hidden = makePortrait({}, { c = "Mossbun" }, H.roblox.UDim2.fromScale(1, 1), true)
 portraitPage.frame.Visible = false
-jobs[3]()
-H.check(entrances == 1, "closing the menu during preload suppresses the hidden entrance")
+ready(hidden)
+H.check(entrances == 1, "hidden menu does not play an entrance")
 local removed = makePortrait({}, { c = "Mossbun" }, H.roblox.UDim2.fromScale(1, 1), true)
 removed.Parent = nil
+removed.Destroying:Fire()
 portraitPage.frame.Visible = true
-jobs[4]()
-H.check(entrances == 1, "replaced portraits do not animate after their preload completes")
-preloadFailure = true
-local fallback = makePortrait({}, { c = "Mossbun" }, H.roblox.UDim2.fromScale(1, 1), true)
-jobs[5]()
+ready(removed)
+timers[4].run()
 H.check(
-	fallback.ImageTransparency == 0 and entrances == 2,
-	"preload failure still reveals available native geometry without blocking the menu"
+	entrances == 1 and removed.readySignal:Count() == 0 and not loadingLabels[4].Parent,
+	"destroyed portrait releases loading UI and ignores late callbacks"
+)
+local slow = makePortrait({}, { c = "Mossbun" }, H.roblox.UDim2.fromScale(1, 1), true)
+H.check(timers[5].seconds == 0.8, "slow assets have a bounded preview fallback")
+timers[5].run()
+H.check(
+	slow.ImageTransparency == 0 and entrances == 2 and not loadingLabels[5].Parent,
+	"slow assets reveal available native geometry instead of indefinite loading"
+)
+ready(slow)
+H.check(entrances == 2 and slow.readySignal:Count() == 0, "late asset readiness does not repeat fallback entrance")
+alreadyReady = true
+local cached = makePortrait({}, { c = "Mossbun" }, H.roblox.UDim2.fromScale(1, 1), true)
+H.check(
+	cached.ImageTransparency == 0 and entrances == 3 and cached.readySignal:Count() == 0,
+	"already-ready viewport is revealed immediately without missing its signal"
 )
 assert(H.summary() == 0, "Expedition presentation budget regressions")

@@ -306,9 +306,17 @@ function K.viewport(model, size, spin, silhouette, fitSubject)
 	end
 	-- Imported meshes can arrive after a static ViewportFrame's first draw.
 	-- Preload outside the UI thread, then invalidate the camera once to redraw them.
+	local destroyed = false
+	local gone = vp.Destroying:Connect(function()
+		destroyed = true
+	end)
 	task.spawn(function()
 		local inTree = false
 		for _ = 1, 30 do
+			if destroyed then
+				gone:Disconnect()
+				return
+			end
 			if vp:IsDescendantOf(game) then
 				inTree = true
 				break
@@ -316,6 +324,7 @@ function K.viewport(model, size, spin, silhouette, fitSubject)
 			task.wait(0.05)
 		end
 		if not inTree then
+			gone:Disconnect()
 			return
 		end
 		local hasMesh = false
@@ -330,9 +339,11 @@ function K.viewport(model, size, spin, silhouette, fitSubject)
 				game:GetService("ContentProvider"):PreloadAsync({ model })
 			end)
 		end
-		if vp.Parent and cam.Parent then
+		if not destroyed and vp.Parent and cam.Parent then
 			cam.CFrame = cam.CFrame * CFrame.new(0.001, 0, 0)
+			vp:SetAttribute("PreviewReady", true)
 		end
+		gone:Disconnect()
 	end)
 	if spin then
 		vp:SetAttribute("Spin", true)
