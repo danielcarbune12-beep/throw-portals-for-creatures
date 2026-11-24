@@ -99,7 +99,9 @@ function Kinds.flyer(m, t)
 	return 2.4
 end
 
-local function buildMonster(parent, enc, theme, index)
+local PetCombat = require(RS.Shared.PetCombat)
+
+local function buildMonster(parent, enc, theme, index, origin)
 	local m = Instance.new("Model")
 	m.Name = "Monster" .. index
 	local top = (Kinds[enc.kind] or Kinds.imp)(m, theme)
@@ -115,8 +117,8 @@ local function buildMonster(parent, enc, theme, index)
 		m:ScaleTo(scale)
 	end
 	local x, z, dx, dz = Battle.PathPoint(enc.p)
-	local face = -V(dx, 0, dz).Unit -- monsters look back down the route at the incoming pet
-	local pos = V(x, GROUND_Y, z)
+	local face = -V(dx, 0, dz).Unit -- monsters look back down the route at the incoming team
+	local pos = V(x, GROUND_Y, z) + origin
 	local rec = { model = m, base = CFrame.lookAt(pos, pos + face), top = top * scale, scale = scale, parts = {}, wings = {} }
 	for _, d in m:GetDescendants() do
 		if d:IsA("BasePart") then
@@ -144,19 +146,34 @@ local function fade(rec, tr)
 	end
 end
 
-function Fight.Attach(scene, plan, petModel, camera)
+-- petModels: one model or a list (the team, in plan.team order). ctx.origin offsets the whole
+-- battle when the scene is built somewhere other than the scene's own coordinates.
+function Fight.Attach(scene, plan, petModels, camera, origin)
+	origin = origin or Vector3.zero
 	local marker = scene:FindFirstChild("ScoutMarker")
 	if marker then
 		marker.Transparency = 1
 	end
-	local ctx = { scene = scene, plan = plan, cam = camera, monsters = {}, camPos = nil, camFocus = nil }
+	local ctx = { scene = scene, plan = plan, cam = camera, monsters = {}, camPos = nil, camFocus = nil, origin = origin, pets = {} }
 	local holder = Instance.new("Model")
 	holder.Name = "BattleMonsters"
 	holder.Parent = scene
 	for i, enc in plan.encounters do
-		ctx.monsters[i] = buildMonster(holder, enc, plan.theme, i)
+		ctx.monsters[i] = buildMonster(holder, enc, plan.theme, i, origin)
 	end
-	if petModel then
+	local list = typeof(petModels) == "Instance" and { petModels } or (petModels or {})
+	for i, petModel in ipairs(list) do
+		if type(petModel) == "table" then
+			-- an animated pet driven by the caller ({ model, drive(info), height }): the caller's
+			-- CreatureAnimator places it, so legs, wings and tails move while it walks and fights
+			local member = plan.team and plan.team[i]
+			local sword = member and PetCombat.WeaponById[member.wp]
+			ctx.pets[i] = {
+				model = petModel.model, drive = petModel.drive, lift = 0, height = petModel.height or 2.2,
+				swordColor = sword and sword.color or Color3.fromRGB(255, 255, 255),
+			}
+			continue
+		end
 		local _, ext = Builder.VisualBounds(petModel)
 		-- about as tall as a minion, but long-tailed/winged pets never sprawl across the route
 		local k = math.min(2.1 / math.max(ext.Y, 0.1), 3.0 / math.max(ext.X, ext.Z, 0.1))
@@ -164,14 +181,22 @@ function Fight.Attach(scene, plan, petModel, camera)
 			petModel:ScaleTo(petModel:GetScale() * k)
 		end)
 		local cf, ext2 = Builder.VisualBounds(petModel)
-		ctx.pet = petModel
-		ctx.petLift = petModel:GetPivot().Position.Y - (cf.Position.Y - ext2.Y / 2)
-		ctx.petHeight = ext2.Y
+		local member = plan.team and plan.team[i]
+		local sword = member and PetCombat.WeaponById[member.wp]
+		ctx.pets[i] = {
+			model = petModel,
+			lift = petModel:GetPivot().Position.Y - (cf.Position.Y - ext2.Y / 2),
+			height = ext2.Y,
+			swordColor = sword and sword.color or Color3.fromRGB(255, 255, 255),
+		}
 	end
+	ctx.pet = ctx.pets[1] and ctx.pets[1].model
 	ctx.spark = part(scene, V(1, 1, 1), CFrame.new(0, -50, 0), WHITE, Enum.PartType.Ball, Enum.Material.Neon)
 	ctx.spark.Name = "HitSpark"
 	ctx.ring = part(scene, V(0.2, 3, 3), CFrame.new(0, -50, 0), WHITE, Enum.PartType.Cylinder, Enum.Material.Neon)
 	ctx.ring.Name = "SlamRing"
+	ctx.slash = part(scene, V(0.12, 0.35, 2.6), CFrame.new(0, -50, 0), WHITE, nil, Enum.Material.Neon)
+	ctx.slash.Name = "SwordSlash"
 	return ctx
 end
 
@@ -180,69 +205,143 @@ local function knockedDown(rec, f)
 	return CFrame.new(0, 0.45 * rec.scale * f, 0.35 * rec.scale * f) * ANG(1.45 * f, 0, 0)
 end
 
-local function routeAt(p)
+local function routeAt(ctx, p)
 	local x, z, dx, dz = Battle.PathPoint(p)
-	return V(x, GROUND_Y, z), V(dx, 0, dz).Unit
+	return V(x, GROUND_Y, z) + (ctx.origin or Vector3.zero), V(dx, 0, dz).Unit
 end
 
--- World positions the panel uses to pin HP bars over the 3D view.
+-- formation: the lead in front, the other two a step behind on either side
+local SLOTS = { { 0, 0 }, { 1.1, 1.6 }, { 1.1, -1.6 } }
+
+-- World positions used to pin HP bars and damage numbers over the view.
 function Fight.Anchors(ctx)
 	return ctx.petHead, ctx.monHead
 end
+
+local HIDDEN = CFrame.new(0, -50, 0)
 
 function Fight.Update(ctx, state, now, dt, settings)
 	local plan = ctx.plan
 	local calm = settings and settings.ReducedMotion
 	local impactFx = not (calm or (settings and (settings.ReducedFlashes or settings.VFXQuality == "Low")))
 	local beat, phase = state.beat, state.phase or 0
-	local pos, fwd = routeAt(state.p)
+	local pos, fwd = routeAt(ctx, state.p)
 	fwd *= state.dir
 	local enc = state.enc and plan.encounters[state.enc]
 	local monRec = state.enc and ctx.monsters[state.enc]
-	local reach = 1.1
 	if monRec then
 		local mp = monRec.base.Position
-		local gap = V(mp.X - pos.X, 0, mp.Z - pos.Z)
-		fwd = gap.Unit
-		-- lunge stops at the monster's front instead of passing through it
-		reach = math.max(0.3, gap.Magnitude - (enc and enc.boss and 1.9 or 1.2))
+		fwd = V(mp.X - pos.X, 0, mp.Z - pos.Z).Unit
 	end
+	local side = V(-fwd.Z, 0, fwd.X)
 	local swing = math.sin(math.pi * math.clamp(phase, 0, 1))
 	local landed = phase >= 0.45 and phase < 0.8
+	local up = V(0, 1, 0)
 
-	-- Pet motion
-	local offset, lift, yaw = V(), 0, 0
-	if state.kind == "walk" or state.kind == "return" then
-		lift = math.abs(math.sin(now * 9)) * 0.28
-	elseif state.kind == "depart" then
-		lift = (1 - state.f) * 1.5
-	elseif state.kind == "loot" or state.kind == "done" then
-		lift = math.abs(math.sin(now * 6)) * 0.7
-		yaw = state.kind == "loot" and now * 5 or 0
-	elseif beat then
-		if beat.who == "pet" then
-			offset = fwd * swing * reach
-			lift = swing * 0.5
-		elseif beat.who == "mon" then
-			if beat.dodged then
-				offset = fwd:Cross(V(0, 1, 0)) * swing * 1.0
-				lift = swing * 0.6
-			elseif landed then
-				offset = -fwd * swing * 0.45
-				yaw = math.sin(now * 40) * 0.15
+	-- Team motion: formation, per-move attack animations, hits, knock-outs and the victory dance.
+	ctx.petHead = nil
+	local slashOn = false
+	local petPositions = {}
+	for i, pr in ipairs(ctx.pets) do
+		local slot = SLOTS[i] or SLOTS[1]
+		local spread = monRec and 0.7 or 1 -- tighter arc in front of a monster
+		local base = pos - fwd * slot[1] * spread + side * slot[2] * spread
+		local member = state.team and state.team[i]
+		local ko = member and member.ko
+		local offset, lift, yaw, roll, pitch = V(), 0, 0, 0, 0
+		local wob = now * 9 + i * 1.7
+		if ko and state.kind ~= "done" then
+			roll = math.pi / 2 -- knocked out: lying on its side
+			lift = -0.2
+			if state.kind == "retreat" then
+				offset = side * 0.3
 			end
-		elseif beat.who == "rest" then
-			offset = -fwd * 1.4 * math.min(1, phase * 3)
-			lift = math.abs(math.sin(now * 3)) * 0.15
+		elseif state.kind == "walk" or state.kind == "return" or state.kind == "retreat" then
+			lift = math.abs(math.sin(wob)) * 0.28
+		elseif state.kind == "depart" then
+			lift = (1 - state.f) * 1.5
+		elseif state.kind == "loot" or state.kind == "done" then
+			-- victory: everyone hops and spins
+			lift = math.abs(math.sin(now * 6 + i)) * 0.9
+			yaw = state.kind == "loot" and (now * 5 + i) or 0
+		elseif beat then
+			local gapV = monRec and (monRec.base.Position - base) * V(1, 0, 1) or fwd * 2
+			local reach = math.max(0.3, gapV.Magnitude - (enc and enc.boss and 1.9 or 1.2))
+			if beat.who == "pet" and beat.i == i then
+				local move = beat.move or "dash"
+				if move == "slam" then
+					-- leap high and crash down on the monster as the hit lands
+					local q = math.clamp(phase / 0.45, 0, 1)
+					offset = fwd * reach * (phase < 0.45 and q or (1 - (phase - 0.45) / 0.55))
+					lift = phase < 0.45 and math.sin(q * math.pi * 0.5) * 3.2 * (1 - q * 0.6) or swing * 0.4
+					pitch = phase < 0.45 and -0.5 * q or 0
+				elseif move == "spin" then
+					offset = fwd * swing * reach
+					yaw = phase * math.pi * 2
+					lift = swing * 0.6
+				elseif move == "slash" then
+					offset = fwd * swing * reach * 0.85
+					yaw = (phase - 0.5) * 1.4
+					lift = swing * 0.35
+					if phase > 0.25 and phase < 0.7 then
+						slashOn = true
+						local a = (phase - 0.25) / 0.45 * 2.6 - 1.3
+						local at = base + offset + up * (pr.height * 0.6)
+						ctx.slash.Color = pr.swordColor
+						ctx.slash.Transparency = 0.1 + 0.8 * math.abs(a) / 1.3
+						ctx.slash.CFrame = CFrame.lookAt(at, at + fwd) * ANG(0, a, 0.35) * CFrame.new(0, 0, -1.3)
+					end
+				elseif move == "bite" then
+					offset = fwd * swing * reach
+					pitch = swing * 0.35
+					lift = swing * 0.25
+				else -- dash: a fast low charge
+					offset = fwd * math.min(1, swing * 1.4) * reach
+					lift = swing * 0.15
+					pitch = -swing * 0.2
+				end
+				ctx.petHead = base + offset + V(0, pr.height + lift + 0.5, 0)
+			elseif beat.who == "mon" and (beat.special or beat.target == i) then
+				if beat.dodged then
+					offset = side * swing * 1.1
+					lift = swing * 0.7
+				elseif landed then
+					offset = -fwd * swing * (beat.special and 0.9 or 0.5)
+					yaw = math.sin(now * 40) * 0.15
+					lift = beat.special and swing * 0.5 or 0
+				end
+				if beat.ko and phase > 0.6 then
+					roll = math.pi / 2 * math.clamp((phase - 0.6) / 0.3, 0, 1)
+				end
+				ctx.petHead = ctx.petHead or (base + offset + V(0, pr.height + lift + 0.5, 0))
+			else
+				-- ready stance: bouncing on its toes, waiting for its turn
+				lift = math.abs(math.sin(now * 5 + i * 2)) * 0.15
+			end
+		end
+		if calm then
+			offset, lift, yaw, pitch = V(), 0, 0, 0
+		end
+		local at = base + offset + V(0, (pr.lift or 0) + lift, 0)
+		if pr.drive then
+			pr.drive({
+				ground = base + offset, lift = lift, fwd = fwd, yaw = yaw, roll = roll, pitch = pitch,
+				walking = not ko and (state.kind == "walk" or state.kind == "return" or state.kind == "retreat"),
+				dt = dt or 1 / 60,
+			})
+		else
+			pr.model:PivotTo(CFrame.lookAt(at, at + fwd) * ANG(pitch, yaw, roll))
+		end
+		petPositions[i] = base + offset
+		if i == 1 and not ctx.petHead then
+			ctx.petHead = base + offset + V(0, pr.height + lift + 0.5, 0)
 		end
 	end
-	if calm then
-		offset, lift, yaw = V(), 0, 0
+	if not slashOn then
+		ctx.slash.CFrame = HIDDEN
 	end
-	if ctx.pet then
-		local at = pos + offset + V(0, (ctx.petLift or 0) + lift, 0)
-		ctx.pet:PivotTo(CFrame.lookAt(at, at + fwd) * ANG(0, yaw, 0))
-		ctx.petHead = pos + offset + V(0, (ctx.petHeight or 2) + lift + 0.5, 0)
+	if not ctx.petHead then
+		ctx.petHead = pos + V(0, 2.5, 0)
 	end
 
 	-- Monsters
@@ -269,14 +368,18 @@ function Fight.Update(ctx, state, now, dt, settings)
 			if state.enc == i and beat then
 				if beat.who == "mon" then
 					local lunge = beat.special and 0 or swing * 0.9
-					o = CFrame.new(0, hover + (beat.special and swing * 1.6 or swing * 0.3), -lunge)
+					o = CFrame.new(0, hover + (beat.special and swing * 1.8 or swing * 0.3), -lunge)
 				elseif beat.who == "pet" and landed then
 					flash = 1 - (phase - 0.45) / 0.35
-					o = CFrame.new(0, hover, 0.35 * swing) * ANG(0, math.sin(now * 45) * 0.12, 0)
+					local knock = beat.move == "slam" and 0.7 or 0.35
+					o = CFrame.new(0, hover - (beat.move == "slam" and 0.15 * swing or 0), knock * swing) * ANG(0, math.sin(now * 45) * 0.12, 0)
 					if beat.monHp <= 0 then
 						local fall = math.clamp((phase - 0.45) / 0.5, 0, 1)
 						o = CFrame.new(0, hover * (1 - fall), 0) * knockedDown(rec, fall)
 					end
+				else
+					-- idle menace between blows
+					o = CFrame.new(0, hover + math.abs(math.sin(now * 3)) * 0.06, 0)
 				end
 				if calm then
 					o = CFrame.new(0, hover, 0)
@@ -298,15 +401,16 @@ function Fight.Update(ctx, state, now, dt, settings)
 		end
 	end
 
-	-- Hit spark and boss slam ring
+	-- Hit spark and slam rings (pet slams crack the ground too)
 	local sparkAt
-	if impactFx and beat and landed and beat.who ~= "rest" and not beat.dodged then
+	if impactFx and beat and landed and not beat.dodged then
 		local k = (phase - 0.45) / 0.35
+		local hitPet = beat.target and petPositions[beat.target] or petPositions[1]
 		if beat.who == "pet" and monRec then
 			sparkAt = monRec.base.Position + V(0, monRec.top * 0.55, 0) - fwd * 0.4
 			ctx.spark.Color = beat.crit and Color3.fromRGB(255, 196, 60) or WHITE
-		elseif ctx.pet then
-			sparkAt = pos + V(0, (ctx.petHeight or 2) * 0.55, 0)
+		elseif hitPet then
+			sparkAt = hitPet + V(0, 1.2, 0)
 			ctx.spark.Color = beat.special and Color3.fromRGB(255, 70, 60) or Color3.fromRGB(255, 140, 120)
 		end
 		if sparkAt then
@@ -315,24 +419,26 @@ function Fight.Update(ctx, state, now, dt, settings)
 			ctx.spark.Transparency = 0.15 + 0.85 * k
 			ctx.spark.CFrame = CFrame.new(sparkAt)
 		end
-		if beat.special and monRec then
-			ctx.ring.Size = V(0.15, 2 + 7 * k, 2 + 7 * k)
+		local ringAt = (beat.special and monRec and monRec.base.Position)
+			or (beat.who == "pet" and beat.move == "slam" and monRec and monRec.base.Position)
+		if ringAt then
+			ctx.ring.Size = V(0.15, 2 + (beat.special and 9 or 6) * k, 2 + (beat.special and 9 or 6) * k)
 			ctx.ring.Transparency = 0.3 + 0.7 * k
-			ctx.ring.Color = plan.theme.accent
-			ctx.ring.CFrame = CFrame.new(monRec.base.Position + V(0, 0.1, 0)) * ANG(0, 0, math.pi / 2)
+			ctx.ring.Color = beat.special and plan.theme.accent or Color3.fromRGB(255, 220, 120)
+			ctx.ring.CFrame = CFrame.new(ringAt + V(0, 0.1, 0)) * ANG(0, 0, math.pi / 2)
 		else
-			ctx.ring.CFrame = CFrame.new(0, -50, 0)
+			ctx.ring.CFrame = HIDDEN
 		end
 	end
 	if not sparkAt then
-		ctx.spark.CFrame = CFrame.new(0, -50, 0)
-		ctx.ring.CFrame = CFrame.new(0, -50, 0)
+		ctx.spark.CFrame = HIDDEN
+		ctx.ring.CFrame = HIDDEN
 	end
 
 	-- Action camera: wide while exploring, closes in on fights.
 	if ctx.cam then
 		if calm then
-			ctx.camPos, ctx.camFocus = V(-25, 21, -29), V(0, 1, 0)
+			ctx.camPos, ctx.camFocus = V(-25, 21, -29) + ctx.origin, V(0, 1, 0) + ctx.origin
 			ctx.cam.CFrame = CFrame.lookAt(ctx.camPos, ctx.camFocus)
 			return
 		end

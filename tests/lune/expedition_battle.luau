@@ -19,7 +19,7 @@ for wi, world in Config.WorldOrder do
 		local again = Battle.Plan(active)
 		check(#plan.segments == #again.segments and plan.summary.crits == again.summary.crits, c.id .. " deterministic")
 		check(plan.encounters[#plan.encounters].boss, world .. " ends with a boss")
-		check(plan.summary.defeated == #plan.encounters, c.id .. "@" .. world .. " defeats everything")
+		check(plan.summary.defeated == (plan.victory and #plan.encounters or plan.summary.defeated) and (plan.victory or plan.summary.defeated < #plan.encounters), c.id .. "@" .. world .. " victory means every monster beaten")
 		local last = plan.segments[#plan.segments]
 		check(math.abs(last.t1 - dur) < 1e-6, c.id .. "@" .. world .. " timeline fills duration (" .. last.t1 .. " vs " .. dur .. ")")
 		local prevT, prevEnc = -1, 0
@@ -42,7 +42,7 @@ for wi, world in Config.WorldOrder do
 			end
 		end
 		check(Battle.At(plan, dur + 5).kind == "done", c.id .. " done after the end")
-		check(cleared == #plan.encounters, c.id .. " all cleared by the end")
+		check(cleared == (plan.victory and #plan.encounters or plan.summary.defeated), c.id .. " cleared count matches the outcome")
 		if plan.summary.rests > worst.rests then
 			worst = { rests = plan.summary.rests, who = c.id .. "@" .. world }
 		end

@@ -4,6 +4,7 @@ local Http = game:GetService("HttpService")
 local Rules = require(RS.Shared.ForgeRules)
 local Data = require(RS.Shared.CreatureData)
 local Variants = require(RS.Shared.Variants)
+local Planner = require(RS.Shared.ExpeditionPlanner)
 local State = require(script.Parent.ClientState)
 local K = require(script.Parent.UIKit)
 local HUD = require(script.Parent.HUD)
@@ -36,7 +37,7 @@ end
 
 local function isAway(uid)
 	local active = State.Data.Expeditions and State.Data.Expeditions.active
-	return active and active.petUid == uid
+	return Planner.OnTeam(active, uid)
 end
 local function selection()
 	local ids = {}

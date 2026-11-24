@@ -6,6 +6,8 @@ local Config = require(RS.Shared.Config)
 local Creatures = require(RS.Shared.CreatureData)
 local Rules = require(RS.Shared.ExpeditionConfig)
 local Planner = require(RS.Shared.ExpeditionPlanner)
+local PetCombat = require(RS.Shared.PetCombat)
+local PetGear = require(RS.Shared.PetGear)
 local Format = require(RS.Shared.Format)
 local Variants = require(RS.Shared.Variants)
 local K = require(script.Parent.UIKit)
@@ -25,6 +27,13 @@ local Panel = {}
 local player = Players.LocalPlayer
 local ready, busy = false, false
 local selectedUid, routeIndex = nil, 1
+local team, chosenLevel, levelButton = {}, {}, nil -- up to 3 pets; chosen adventure level per biome
+local TEAM_SIZE = 3
+local function levelFor(r)
+	local top = math.min(r and r.maxLevel or 5, ((r and r.cleared) or 0) + 1)
+	local want = r and chosenLevel[r.world] or nil
+	return math.clamp(want or top, 1, math.max(1, top))
+end
 local routeDirection = 1
 local manualSelection, routeInitialized = false, false
 local activeHint
@@ -347,7 +356,21 @@ renderPets = function()
 				)
 				petForButton[b] = p
 				K.bind(b, function()
-					selectedUid, manualSelection = p.u, true
+					-- tap to add a pet to the team (up to 3), tap again to take it out
+					if not manualSelection then
+						manualSelection = true
+					end
+					local at = table.find(team, p.u)
+					if at then
+						if #team > 1 then
+							table.remove(team, at)
+						end
+					elseif #team < TEAM_SIZE then
+						table.insert(team, p.u)
+					else
+						team[TEAM_SIZE] = p.u
+					end
+					selectedUid = team[1]
 					updateSelection()
 				end)
 			end
@@ -357,10 +380,29 @@ renderPets = function()
 	for _, b in portraits:GetChildren() do
 		if b:IsA("TextButton") then
 			local st = b:FindFirstChildOfClass("UIStroke")
-			local chosen = b.Name == "Pet_" .. tostring(selectedUid)
+			local slot
+			for i, uid in ipairs(team) do
+				if b.Name == "Pet_" .. tostring(uid) then
+					slot = i
+				end
+			end
+			local chosen = slot ~= nil
 			b:SetAttribute("Selected", chosen)
 			st.Color = chosen and T.Gold or T.Border
-			st.Thickness = chosen and 2 or 1
+			st.Thickness = chosen and 3 or 1
+			local badge = b:FindFirstChild("TeamSlot")
+			if chosen and not badge then
+				badge = K.new("TextLabel", {
+					Name = "TeamSlot", AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -2, 0, 2),
+					Size = UDim2.fromOffset(18, 18), BackgroundColor3 = T.Gold, TextColor3 = Color3.new(1, 1, 1),
+					Font = T.Bold, TextSize = 13, ZIndex = 5, Parent = b,
+				})
+				K.corner(9).Parent = badge
+			end
+			if badge then
+				badge.Visible = chosen
+				badge.Text = tostring(slot or "")
+			end
 		end
 	end
 end
@@ -369,21 +411,61 @@ updateSelection = function()
 		return
 	end
 	local r = route()
-	if not manualSelection or not ownedPet() then
-		selectedUid = Planner.Suggest(State.Data, r)
+	-- keep only pets that still exist and aren't away; refill with a suggested team when unchosen
+	local owned = {}
+	for _, pet in State.Data.Creatures or {} do
+		owned[pet.u] = pet
+	end
+	local away = activeTrip()
+	for i = #team, 1, -1 do
+		if not owned[team[i]] or Planner.OnTeam(away, team[i]) then
+			table.remove(team, i)
+		end
+	end
+	if not manualSelection or #team == 0 then
+		team = Planner.SuggestTeam(State.Data, r, TEAM_SIZE)
+	end
+	selectedUid = team[1]
+	local teamPets = {}
+	for _, uid in ipairs(team) do
+		table.insert(teamPets, owned[uid])
 	end
 	local p = ownedPet()
 	local d = p and Creatures.ById[p.c]
-	scoutCaption.Text = manualSelection and "Your chosen scout" or "Suggested scout"
-	petLabel.Text = d and Variants.Prefix(p.s, p.v) .. d.name or "Choose a pet"
-	bonus.Text = "Choose a scout for this route."
+	local level = levelFor(r)
+	scoutCaption.Text = (manualSelection and "Your team" or "Suggested team") .. " (" .. #team .. "/" .. TEAM_SIZE .. ")"
+	local names = {}
+	for _, pet in ipairs(teamPets) do
+		local def = Creatures.ById[pet.c]
+		table.insert(names, def and def.name or "?")
+	end
+	petLabel.Text = #names > 0 and table.concat(names, " + ") or "Choose up to 3 pets"
+	bonus.Text = "Tap pets below to build a team of up to 3."
 	reward.Text = ""
 	reward.TextSize = page.premium and 28 or 20
+	if levelButton and r then
+		local top = math.min(r.maxLevel or 5, (r.cleared or 0) + 1)
+		K.setButton(levelButton, "Level " .. level .. " / " .. (r.maxLevel or 5), T.Brass)
+		K.setEnabled(levelButton, top > 1)
+	end
 	if p and d and r then
-		local quote = Planner.Quote(p, r)
-		local _, _, commitment = Planner.Commitment(State.Data, p.u)
-		reward.Text = Format.Money(quote.coins) .. " coins"
-		bonus.Text = quote.matched and ("+" .. quote.bonusPercent .. "% biome bonus / " .. commitment) or commitment
+		local leveled = table.clone(r)
+		leveled.duration = math.floor(r.duration * (1 + 0.2 * (level - 1)) + 0.5)
+		local quote = Planner.QuoteTeam(teamPets, leveled, level)
+		local teamHp, teamAtk = 0, 0
+		for _, pet in ipairs(teamPets) do
+			local hp, atk = PetCombat.Stats(pet)
+			teamHp += hp
+			teamAtk += atk
+		end
+		local tier = Battle.LootTier(r.world, level)
+		local loot = PetCombat.Weapons[tier]
+		reward.Text = Format.Money(quote.coins) .. " coins + loot"
+		bonus.Text = string.format(
+			"Team HP %s · ATK %s · win to drop up to %s-tier gear%s",
+			PetGear.Short(teamHp), PetGear.Short(teamAtk), loot and loot.id or "?",
+			quote.matched and (" · +" .. quote.bonusPercent .. "% biome bonus") or ""
+		)
 		bonus.TextColor3 = quote.matched and T.Success or T.Muted
 		relicHint.Text = (view() and view().relics and view().relics[r.world]) and "Biome relic recovered"
 			or "First return recovers this biome's relic"
@@ -393,7 +475,8 @@ updateSelection = function()
 		routeCaption.Text = r.unlocked and (descriptions[r.world] or "Explore the biome and recover its relic.")
 			or ("Unlock " .. worldName(r.world) .. " in the biome shop to explore here.")
 
-		stats.Text = duration(r.duration) .. "  /  " .. (r.unlocked and "Unlocked" or "Locked biome")
+		local lvl = levelFor(r)
+		stats.Text = duration(r.duration * (1 + 0.2 * (lvl - 1))) .. "  /  " .. (r.unlocked and ("Level " .. lvl .. " · " .. (r.cleared or 0) .. "/" .. (r.maxLevel or 5) .. " cleared") or "Locked biome")
 		if page.frame.Size.Y.Offset < 260 then
 			local _, status = Planner.Commitment(State.Data, p and p.u)
 			stats.Text = duration(r.duration) .. " / " .. (r.unlocked and status or "Locked biome")
@@ -704,9 +787,29 @@ function Panel.Init()
 		local r = route()
 		if r and not r.unlocked then
 			HUD.Open("Worlds")
-		elseif selectedUid and r then
-			request("StartExpedition", game.HttpService:JSONEncode({ route = r.id, petUid = selectedUid }))
+		elseif #team > 0 and r then
+			request(
+				"StartExpedition",
+				game.HttpService:JSONEncode({ route = r.id, pets = team, petUid = team[1], level = levelFor(r) })
+			)
 		end
+	end)
+	-- adventure level for this biome: tap to cycle through the levels you have unlocked
+	levelButton = K.button(
+		"Level 1",
+		T.Brass,
+		nil,
+		UDim2.fromOffset(130, 44),
+		{ Name = "AdventureLevel", AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -162, 1, 0), Parent = right }
+	)
+	K.bind(levelButton, function()
+		local r = route()
+		if not r then
+			return
+		end
+		local top = math.min(r.maxLevel or 5, (r.cleared or 0) + 1)
+		chosenLevel[r.world] = (levelFor(r) % top) + 1
+		updateSelection()
 	end)
 	activeBox = K.new(
 		"Frame",
@@ -913,6 +1016,9 @@ function Panel.Init()
 		relicLink.Position = UDim2.new(0, 0, 1, -30)
 		relicLink.Size = UDim2.new(0.3, -12, 0, 30)
 		send.Size = UDim2.fromOffset(154, 44)
+		levelButton.AnchorPoint = Vector2.new(1, 1)
+		levelButton.Position = UDim2.new(1, -162, 1, 0)
+		levelButton.Size = UDim2.fromOffset(130, 44)
 		selectedHero.Visible = premium
 		petMeta.Visible = premium
 		relicHint.Visible = premium
@@ -1031,6 +1137,8 @@ function Panel.Init()
 			stats.TextSize = 15
 			relicHint.Position = UDim2.fromOffset(0, 330)
 			send.Size = UDim2.new(1, 0, 0, 48)
+			levelButton.Position = UDim2.new(1, 0, 1, -54)
+			levelButton.Size = UDim2.new(1, 0, 0, 40)
 			activeSceneFrame.Position = UDim2.fromOffset(0, 8)
 			activeSceneFrame.Size = UDim2.new(0.46, -12, 1, -54)
 			activeSceneFrame.BackgroundTransparency = 0

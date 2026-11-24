@@ -2693,9 +2693,9 @@ function Policy.Resolve(s)
 end
 return Policy
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX10"><Properties><string name="Name">ExpeditionBattle</string><ProtectedString name="Source"><![CDATA[-- Deterministic expedition battles. The same saved expedition (id, world, pet) always plays the same
--- fights, so the journey map, the HUD mini-map and the server's claim message agree without syncing
--- anything extra. Purely presentational: payouts stay in ExpeditionPlanner/ExpeditionService.
+<Item class="ModuleScript" referent="RBX10"><Properties><string name="Name">ExpeditionBattle</string><ProtectedString name="Source"><![CDATA[-- Deterministic team expeditions. The same saved expedition (id, world, team, level) always plays the
+-- same fights, so the battle scene, the HUD mini-map and the server agree without syncing anything
+-- extra. The server pays out from this too: a win gives full coins, gear loot and the next level.
 local Config = require(script.Parent.Config)
 local Creatures = require(script.Parent.CreatureData)
 local PetCombat = require(script.Parent.PetCombat)
@@ -2796,42 +2796,124 @@ end
 
 local BEAT_MAX, INTRO, LOOT_BEATS, RETURN_SHARE = 1.4, 2, 3, 0.15
 
+-- Adventure levels: every biome has 5, each one harder, longer and better paid than the last.
+Battle.MaxLevel = 5
+Battle.TeamSize = 3
+function Battle.Level(active)
+	return math.clamp(math.floor(tonumber(active and active.level) or 1), 1, Battle.MaxLevel)
+end
+function Battle.LevelReward(level)
+	return 1 + 0.6 * (math.clamp(level or 1, 1, Battle.MaxLevel) - 1)
+end
+function Battle.LevelDuration(level)
+	return 1 + 0.2 * (math.clamp(level or 1, 1, Battle.MaxLevel) - 1)
+end
+
+-- The team on a saved expedition (older single-pet saves still work).
+function Battle.Team(active)
+	local out = {}
+	if type(active.team) == "table" then
+		for _, m in ipairs(active.team) do
+			if #out >= Battle.TeamSize then break end
+			if type(m) == "table" and Creatures.ById[m.c] then
+				table.insert(out, m)
+			end
+		end
+	end
+	if #out == 0 then
+		out[1] = { u = active.petUid, c = active.creature, s = active.s, v = active.v, wp = active.wp, ar = active.ar,
+			hp = active.hp, atk = active.atk }
+	end
+	return out
+end
+
+-- Gear dropped for a win: tier grows with the biome and the level.
+function Battle.LootTier(world, level)
+	local wi = table.find(Config.WorldOrder, world) or 1
+	return math.clamp(math.floor((wi - 1) * 5 / 7 + (math.clamp(level or 1, 1, Battle.MaxLevel) - 1) * 0.5) + 1, 1, 6)
+end
+function Battle.Loot(active)
+	local world = Battle.Monsters[active.world] and active.world or "Forest"
+	local level = Battle.Level(active)
+	local rand = rng(hash("loot|" .. tostring(active.id) .. "|" .. world .. "|" .. level))
+	local tier = Battle.LootTier(world, level)
+	local drops = {}
+	local n = 1 + (level >= 3 and 1 or 0) + (rand() < 0.25 and 1 or 0)
+	for i = 1, n do
+		local kind = rand() < 0.5 and "weapon" or "armor"
+		local list = PetCombat.Catalog(kind)
+		local t = math.clamp(tier - ((i > 1 and rand() < 0.5) and 1 or 0), 1, #list)
+		table.insert(drops, { kind = kind, id = list[t].id })
+	end
+	return drops
+end
+
+-- attack moves (the scene animates each one differently)
+local function pickMove(p, crit, r)
+	if crit then return "slam" end
+	if p.sword and r < 0.45 then return "slash" end
+	if r < 0.62 then return "spin" end
+	if r < 0.82 then return "dash" end
+	return "bite"
+end
+local VERB = { slam = " SLAMS ", slash = " slashes ", spin = " spin-attacks ", dash = " charges ", bite = " bites " }
+
+local function snap(team)
+	local t = {}
+	for i, p in ipairs(team) do t[i] = p.hp end
+	return t
+end
+local function total(t)
+	local s = 0
+	for _, v in ipairs(t) do s += v end
+	return s
+end
+
 function Battle.Plan(active)
 	local world = Battle.Monsters[active.world] and active.world or "Forest"
 	local theme = Battle.Monsters[world]
-	local def = Creatures.ById[active.creature]
-	local rarity = def and Config.Rarities[def.rarity]
-	local order = rarity and rarity.order or 1
+	local level = Battle.Level(active)
 	local tier = table.find(Config.WorldOrder, world) or 1
 	local duration = math.max(1, (active.endsAt or 0) - (active.startedAt or 0))
-	local rand = rng(hash(tostring(active.id) .. "|" .. world .. "|" .. tostring(active.creature)))
+	local rand = rng(hash(tostring(active.id) .. "|" .. world .. "|" .. tostring(active.creature) .. "|" .. level))
 	local function roll(lo, hi)
 		return lo + (hi - lo) * rand()
 	end
 
-	-- The pet fights with its real stats (PetCombat: rarity, variant, feeding, Power, sword, armour),
-	-- snapshotted when it departed. Biome monsters have their own strength that grows each world,
-	-- bounded relative to the pet so a weak pet still has a (hard) fight and a strong one crushes it.
-	local hp0, atk0 = tonumber(active.hp), tonumber(active.atk)
-	if not (hp0 and atk0 and hp0 > 0 and atk0 > 0) then
-		hp0, atk0 = PetCombat.Stats({ c = active.creature, s = active.s, v = active.v, wp = active.wp, ar = active.ar })
+	-- The team fights with each pet's real stats (PetCombat: rarity, variant, feeding, Power, sword,
+	-- armour), snapshotted when it departed. Pets from this biome get +20% attack at home.
+	local team, teamHp, teamAtk = {}, 0, 0
+	for i, m in ipairs(Battle.Team(active)) do
+		local def = Creatures.ById[m.c]
+		local hp, atk = tonumber(m.hp), tonumber(m.atk)
+		if not (hp and atk and hp > 0 and atk > 0) then
+			hp, atk = PetCombat.Stats(m)
+		end
+		local r = def and Config.Rarities[def.rarity]
+		local order = r and r.order or 1
+		local p = {
+			i = i, u = m.u, c = m.c, s = m.s, v = m.v, wp = m.wp, ar = m.ar,
+			name = def and def.name or "Pet",
+			maxHp = math.max(1, math.floor(hp)), hp = math.max(1, math.floor(hp)),
+			atk = math.max(1, atk * ((def and def.world == world) and 1.2 or 1)),
+			crit = math.min(0.4, 0.12 + 0.03 * order), dodge = math.min(0.35, 0.08 + 0.025 * order),
+			sword = PetCombat.WeaponById[m.wp] ~= nil,
+		}
+		team[i] = p
+		teamHp += p.maxHp
+		teamAtk += p.atk
 	end
-	local home = def and def.world == world
-	local pet = {
-		name = def and def.name or "Your pet",
-		maxHp = math.max(1, math.floor(hp0)),
-		hp = math.max(1, math.floor(hp0)),
-		atk = math.max(1, atk0 * (home and 1.2 or 1)),
-		crit = math.min(0.4, 0.12 + 0.03 * order),
-		dodge = math.min(0.35, 0.08 + 0.025 * order),
-	}
-	local wb = 2.1 ^ (tier - 1)
-	local minionHp, minionAtk = 50 * wb, 7 * wb
+	local avgHp = teamHp / #team
+	local pet = { name = #team > 1 and (team[1].name .. "'s team") or team[1].name, maxHp = teamHp, atk = teamAtk }
+
+	-- Biome monsters grow each world and each level; bounded relative to the team so a strong team
+	-- crushes them, an even one has a real fight, and a team that is far too weak gets knocked out.
+	local wb = 1.75 ^ (tier - 1) * 1.45 ^ (level - 1)
+	local minionHp, minionAtk = 30 * wb, 4.2 * wb
 	local function bound(v, lo, hi)
 		return math.max(1, math.floor(math.clamp(v, lo, math.max(lo, hi))))
 	end
-
-	local count = 4 + math.min(2, math.floor((tier - 1) / 3))
+	local count = math.min(8, 4 + math.min(2, math.floor((tier - 1) / 3)) + math.floor((level - 1) / 2))
 	local encounters = {}
 	for i = 1, count do
 		local pick = theme.minions[(i - 1) % #theme.minions + 1]
@@ -2840,96 +2922,129 @@ function Battle.Plan(active)
 		end
 		table.insert(encounters, {
 			name = pick[1], kind = pick[2], boss = false,
-			p = 0.1 + 0.72 * (i - 0.5) / count + roll(-0.015, 0.015),
-			maxHp = bound(minionHp * (0.85 + 0.06 * i + roll(0, 0.1)), pet.atk * 2, pet.atk * 9),
-			atk = bound(minionAtk * (0.9 + 0.05 * i), pet.maxHp * 0.06, pet.maxHp * 0.34),
+			p = 0.1 + 0.72 * (i - 0.5) / count + roll(-0.012, 0.012),
+			maxHp = bound(minionHp * (0.85 + 0.06 * i + roll(0, 0.1)) * (0.6 + 0.4 * #team), teamAtk * 1.2, teamAtk * 16),
+			atk = bound(minionAtk * (0.9 + 0.05 * i), avgHp * 0.05, avgHp * 0.8),
 		})
 	end
 	table.insert(encounters, {
 		name = theme.boss[1], kind = theme.boss[2], boss = true, p = 0.9,
-		maxHp = bound(minionHp * 4.5, pet.atk * 6, pet.atk * 16),
-		atk = bound(minionAtk * 1.8, pet.maxHp * 0.1, pet.maxHp * 0.45),
+		maxHp = bound(minionHp * 4 * (0.6 + 0.4 * #team), teamAtk * 4, teamAtk * 30),
+		atk = bound(minionAtk * 1.6, avgHp * 0.08, avgHp * 1.0),
 	})
 
-	-- Simulate every fight as a list of beats.
-	local summary = { defeated = 0, crits = 0, dodges = 0, rests = 0, boss = theme.boss[1] }
+	-- Simulate every fight as a list of beats: each standing pet attacks, then the monster hits back
+	-- (the boss slams the whole team every third round). When every pet is down, the team has lost.
+	local summary = { defeated = 0, crits = 0, dodges = 0, kos = 0, rests = 0, boss = theme.boss[1], victory = true,
+		level = level, team = #team }
 	local fights = {}
 	for index, enc in encounters do
-		local monHp, beats, turn = enc.maxHp, {}, 0
-		local startHp = pet.hp
-		while monHp > 0 do
-			turn += 1
-			local crit = rand() < pet.crit
-			local dmg = math.floor(pet.atk * roll(0.8, 1.2) * (crit and 1.8 or 1) + 0.5)
-			if turn > 40 then
-				dmg = monHp
+		local monHp, beats, round, actions = enc.maxHp, {}, 0, 0
+		local start = snap(team)
+		local function standing()
+			local list = {}
+			for _, p in ipairs(team) do
+				if p.hp > 0 then table.insert(list, p) end
 			end
-			monHp = math.max(0, monHp - dmg)
-			summary.crits += crit and 1 or 0
-			table.insert(beats, { who = "pet", dmg = dmg, crit = crit, petHp = pet.hp, monHp = monHp })
-			if monHp <= 0 then
-				break
+			return list
+		end
+		while monHp > 0 and #standing() > 0 and actions < 90 do
+			round += 1
+			for _, p in ipairs(team) do
+				if p.hp > 0 and monHp > 0 then
+					actions += 1
+					local crit = rand() < p.crit
+					local move = pickMove(p, crit, rand())
+					local dmg = math.floor(p.atk * roll(0.8, 1.2) * (crit and 1.8 or 1) + 0.5)
+					monHp = math.max(0, monHp - dmg)
+					summary.crits += crit and 1 or 0
+					table.insert(beats, { who = "pet", i = p.i, dmg = dmg, crit = crit, move = move, team = snap(team), monHp = monHp })
+				end
 			end
-			local special = enc.boss and turn % 3 == 0
-			local dodged = not special and rand() < pet.dodge
-			local hit = dodged and 0 or math.floor(enc.atk * roll(0.8, 1.2) * (special and 2 or 1) + 0.5)
-			summary.dodges += dodged and 1 or 0
-			if hit >= pet.hp then
-				-- The pet never dies: it backs off, recovers and comes back to finish the job.
-				pet.hp = 0
-				table.insert(beats, { who = "mon", dmg = hit, special = special, petHp = 0, monHp = monHp })
-				pet.hp = pet.maxHp
-				summary.rests += 1
-				table.insert(beats, { who = "rest", petHp = pet.hp, monHp = monHp, len = 3 })
+			if monHp <= 0 then break end
+			if enc.boss and round % 3 == 0 then
+				local hits, top = {}, 0
+				for _, p in ipairs(standing()) do
+					local d = math.floor(enc.atk * roll(0.8, 1.2) * 1.3 + 0.5)
+					p.hp = math.max(0, p.hp - d)
+					hits[p.i] = d
+					top = math.max(top, d)
+					if p.hp == 0 then summary.kos += 1 end
+				end
+				table.insert(beats, { who = "mon", special = true, hits = hits, dmg = top, team = snap(team), monHp = monHp, len = 1.4 })
 			else
-				pet.hp -= hit
-				table.insert(beats, { who = "mon", dmg = hit, special = special, dodged = dodged, petHp = pet.hp, monHp = monHp })
+				local targets = standing()
+				local p = targets[math.floor(rand() * #targets) + 1]
+				local dodged = rand() < p.dodge
+				local d = dodged and 0 or math.floor(enc.atk * roll(0.8, 1.2) + 0.5)
+				p.hp = math.max(0, p.hp - d)
+				summary.dodges += dodged and 1 or 0
+				local ko = p.hp == 0
+				if ko then summary.kos += 1 end
+				table.insert(beats, { who = "mon", target = p.i, dmg = d, dodged = dodged, ko = ko, team = snap(team), monHp = monHp })
 			end
 		end
+		local won = monHp <= 0
+		fights[index] = { beats = beats, start = start, finish = snap(team), won = won }
+		if not won then
+			summary.victory = false
+			break
+		end
 		summary.defeated += 1
-		fights[index] = { beats = beats, startHp = startHp, endHp = pet.hp }
-		-- walking to the next fight heals part of the damage
-		pet.hp = math.min(pet.maxHp, pet.hp + math.floor(pet.maxHp * 0.35))
+		-- between fights: knocked-out pets get back up at 35%, the others heal 35%
+		for _, p in ipairs(team) do
+			p.hp = p.hp > 0 and math.min(p.maxHp, p.hp + math.floor(p.maxHp * 0.35)) or math.floor(p.maxHp * 0.35)
+		end
 	end
 
-	local totalBeats = LOOT_BEATS
-	for _, f in fights do
-		for _, b in f.beats do
+	local totalBeats = summary.victory and LOOT_BEATS or 0
+	for _, f in pairs(fights) do
+		for _, b in ipairs(f.beats) do
 			totalBeats += b.len or 1
 		end
 	end
 	local back = duration * RETURN_SHARE
-	local beat = math.max(0.05, math.min(BEAT_MAX, (duration * 0.55) / totalBeats))
+	local beat = math.max(0.05, math.min(BEAT_MAX, (duration * 0.55) / math.max(1, totalBeats)))
 	local intro = math.min(INTRO, duration * 0.05)
 	local walkTotal = math.max(0, duration - intro - back - totalBeats * beat)
 
 	-- Lay the segments out on the timeline (seconds since departure).
-	local segments, t, p, hp = {}, 0, 0, pet.maxHp
+	local full = {}
+	for i, p in ipairs(team) do full[i] = p.maxHp end
+	local segments, t, p, hp = {}, 0, 0, full
 	local function push(seg)
 		seg.t0 = t
 		t += seg.len
 		seg.t1 = t
 		table.insert(segments, seg)
 	end
-	push({ kind = "depart", len = intro, p0 = 0, p1 = 0, hp0 = hp, hp1 = hp })
+	push({ kind = "depart", len = intro, p0 = 0, p1 = 0, team0 = full, team1 = full })
 	local stopAt = 0.92
+	local lastFight = 0
 	for index, enc in encounters do
-		local stand = math.max(p, Battle.Back(enc.p, enc.boss and 3.4 or 2.4))
-		push({ kind = "walk", len = walkTotal * (stand - p) / stopAt, p0 = p, p1 = stand, hp0 = hp, hp1 = fights[index].startHp, next = index })
+		local f = fights[index]
+		if not f then break end
+		local stand = math.max(p, Battle.Back(enc.p, enc.boss and 3.6 or 2.6))
+		push({ kind = "walk", len = walkTotal * (stand - p) / stopAt, p0 = p, p1 = stand, team0 = hp, team1 = f.start, next = index })
 		local len = 0
-		for _, b in fights[index].beats do
+		for _, b in ipairs(f.beats) do
 			len += (b.len or 1) * beat
 		end
-		push({ kind = "fight", len = len, p0 = stand, p1 = stand, enc = index, beats = fights[index].beats, beat = beat, hp0 = fights[index].startHp })
-		p, hp = stand, fights[index].endHp
+		push({ kind = "fight", len = len, p0 = stand, p1 = stand, enc = index, beats = f.beats, beat = beat, team0 = f.start, won = f.won })
+		p, hp, lastFight = stand, f.finish, index
 	end
-	push({ kind = "walk", len = walkTotal * math.max(0, stopAt - p) / stopAt, p0 = p, p1 = 1, hp0 = hp, hp1 = pet.maxHp })
-	push({ kind = "loot", len = LOOT_BEATS * beat, p0 = 1, p1 = 1, hp0 = pet.maxHp, hp1 = pet.maxHp })
-	push({ kind = "return", len = math.max(0, duration - t), p0 = 1, p1 = 0, hp0 = pet.maxHp, hp1 = pet.maxHp })
+	if summary.victory then
+		push({ kind = "walk", len = walkTotal * math.max(0, stopAt - p) / stopAt, p0 = p, p1 = 1, team0 = hp, team1 = full })
+		push({ kind = "loot", len = LOOT_BEATS * beat, p0 = 1, p1 = 1, team0 = full, team1 = full })
+		push({ kind = "return", len = math.max(0, duration - t), p0 = 1, p1 = 0, team0 = full, team1 = full })
+	else
+		push({ kind = "retreat", len = math.max(0, duration - t), p0 = p, p1 = 0, team0 = hp, team1 = hp })
+	end
 
 	return {
-		world = world, theme = theme, pet = pet, encounters = encounters, segments = segments,
-		duration = duration, beat = beat, summary = summary,
+		world = world, theme = theme, pet = pet, team = team, level = level, encounters = encounters,
+		segments = segments, duration = duration, beat = beat, summary = summary, victory = summary.victory,
+		lostAt = not summary.victory and lastFight or nil, loot = summary.victory and Battle.Loot(active) or {},
 	}
 end
 
@@ -2937,11 +3052,20 @@ local function lerp(a, b, f)
 	return a + (b - a) * f
 end
 
+local function teamState(plan, hps)
+	local out = {}
+	for i, p in ipairs(plan.team) do
+		local hpv = math.floor((hps and hps[i] or p.maxHp) + 0.5)
+		out[i] = { hp = hpv, maxHp = p.maxHp, ko = hpv <= 0 }
+	end
+	return out
+end
+
 -- State of the journey `elapsed` seconds after departure.
 function Battle.At(plan, elapsed)
 	local segs = plan.segments
 	local seg = segs[#segs]
-	for _, s in segs do
+	for _, s in ipairs(segs) do
 		if elapsed < s.t1 then
 			seg = s
 			break
@@ -2951,78 +3075,101 @@ function Battle.At(plan, elapsed)
 	local name = plan.pet.name
 	local state = {
 		kind = seg.kind, p = lerp(seg.p0, seg.p1, f), dir = seg.p1 < seg.p0 and -1 or 1,
-		hp = plan.pet.maxHp, maxHp = plan.pet.maxHp, cleared = 0, f = f,
+		hp = plan.pet.maxHp, maxHp = plan.pet.maxHp, cleared = 0, f = f, victory = plan.victory,
 	}
-	for i, enc in plan.encounters do
-		local done = false
-		for _, s in segs do
-			if s.kind == "fight" and s.enc == i and s.t1 <= elapsed then
-				done = true
-			end
-		end
-		if done then
-			state.cleared = i
+	for _, s in ipairs(segs) do
+		if s.kind == "fight" and s.won and s.t1 <= elapsed then
+			state.cleared = math.max(state.cleared, s.enc)
 		end
 	end
-	if elapsed >= plan.duration then
-		state.kind, state.p, state.dir, state.cleared = "done", 0, -1, #plan.encounters
-		state.text = name .. " is back with the loot!"
+	local function finish(hps)
+		state.team = teamState(plan, hps)
+		state.hp = 0
+		for _, m in ipairs(state.team) do state.hp += m.hp end
 		return state
+	end
+	if elapsed >= plan.duration then
+		state.kind, state.p, state.dir, state.cleared = "done", 0, -1, plan.summary.defeated
+		state.text = plan.victory and "Your team is back with the loot!" or "Your team made it home. Train them and try again!"
+		return finish(nil)
 	end
 	if seg.kind == "fight" then
 		local enc = plan.encounters[seg.enc]
 		local at, beats = (elapsed - seg.t0) / seg.beat, seg.beats
 		local pos, cur, phase = 0, nil, 0
-		local prevPet, prevMon = seg.hp0, enc.maxHp
-		for _, b in beats do
+		local prevTeam, prevMon = seg.team0, enc.maxHp
+		for _, b in ipairs(beats) do
 			local len = b.len or 1
 			if at < pos + len then
 				cur, phase = b, (at - pos) / len
 				break
 			end
 			pos += len
-			prevPet, prevMon = b.petHp, b.monHp
+			prevTeam, prevMon = b.team, b.monHp
 		end
 		cur = cur or beats[#beats]
+		if not cur then
+			state.text = "..."
+			return finish(seg.team0)
+		end
 		state.enc, state.beat, state.phase = seg.enc, cur, phase
 		-- damage lands halfway through the swing
 		local landed = phase >= 0.45
-		state.hp = landed and cur.petHp or prevPet
 		state.monHp = landed and cur.monHp or prevMon
 		state.monMax = enc.maxHp
+		local actor = cur.i and plan.team[cur.i]
+		local target = cur.target and plan.team[cur.target]
 		if cur.who == "pet" then
-			state.text = (cur.crit and "CRITICAL! " or "") .. name .. " hits " .. enc.name .. " for " .. cur.dmg
+			state.text = (cur.crit and "CRITICAL! " or "") .. (actor and actor.name or name) .. (VERB[cur.move] or " hits ") .. enc.name .. " for " .. cur.dmg
 			if cur.monHp <= 0 and landed then
 				state.text = enc.name .. " defeated!"
 			end
-		elseif cur.who == "rest" then
-			state.text = name .. " backs off to recover..."
-			state.hp = math.floor(lerp(0, cur.petHp, phase))
+		elseif cur.special then
+			state.text = enc.name .. " SLAMS the whole team!"
 		elseif cur.dodged then
-			state.text = name .. " dodged " .. enc.name .. "!"
+			state.text = (target and target.name or name) .. " dodged " .. enc.name .. "!"
+		elseif cur.ko and landed then
+			state.text = enc.name .. " knocks out " .. (target and target.name or name) .. "!"
 		else
-			state.text = enc.name .. (cur.special and " uses SLAM for " or " strikes back for ") .. cur.dmg
+			state.text = enc.name .. " hits " .. (target and target.name or name) .. " for " .. cur.dmg
 		end
-	else
-		state.hp = math.floor(lerp(seg.hp0, seg.hp1 or seg.hp0, f) + 0.5)
-		if seg.kind == "depart" then
-			state.text = name .. " steps through the portal"
-		elseif seg.kind == "walk" then
-			local nxt = seg.next and plan.encounters[seg.next]
-			state.text = nxt and (nxt.boss and "Boss ahead: " .. nxt.name .. "!" or "Tracking a " .. nxt.name .. "...")
-				or "Heading for the relic shrine"
-		elseif seg.kind == "loot" then
-			state.text = "Relic recovered!"
-		else
-			state.text = "Heading home with the loot"
+		if not seg.won and cur == beats[#beats] and landed then
+			state.text = "Your team was defeated by " .. enc.name .. "..."
 		end
+		return finish(landed and cur.team or prevTeam)
 	end
-	return state
+	local hps = {}
+	for i in ipairs(plan.team) do
+		local a = seg.team0 and seg.team0[i] or plan.team[i].maxHp
+		local b = seg.team1 and seg.team1[i] or a
+		hps[i] = lerp(a, b, f)
+	end
+	if seg.kind == "depart" then
+		state.text = (#plan.team > 1 and "Your team steps" or name .. " steps") .. " through the portal"
+	elseif seg.kind == "walk" then
+		local nxt = seg.next and plan.encounters[seg.next]
+		state.text = nxt and (nxt.boss and "Boss ahead: " .. nxt.name .. "!" or "Tracking a " .. nxt.name .. "...")
+			or "Heading for the relic shrine"
+	elseif seg.kind == "loot" then
+		state.text = "Victory! Treasure found!"
+	elseif seg.kind == "retreat" then
+		state.text = "Defeated... the team retreats to the portal"
+	else
+		state.text = "Heading home with the loot"
+	end
+	return finish(hps)
 end
 
 function Battle.Summary(active)
 	local ok, plan = pcall(Battle.Plan, active)
 	return ok and plan.summary or nil
+end
+
+-- The full outcome the server pays out (and the client shows): victory, loot and summary.
+function Battle.Outcome(active)
+	local ok, plan = pcall(Battle.Plan, active)
+	if not ok then return nil end
+	return { victory = plan.victory, loot = plan.loot, summary = plan.summary }
 end
 
 return Battle
@@ -3066,6 +3213,7 @@ return Rules
 local Creatures = require(script.Parent.CreatureData)
 local Variants = require(script.Parent.Variants)
 local Rules = require(script.Parent.ExpeditionConfig)
+local PetCombat = require(script.Parent.PetCombat)
 local Planner = { MaxReward = 1e12 }
 
 function Planner.Quote(pet, route)
@@ -3078,6 +3226,33 @@ function Planner.Quote(pet, route)
 	local income = Creatures.Income(pet.c) * Variants.Mult(pet.s, pet.v)
 	local coins = (route.coins + income * route.duration * (route.incomeCoinsPerSecond or Rules.IncomeFraction))
 		* multiplier
+	return {
+		coins = math.clamp(math.floor(coins), 0, Planner.MaxReward),
+		matched = matched,
+		bonusPercent = math.floor((multiplier - 1) * 100 + 0.5),
+	}
+end
+
+-- A team of up to 3 pets: every pet's income adds to the haul, the biome bonus applies when any
+-- team member is from that biome, and higher adventure levels pay more (+60% per level).
+function Planner.QuoteTeam(pets, route, level)
+	if not route or not pets or #pets == 0 then
+		return nil
+	end
+	local income, matched = 0, false
+	for _, pet in ipairs(pets) do
+		local creature = Creatures.ById[pet.c]
+		if creature then
+			income += Creatures.Income(pet.c) * Variants.Mult(pet.s, pet.v)
+			matched = matched or creature.world == route.world
+		end
+	end
+	local multiplier = matched and (route.matchMultiplier or Rules.MatchingBiomeMultiplier) or 1
+	local lv = math.clamp(math.floor(tonumber(level) or 1), 1, 5)
+	local levelMult = 1 + 0.6 * (lv - 1)
+	local coins = (route.coins + income * route.duration * (route.incomeCoinsPerSecond or Rules.IncomeFraction))
+		* multiplier
+		* levelMult
 	return {
 		coins = math.clamp(math.floor(coins), 0, Planner.MaxReward),
 		matched = matched,
@@ -3098,6 +3273,45 @@ function Planner.Commitment(data, uid)
 	return 0, "Stored pet", "Stored pet / garden income keeps earning."
 end
 
+-- true when uid is on the active expedition (lead pet or any team member)
+function Planner.OnTeam(active, uid)
+	if type(active) ~= "table" or uid == nil then
+		return false
+	end
+	if active.petUid == uid then
+		return true
+	end
+	for _, m in ipairs(type(active.team) == "table" and active.team or {}) do
+		if type(m) == "table" and m.u == uid then
+			return true
+		end
+	end
+	return false
+end
+
+-- Suggested team: the strongest idle pets (stored first, so garden income and followers are kept).
+function Planner.SuggestTeam(data, route, size)
+	local away = data.Expeditions and data.Expeditions.active
+	local list = {}
+	for _, pet in data.Creatures or {} do
+		if Creatures.ById[pet.c] and not Planner.OnTeam(away, pet.u) then
+			local hp, atk = PetCombat.Stats(pet)
+			table.insert(list, { pet = pet, cost = Planner.Commitment(data, pet.u), rating = PetCombat.Rating(hp, atk) })
+		end
+	end
+	table.sort(list, function(a, b)
+		if (a.cost == 0) ~= (b.cost == 0) then
+			return a.cost == 0
+		end
+		return a.rating > b.rating
+	end)
+	local out = {}
+	for i = 1, math.min(size or 3, #list) do
+		out[i] = list[i].pet.u
+	end
+	return out
+end
+
 -- Prefer an idle stored pet so the suggestion doesn't sacrifice garden income
 -- or a follower buff. Within that group, prefer a biome match, then the payout.
 -- This is a starting suggestion; explicit player selections remain untouched.
@@ -3105,7 +3319,7 @@ function Planner.Suggest(data, route)
 	local best, bestCost, bestQuote
 	for _, pet in data.Creatures or {} do
 		local away = data.Expeditions and data.Expeditions.active
-		if not away or away.petUid ~= pet.u then
+		if not Planner.OnTeam(away, pet.u) then
 			local quote = Planner.Quote(pet, route)
 			if quote then
 				local cost = Planner.Commitment(data, pet.u)
@@ -4235,6 +4449,23 @@ local function cluster(rig, cfs, anchor, reach, avoid)
 	end
 	if not found then return nil end
 	return lo, hi
+end
+
+-- size of the whole visible creature in its own (root) frame, without moving anything
+function Gear.Extents(rig)
+	local cfs = solve(rig)
+	local lo, hi = V(math.huge, math.huge, math.huge), V(-math.huge, -math.huge, -math.huge)
+	local found = false
+	for part, cf in pairs(cfs) do
+		if part ~= rig.root and part.Transparency < 0.5 then
+			local half = extent(part) / 2
+			local p = cf.Position
+			lo = V(math.min(lo.X, p.X - half.X), math.min(lo.Y, p.Y - half.Y), math.min(lo.Z, p.Z - half.Z))
+			hi = V(math.max(hi.X, p.X + half.X), math.max(hi.Y, p.Y + half.Y), math.max(hi.Z, p.Z + half.Z))
+			found = true
+		end
+	end
+	return found and (hi - lo) or V(2, 2, 2)
 end
 
 function Gear.Clear(model)
@@ -14657,11 +14888,7 @@ local Rules = require(RS.Shared.ExpeditionConfig)
 local Creatures = require(RS.Shared.CreatureData)
 local Planner = require(RS.Shared.ExpeditionPlanner)
 local PetCombat = require(RS.Shared.PetCombat)
-local okBattle, Battle = pcall(require, RS.Shared.ExpeditionBattle)
-if not okBattle then
-	warn("[Expedition] battle summaries disabled: " .. tostring(Battle))
-	Battle = nil
-end
+local Battle = require(RS.Shared.ExpeditionBattle) -- decides victory, loot and levels
 local Service = {}
 
 local MAX_REWARD = Planner.MaxReward
@@ -14745,6 +14972,33 @@ function Service.Init()
 	end)
 end
 
+local function gearId(kind, id)
+	local _, byId = PetCombat.Catalog(kind)
+	return type(id) == "string" and byId and byId[id] and id or nil
+end
+
+-- One team member's saved snapshot (stats are taken at departure).
+local function cleanMember(data, m)
+	if type(m) ~= "table" or not validUid(m.u) then
+		return nil
+	end
+	local pet = getPet(data, m.u)
+	if not pet or pet.c ~= m.c then
+		return nil
+	end
+	return {
+		u = m.u,
+		c = m.c,
+		s = type(m.s) == "string" and m.s or nil,
+		v = type(m.v) == "string" and m.v or nil,
+		wp = gearId("weapon", m.wp),
+		ar = gearId("armor", m.ar),
+		hp = statValue(m.hp),
+		atk = statValue(m.atk),
+		wasPlaced = m.wasPlaced == true,
+	}
+end
+
 local function cleanActive(data, active)
 	if type(active) ~= "table" then
 		return nil
@@ -14771,6 +15025,16 @@ local function cleanActive(data, active)
 	if not integer(active.coins) or active.coins < 0 or active.coins > MAX_REWARD then
 		return nil
 	end
+	local team, seen = {}, {}
+	if type(active.team) == "table" then
+		for _, m in ipairs(active.team) do
+			local member = #team < Battle.TeamSize and cleanMember(data, m)
+			if member and not seen[member.u] then
+				seen[member.u] = true
+				table.insert(team, member)
+			end
+		end
+	end
 	return {
 		id = active.id,
 		petUid = active.petUid,
@@ -14786,8 +15050,10 @@ local function cleanActive(data, active)
 		-- battle snapshot taken at departure (PetCombat); gear bought later applies to the next trip
 		hp = statValue(active.hp),
 		atk = statValue(active.atk),
-		wp = type(active.wp) == "string" and #active.wp <= 16 and active.wp or nil,
-		ar = type(active.ar) == "string" and #active.ar <= 16 and active.ar or nil,
+		wp = gearId("weapon", active.wp),
+		ar = gearId("armor", active.ar),
+		team = #team > 0 and team or nil,
+		level = integer(active.level) and math.clamp(active.level, 1, Battle.MaxLevel) or 1,
 	}
 end
 
@@ -14805,12 +15071,42 @@ function Service.Ensure(data)
 	data.ExpeditionRelics = relics
 	local completed = data.ExpeditionCompletions
 	data.ExpeditionCompletions = integer(completed) and math.clamp(completed, 0, 2147483647) or 0
+	-- highest adventure level won in each biome (0 = none yet)
+	local levels = {}
+	for _, id in Rules.Order do
+		local v = type(data.ExpeditionLevels) == "table" and data.ExpeditionLevels[id]
+		levels[id] = integer(v) and math.clamp(v, 0, Battle.MaxLevel) or 0
+	end
+	data.ExpeditionLevels = levels
+	-- loot won on expeditions, waiting to be equipped: { weapon = { Iron = 2 }, armor = { ... } }
+	local bag = { weapon = {}, armor = {} }
+	for _, kind in { "weapon", "armor" } do
+		local src = type(data.GearBag) == "table" and type(data.GearBag[kind]) == "table" and data.GearBag[kind] or {}
+		for id, n in pairs(src) do
+			if gearId(kind, id) and integer(n) and n > 0 then
+				bag[kind][id] = math.min(n, 999)
+			end
+		end
+	end
+	data.GearBag = bag
 	data.ActiveExpedition = cleanActive(data, data.ActiveExpedition)
+end
+
+local function onTeam(active, uid)
+	if active.petUid == uid then
+		return true
+	end
+	for _, m in ipairs(active.team or {}) do
+		if m.u == uid then
+			return true
+		end
+	end
+	return false
 end
 
 function Service.IsAway(data, uid)
 	local active = data.ActiveExpedition
-	return validUid(uid) and type(active) == "table" and active.petUid == uid or false
+	return validUid(uid) and type(active) == "table" and onTeam(active, uid) or false
 end
 
 local function nearTable(player, base)
@@ -14834,20 +15130,24 @@ local function unix(now)
 	return integer(now) and now >= 0 and now or os.time()
 end
 
-local function durationFor(route)
-	return math.clamp(math.floor(route.duration * tuning.duration + 0.5), 15, MAX_DURATION)
+local function durationFor(route, level)
+	return math.clamp(math.floor(route.duration * tuning.duration * Battle.LevelDuration(level) + 0.5), 15, MAX_DURATION)
 end
 
 local function routeView(route, data)
+	local cleared = type(data.ExpeditionLevels) == "table" and data.ExpeditionLevels[route.world] or 0
 	return {
 		id = route.id,
 		name = route.name,
 		world = route.world,
-		duration = durationFor(route),
+		duration = durationFor(route, 1),
 		coins = route.coins * tuning.reward,
 		incomeCoinsPerSecond = Rules.IncomeFraction * tuning.reward,
 		matchMultiplier = Rules.MatchingBiomeMultiplier,
 		unlocked = type(data.UnlockedWorlds) == "table" and data.UnlockedWorlds[route.world] == true,
+		cleared = cleared,
+		maxLevel = Battle.MaxLevel,
+		durationStep = 0.2 * tuning.duration,
 	}
 end
 
@@ -14876,13 +15176,15 @@ function Service.ReturnToTable(player, base)
 	return true
 end
 
-function Service.Start(player, data, base, routeId, petUid, now)
+-- petUids: one uid or a list of up to Battle.TeamSize uids. level: 1..5, at most one above the
+-- highest level already won in that biome.
+function Service.Start(player, data, base, routeId, petUids, now, level)
 	Service.Ensure(data)
 	if not nearTable(player, base) then
 		return false, "Use the expedition table in your courtyard."
 	end
 	if data.ActiveExpedition then
-		return false, "Your pet is already on an expedition. Claim its return first."
+		return false, "Your team is already on an expedition. Claim its return first."
 	end
 	local route = type(routeId) == "string" and Rules.ById[routeId]
 	if not route then
@@ -14891,34 +15193,70 @@ function Service.Start(player, data, base, routeId, petUid, now)
 	if type(data.UnlockedWorlds) ~= "table" or data.UnlockedWorlds[route.world] ~= true then
 		return false, "Unlock this biome before sending an expedition."
 	end
-	local pet = validUid(petUid) and getPet(data, petUid)
-	if not pet then
-		return false, "Choose a creature you own."
+	level = integer(level) and level or 1
+	local cleared = data.ExpeditionLevels[route.world] or 0
+	if level < 1 or level > Battle.MaxLevel then
+		return false, "Choose a valid level."
 	end
-	local creature = Creatures.ById[pet.c]
+	if level > cleared + 1 then
+		return false, "Win level " .. (cleared + 1) .. " first."
+	end
+	local list = type(petUids) == "table" and petUids or { petUids }
+	local pets, seen = {}, {}
+	for _, uid in ipairs(list) do
+		if #pets >= Battle.TeamSize then
+			break
+		end
+		local pet = validUid(uid) and getPet(data, uid)
+		if not pet then
+			return false, "Choose creatures you own."
+		end
+		if not seen[uid] then
+			seen[uid] = true
+			table.insert(pets, pet)
+		end
+	end
+	if #pets == 0 then
+		return false, "Choose at least one creature."
+	end
+	local lead = pets[1]
 	local resolved = routeView(route, data)
-	local quote = Planner.Quote(pet, resolved)
-	local duration = resolved.duration
-	local hp, atk = PetCombat.Stats(pet)
+	resolved.duration = durationFor(route, level)
+	local quote = Planner.QuoteTeam(pets, resolved, level)
+	local team = {}
+	for _, pet in ipairs(pets) do
+		local hp, atk = PetCombat.Stats(pet)
+		table.insert(team, {
+			u = pet.u, c = pet.c,
+			s = type(pet.s) == "string" and pet.s or nil,
+			v = type(pet.v) == "string" and pet.v or nil,
+			wp = gearId("weapon", pet.wp), ar = gearId("armor", pet.ar),
+			hp = hp, atk = atk,
+			wasPlaced = type(data.Placed) == "table" and table.find(data.Placed, pet.u) ~= nil,
+		})
+	end
 	local startedAt = unix(now)
 	data.ActiveExpedition = {
 		id = Http:GenerateGUID(false),
-		petUid = petUid,
-		creature = pet.c,
-		s = type(pet.s) == "string" and pet.s or nil,
-		v = type(pet.v) == "string" and pet.v or nil,
+		petUid = lead.u,
+		creature = lead.c,
+		s = team[1].s,
+		v = team[1].v,
 		world = route.world,
 		startedAt = startedAt,
-		endsAt = startedAt + duration,
+		endsAt = startedAt + resolved.duration,
 		coins = quote.coins,
 		matched = quote.matched,
-		wasPlaced = type(data.Placed) == "table" and table.find(data.Placed, petUid) ~= nil,
-		hp = hp,
-		atk = atk,
-		wp = pet.wp,
-		ar = pet.ar,
+		wasPlaced = team[1].wasPlaced,
+		hp = team[1].hp,
+		atk = team[1].atk,
+		wp = team[1].wp,
+		ar = team[1].ar,
+		team = team,
+		level = level,
 	}
-	return true, creature.name .. " departed for " .. route.name .. "."
+	local who = #team > 1 and ("A team of " .. #team) or Creatures.ById[lead.c].name
+	return true, who .. " departed for " .. route.name .. " (Level " .. level .. ")."
 end
 
 function Service.Claim(player, data, base, expeditionId, now)
@@ -14931,24 +15269,79 @@ function Service.Claim(player, data, base, expeditionId, now)
 		return false, "This expedition has already been claimed or is no longer active."
 	end
 	if unix(now) < active.endsAt then
-		return false, "Your pet is still exploring."
+		return false, "Your team is still exploring."
 	end
-	local firstRelic = data.ExpeditionRelics[active.world] ~= true
+	-- The same deterministic battle the client animated decides the outcome.
+	local outcome = Battle.Outcome(active) or { victory = true, loot = {}, summary = nil }
+	local victory = outcome.victory
+	local coins = victory and active.coins or math.floor(active.coins * 0.25)
+	local firstRelic = victory and data.ExpeditionRelics[active.world] ~= true
 	-- Consume the ID before awarding anything. There are no yielding operations
 	-- between the validation, consumption and profile mutation.
 	data.ActiveExpedition = nil
-	data.Money = (finite(data.Money) and data.Money or 0) + active.coins
-	data.TotalEarned = (finite(data.TotalEarned) and data.TotalEarned or 0) + active.coins
-	data.ExpeditionRelics[active.world] = true
+	data.Money = (finite(data.Money) and data.Money or 0) + coins
+	data.TotalEarned = (finite(data.TotalEarned) and data.TotalEarned or 0) + coins
 	data.ExpeditionCompletions = math.min(2147483647, data.ExpeditionCompletions + 1)
-	local text = firstRelic and "Expedition complete. Coins and a new biome relic recovered."
-		or "Expedition complete. Coins recovered and your pet is home."
-	-- Same deterministic battle the client animated; text only, never affects the payout.
-	local summary = Battle and Battle.Summary(active)
-	if summary then
-		text = ("Your pet defeated %d monsters, including the %s! %s"):format(summary.defeated, summary.boss, text)
+	local summary = outcome.summary
+	if not victory then
+		return true,
+			("Defeated by the %s. Your team brought back %d coins. Upgrade them and try again!"):format(
+				summary and summary.boss or "monsters",
+				coins
+			)
+	end
+	data.ExpeditionRelics[active.world] = true
+	local level = active.level or 1
+	data.ExpeditionLevels[active.world] = math.max(data.ExpeditionLevels[active.world] or 0, level)
+	local names = {}
+	for _, drop in ipairs(outcome.loot or {}) do
+		local list, byId = PetCombat.Catalog(drop.kind)
+		local item = byId and byId[drop.id]
+		if item then
+			local bag = data.GearBag[drop.kind]
+			bag[drop.id] = math.min((bag[drop.id] or 0) + 1, 999)
+			table.insert(names, item.name)
+		end
+	end
+	local text = ("Victory! Level %d cleared: %d coins"):format(level, coins)
+	if #names > 0 then
+		text ..= " + " .. table.concat(names, ", ")
+	end
+	if firstRelic then
+		text ..= " + a new biome relic"
+	end
+	if level < Battle.MaxLevel and data.ExpeditionLevels[active.world] == level then
+		text ..= ". Level " .. (level + 1) .. " unlocked!"
 	end
 	return true, text
+end
+
+-- Put a looted sword/armour from the bag on a pet; whatever it wore goes back into the bag.
+function Service.EquipFromBag(data, uid, kind, id)
+	Service.Ensure(data)
+	local pet = validUid(uid) and getPet(data, uid)
+	if not pet then
+		return false, "Choose a pet you own."
+	end
+	if not gearId(kind, id) then
+		return false, "Unknown item"
+	end
+	local bag = data.GearBag[kind]
+	if (bag[id] or 0) < 1 then
+		return false, "You don't have that item."
+	end
+	local field = kind == "weapon" and "wp" or "ar"
+	local old = pet[field]
+	bag[id] -= 1
+	if bag[id] <= 0 then
+		bag[id] = nil
+	end
+	if gearId(kind, old) then
+		bag[old] = math.min((bag[old] or 0) + 1, 999)
+	end
+	pet[field] = id
+	local _, byId = PetCombat.Catalog(kind)
+	return true, byId[id].name .. " equipped!"
 end
 
 function Service.BuildView(data, now)
@@ -14966,6 +15359,8 @@ function Service.BuildView(data, now)
 		relics = relics,
 		completed = data.ExpeditionCompletions,
 		routes = routes,
+		levels = table.clone(data.ExpeditionLevels),
+		gearBag = { weapon = table.clone(data.GearBag.weapon), armor = table.clone(data.GearBag.armor) },
 		serverNow = unix(now),
 	}
 end
@@ -18341,11 +18736,41 @@ function Actions.StartExpedition(player, data, st, arg)
 	if not ok or type(request) ~= "table" then
 		return false, "Choose a pet and biome."
 	end
-	local started, message = Expeditions.Start(player, data, st.base, request.route, request.petUid)
-	if started and st.base then
-		BaseBuilder.Refresh(st.base, data)
+	-- request.pets: up to 3 uids for a team (older clients send petUid); request.level: 1..5
+	local pets = request.petUid
+	if type(request.pets) == "table" then
+		pets = {}
+		for i, uid in ipairs(request.pets) do
+			if i > 3 then
+				break
+			end
+			pets[i] = uid
+		end
+	end
+	local started, message = Expeditions.Start(player, data, st.base, request.route, pets, nil, request.level)
+	if started then
+		-- pets on the team stop following you while they are away
+		for i = #data.EquippedPets, 1, -1 do
+			if Expeditions.IsAway(data, data.EquippedPets[i]) then
+				table.remove(data.EquippedPets, i)
+			end
+		end
+		if st.base then
+			BaseBuilder.Refresh(st.base, data)
+		end
 	end
 	return started, message
+end
+-- arg "uid|weapon|Iron": equip a looted sword/armour from your bag (the old one goes back in)
+function Actions.EquipGear(player, data, st, arg)
+	if type(arg) ~= "string" or #arg > 64 then
+		return false, "Bad request"
+	end
+	local uidText, kind, id = string.match(arg, "^(%d+)|(%a+)|(%a+)$")
+	if not uidText then
+		return false, "Bad request"
+	end
+	return Expeditions.EquipFromBag(data, tonumber(uidText), kind, id)
 end
 function Actions.ClaimExpedition(player, data, st, id)
 	local claimed, message = Expeditions.Claim(player, data, st.base, id)
@@ -23928,10 +24353,272 @@ return L
 ]]></ProtectedString></Properties></Item>
 </Item>
 </Item>
-<Item class="StarterPlayer" referent="RBX129"><Properties><string name="Name">StarterPlayer</string></Properties>
+<Item class="StarterPlayer" referent="RBX130"><Properties><string name="Name">StarterPlayer</string></Properties>
 <Item class="StarterPlayerScripts" referent="RBX80"><Properties><string name="Name">StarterPlayerScripts</string></Properties>
 <Item class="Folder" referent="RBX81"><Properties><string name="Name">Client</string></Properties>
-<Item class="ModuleScript" referent="RBX82"><Properties><string name="Name">CaughtPresentation</string><ProtectedString name="Source"><![CDATA[-- A brief bestiary slip for discoveries and Rare+ catches. Routine catches stay quiet.
+<Item class="ModuleScript" referent="RBX82"><Properties><string name="Name">ArenaScene</string><ProtectedString name="Source"><![CDATA[-- ArenaScene: turns the compact biome vignette (ExpeditionScene) into a full battle map for the
+-- top-down battle scene: a wide arena ringed by cliffs, a stone-edged road lit by torches, an
+-- entry portal, a boss arena with glowing runes, pillars and banners, lots of biome scenery,
+-- drifting weather particles and a colour grade per world. Built in the scene's own coordinates
+-- (the route from Shared/ExpeditionBattle); the caller moves it into place.
+local RS = game:GetService("ReplicatedStorage")
+local Config = require(RS.Shared.Config)
+local Battle = require(RS.Shared.ExpeditionBattle)
+local okPortal, Portal = pcall(require, RS.Shared.PortalBuilder)
+local Arena = {}
+local V, C, ANG = Vector3.new, Color3.fromRGB, CFrame.Angles
+
+local LOOK = {
+	Forest = { glow = C(255, 196, 110), weather = "leaf", tint = C(235, 255, 225), sat = 0.15, accent = C(70, 150, 80), stone = C(110, 114, 104) },
+	Volcano = { glow = C(255, 120, 40), weather = "ember", tint = C(255, 225, 205), sat = 0.2, accent = C(220, 70, 30), stone = C(70, 58, 56) },
+	Frozen = { glow = C(150, 210, 255), weather = "snow", tint = C(225, 240, 255), sat = 0, accent = C(120, 190, 240), stone = C(170, 190, 205) },
+	Crystal = { glow = C(190, 140, 255), weather = "sparkle", tint = C(240, 230, 255), sat = 0.2, accent = C(140, 100, 230), stone = C(90, 84, 120) },
+	Candy = { glow = C(255, 150, 210), weather = "confetti", tint = C(255, 238, 248), sat = 0.25, accent = C(240, 110, 170), stone = C(230, 200, 220) },
+	Space = { glow = C(140, 220, 255), weather = "star", tint = C(220, 225, 255), sat = 0.1, accent = C(110, 120, 230), stone = C(70, 74, 96) },
+	Shadow = { glow = C(170, 90, 255), weather = "mote", tint = C(225, 210, 245), sat = -0.05, accent = C(130, 60, 200), stone = C(52, 46, 66) },
+	Heaven = { glow = C(255, 230, 150), weather = "gold", tint = C(255, 250, 235), sat = 0.1, accent = C(240, 196, 80), stone = C(236, 230, 214) },
+}
+Arena.Look = LOOK
+
+local SPARK = "rbxasset://textures/particles/sparkles_main.dds"
+local SMOKE = "rbxasset://textures/particles/smoke_main.dds"
+local FIRE = "rbxasset://textures/particles/fire_main.dds"
+
+local function rng(seed)
+	local s = seed
+	return function(a, b)
+		s = (s * 48271) % 2147483647
+		local r = s / 2147483647
+		return a and (a + (b - a) * r) or r
+	end
+end
+
+function Arena.Decorate(model, worldId)
+	local def = Config.Worlds[worldId] or Config.Worlds.Forest
+	local look = LOOK[worldId] or LOOK.Forest
+	local ground = def.groundColor
+	local stone = look.stone
+	local rand = rng(#worldId * 7919 + 17)
+
+	local function part(name, size, cf, color, material, shape, class)
+		local p = Instance.new(class or "Part")
+		p.Name, p.Size, p.CFrame, p.Color = name, size, cf, color
+		p.Anchored, p.CanCollide, p.CanQuery, p.CanTouch = true, false, false, false
+		p.Material = material or Enum.Material.SmoothPlastic
+		p.TopSurface, p.BottomSurface = Enum.SurfaceType.Smooth, Enum.SurfaceType.Smooth
+		if shape then p.Shape = shape end
+		p.Parent = model
+		return p
+	end
+	local function light(p, color, range, brightness)
+		local l = Instance.new("PointLight")
+		l.Color, l.Range, l.Brightness, l.Shadows = color, range or 10, brightness or 1.5, false
+		l.Parent = p
+		return l
+	end
+
+	-- wide ground and a ring of cliffs closing the arena in
+	part("ArenaGround", V(96, 1, 76), CFrame.new(0, -0.45, 0), ground:Lerp(C(0, 0, 0), 0.12), Enum.Material.Grass)
+	part("ArenaGroundInner", V(40, 0.4, 28), CFrame.new(0, -0.05, 0), ground:Lerp(stone, 0.18))
+	for i = 0, 27 do
+		local a = i / 28 * math.pi * 2
+		local r = 40 + rand(-3, 3)
+		local h = rand(9, 20)
+		local w = rand(9, 14)
+		local cliff = part("Cliff", V(w, h, rand(7, 11)), CFrame.new(math.cos(a) * r, h / 2 - 0.5, math.sin(a) * r * 0.8) * ANG(0, -a + rand(-0.3, 0.3), rand(-0.08, 0.08)),
+			stone:Lerp(C(0, 0, 0), rand(0, 0.25)), Enum.Material.Slate)
+		if rand() < 0.6 then
+			part("CliffCap", V(w * 0.9, 0.6, cliff.Size.Z * 0.9), cliff.CFrame * CFrame.new(0, h / 2 + 0.25, 0), ground, Enum.Material.Grass)
+		end
+	end
+
+	-- stone-edged road with torches
+	local path = Battle.Path
+	for li = 1, #path - 1 do
+		local a, b = V(path[li][1], 0, path[li][2]), V(path[li + 1][1], 0, path[li + 1][2])
+		local dir = (b - a).Unit
+		local sideV = V(-dir.Z, 0, dir.X)
+		local len = (b - a).Magnitude
+		part("Road", V(2.6, 0.12, len + 1.2), CFrame.lookAt((a + b) / 2 + V(0, 0.42, 0), b + V(0, 0.42, 0)), stone:Lerp(C(150, 140, 120), 0.35), Enum.Material.Cobblestone)
+		local steps = math.floor(len / 1.3)
+		for s = 0, steps do
+			local at = a + dir * (s * 1.3)
+			for _, sx in { -1, 1 } do
+				part("RoadEdge", V(0.5, 0.35, 0.9), CFrame.lookAt(at + sideV * sx * 1.6 + V(0, 0.5, 0), at + sideV * sx * 1.6 + dir + V(0, 0.5, 0)) * ANG(0, rand(-0.2, 0.2), 0),
+					stone:Lerp(C(0, 0, 0), rand(0, 0.2)), Enum.Material.Slate)
+			end
+		end
+		local torches = math.max(1, math.floor(len / 4.5))
+		for tI = 1, torches do
+			local at = a + dir * (len * tI / (torches + 1))
+			local sx = (tI + li) % 2 == 0 and 1 or -1
+			local foot = at + sideV * sx * 2.4
+			part("TorchPost", V(0.3, 2.6, 0.3), CFrame.new(foot + V(0, 1.7, 0)), C(80, 58, 40), Enum.Material.Wood)
+			local bowl = part("TorchBowl", V(0.7, 0.3, 0.7), CFrame.new(foot + V(0, 3.05, 0)), C(60, 56, 60), Enum.Material.Metal)
+			local flame = part("TorchFlame", V(0.35, 0.5, 0.35), CFrame.new(foot + V(0, 3.4, 0)), look.glow, Enum.Material.Neon)
+			flame.Transparency = 0.2
+			local fire = Instance.new("Fire")
+			fire.Size, fire.Heat = 2.2, 6
+			fire.Color, fire.SecondaryColor = look.glow, look.glow:Lerp(C(255, 255, 255), 0.4)
+			fire.Parent = bowl
+			light(flame, look.glow, 12, 1.8)
+		end
+	end
+
+	-- entry portal the team steps out of
+	local sx, sz, dx, dz = Battle.PathPoint(0)
+	if okPortal and Portal and Portal.BuildGate then
+		local ok, gate = pcall(Portal.BuildGate, "Basic", 3.2)
+		if ok and gate then
+			local at = V(sx, 0.4 + 3.2 + 0.4, sz) - V(dx, 0, dz).Unit * 1.2
+			gate:PivotTo(CFrame.lookAt(at, at + V(dx, 0, dz)))
+			for _, d in ipairs(gate:GetDescendants()) do
+				if d:IsA("BasePart") then d.Anchored = true end
+			end
+			gate.Parent = model
+		end
+	end
+
+	-- boss arena: round platform, rune circle, pillars with banners and a back arch
+	local boss = Battle.PathPoint(0.9)
+	local bx, bz = Battle.PathPoint(0.9)
+	local bossAt = V(bx, 0, bz)
+	part("BossPlatform", V(0.6, 11, 11), CFrame.new(bossAt + V(0, 0.5, 0)) * ANG(0, 0, math.pi / 2), stone:Lerp(C(255, 255, 255), 0.15), Enum.Material.Marble, Enum.PartType.Cylinder)
+	part("BossPlatformRim", V(0.4, 11.8, 11.8), CFrame.new(bossAt + V(0, 0.3, 0)) * ANG(0, 0, math.pi / 2), stone:Lerp(C(0, 0, 0), 0.3), Enum.Material.Slate, Enum.PartType.Cylinder)
+	for i = 0, 15 do
+		local a = i / 16 * math.pi * 2
+		local rune = part("Rune", V(0.7, 0.08, 0.25), CFrame.new(bossAt + V(math.cos(a) * 4.4, 0.83, math.sin(a) * 4.4)) * ANG(0, -a, 0), look.glow, Enum.Material.Neon)
+		rune.Transparency = 0.1
+	end
+	local ring = part("RuneRing", V(0.1, 7.2, 7.2), CFrame.new(bossAt + V(0, 0.82, 0)) * ANG(0, 0, math.pi / 2), look.glow, Enum.Material.Neon, Enum.PartType.Cylinder)
+	ring.Transparency = 0.75
+	light(ring, look.glow, 16, 1.2)
+	for i = 0, 3 do
+		local a = math.pi / 4 + i * math.pi / 2
+		local at = bossAt + V(math.cos(a) * 6.2, 0, math.sin(a) * 6.2)
+		part("BossPillar", V(1.2, 7, 1.2), CFrame.new(at + V(0, 4, 0)), stone:Lerp(C(255, 255, 255), 0.25), Enum.Material.Marble)
+		part("BossPillarCap", V(1.7, 0.5, 1.7), CFrame.new(at + V(0, 7.6, 0)), C(220, 180, 80), Enum.Material.Metal)
+		local banner = part("Banner", V(0.08, 3.4, 1.3), CFrame.lookAt(at + V(0, 5, 0), bossAt + V(0, 5, 0)) * CFrame.new(0, 0, -0.7), look.accent, Enum.Material.Fabric)
+		part("BannerTrim", V(0.1, 0.25, 1.35), banner.CFrame * CFrame.new(0, -1.6, 0), C(240, 200, 90), Enum.Material.Metal)
+		local brazier = part("Brazier", V(0.9, 0.4, 0.9), CFrame.new(at + V(0, 8.05, 0)), C(60, 56, 60), Enum.Material.Metal)
+		local f = Instance.new("Fire")
+		f.Size, f.Heat, f.Color, f.SecondaryColor = 3, 8, look.glow, C(255, 240, 200)
+		f.Parent = brazier
+		light(brazier, look.glow, 14, 1.6)
+	end
+
+	-- scenery around the arena, themed per biome
+	local function clear(x, z)
+		-- keep props off the road and the play space
+		return math.abs(x) > 15 or math.abs(z) > 11
+	end
+	for i = 1, 46 do
+		local x, z = rand(-36, 36), rand(-29, 29)
+		if clear(x, z) then
+			local s = rand(0.8, 1.6)
+			if worldId == "Forest" then
+				part("Trunk", V(0.8, 4 * s, 0.8), CFrame.new(x, 2 * s, z), C(96, 70, 48), Enum.Material.Wood)
+				for lv = 0, 2 do
+					local w = (3.6 - lv * 0.9) * s
+					part("Leaves", V(w, 1.4 * s, w), CFrame.new(x, (3.6 + lv * 1.1) * s, z) * ANG(0, lv * 0.5, 0), C(60 + lv * 12, 130 + lv * 10, 60), Enum.Material.Grass)
+				end
+			elseif worldId == "Volcano" then
+				local rock = part("Basalt", V(2 * s, 3 * s, 2 * s), CFrame.new(x, 1.4 * s, z) * ANG(0, rand(0, 3), rand(-0.2, 0.2)), C(60, 52, 54), Enum.Material.Basalt)
+				if rand() < 0.4 then
+					local lava = part("LavaPool", V(0.2, 4 * s, 4 * s), CFrame.new(x + 2.5, 0.16, z) * ANG(0, 0, math.pi / 2), C(255, 110, 30), Enum.Material.Neon, Enum.PartType.Cylinder)
+					light(lava, C(255, 120, 40), 14, 2)
+				end
+				if rand() < 0.3 then
+					local e = Instance.new("ParticleEmitter")
+					e.Texture, e.Rate, e.Lifetime, e.Speed = SMOKE, 3, NumberRange.new(3, 5), NumberRange.new(2, 3)
+					e.Color = ColorSequence.new(C(70, 60, 60))
+					e.Size = NumberSequence.new(1.5, 4)
+					e.Transparency = NumberSequence.new(0.4, 1)
+					e.Parent = rock
+				end
+			elseif worldId == "Frozen" then
+				part("IceSpike", V(1.4 * s, 5 * s, 1.4 * s), CFrame.new(x, 2.3 * s, z) * ANG(rand(-0.15, 0.15), rand(0, 3), rand(-0.15, 0.15)), C(170, 220, 245), Enum.Material.Ice)
+				part("Snowdrift", V(3.5 * s, 0.8, 2.5 * s), CFrame.new(x + 1, 0.1, z), C(245, 250, 255), Enum.Material.Snow)
+			elseif worldId == "Crystal" then
+				local col = rand() < 0.5 and C(150, 110, 240) or C(100, 220, 235)
+				for c = 1, 3 do
+					local cr = part("Crystal", V(0.9 * s, (2 + c) * s, 0.9 * s), CFrame.new(x + c * 0.6 - 1, (1 + c * 0.5) * s, z) * ANG(rand(-0.3, 0.3), rand(0, 3), rand(-0.3, 0.3)), col, Enum.Material.Neon)
+					cr.Transparency = 0.15
+					if c == 2 then light(cr, col, 10, 1.4) end
+				end
+			elseif worldId == "Candy" then
+				for band = 0, 4 do
+					part("CandyCane", V(0.8 * s, 0.9 * s, 0.8 * s), CFrame.new(x, (0.45 + band * 0.9) * s, z), band % 2 == 0 and C(240, 80, 110) or C(255, 250, 250))
+				end
+				part("Gumdrop", V(2 * s, 1.4 * s, 2 * s), CFrame.new(x + 2, 0.7 * s, z + 1), C(130, 220, 170), Enum.Material.Glass, Enum.PartType.Ball).Transparency = 0.2
+			elseif worldId == "Space" then
+				local moon = part("MoonRock", V(2.4 * s, 1.6 * s, 2.4 * s), CFrame.new(x, 0.6 * s, z) * ANG(0, rand(0, 3), 0), C(120, 124, 140), Enum.Material.Slate, Enum.PartType.Ball)
+				if rand() < 0.35 then
+					local beacon = part("Beacon", V(0.4, 0.4, 0.4), moon.CFrame * CFrame.new(0, 1.2 * s, 0), C(140, 230, 255), Enum.Material.Neon, Enum.PartType.Ball)
+					light(beacon, C(140, 230, 255), 10, 1.5)
+				end
+			elseif worldId == "Shadow" then
+				part("DeadTree", V(0.6, 5 * s, 0.6), CFrame.new(x, 2.5 * s, z) * ANG(0, 0, rand(-0.2, 0.2)), C(60, 54, 70), Enum.Material.Wood)
+				part("Branch", V(0.35, 2.2 * s, 0.35), CFrame.new(x + 0.6, 3.8 * s, z) * ANG(0, rand(0, 3), -0.8), C(60, 54, 70), Enum.Material.Wood)
+				if rand() < 0.4 then
+					local orb = part("SoulOrb", V(0.6, 0.6, 0.6), CFrame.new(x + 1, 1.5, z + 1), C(180, 100, 255), Enum.Material.Neon, Enum.PartType.Ball)
+					light(orb, C(170, 90, 255), 10, 1.4)
+				end
+			else -- Heaven
+				part("Column", V(1.2, 5 * s, 1.2), CFrame.new(x, 2.5 * s, z), C(240, 236, 224), Enum.Material.Marble)
+				part("Cloud", V(4 * s, 1.4 * s, 3 * s), CFrame.new(x + 1.5, 0.4, z + 1), C(255, 255, 255), Enum.Material.SmoothPlastic, Enum.PartType.Ball).Transparency = 0.15
+			end
+		end
+	end
+
+	-- drifting weather over the whole arena
+	local sky = part("Weather", V(70, 1, 56), CFrame.new(0, 22, 0), C(255, 255, 255))
+	sky.Transparency = 1
+	local e = Instance.new("ParticleEmitter")
+	e.Texture = look.weather == "ember" and FIRE or (look.weather == "snow" and SMOKE or SPARK)
+	e.Rate = 40
+	e.Lifetime = NumberRange.new(5, 8)
+	e.EmissionDirection = (look.weather == "ember" or look.weather == "mote" or look.weather == "gold") and Enum.NormalId.Top or Enum.NormalId.Bottom
+	e.Speed = NumberRange.new(2, 4)
+	e.SpreadAngle = Vector2.new(20, 20)
+	e.Color = ColorSequence.new(look.glow, look.glow:Lerp(C(255, 255, 255), 0.5))
+	e.LightEmission = (look.weather == "snow" or look.weather == "leaf") and 0 or 0.8
+	e.Size = NumberSequence.new(look.weather == "snow" and 0.4 or 0.3)
+	e.Transparency = NumberSequence.new(0.2, 1)
+	e.Rotation = NumberRange.new(0, 360)
+	e.RotSpeed = NumberRange.new(-60, 60)
+	if look.weather == "leaf" then
+		e.Color = ColorSequence.new(C(120, 180, 80), C(220, 180, 70))
+		e.Size = NumberSequence.new(0.35)
+	elseif look.weather == "ember" then
+		sky.CFrame = CFrame.new(0, -1, 0)
+	elseif look.weather == "mote" or look.weather == "gold" then
+		sky.CFrame = CFrame.new(0, 0, 0)
+	end
+	e.Parent = sky
+	return look
+end
+
+-- colour grade + bloom on the camera while the battle scene is open
+function Arena.Grade(camera, worldId)
+	local look = LOOK[worldId] or LOOK.Forest
+	local cc = Instance.new("ColorCorrectionEffect")
+	cc.Name = "ArenaGrade"
+	cc.TintColor = look.tint
+	cc.Saturation = look.sat
+	cc.Contrast = 0.08
+	cc.Brightness = 0.02
+	cc.Parent = camera
+	local bloom = Instance.new("BloomEffect")
+	bloom.Name = "ArenaBloom"
+	bloom.Intensity, bloom.Size, bloom.Threshold = 0.6, 28, 0.92
+	bloom.Parent = camera
+	return { cc, bloom }
+end
+
+return Arena
+]]></ProtectedString></Properties></Item>
+<Item class="ModuleScript" referent="RBX83"><Properties><string name="Name">CaughtPresentation</string><ProtectedString name="Source"><![CDATA[-- A brief bestiary slip for discoveries and Rare+ catches. Routine catches stay quiet.
 local RS = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 local Data = require(RS.Shared.CreatureData)
@@ -24048,10 +24735,10 @@ return function(key, discovery)
 	end)
 end
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX83"><Properties><string name="Name">CinematicLook</string><ProtectedString name="Source"><![CDATA[-- One controller owns the scene, including biome and weather transitions.
+<Item class="LocalScript" referent="RBX84"><Properties><string name="Name">CinematicLook</string><ProtectedString name="Source"><![CDATA[-- One controller owns the scene, including biome and weather transitions.
 require(script.Parent.SceneLighting).Start()
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX84"><Properties><string name="Name">ClientMain</string><ProtectedString name="Source"><![CDATA[-- ClientMain: wires all client modules together.
+<Item class="LocalScript" referent="RBX85"><Properties><string name="Name">ClientMain</string><ProtectedString name="Source"><![CDATA[-- ClientMain: wires all client modules together.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ClientMain (LocalScript)
 
 local Players = game:GetService("Players")
@@ -24347,7 +25034,7 @@ task.spawn(function()
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX85"><Properties><string name="Name">ClientSettings</string><ProtectedString name="Source"><![CDATA[-- ClientSettings: presentation-only player settings (never affect odds, charge, rewards).
+<Item class="ModuleScript" referent="RBX86"><Properties><string name="Name">ClientSettings</string><ProtectedString name="Source"><![CDATA[-- ClientSettings: presentation-only player settings (never affect odds, charge, rewards).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ClientSettings (ModuleScript)
 -- Values persist for the session via player attributes; defaults are safe for everyone.
 
@@ -24383,7 +25070,7 @@ end
 
 return Settings
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX86"><Properties><string name="Name">ClientState</string><ProtectedString name="Source"><![CDATA[-- ClientState: local mirror of the player's data + change signal + request helper.
+<Item class="ModuleScript" referent="RBX87"><Properties><string name="Name">ClientState</string><ProtectedString name="Source"><![CDATA[-- ClientState: local mirror of the player's data + change signal + request helper.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ClientState (ModuleScript)
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -24423,7 +25110,7 @@ end
 
 return State
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX87"><Properties><string name="Name">CreatureBudget</string><ProtectedString name="Source"><![CDATA[-- Presentation scheduling only. Catch deadlines, rewards and pet ownership remain on the server.
+<Item class="ModuleScript" referent="RBX88"><Properties><string name="Name">CreatureBudget</string><ProtectedString name="Source"><![CDATA[-- Presentation scheduling only. Catch deadlines, rewards and pet ownership remain on the server.
 local Budget = {}
 Budget.LastAnimatedTier = 3
 local tiers = { { 70, 0 }, { 150, 1 / 20 }, { 260, 1 / 8 } }
@@ -24462,7 +25149,7 @@ end
 
 return Budget
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX88"><Properties><string name="Name">CreatureRenderer</string><ProtectedString name="Source"><![CDATA[-- CreatureRenderer: renders every creature on this client — base pets of all players,
+<Item class="ModuleScript" referent="RBX89"><Properties><string name="Name">CreatureRenderer</string><ProtectedString name="Source"><![CDATA[-- CreatureRenderer: renders every creature on this client — base pets of all players,
 -- creatures being carried, and freshly revealed wild creatures. Handles species entrances,
 -- capture presentation, reactions, click-to-pet, distance LOD and previews.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > CreatureRenderer (ModuleScript)
@@ -25765,7 +26452,7 @@ end
 
 return Renderer
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX89"><Properties><string name="Name">CustomCursor</string><ProtectedString name="Source"><![CDATA[-- Ivory and brass cursor. Native pointer stays available until artwork loads.
+<Item class="LocalScript" referent="RBX90"><Properties><string name="Name">CustomCursor</string><ProtectedString name="Source"><![CDATA[-- Ivory and brass cursor. Native pointer stays available until artwork loads.
 local Input = game:GetService("UserInputService")
 local Gui = game:GetService("GuiService")
 local Run = game:GetService("RunService")
@@ -25913,7 +26600,7 @@ script.Destroying:Connect(function()
 	layer:Destroy()
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX90"><Properties><string name="Name">Effects</string><ProtectedString name="Source"><![CDATA[-- Effects: camera shake, flashes, shockwaves, particle bursts, light beams, floating text,
+<Item class="ModuleScript" referent="RBX91"><Properties><string name="Name">Effects</string><ProtectedString name="Source"><![CDATA[-- Effects: camera shake, flashes, shockwaves, particle bursts, light beams, floating text,
 -- flying-coin money effect, rarity banners and per-world lighting.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > Effects (ModuleScript)
 
@@ -26435,7 +27122,7 @@ end
 
 return Effects
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX91"><Properties><string name="Name">Entrances</string><ProtectedString name="Source"><![CDATA[-- Entrances: themed portal entrances for freshly revealed wild creatures.
+<Item class="ModuleScript" referent="RBX92"><Properties><string name="Name">Entrances</string><ProtectedString name="Source"><![CDATA[-- Entrances: themed portal entrances for freshly revealed wild creatures.
 -- Location: StarterPlayerScripts > Client > Entrances (ModuleScript), used by CreatureRenderer.
 --
 -- Each creature gets a MOTION STYLE from what kind of animal it is (cats pounce, dragons swoop in and
@@ -26904,7 +27591,7 @@ end
 
 return E
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX92"><Properties><string name="Name">ExchangeView</string><ProtectedString name="Source"><![CDATA[-- Four direct trade signs linked to an architectural model of the sanctuary.
+<Item class="ModuleScript" referent="RBX93"><Properties><string name="Name">ExchangeView</string><ProtectedString name="Source"><![CDATA[-- Four direct trade signs linked to an architectural model of the sanctuary.
 local K = require(script.Parent.UIKit)
 local T = K.Theme
 local Craft = require(script.Parent.SanctuaryUI)
@@ -27137,13 +27824,14 @@ function E.Mount(hub, HUD)
 end
 return E
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX93"><Properties><string name="Name">ExpeditionArena</string><ProtectedString name="Source"><![CDATA[-- ExpeditionArena: full-screen battle scene. You "enter" the expedition and watch it from above:
--- your pet (wearing its sword and armour) walks the biome, fights every monster and finally the boss,
--- with HP bars, damage numbers, a boss intro and a victory screen.
+<Item class="ModuleScript" referent="RBX94"><Properties><string name="Name">ExpeditionArena</string><ProtectedString name="Source"><![CDATA[-- ExpeditionArena: the battle scene. You "enter" the expedition and watch it from above: a full battle
+-- map built in the 3D world (ArenaScene: cliffs, torch-lit road, entry portal, boss arena, scenery,
+-- weather, colour grade), your team of up to 3 animated pets wearing their swords and armour, every
+-- monster and the boss, HP bars, damage numbers, banners, and a victory (with loot) or defeat screen.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ExpeditionArena (ModuleScript)
 --
--- It replays the same deterministic battle the expedition timer runs (Shared/ExpeditionBattle), so
--- results always match the mini-map and the claim. Walking is fast-forwarded and every fight plays at
+-- It replays the same deterministic battle the expedition timer runs (Shared/ExpeditionBattle), so the
+-- outcome always matches the mini-map and the claim. Walking is fast-forwarded and every fight plays at
 -- a readable pace, so the whole battle fits in about a minute whenever you watch it.
 local RS = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -27151,21 +27839,27 @@ local Players = game:GetService("Players")
 local Config = require(RS.Shared.Config)
 local Battle = require(RS.Shared.ExpeditionBattle)
 local PetGear = require(RS.Shared.PetGear)
+local PetCombat = require(RS.Shared.PetCombat)
+local Builder = require(RS.Shared.CreatureBuilder)
+local Animator = require(RS.Shared.CreatureAnimator)
+local Variants = require(RS.Shared.Variants)
+local Format = require(RS.Shared.Format)
 local K = require(script.Parent.UIKit)
 local T = K.Theme
 local Scene = require(script.Parent.ExpeditionScene)
+local ArenaScene = require(script.Parent.ArenaScene)
 local Fight = require(script.Parent.ExpeditionFight)
-local Renderer = require(script.Parent.CreatureRenderer)
 local Settings = require(script.Parent.ClientSettings)
 local Sounds = require(script.Parent.Sounds)
 local Arena = {}
 
 local player = Players.LocalPlayer
+local ORIGIN = Vector3.new(-6000, 800, -6000) -- far from the real map; only this client builds it
 local open -- the running scene
 Arena.HideHud = nil -- set by the panel: function(hidden)
 
 -- arena seconds per plan segment: walks fast-forwarded, fights at a watchable beat
-local MIN_BEAT, WALK_MAX, DEPART, LOOT, BACK = 0.75, 1.4, 1.2, 2.2, 2.2
+local MIN_BEAT, WALK_MAX, DEPART, LOOT, BACK = 0.8, 1.6, 1.6, 2.4, 2.4
 local function arenaTimeline(plan)
 	local out, t = {}, 0
 	for _, s in ipairs(plan.segments) do
@@ -27175,7 +27869,7 @@ local function arenaTimeline(plan)
 			for _, b in ipairs(s.beats) do beats += b.len or 1 end
 			len = beats * math.max(MIN_BEAT, s.beat or MIN_BEAT)
 		elseif s.kind == "walk" then
-			len = math.min(WALK_MAX, math.max(0.4, s.len))
+			len = math.min(WALK_MAX, math.max(0.5, s.len))
 		elseif s.kind == "depart" then
 			len = DEPART
 		elseif s.kind == "loot" then
@@ -27222,6 +27916,8 @@ end
 local function setBar(bar, cur, max, text)
 	local f = max > 0 and math.clamp(cur / max, 0, 1) or 0
 	bar.fill.Size = UDim2.fromScale(f, 1)
+	bar.fill.BackgroundColor3 = bar.color and (f > 0.5 and bar.color or (f > 0.25 and Color3.fromRGB(240, 196, 70) or Color3.fromRGB(235, 80, 70)))
+		or bar.fill.BackgroundColor3
 	bar.text.Text = text or (PetGear.Short(cur) .. " / " .. PetGear.Short(max))
 end
 
@@ -27234,8 +27930,46 @@ function Arena.Close()
 	if not o then return end
 	open = nil
 	if o.conn then o.conn:Disconnect() end
+	for _, a in ipairs(o.anims or {}) do pcall(a.Destroy, a) end
+	if o.folder then o.folder:Destroy() end
+	for _, fx in ipairs(o.grade or {}) do fx:Destroy() end
 	if o.gui then o.gui:Destroy() end
+	local cam = workspace.CurrentCamera
+	if cam and o.camType then
+		cam.CameraType = o.camType
+		cam.FieldOfView = o.fov or 70
+	end
 	if Arena.HideHud then pcall(Arena.HideHud, false) end
+end
+
+-- an animated team member: the CreatureAnimator moves legs, wings and tail while the battle drives it
+local function buildPet(member, folder, at)
+	local model, rig = Builder.Build(member.c, Variants.Scale(member.s))
+	Variants.Apply(model, member.v)
+	pcall(PetGear.Apply, model, rig, member)
+	for _, e in ipairs(rig.emitters or {}) do e.Enabled = true end
+	model.Parent = folder
+	local anim = Animator.new(rig, CFrame.new(at))
+	local ext = PetGear.Extents(rig)
+	local k = math.clamp(math.min(2.5 / math.max(ext.Y, 0.1), 3.4 / math.max(ext.X, ext.Z, 0.1)), 0.2, 3)
+	anim:SetScale(k)
+	local entry = { model = model, height = ext.Y * k }
+	entry.drive = function(info)
+		local g = info.ground
+		if info.walking then
+			local flat = Vector3.new(g.X - anim.pos.X, 0, g.Z - anim.pos.Z)
+			anim:MoveTo(Vector3.new(g.X, anim.pos.Y, g.Z), math.max(4, flat.Magnitude / math.max(info.dt, 1 / 120) * 1.1))
+		else
+			anim.moveTarget = nil
+			anim.pos = Vector3.new(g.X, anim.pos.Y, g.Z)
+			local yaw = math.atan2(-info.fwd.X, -info.fwd.Z) + (info.yaw or 0)
+			anim.yaw, anim.targetYaw = yaw, yaw
+		end
+		anim.groundY = g.Y + (info.lift or 0)
+		anim.rootRoll = info.roll or 0
+		anim:Step(info.dt)
+	end
+	return entry, anim
 end
 
 -- active = the expedition record (Expeditions.active from the server view)
@@ -27248,49 +27982,61 @@ function Arena.Open(active)
 		return
 	end
 	local map, total = arenaTimeline(plan)
-	local o = { plan = plan, t = 0, speed = 1 }
+	local o = { plan = plan, t = 0, speed = 1, anims = {} }
 	open = o
 	if Arena.HideHud then pcall(Arena.HideHud, true) end
+	local cam = workspace.CurrentCamera
+	o.camType, o.fov = cam.CameraType, cam.FieldOfView
 
-	local gui = K.new("ScreenGui", { Name = "BattleArena", IgnoreGuiInset = true, ResetOnSpawn = false, DisplayOrder = 45,
-		Parent = player:WaitForChild("PlayerGui") })
-	o.gui = gui
-	local bg = K.new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(14, 12, 22), Parent = gui })
-	K.new("UIGradient", { Rotation = 90, Color = ColorSequence.new(Color3.fromRGB(46, 40, 70), Color3.fromRGB(10, 8, 16)), Parent = bg })
-
-	-- the biome, your geared pet and the monsters, rendered full screen
+	-- the battle map, built in the world (real lighting, fire, particles)
+	local folder = Instance.new("Folder")
+	folder.Name = "BattleArena"
+	o.folder = folder
 	local scene = Scene.Build(plan.world)
-	local gear = { wp = active.wp, ar = active.ar }
-	local okPet, petModel = pcall(Renderer.BuildPreview, active.creature, active.v, gear)
-	if okPet and petModel then
-		petModel.Name = "Scout"
-		petModel.Parent = scene
-	else
-		petModel = nil
+	local okDecor, err = pcall(ArenaScene.Decorate, scene, plan.world)
+	if not okDecor then warn("[Arena] decor: " .. tostring(err)) end
+	for _, d in ipairs(scene:GetDescendants()) do
+		if d:IsA("BasePart") then
+			d.CFrame += ORIGIN
+			d.Anchored = true
+		end
 	end
-	local vp = K.viewport(scene, UDim2.fromScale(1, 1), false)
-	vp.Name = "ArenaView"
-	vp.Ambient = Color3.fromRGB(170, 170, 185)
-	vp.LightDirection = Vector3.new(-0.4, -1, -0.3)
-	vp.Parent = bg
-	local cam = vp.CurrentCamera
-	cam.FieldOfView = 40
-	local okFight, ctx = pcall(Fight.Attach, scene, plan, petModel, cam)
+	scene.Parent = folder
+	folder.Parent = workspace
+
+	local team = {}
+	local sx, sz = Battle.PathPoint(0)
+	for i, member in ipairs(plan.team) do
+		local okPet, entry, anim = pcall(buildPet, member, folder, ORIGIN + Vector3.new(sx, 0.42, sz))
+		if okPet then
+			team[i] = entry
+			table.insert(o.anims, anim)
+		else
+			warn("[Arena] pet: " .. tostring(entry))
+		end
+	end
+	local okFight, ctx = pcall(Fight.Attach, scene, plan, team, cam, ORIGIN)
 	if not okFight then
 		warn("[Arena] could not build the battle: " .. tostring(ctx))
 		Arena.Close()
 		return
 	end
-	ctx.camDir = Vector3.new(-0.32, 0.86, -0.4) -- looking down on the fight from above
-	ctx.camZoom = 1.15
+	cam.CameraType = Enum.CameraType.Scriptable
+	cam.FieldOfView = 48
+	ctx.camDir = Vector3.new(-0.3, 0.88, -0.38) -- looking down on the fight from above
+	ctx.camZoom = 1.0
 	o.ctx = ctx
+	o.grade = ArenaScene.Grade(cam, plan.world)
 
 	------------------------------------------------------------ overlay
+	local gui = K.new("ScreenGui", { Name = "BattleArena", IgnoreGuiInset = true, ResetOnSpawn = false, DisplayOrder = 45,
+		Parent = player:WaitForChild("PlayerGui") })
+	o.gui = gui
 	local def = Config.Worlds[plan.world]
-	local top = K.new("Frame", { BackgroundColor3 = Color3.fromRGB(16, 12, 24), BackgroundTransparency = 0.25,
+	local top = K.new("Frame", { BackgroundColor3 = Color3.fromRGB(16, 12, 24), BackgroundTransparency = 0.3,
 		Size = UDim2.new(1, 0, 0, 52), Parent = gui })
-	label(top, { Text = string.upper((def and def.name or plan.world) .. " expedition"), TextSize = 20,
-		TextColor3 = T.CinematicGold, Position = UDim2.fromOffset(18, 0), Size = UDim2.new(0.5, 0, 1, 0), TextXAlignment = Enum.TextXAlignment.Left })
+	label(top, { Text = string.upper((def and def.name or plan.world) .. "  ·  Level " .. plan.level), TextSize = 20,
+		TextColor3 = T.CinematicGold, Position = UDim2.fromOffset(18, 0), Size = UDim2.new(0.45, 0, 1, 0), TextXAlignment = Enum.TextXAlignment.Left })
 	local counter = label(top, { Text = "", TextSize = 18, AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.fromScale(0.5, 0), Size = UDim2.new(0, 260, 1, 0) })
 	local leave = K.button("Leave", T.Raised, nil, UDim2.fromOffset(96, 36), { AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -12, 0.5, 0), Parent = top })
 	K.bind(leave, Arena.Close)
@@ -27300,28 +28046,35 @@ function Arena.Open(active)
 		K.setButton(speedBtn, "Speed x" .. o.speed)
 	end)
 
-	-- your pet (bottom left) and the current enemy (top centre)
-	local petCard = K.new("Frame", { BackgroundColor3 = Color3.fromRGB(16, 12, 24), BackgroundTransparency = 0.2,
-		AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 16, 1, -16), Size = UDim2.fromOffset(300, 74), Parent = gui })
-	K.corner(12).Parent = petCard
-	label(petCard, { Text = plan.pet.name, TextSize = 18, Position = UDim2.fromOffset(12, 6), Size = UDim2.new(1, -24, 0, 22), TextXAlignment = Enum.TextXAlignment.Left })
-	local petBar = hpBar(petCard, Color3.fromRGB(96, 214, 110), 276, 20)
-	petBar.back.Position = UDim2.fromOffset(12, 30)
-	label(petCard, { Text = "ATK " .. PetGear.Short(plan.pet.atk), TextSize = 13, TextColor3 = Color3.fromRGB(255, 214, 140),
-		Position = UDim2.fromOffset(12, 52), Size = UDim2.new(1, -24, 0, 16), TextXAlignment = Enum.TextXAlignment.Left })
+	-- your team (bottom left) and the current enemy (top centre)
+	local cards = {}
+	for i, member in ipairs(plan.team) do
+		local card = K.new("Frame", { BackgroundColor3 = Color3.fromRGB(16, 12, 24), BackgroundTransparency = 0.2,
+			AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 16, 1, -16 - (#plan.team - i) * 64), Size = UDim2.fromOffset(280, 58), Parent = gui })
+		K.corner(10).Parent = card
+		local sword = PetCombat.WeaponById[member.wp]
+		label(card, { Text = member.name .. (sword and ("  ·  " .. sword.name) or ""), TextSize = 15, Position = UDim2.fromOffset(10, 4),
+			Size = UDim2.new(1, -20, 0, 18), TextXAlignment = Enum.TextXAlignment.Left })
+		local bar = hpBar(card, Color3.fromRGB(96, 214, 110), 260, 18)
+		bar.color = Color3.fromRGB(96, 214, 110)
+		bar.back.Position = UDim2.fromOffset(10, 24)
+		label(card, { Text = "ATK " .. PetGear.Short(member.atk), TextSize = 12, TextColor3 = Color3.fromRGB(255, 214, 140),
+			Position = UDim2.fromOffset(10, 43), Size = UDim2.new(1, -20, 0, 12), TextXAlignment = Enum.TextXAlignment.Left })
+		cards[i] = { card = card, bar = bar }
+	end
 	local enemy = K.new("Frame", { BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 62),
-		Size = UDim2.fromOffset(420, 52), Visible = false, Parent = gui })
+		Size = UDim2.fromOffset(440, 52), Visible = false, Parent = gui })
 	local enemyName = label(enemy, { Text = "", TextSize = 20, Size = UDim2.new(1, 0, 0, 24) })
-	local enemyBar = hpBar(enemy, Color3.fromRGB(235, 80, 70), 420, 20)
+	local enemyBar = hpBar(enemy, Color3.fromRGB(235, 80, 70), 440, 20)
 	enemyBar.back.Position = UDim2.fromOffset(0, 28)
 
 	local log = label(gui, { Text = "", TextSize = 20, AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -24),
-		Size = UDim2.new(0.6, 0, 0, 28) })
-	local popup = label(gui, { Text = "", TextSize = 34, AnchorPoint = Vector2.new(0.5, 1), Size = UDim2.fromOffset(200, 40), Visible = false, ZIndex = 6 })
-	local banner = label(gui, { Text = "", TextSize = 56, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.38),
-		Size = UDim2.new(1, 0, 0, 70), TextTransparency = 1, TextStrokeTransparency = 1, ZIndex = 8 })
+		Size = UDim2.new(0.5, 0, 0, 28) })
+	local popup = label(gui, { Text = "", TextSize = 34, AnchorPoint = Vector2.new(0.5, 1), Size = UDim2.fromOffset(220, 40), Visible = false, ZIndex = 6 })
+	local banner = label(gui, { Text = "", TextSize = 60, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.34),
+		Size = UDim2.new(1, 0, 0, 74), TextTransparency = 1, TextStrokeTransparency = 1, ZIndex = 8 })
 	local bannerSub = label(gui, { Text = "", TextSize = 24, TextColor3 = T.CinematicGold, AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.46), Size = UDim2.new(1, 0, 0, 30), TextTransparency = 1, TextStrokeTransparency = 1, ZIndex = 8 })
+		Position = UDim2.fromScale(0.5, 0.42), Size = UDim2.new(1, 0, 0, 30), TextTransparency = 1, TextStrokeTransparency = 1, ZIndex = 8 })
 	local flash = K.new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(255, 60, 50), BackgroundTransparency = 1, ZIndex = 7, Parent = gui })
 	local bannerT, bannerLife = 99, 1.6
 	local function showBanner(text, sub, color, life)
@@ -27330,7 +28083,37 @@ function Arena.Open(active)
 		bannerT, bannerLife = 0, life or 1.6
 	end
 
-	local seenBoss, lastCleared, finished = false, 0, false
+	local function resultScreen(victory)
+		local s = plan.summary
+		local panel = K.new("Frame", { AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(460, 210),
+			BackgroundColor3 = Color3.fromRGB(18, 14, 28), BackgroundTransparency = 0.1, ZIndex = 9, Parent = gui })
+		K.corner(14).Parent = panel
+		K.new("UIStroke", { Color = victory and T.CinematicGold or Color3.fromRGB(235, 80, 70), Thickness = 2, Parent = panel })
+		local lines = {}
+		if victory then
+			table.insert(lines, string.format("%d monsters defeated, including the %s", s.defeated, s.boss))
+			table.insert(lines, "Rewards: " .. Format.Money(active.coins) .. " coins")
+			for _, drop in ipairs(plan.loot) do
+				local _, byId = PetCombat.Catalog(drop.kind)
+				local item = byId and byId[drop.id]
+				if item then table.insert(lines, "+ " .. item.name) end
+			end
+			if plan.level < Battle.MaxLevel then table.insert(lines, "Level " .. (plan.level + 1) .. " unlocks when you claim!") end
+		else
+			table.insert(lines, "Your team was knocked out by the " .. (plan.encounters[plan.lostAt or 1] and plan.encounters[plan.lostAt or 1].name or "monsters"))
+			table.insert(lines, "You still bring back " .. Format.Money(math.floor(active.coins * 0.25)) .. " coins")
+			table.insert(lines, "Upgrade Power, buy swords & armour, or send a bigger team!")
+		end
+		table.insert(lines, "Claim at the expedition table when the timer ends.")
+		label(panel, { Text = table.concat(lines, "\n"), TextSize = 16, Position = UDim2.fromOffset(16, 12), Size = UDim2.new(1, -32, 1, -70),
+			TextWrapped = true, TextYAlignment = Enum.TextYAlignment.Top, ZIndex = 10 })
+		local back = K.button("Back to the game", victory and T.Gold or T.Raised, nil, UDim2.new(1, -32, 0, 44),
+			{ AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -12), ZIndex = 10, Parent = panel })
+		K.bind(back, Arena.Close)
+	end
+
+	local seenBoss, lastCleared, finished, lostShown = false, 0, false, false
+	local lastKo = {}
 	local calm = Settings.ReducedMotion
 	o.conn = RunService.RenderStepped:Connect(function(dt)
 		if open ~= o then return end
@@ -27338,10 +28121,24 @@ function Arena.Open(active)
 		local pt = planTime(map, total, o.t)
 		local state = Battle.At(plan, math.min(pt, plan.duration - 1e-3))
 		local now = os.clock()
-		pcall(Fight.Update, ctx, state, now, dt, Settings)
+		local okUpdate, uerr = pcall(Fight.Update, ctx, state, now, dt * o.speed, Settings)
+		if not okUpdate and not o.warned then
+			o.warned = true
+			warn("[Arena] update: " .. tostring(uerr))
+		end
 
 		counter.Text = "Monsters " .. state.cleared .. " / " .. #plan.encounters
-		setBar(petBar, state.hp, state.maxHp, "HP " .. PetGear.Short(state.hp) .. " / " .. PetGear.Short(state.maxHp))
+		for i, c in ipairs(cards) do
+			local m = state.team and state.team[i]
+			if m then
+				setBar(c.bar, m.hp, m.maxHp, m.ko and "KNOCKED OUT" or ("HP " .. PetGear.Short(m.hp) .. " / " .. PetGear.Short(m.maxHp)))
+				c.card.BackgroundColor3 = m.ko and Color3.fromRGB(60, 20, 24) or Color3.fromRGB(16, 12, 24)
+				if m.ko and not lastKo[i] then
+					showBanner("KNOCKED OUT!", plan.team[i].name, Color3.fromRGB(255, 110, 90), 1.1)
+				end
+				lastKo[i] = m.ko
+			end
+		end
 		local enc = state.enc and plan.encounters[state.enc]
 		enemy.Visible = enc ~= nil
 		if enc then
@@ -27362,31 +28159,34 @@ function Arena.Open(active)
 				showBanner("DEFEATED!", beaten.name, Color3.fromRGB(140, 255, 150), 1.1)
 			end
 		end
+		if state.kind == "retreat" and not lostShown then
+			lostShown = true
+			showBanner("DEFEAT", "The team retreats...", Color3.fromRGB(235, 80, 70), 2.2)
+		end
 		log.Text = state.text or ""
 
-		-- damage numbers over whoever got hit
+		-- damage numbers over whoever got hit, a camera jolt on big blows
 		local beat, phase = state.beat, state.phase or 0
 		local petHead, monHead = Fight.Anchors(ctx)
 		local show = beat and (beat.who == "pet" or beat.who == "mon") and phase >= 0.45
 		popup.Visible = false
 		if show then
-			local at = Fight.Project(cam, vp.AbsoluteSize, beat.who == "pet" and monHead or petHead)
-			if at then
-				popup.Visible = true
-				popup.Position = UDim2.fromOffset(at.X, at.Y - (phase - 0.45) * 60)
-				popup.Text = beat.dodged and "MISS" or ((beat.crit and "CRIT " or "") .. "-" .. PetGear.Short(beat.dmg))
-				popup.TextColor3 = beat.dodged and Color3.fromRGB(200, 220, 255)
-					or (beat.who == "pet" and (beat.crit and Color3.fromRGB(255, 200, 60) or Color3.new(1, 1, 1)) or Color3.fromRGB(255, 90, 80))
-				popup.TextTransparency = math.clamp((phase - 0.75) * 4, 0, 1)
+			local target = beat.who == "pet" and monHead or petHead
+			if target then
+				local sp, onScreen = cam:WorldToViewportPoint(target)
+				if onScreen then
+					popup.Visible = true
+					popup.Position = UDim2.fromOffset(sp.X, sp.Y - (phase - 0.45) * 70)
+					popup.Text = beat.dodged and "MISS" or ((beat.crit and "CRIT " or "") .. "-" .. PetGear.Short(beat.dmg))
+					popup.TextColor3 = beat.dodged and Color3.fromRGB(200, 220, 255)
+						or (beat.who == "pet" and (beat.crit and Color3.fromRGB(255, 200, 60) or Color3.new(1, 1, 1)) or Color3.fromRGB(255, 90, 80))
+					popup.TextTransparency = math.clamp((phase - 0.75) * 4, 0, 1)
+				end
 			end
-			-- the screen jolts on boss slams and big hits
-			if not calm and phase < 0.6 and (beat.special or beat.crit) then
-				vp.Position = UDim2.fromOffset(math.random(-6, 6), math.random(-6, 6))
-			else
-				vp.Position = UDim2.new()
+			if not calm and phase < 0.62 and (beat.special or beat.crit or beat.move == "slam") then
+				local a = 0.012 * (beat.special and 1.6 or 1)
+				cam.CFrame *= CFrame.Angles(math.noise(now * 30, 1) * a, math.noise(1, now * 30) * a, 0)
 			end
-		else
-			vp.Position = UDim2.new()
 		end
 
 		-- banners and the boss flash
@@ -27395,25 +28195,26 @@ function Arena.Open(active)
 		local alpha = bk < 0.15 and 1 - bk / 0.15 or (bk > 0.75 and math.clamp((bk - 0.75) / 0.25, 0, 1) or 0)
 		banner.TextTransparency, banner.TextStrokeTransparency = alpha, math.max(alpha, 0.2)
 		bannerSub.TextTransparency, bannerSub.TextStrokeTransparency = alpha, math.max(alpha, 0.3)
-		banner.Size = UDim2.new(1, 0, 0, 70 * (bk < 0.15 and (1.6 - bk / 0.15 * 0.6) or 1))
+		banner.Size = UDim2.new(1, 0, 0, 74 * (bk < 0.15 and (1.6 - bk / 0.15 * 0.6) or 1))
 		flash.BackgroundTransparency = math.min(1, flash.BackgroundTransparency + dt * 1.5)
 
 		if pt == math.huge and not finished then
 			finished = true
-			local s = plan.summary
-			showBanner("VICTORY!", string.format("%d monsters defeated, including the %s", s.defeated, s.boss), T.CinematicGold, 1e9)
-			pcall(Sounds.Play, "Rare", 1)
 			enemy.Visible = false
-			local back = K.button("Back to the game", T.Gold, nil, UDim2.fromOffset(240, 50),
-				{ AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.fromScale(0.5, 0.54), Parent = gui })
-			K.bind(back, Arena.Close)
+			if plan.victory then
+				showBanner("VICTORY!", "Level " .. plan.level .. " cleared", T.CinematicGold, 1e9)
+				pcall(Sounds.Play, "Rare", 1)
+			else
+				showBanner("DEFEAT", "Level " .. plan.level .. " was too strong this time", Color3.fromRGB(235, 80, 70), 1e9)
+			end
+			resultScreen(plan.victory)
 		end
 	end)
 end
 
 return Arena
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX94"><Properties><string name="Name">ExpeditionFight</string><ProtectedString name="Source"><![CDATA[-- Animated expedition battle inside the journey-map ViewportFrame: the real pet walks the route,
+<Item class="ModuleScript" referent="RBX95"><Properties><string name="Name">ExpeditionFight</string><ProtectedString name="Source"><![CDATA[-- Animated expedition battle inside the journey-map ViewportFrame: the real pet walks the route,
 -- fights each biome monster (lunges, hits, sparks, knock-downs) and the camera follows the action.
 -- Timing comes from Shared/ExpeditionBattle, so it always matches the HUD mini-map.
 local RS = game:GetService("ReplicatedStorage")
@@ -27514,7 +28315,9 @@ function Kinds.flyer(m, t)
 	return 2.4
 end
 
-local function buildMonster(parent, enc, theme, index)
+local PetCombat = require(RS.Shared.PetCombat)
+
+local function buildMonster(parent, enc, theme, index, origin)
 	local m = Instance.new("Model")
 	m.Name = "Monster" .. index
 	local top = (Kinds[enc.kind] or Kinds.imp)(m, theme)
@@ -27530,8 +28333,8 @@ local function buildMonster(parent, enc, theme, index)
 		m:ScaleTo(scale)
 	end
 	local x, z, dx, dz = Battle.PathPoint(enc.p)
-	local face = -V(dx, 0, dz).Unit -- monsters look back down the route at the incoming pet
-	local pos = V(x, GROUND_Y, z)
+	local face = -V(dx, 0, dz).Unit -- monsters look back down the route at the incoming team
+	local pos = V(x, GROUND_Y, z) + origin
 	local rec = { model = m, base = CFrame.lookAt(pos, pos + face), top = top * scale, scale = scale, parts = {}, wings = {} }
 	for _, d in m:GetDescendants() do
 		if d:IsA("BasePart") then
@@ -27559,19 +28362,34 @@ local function fade(rec, tr)
 	end
 end
 
-function Fight.Attach(scene, plan, petModel, camera)
+-- petModels: one model or a list (the team, in plan.team order). ctx.origin offsets the whole
+-- battle when the scene is built somewhere other than the scene's own coordinates.
+function Fight.Attach(scene, plan, petModels, camera, origin)
+	origin = origin or Vector3.zero
 	local marker = scene:FindFirstChild("ScoutMarker")
 	if marker then
 		marker.Transparency = 1
 	end
-	local ctx = { scene = scene, plan = plan, cam = camera, monsters = {}, camPos = nil, camFocus = nil }
+	local ctx = { scene = scene, plan = plan, cam = camera, monsters = {}, camPos = nil, camFocus = nil, origin = origin, pets = {} }
 	local holder = Instance.new("Model")
 	holder.Name = "BattleMonsters"
 	holder.Parent = scene
 	for i, enc in plan.encounters do
-		ctx.monsters[i] = buildMonster(holder, enc, plan.theme, i)
+		ctx.monsters[i] = buildMonster(holder, enc, plan.theme, i, origin)
 	end
-	if petModel then
+	local list = typeof(petModels) == "Instance" and { petModels } or (petModels or {})
+	for i, petModel in ipairs(list) do
+		if type(petModel) == "table" then
+			-- an animated pet driven by the caller ({ model, drive(info), height }): the caller's
+			-- CreatureAnimator places it, so legs, wings and tails move while it walks and fights
+			local member = plan.team and plan.team[i]
+			local sword = member and PetCombat.WeaponById[member.wp]
+			ctx.pets[i] = {
+				model = petModel.model, drive = petModel.drive, lift = 0, height = petModel.height or 2.2,
+				swordColor = sword and sword.color or Color3.fromRGB(255, 255, 255),
+			}
+			continue
+		end
 		local _, ext = Builder.VisualBounds(petModel)
 		-- about as tall as a minion, but long-tailed/winged pets never sprawl across the route
 		local k = math.min(2.1 / math.max(ext.Y, 0.1), 3.0 / math.max(ext.X, ext.Z, 0.1))
@@ -27579,14 +28397,22 @@ function Fight.Attach(scene, plan, petModel, camera)
 			petModel:ScaleTo(petModel:GetScale() * k)
 		end)
 		local cf, ext2 = Builder.VisualBounds(petModel)
-		ctx.pet = petModel
-		ctx.petLift = petModel:GetPivot().Position.Y - (cf.Position.Y - ext2.Y / 2)
-		ctx.petHeight = ext2.Y
+		local member = plan.team and plan.team[i]
+		local sword = member and PetCombat.WeaponById[member.wp]
+		ctx.pets[i] = {
+			model = petModel,
+			lift = petModel:GetPivot().Position.Y - (cf.Position.Y - ext2.Y / 2),
+			height = ext2.Y,
+			swordColor = sword and sword.color or Color3.fromRGB(255, 255, 255),
+		}
 	end
+	ctx.pet = ctx.pets[1] and ctx.pets[1].model
 	ctx.spark = part(scene, V(1, 1, 1), CFrame.new(0, -50, 0), WHITE, Enum.PartType.Ball, Enum.Material.Neon)
 	ctx.spark.Name = "HitSpark"
 	ctx.ring = part(scene, V(0.2, 3, 3), CFrame.new(0, -50, 0), WHITE, Enum.PartType.Cylinder, Enum.Material.Neon)
 	ctx.ring.Name = "SlamRing"
+	ctx.slash = part(scene, V(0.12, 0.35, 2.6), CFrame.new(0, -50, 0), WHITE, nil, Enum.Material.Neon)
+	ctx.slash.Name = "SwordSlash"
 	return ctx
 end
 
@@ -27595,69 +28421,143 @@ local function knockedDown(rec, f)
 	return CFrame.new(0, 0.45 * rec.scale * f, 0.35 * rec.scale * f) * ANG(1.45 * f, 0, 0)
 end
 
-local function routeAt(p)
+local function routeAt(ctx, p)
 	local x, z, dx, dz = Battle.PathPoint(p)
-	return V(x, GROUND_Y, z), V(dx, 0, dz).Unit
+	return V(x, GROUND_Y, z) + (ctx.origin or Vector3.zero), V(dx, 0, dz).Unit
 end
 
--- World positions the panel uses to pin HP bars over the 3D view.
+-- formation: the lead in front, the other two a step behind on either side
+local SLOTS = { { 0, 0 }, { 1.1, 1.6 }, { 1.1, -1.6 } }
+
+-- World positions used to pin HP bars and damage numbers over the view.
 function Fight.Anchors(ctx)
 	return ctx.petHead, ctx.monHead
 end
+
+local HIDDEN = CFrame.new(0, -50, 0)
 
 function Fight.Update(ctx, state, now, dt, settings)
 	local plan = ctx.plan
 	local calm = settings and settings.ReducedMotion
 	local impactFx = not (calm or (settings and (settings.ReducedFlashes or settings.VFXQuality == "Low")))
 	local beat, phase = state.beat, state.phase or 0
-	local pos, fwd = routeAt(state.p)
+	local pos, fwd = routeAt(ctx, state.p)
 	fwd *= state.dir
 	local enc = state.enc and plan.encounters[state.enc]
 	local monRec = state.enc and ctx.monsters[state.enc]
-	local reach = 1.1
 	if monRec then
 		local mp = monRec.base.Position
-		local gap = V(mp.X - pos.X, 0, mp.Z - pos.Z)
-		fwd = gap.Unit
-		-- lunge stops at the monster's front instead of passing through it
-		reach = math.max(0.3, gap.Magnitude - (enc and enc.boss and 1.9 or 1.2))
+		fwd = V(mp.X - pos.X, 0, mp.Z - pos.Z).Unit
 	end
+	local side = V(-fwd.Z, 0, fwd.X)
 	local swing = math.sin(math.pi * math.clamp(phase, 0, 1))
 	local landed = phase >= 0.45 and phase < 0.8
+	local up = V(0, 1, 0)
 
-	-- Pet motion
-	local offset, lift, yaw = V(), 0, 0
-	if state.kind == "walk" or state.kind == "return" then
-		lift = math.abs(math.sin(now * 9)) * 0.28
-	elseif state.kind == "depart" then
-		lift = (1 - state.f) * 1.5
-	elseif state.kind == "loot" or state.kind == "done" then
-		lift = math.abs(math.sin(now * 6)) * 0.7
-		yaw = state.kind == "loot" and now * 5 or 0
-	elseif beat then
-		if beat.who == "pet" then
-			offset = fwd * swing * reach
-			lift = swing * 0.5
-		elseif beat.who == "mon" then
-			if beat.dodged then
-				offset = fwd:Cross(V(0, 1, 0)) * swing * 1.0
-				lift = swing * 0.6
-			elseif landed then
-				offset = -fwd * swing * 0.45
-				yaw = math.sin(now * 40) * 0.15
+	-- Team motion: formation, per-move attack animations, hits, knock-outs and the victory dance.
+	ctx.petHead = nil
+	local slashOn = false
+	local petPositions = {}
+	for i, pr in ipairs(ctx.pets) do
+		local slot = SLOTS[i] or SLOTS[1]
+		local spread = monRec and 0.7 or 1 -- tighter arc in front of a monster
+		local base = pos - fwd * slot[1] * spread + side * slot[2] * spread
+		local member = state.team and state.team[i]
+		local ko = member and member.ko
+		local offset, lift, yaw, roll, pitch = V(), 0, 0, 0, 0
+		local wob = now * 9 + i * 1.7
+		if ko and state.kind ~= "done" then
+			roll = math.pi / 2 -- knocked out: lying on its side
+			lift = -0.2
+			if state.kind == "retreat" then
+				offset = side * 0.3
 			end
-		elseif beat.who == "rest" then
-			offset = -fwd * 1.4 * math.min(1, phase * 3)
-			lift = math.abs(math.sin(now * 3)) * 0.15
+		elseif state.kind == "walk" or state.kind == "return" or state.kind == "retreat" then
+			lift = math.abs(math.sin(wob)) * 0.28
+		elseif state.kind == "depart" then
+			lift = (1 - state.f) * 1.5
+		elseif state.kind == "loot" or state.kind == "done" then
+			-- victory: everyone hops and spins
+			lift = math.abs(math.sin(now * 6 + i)) * 0.9
+			yaw = state.kind == "loot" and (now * 5 + i) or 0
+		elseif beat then
+			local gapV = monRec and (monRec.base.Position - base) * V(1, 0, 1) or fwd * 2
+			local reach = math.max(0.3, gapV.Magnitude - (enc and enc.boss and 1.9 or 1.2))
+			if beat.who == "pet" and beat.i == i then
+				local move = beat.move or "dash"
+				if move == "slam" then
+					-- leap high and crash down on the monster as the hit lands
+					local q = math.clamp(phase / 0.45, 0, 1)
+					offset = fwd * reach * (phase < 0.45 and q or (1 - (phase - 0.45) / 0.55))
+					lift = phase < 0.45 and math.sin(q * math.pi * 0.5) * 3.2 * (1 - q * 0.6) or swing * 0.4
+					pitch = phase < 0.45 and -0.5 * q or 0
+				elseif move == "spin" then
+					offset = fwd * swing * reach
+					yaw = phase * math.pi * 2
+					lift = swing * 0.6
+				elseif move == "slash" then
+					offset = fwd * swing * reach * 0.85
+					yaw = (phase - 0.5) * 1.4
+					lift = swing * 0.35
+					if phase > 0.25 and phase < 0.7 then
+						slashOn = true
+						local a = (phase - 0.25) / 0.45 * 2.6 - 1.3
+						local at = base + offset + up * (pr.height * 0.6)
+						ctx.slash.Color = pr.swordColor
+						ctx.slash.Transparency = 0.1 + 0.8 * math.abs(a) / 1.3
+						ctx.slash.CFrame = CFrame.lookAt(at, at + fwd) * ANG(0, a, 0.35) * CFrame.new(0, 0, -1.3)
+					end
+				elseif move == "bite" then
+					offset = fwd * swing * reach
+					pitch = swing * 0.35
+					lift = swing * 0.25
+				else -- dash: a fast low charge
+					offset = fwd * math.min(1, swing * 1.4) * reach
+					lift = swing * 0.15
+					pitch = -swing * 0.2
+				end
+				ctx.petHead = base + offset + V(0, pr.height + lift + 0.5, 0)
+			elseif beat.who == "mon" and (beat.special or beat.target == i) then
+				if beat.dodged then
+					offset = side * swing * 1.1
+					lift = swing * 0.7
+				elseif landed then
+					offset = -fwd * swing * (beat.special and 0.9 or 0.5)
+					yaw = math.sin(now * 40) * 0.15
+					lift = beat.special and swing * 0.5 or 0
+				end
+				if beat.ko and phase > 0.6 then
+					roll = math.pi / 2 * math.clamp((phase - 0.6) / 0.3, 0, 1)
+				end
+				ctx.petHead = ctx.petHead or (base + offset + V(0, pr.height + lift + 0.5, 0))
+			else
+				-- ready stance: bouncing on its toes, waiting for its turn
+				lift = math.abs(math.sin(now * 5 + i * 2)) * 0.15
+			end
+		end
+		if calm then
+			offset, lift, yaw, pitch = V(), 0, 0, 0
+		end
+		local at = base + offset + V(0, (pr.lift or 0) + lift, 0)
+		if pr.drive then
+			pr.drive({
+				ground = base + offset, lift = lift, fwd = fwd, yaw = yaw, roll = roll, pitch = pitch,
+				walking = not ko and (state.kind == "walk" or state.kind == "return" or state.kind == "retreat"),
+				dt = dt or 1 / 60,
+			})
+		else
+			pr.model:PivotTo(CFrame.lookAt(at, at + fwd) * ANG(pitch, yaw, roll))
+		end
+		petPositions[i] = base + offset
+		if i == 1 and not ctx.petHead then
+			ctx.petHead = base + offset + V(0, pr.height + lift + 0.5, 0)
 		end
 	end
-	if calm then
-		offset, lift, yaw = V(), 0, 0
+	if not slashOn then
+		ctx.slash.CFrame = HIDDEN
 	end
-	if ctx.pet then
-		local at = pos + offset + V(0, (ctx.petLift or 0) + lift, 0)
-		ctx.pet:PivotTo(CFrame.lookAt(at, at + fwd) * ANG(0, yaw, 0))
-		ctx.petHead = pos + offset + V(0, (ctx.petHeight or 2) + lift + 0.5, 0)
+	if not ctx.petHead then
+		ctx.petHead = pos + V(0, 2.5, 0)
 	end
 
 	-- Monsters
@@ -27684,14 +28584,18 @@ function Fight.Update(ctx, state, now, dt, settings)
 			if state.enc == i and beat then
 				if beat.who == "mon" then
 					local lunge = beat.special and 0 or swing * 0.9
-					o = CFrame.new(0, hover + (beat.special and swing * 1.6 or swing * 0.3), -lunge)
+					o = CFrame.new(0, hover + (beat.special and swing * 1.8 or swing * 0.3), -lunge)
 				elseif beat.who == "pet" and landed then
 					flash = 1 - (phase - 0.45) / 0.35
-					o = CFrame.new(0, hover, 0.35 * swing) * ANG(0, math.sin(now * 45) * 0.12, 0)
+					local knock = beat.move == "slam" and 0.7 or 0.35
+					o = CFrame.new(0, hover - (beat.move == "slam" and 0.15 * swing or 0), knock * swing) * ANG(0, math.sin(now * 45) * 0.12, 0)
 					if beat.monHp <= 0 then
 						local fall = math.clamp((phase - 0.45) / 0.5, 0, 1)
 						o = CFrame.new(0, hover * (1 - fall), 0) * knockedDown(rec, fall)
 					end
+				else
+					-- idle menace between blows
+					o = CFrame.new(0, hover + math.abs(math.sin(now * 3)) * 0.06, 0)
 				end
 				if calm then
 					o = CFrame.new(0, hover, 0)
@@ -27713,15 +28617,16 @@ function Fight.Update(ctx, state, now, dt, settings)
 		end
 	end
 
-	-- Hit spark and boss slam ring
+	-- Hit spark and slam rings (pet slams crack the ground too)
 	local sparkAt
-	if impactFx and beat and landed and beat.who ~= "rest" and not beat.dodged then
+	if impactFx and beat and landed and not beat.dodged then
 		local k = (phase - 0.45) / 0.35
+		local hitPet = beat.target and petPositions[beat.target] or petPositions[1]
 		if beat.who == "pet" and monRec then
 			sparkAt = monRec.base.Position + V(0, monRec.top * 0.55, 0) - fwd * 0.4
 			ctx.spark.Color = beat.crit and Color3.fromRGB(255, 196, 60) or WHITE
-		elseif ctx.pet then
-			sparkAt = pos + V(0, (ctx.petHeight or 2) * 0.55, 0)
+		elseif hitPet then
+			sparkAt = hitPet + V(0, 1.2, 0)
 			ctx.spark.Color = beat.special and Color3.fromRGB(255, 70, 60) or Color3.fromRGB(255, 140, 120)
 		end
 		if sparkAt then
@@ -27730,24 +28635,26 @@ function Fight.Update(ctx, state, now, dt, settings)
 			ctx.spark.Transparency = 0.15 + 0.85 * k
 			ctx.spark.CFrame = CFrame.new(sparkAt)
 		end
-		if beat.special and monRec then
-			ctx.ring.Size = V(0.15, 2 + 7 * k, 2 + 7 * k)
+		local ringAt = (beat.special and monRec and monRec.base.Position)
+			or (beat.who == "pet" and beat.move == "slam" and monRec and monRec.base.Position)
+		if ringAt then
+			ctx.ring.Size = V(0.15, 2 + (beat.special and 9 or 6) * k, 2 + (beat.special and 9 or 6) * k)
 			ctx.ring.Transparency = 0.3 + 0.7 * k
-			ctx.ring.Color = plan.theme.accent
-			ctx.ring.CFrame = CFrame.new(monRec.base.Position + V(0, 0.1, 0)) * ANG(0, 0, math.pi / 2)
+			ctx.ring.Color = beat.special and plan.theme.accent or Color3.fromRGB(255, 220, 120)
+			ctx.ring.CFrame = CFrame.new(ringAt + V(0, 0.1, 0)) * ANG(0, 0, math.pi / 2)
 		else
-			ctx.ring.CFrame = CFrame.new(0, -50, 0)
+			ctx.ring.CFrame = HIDDEN
 		end
 	end
 	if not sparkAt then
-		ctx.spark.CFrame = CFrame.new(0, -50, 0)
-		ctx.ring.CFrame = CFrame.new(0, -50, 0)
+		ctx.spark.CFrame = HIDDEN
+		ctx.ring.CFrame = HIDDEN
 	end
 
 	-- Action camera: wide while exploring, closes in on fights.
 	if ctx.cam then
 		if calm then
-			ctx.camPos, ctx.camFocus = V(-25, 21, -29), V(0, 1, 0)
+			ctx.camPos, ctx.camFocus = V(-25, 21, -29) + ctx.origin, V(0, 1, 0) + ctx.origin
 			ctx.cam.CFrame = CFrame.lookAt(ctx.camPos, ctx.camFocus)
 			return
 		end
@@ -27786,7 +28693,7 @@ end
 
 return Fight
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX95"><Properties><string name="Name">ExpeditionMiniMap</string><ProtectedString name="Source"><![CDATA[-- Always-on HUD mini-map for the active expedition: the route, every monster (waiting, fighting,
+<Item class="ModuleScript" referent="RBX96"><Properties><string name="Name">ExpeditionMiniMap</string><ProtectedString name="Source"><![CDATA[-- Always-on HUD mini-map for the active expedition: the route, every monster (waiting, fighting,
 -- defeated), the pet marker moving and lunging, live HP bars and a one-line battle log.
 local RS = game:GetService("ReplicatedStorage")
 local Config = require(RS.Shared.Config)
@@ -28008,7 +28915,7 @@ end
 
 return Mini
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX96"><Properties><string name="Name">ExpeditionPanel</string><ProtectedString name="Source"><![CDATA[-- Skyforge visual planning; all mission authority remains on the server.
+<Item class="ModuleScript" referent="RBX97"><Properties><string name="Name">ExpeditionPanel</string><ProtectedString name="Source"><![CDATA[-- Skyforge visual planning; all mission authority remains on the server.
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -28016,6 +28923,8 @@ local Config = require(RS.Shared.Config)
 local Creatures = require(RS.Shared.CreatureData)
 local Rules = require(RS.Shared.ExpeditionConfig)
 local Planner = require(RS.Shared.ExpeditionPlanner)
+local PetCombat = require(RS.Shared.PetCombat)
+local PetGear = require(RS.Shared.PetGear)
 local Format = require(RS.Shared.Format)
 local Variants = require(RS.Shared.Variants)
 local K = require(script.Parent.UIKit)
@@ -28035,6 +28944,13 @@ local Panel = {}
 local player = Players.LocalPlayer
 local ready, busy = false, false
 local selectedUid, routeIndex = nil, 1
+local team, chosenLevel, levelButton = {}, {}, nil -- up to 3 pets; chosen adventure level per biome
+local TEAM_SIZE = 3
+local function levelFor(r)
+	local top = math.min(r and r.maxLevel or 5, ((r and r.cleared) or 0) + 1)
+	local want = r and chosenLevel[r.world] or nil
+	return math.clamp(want or top, 1, math.max(1, top))
+end
 local routeDirection = 1
 local manualSelection, routeInitialized = false, false
 local activeHint
@@ -28357,7 +29273,21 @@ renderPets = function()
 				)
 				petForButton[b] = p
 				K.bind(b, function()
-					selectedUid, manualSelection = p.u, true
+					-- tap to add a pet to the team (up to 3), tap again to take it out
+					if not manualSelection then
+						manualSelection = true
+					end
+					local at = table.find(team, p.u)
+					if at then
+						if #team > 1 then
+							table.remove(team, at)
+						end
+					elseif #team < TEAM_SIZE then
+						table.insert(team, p.u)
+					else
+						team[TEAM_SIZE] = p.u
+					end
+					selectedUid = team[1]
 					updateSelection()
 				end)
 			end
@@ -28367,10 +29297,29 @@ renderPets = function()
 	for _, b in portraits:GetChildren() do
 		if b:IsA("TextButton") then
 			local st = b:FindFirstChildOfClass("UIStroke")
-			local chosen = b.Name == "Pet_" .. tostring(selectedUid)
+			local slot
+			for i, uid in ipairs(team) do
+				if b.Name == "Pet_" .. tostring(uid) then
+					slot = i
+				end
+			end
+			local chosen = slot ~= nil
 			b:SetAttribute("Selected", chosen)
 			st.Color = chosen and T.Gold or T.Border
-			st.Thickness = chosen and 2 or 1
+			st.Thickness = chosen and 3 or 1
+			local badge = b:FindFirstChild("TeamSlot")
+			if chosen and not badge then
+				badge = K.new("TextLabel", {
+					Name = "TeamSlot", AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -2, 0, 2),
+					Size = UDim2.fromOffset(18, 18), BackgroundColor3 = T.Gold, TextColor3 = Color3.new(1, 1, 1),
+					Font = T.Bold, TextSize = 13, ZIndex = 5, Parent = b,
+				})
+				K.corner(9).Parent = badge
+			end
+			if badge then
+				badge.Visible = chosen
+				badge.Text = tostring(slot or "")
+			end
 		end
 	end
 end
@@ -28379,21 +29328,61 @@ updateSelection = function()
 		return
 	end
 	local r = route()
-	if not manualSelection or not ownedPet() then
-		selectedUid = Planner.Suggest(State.Data, r)
+	-- keep only pets that still exist and aren't away; refill with a suggested team when unchosen
+	local owned = {}
+	for _, pet in State.Data.Creatures or {} do
+		owned[pet.u] = pet
+	end
+	local away = activeTrip()
+	for i = #team, 1, -1 do
+		if not owned[team[i]] or Planner.OnTeam(away, team[i]) then
+			table.remove(team, i)
+		end
+	end
+	if not manualSelection or #team == 0 then
+		team = Planner.SuggestTeam(State.Data, r, TEAM_SIZE)
+	end
+	selectedUid = team[1]
+	local teamPets = {}
+	for _, uid in ipairs(team) do
+		table.insert(teamPets, owned[uid])
 	end
 	local p = ownedPet()
 	local d = p and Creatures.ById[p.c]
-	scoutCaption.Text = manualSelection and "Your chosen scout" or "Suggested scout"
-	petLabel.Text = d and Variants.Prefix(p.s, p.v) .. d.name or "Choose a pet"
-	bonus.Text = "Choose a scout for this route."
+	local level = levelFor(r)
+	scoutCaption.Text = (manualSelection and "Your team" or "Suggested team") .. " (" .. #team .. "/" .. TEAM_SIZE .. ")"
+	local names = {}
+	for _, pet in ipairs(teamPets) do
+		local def = Creatures.ById[pet.c]
+		table.insert(names, def and def.name or "?")
+	end
+	petLabel.Text = #names > 0 and table.concat(names, " + ") or "Choose up to 3 pets"
+	bonus.Text = "Tap pets below to build a team of up to 3."
 	reward.Text = ""
 	reward.TextSize = page.premium and 28 or 20
+	if levelButton and r then
+		local top = math.min(r.maxLevel or 5, (r.cleared or 0) + 1)
+		K.setButton(levelButton, "Level " .. level .. " / " .. (r.maxLevel or 5), T.Brass)
+		K.setEnabled(levelButton, top > 1)
+	end
 	if p and d and r then
-		local quote = Planner.Quote(p, r)
-		local _, _, commitment = Planner.Commitment(State.Data, p.u)
-		reward.Text = Format.Money(quote.coins) .. " coins"
-		bonus.Text = quote.matched and ("+" .. quote.bonusPercent .. "% biome bonus / " .. commitment) or commitment
+		local leveled = table.clone(r)
+		leveled.duration = math.floor(r.duration * (1 + 0.2 * (level - 1)) + 0.5)
+		local quote = Planner.QuoteTeam(teamPets, leveled, level)
+		local teamHp, teamAtk = 0, 0
+		for _, pet in ipairs(teamPets) do
+			local hp, atk = PetCombat.Stats(pet)
+			teamHp += hp
+			teamAtk += atk
+		end
+		local tier = Battle.LootTier(r.world, level)
+		local loot = PetCombat.Weapons[tier]
+		reward.Text = Format.Money(quote.coins) .. " coins + loot"
+		bonus.Text = string.format(
+			"Team HP %s · ATK %s · win to drop up to %s-tier gear%s",
+			PetGear.Short(teamHp), PetGear.Short(teamAtk), loot and loot.id or "?",
+			quote.matched and (" · +" .. quote.bonusPercent .. "% biome bonus") or ""
+		)
 		bonus.TextColor3 = quote.matched and T.Success or T.Muted
 		relicHint.Text = (view() and view().relics and view().relics[r.world]) and "Biome relic recovered"
 			or "First return recovers this biome's relic"
@@ -28403,7 +29392,8 @@ updateSelection = function()
 		routeCaption.Text = r.unlocked and (descriptions[r.world] or "Explore the biome and recover its relic.")
 			or ("Unlock " .. worldName(r.world) .. " in the biome shop to explore here.")
 
-		stats.Text = duration(r.duration) .. "  /  " .. (r.unlocked and "Unlocked" or "Locked biome")
+		local lvl = levelFor(r)
+		stats.Text = duration(r.duration * (1 + 0.2 * (lvl - 1))) .. "  /  " .. (r.unlocked and ("Level " .. lvl .. " · " .. (r.cleared or 0) .. "/" .. (r.maxLevel or 5) .. " cleared") or "Locked biome")
 		if page.frame.Size.Y.Offset < 260 then
 			local _, status = Planner.Commitment(State.Data, p and p.u)
 			stats.Text = duration(r.duration) .. " / " .. (r.unlocked and status or "Locked biome")
@@ -28714,9 +29704,29 @@ function Panel.Init()
 		local r = route()
 		if r and not r.unlocked then
 			HUD.Open("Worlds")
-		elseif selectedUid and r then
-			request("StartExpedition", game.HttpService:JSONEncode({ route = r.id, petUid = selectedUid }))
+		elseif #team > 0 and r then
+			request(
+				"StartExpedition",
+				game.HttpService:JSONEncode({ route = r.id, pets = team, petUid = team[1], level = levelFor(r) })
+			)
 		end
+	end)
+	-- adventure level for this biome: tap to cycle through the levels you have unlocked
+	levelButton = K.button(
+		"Level 1",
+		T.Brass,
+		nil,
+		UDim2.fromOffset(130, 44),
+		{ Name = "AdventureLevel", AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -162, 1, 0), Parent = right }
+	)
+	K.bind(levelButton, function()
+		local r = route()
+		if not r then
+			return
+		end
+		local top = math.min(r.maxLevel or 5, (r.cleared or 0) + 1)
+		chosenLevel[r.world] = (levelFor(r) % top) + 1
+		updateSelection()
 	end)
 	activeBox = K.new(
 		"Frame",
@@ -28923,6 +29933,9 @@ function Panel.Init()
 		relicLink.Position = UDim2.new(0, 0, 1, -30)
 		relicLink.Size = UDim2.new(0.3, -12, 0, 30)
 		send.Size = UDim2.fromOffset(154, 44)
+		levelButton.AnchorPoint = Vector2.new(1, 1)
+		levelButton.Position = UDim2.new(1, -162, 1, 0)
+		levelButton.Size = UDim2.fromOffset(130, 44)
 		selectedHero.Visible = premium
 		petMeta.Visible = premium
 		relicHint.Visible = premium
@@ -29041,6 +30054,8 @@ function Panel.Init()
 			stats.TextSize = 15
 			relicHint.Position = UDim2.fromOffset(0, 330)
 			send.Size = UDim2.new(1, 0, 0, 48)
+			levelButton.Position = UDim2.new(1, 0, 1, -54)
+			levelButton.Size = UDim2.new(1, 0, 0, 40)
 			activeSceneFrame.Position = UDim2.fromOffset(0, 8)
 			activeSceneFrame.Size = UDim2.new(0.46, -12, 1, -54)
 			activeSceneFrame.BackgroundTransparency = 0
@@ -29160,7 +30175,7 @@ function Panel.Init()
 end
 return Panel
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX97"><Properties><string name="Name">ExpeditionScene</string><ProtectedString name="Source"><![CDATA[-- Detailed, deterministic native biome vignettes for the expedition map.
+<Item class="ModuleScript" referent="RBX98"><Properties><string name="Name">ExpeditionScene</string><ProtectedString name="Source"><![CDATA[-- Detailed, deterministic native biome vignettes for the expedition map.
 local Config = require(game.ReplicatedStorage.Shared.Config)
 local Scene = {}
 local V, C = Vector3.new, Color3.fromRGB
@@ -29350,7 +30365,7 @@ function Scene.Build(id)
 end
 return Scene
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX98"><Properties><string name="Name">FarmClient</string><ProtectedString name="Source"><![CDATA[-- FarmClient: client side of the courtyard farm (server: FarmService).
+<Item class="LocalScript" referent="RBX99"><Properties><string name="Name">FarmClient</string><ProtectedString name="Source"><![CDATA[-- FarmClient: client side of the courtyard farm (server: FarmService).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > FarmClient (LocalScript)
 --  * Shows only YOUR courtyard's farm prompts (beds, feeding, board, chest); others' stay hidden.
 --  * Updates permanent physical farm signs. No screen toasts or character message bursts.
@@ -29783,7 +30798,7 @@ FarmFx.OnClientEvent:Connect(function(kind, d)
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX99"><Properties><string name="Name">FarmMarketPanel</string><ProtectedString name="Source"><![CDATA[-- Two physical entrances, one small shop. No additional HUD destination.
+<Item class="ModuleScript" referent="RBX100"><Properties><string name="Name">FarmMarketPanel</string><ProtectedString name="Source"><![CDATA[-- Two physical entrances, one small shop. No additional HUD destination.
 local Players = game:GetService("Players")
 local Http = game:GetService("HttpService")
 local RS = game:GetService("ReplicatedStorage")
@@ -30095,12 +31110,13 @@ end
 
 return Panel
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX100"><Properties><string name="Name">ForgePanel</string><ProtectedString name="Source"><![CDATA[-- The hall is the entry point. Explicit copies, visible odds, then a consumption confirmation.
+<Item class="ModuleScript" referent="RBX101"><Properties><string name="Name">ForgePanel</string><ProtectedString name="Source"><![CDATA[-- The hall is the entry point. Explicit copies, visible odds, then a consumption confirmation.
 local RS = game:GetService("ReplicatedStorage")
 local Http = game:GetService("HttpService")
 local Rules = require(RS.Shared.ForgeRules)
 local Data = require(RS.Shared.CreatureData)
 local Variants = require(RS.Shared.Variants)
+local Planner = require(RS.Shared.ExpeditionPlanner)
 local State = require(script.Parent.ClientState)
 local K = require(script.Parent.UIKit)
 local HUD = require(script.Parent.HUD)
@@ -30133,7 +31149,7 @@ end
 
 local function isAway(uid)
 	local active = State.Data.Expeditions and State.Data.Expeditions.active
-	return active and active.petUid == uid
+	return Planner.OnTeam(active, uid)
 end
 local function selection()
 	local ids = {}
@@ -30612,7 +31628,7 @@ function Panel.Init()
 end
 return Panel
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX101"><Properties><string name="Name">GameplayFeel</string><ProtectedString name="Source"><![CDATA[-- Batched treasury collection feedback. Sir Rowan owns tutorial guidance.
+<Item class="ModuleScript" referent="RBX102"><Properties><string name="Name">GameplayFeel</string><ProtectedString name="Source"><![CDATA[-- Batched treasury collection feedback. Sir Rowan owns tutorial guidance.
 local RS = game:GetService("ReplicatedStorage")
 local Format = require(RS.Shared.Format)
 local Settings = require(script.Parent.ClientSettings)
@@ -30648,7 +31664,7 @@ function Feel.Money(amount, position)
 end
 return Feel
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX102"><Properties><string name="Name">GuildModel</string><ProtectedString name="Source"><![CDATA[-- An architectural model of the four sanctuary trades, made for the exchange folio.
+<Item class="ModuleScript" referent="RBX103"><Properties><string name="Name">GuildModel</string><ProtectedString name="Source"><![CDATA[-- An architectural model of the four sanctuary trades, made for the exchange folio.
 local Merchant = require(script.Parent.MerchantDisplay)
 local Portal = require(game:GetService("ReplicatedStorage").Shared.PortalBuilder)
 local K = require(script.Parent.UIKit)
@@ -30820,7 +31836,7 @@ function G.Pedestal(model)
 end
 return G
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX103"><Properties><string name="Name">HUD</string><ProtectedString name="Source"><![CDATA[-- Direct Pets, Shop and Expeditions navigation with a shared responsive panel layer.
+<Item class="ModuleScript" referent="RBX104"><Properties><string name="Name">HUD</string><ProtectedString name="Source"><![CDATA[-- Direct Pets, Shop and Expeditions navigation with a shared responsive panel layer.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Input = game:GetService("UserInputService")
@@ -31378,7 +32394,7 @@ end)
 task.defer(rescale)
 return HUD
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX104"><Properties><string name="Name">Intro</string><ProtectedString name="Source"><![CDATA[-- Intro: the portal arrival you see when you join.
+<Item class="ModuleScript" referent="RBX105"><Properties><string name="Name">Intro</string><ProtectedString name="Source"><![CDATA[-- Intro: the portal arrival you see when you join.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > Intro (ModuleScript)
 --
 --   Intro.Cover(hud)  runs the moment the client starts, entirely in 2D so it never waits on the map:
@@ -31871,7 +32887,7 @@ end
 
 return Intro
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX105"><Properties><string name="Name">IntroReadiness</string><ProtectedString name="Source"><![CDATA[-- Loading stages describe actual readiness, rather than a percentage of arbitrary instance counts.
+<Item class="ModuleScript" referent="RBX106"><Properties><string name="Name">IntroReadiness</string><ProtectedString name="Source"><![CDATA[-- Loading stages describe actual readiness, rather than a percentage of arbitrary instance counts.
 local Readiness = {}
 function Readiness.Resolve(state)
 	if not state.loaded or not state.map then
@@ -31890,7 +32906,7 @@ function Readiness.Resolve(state)
 end
 return Readiness
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX106"><Properties><string name="Name">KnightGuide</string><ProtectedString name="Source"><![CDATA[-- A short saved guide, with a real knight portrait and ground arrows on known hub paths.
+<Item class="ModuleScript" referent="RBX107"><Properties><string name="Name">KnightGuide</string><ProtectedString name="Source"><![CDATA[-- A short saved guide, with a real knight portrait and ground arrows on known hub paths.
 local RS = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Rules = require(RS.Shared.ForgeRules)
@@ -32328,7 +33344,7 @@ function Guide.Init()
 end
 return Guide
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX107"><Properties><string name="Name">LabelDeclutter</string><ProtectedString name="Source"><![CDATA[-- LabelDeclutter: keeps floating world labels (BillboardGuis) from piling on top of each other.
+<Item class="LocalScript" referent="RBX108"><Properties><string name="Name">LabelDeclutter</string><ProtectedString name="Source"><![CDATA[-- LabelDeclutter: keeps floating world labels (BillboardGuis) from piling on top of each other.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > LabelDeclutter (LocalScript)
 --
 -- Most labels are drawn at a fixed pixel size, so a label 30 studs away is as big on screen as one
@@ -32516,7 +33532,7 @@ RunService.Heartbeat:Connect(function(dt)
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX108"><Properties><string name="Name">MenuWidgets</string><ProtectedString name="Source"><![CDATA[-- Gameplay widgets yield to menus and the loading intro, preserving their enabled state.
+<Item class="LocalScript" referent="RBX109"><Properties><string name="Name">MenuWidgets</string><ProtectedString name="Source"><![CDATA[-- Gameplay widgets yield to menus and the loading intro, preserving their enabled state.
 local player = game:GetService("Players").LocalPlayer
 local gui = player:WaitForChild("PlayerGui")
 local names = { MomentumUI = true, QuestPanel = true }
@@ -32542,7 +33558,7 @@ workspace:GetAttributeChangedSignal("TPFC_IntroPlaying"):Connect(update)
 gui.ChildAdded:Connect(update)
 update()
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX109"><Properties><string name="Name">MerchantDisplay</string><ProtectedString name="Source"><![CDATA[-- A small, actual sanctuary shop display for the menu. No image or asset dependency.
+<Item class="ModuleScript" referent="RBX110"><Properties><string name="Name">MerchantDisplay</string><ProtectedString name="Source"><![CDATA[-- A small, actual sanctuary shop display for the menu. No image or asset dependency.
 local D = {}
 local C, V, CF = Color3.fromRGB, Vector3.new, CFrame.new
 local wood, stone, brass, slate = C(88, 62, 40), C(224, 221, 206), C(178, 142, 74), C(39, 65, 69)
@@ -32653,7 +33669,7 @@ function D.Emblem(kind)
 end
 return D
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX110"><Properties><string name="Name">MomentumUI</string><ProtectedString name="Source"><![CDATA[-- MomentumUI: shows the perfect-throw streak and the server-wide Rift Storm.
+<Item class="LocalScript" referent="RBX111"><Properties><string name="Name">MomentumUI</string><ProtectedString name="Source"><![CDATA[-- MomentumUI: shows the perfect-throw streak and the server-wide Rift Storm.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > MomentumUI (LocalScript)
 --
 --   * Streak badge (bottom centre): appears after a perfect throw, "PERFECT STREAK x3 · +15% luck",
@@ -32797,7 +33813,7 @@ RunService.Heartbeat:Connect(function(dt)
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX111"><Properties><string name="Name">MovementFov</string><ProtectedString name="Source"><![CDATA[-- Reversible sprint lens offset. Cinematics release it before saving their lens.
+<Item class="ModuleScript" referent="RBX112"><Properties><string name="Name">MovementFov</string><ProtectedString name="Source"><![CDATA[-- Reversible sprint lens offset. Cinematics release it before saving their lens.
 local Fov = {}
 local owner, offset, output
 local function close(a, b)
@@ -32833,7 +33849,7 @@ function Fov.Update(camera, target, dt)
 end
 return Fov
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX112"><Properties><string name="Name">Panels</string><ProtectedString name="Source"><![CDATA[-- Sanctuary shops, collection, index, customization and settings.
+<Item class="ModuleScript" referent="RBX113"><Properties><string name="Name">Panels</string><ProtectedString name="Source"><![CDATA[-- Sanctuary shops, collection, index, customization and settings.
 -- All spending and ownership changes use the existing authoritative server actions.
 local RS = game:GetService("ReplicatedStorage")
 local Http = game:GetService("HttpService")
@@ -32847,6 +33863,24 @@ local Variants = require(RS.Shared.Variants)
 local Farm = require(RS.Shared.FarmConfig)
 local PetCombat = require(RS.Shared.PetCombat)
 local PetGear = require(RS.Shared.PetGear)
+local Planner = require(RS.Shared.ExpeditionPlanner)
+local function bagKey(d)
+	local bag = d.Expeditions and d.Expeditions.gearBag
+	if not bag then return "" end
+	local parts = {}
+	for _, kind in ipairs({ "weapon", "armor" }) do
+		for id, n in pairs(bag[kind] or {}) do table.insert(parts, kind .. id .. n) end
+	end
+	table.sort(parts)
+	return table.concat(parts, ",")
+end
+local function teamKey(d)
+	local a = d.Expeditions and d.Expeditions.active
+	if not a then return "" end
+	local ids = { tostring(a.petUid) }
+	for _, m in ipairs(a.team or {}) do table.insert(ids, tostring(m.u)) end
+	return table.concat(ids, "+")
+end
 local K = require(script.Parent.UIKit)
 local T = K.Theme
 local HUD = require(script.Parent.HUD)
@@ -33331,7 +34365,7 @@ local function renderCreatureDetail()
 			break
 		end
 	end
-	local awayUid = d.Expeditions and d.Expeditions.active and d.Expeditions.active.petUid
+	local awayUid = teamKey(d)
 	local key = entry
 			and entry.u .. ":" .. tostring(State.IsPlaced(entry.u)) .. ":" .. tostring(armedUid) .. ":" .. tostring(
 				awayUid
@@ -33340,7 +34374,7 @@ local function renderCreatureDetail()
 	if entry then
 		key ..= ":" .. tostring(entry.l or 1) .. ":" .. tostring(entry.e or 0) .. ":" .. tostring(entry.pw or 0) .. ":" .. tostring(
 			entry.wp
-		) .. ":" .. tostring(entry.ar) .. ":" .. table.concat(
+		) .. ":" .. tostring(entry.ar) .. ":" .. bagKey(d) .. ":" .. table.concat(
 			d.EquippedPets or {},
 			","
 		) .. ":" .. #d.Creatures
@@ -33400,7 +34434,7 @@ local function renderCreatureDetail()
 	progress.Name = "PetExperience"
 
 	local isPlaced = State.IsPlaced(entry.u)
-	local away = awayUid == entry.u
+	local away = Planner.OnTeam(d.Expeditions and d.Expeditions.active, entry.u)
 	local place = K.button(
 		away and "On expedition" or isPlaced and "Remove from garden" or "Place in garden",
 		T.Gold,
@@ -33606,6 +34640,31 @@ local function renderCreatureDetail()
 				function() return request("BuyGear", entry.u .. "|" .. kind .. "|" .. nextItem.id, nextItem.name .. " equipped!") end
 			)
 		end
+		-- loot won on expeditions: equip it here (the old piece goes back into the bag)
+		local bag = d.Expeditions and d.Expeditions.gearBag or {}
+		local n = 0
+		for _, kind in ipairs({ "weapon", "armor" }) do
+			local list = PetCombat.Catalog(kind)
+			for ti = #list, 1, -1 do
+				local item = list[ti]
+				local count = bag[kind] and bag[kind][item.id] or 0
+				if count > 0 then
+					n += 1
+					local b = K.button(
+						string.format("Equip %s (x%d) · %s x%.1f", item.name, count, kind == "weapon" and "ATK" or "HP", item.mult),
+						T.Jade, nil, UDim2.new(1, -12, 0, 38),
+						{ Name = string.format("ZBag%02d", n), LayoutOrder = 14, Parent = invDetail }
+					)
+					K.bind(b, function()
+						clearArm()
+						if request("EquipGear", entry.u .. "|" .. kind .. "|" .. item.id, item.name .. " equipped!") then
+							detailKey = nil
+							renderCreatureDetail()
+						end
+					end)
+				end
+			end
+		end
 		K.label(
 			"Stronger pets win expedition battles faster. Gear stays on this pet and shows on it in your garden.",
 			UDim2.new(1, -12, 0, 36),
@@ -33632,7 +34691,7 @@ inv.refresh = function()
 	local key = table.concat(ids, ",")
 		.. invSearch.Text:lower()
 		.. ":"
-		.. tostring(d.Expeditions and d.Expeditions.active and d.Expeditions.active.petUid)
+		.. teamKey(d)
 		.. ":"
 		.. table.concat(d.EquippedPets or {}, ",")
 	if inventoryKey ~= key then
@@ -33709,7 +34768,7 @@ inv.refresh = function()
 				rarityLabel.Name = "PetRarity"
 				local statusLabel = K.text(
 					b,
-					(d.Expeditions and d.Expeditions.active and d.Expeditions.active.petUid == entry.u)
+					Planner.OnTeam(d.Expeditions and d.Expeditions.active, entry.u)
 							and "On expedition"
 						or table.find(d.EquippedPets or {}, entry.u) and "Following"
 						or State.IsPlaced(entry.u) and "In courtyard"
@@ -34256,7 +35315,7 @@ function Panels.Init()
 end
 return Panels
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX113"><Properties><string name="Name">Plaque</string><ProtectedString name="Source"><![CDATA[-- Plaque: the carved rarity plaque from the reveal reference sheet (Actions/02_Rarity_Reveal_and_Capture):
+<Item class="ModuleScript" referent="RBX114"><Properties><string name="Name">Plaque</string><ProtectedString name="Source"><![CDATA[-- Plaque: the carved rarity plaque from the reveal reference sheet (Actions/02_Rarity_Reveal_and_Capture):
 -- a bevelled bar with pointed diamond ends, double gold trim, small gold diamond ornaments, serif caps,
 -- and gold laurels for the showcase tiers. Pixel sized, so it works in ScreenGuis and BillboardGuis.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > Plaque (ModuleScript)
@@ -34413,7 +35472,7 @@ end
 
 return P
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX114"><Properties><string name="Name">PlayerFeel</string><ProtectedString name="Source"><![CDATA[-- PlayerFeel: how the local player's character moves and feels.
+<Item class="LocalScript" referent="RBX115"><Properties><string name="Name">PlayerFeel</string><ProtectedString name="Source"><![CDATA[-- PlayerFeel: how the local player's character moves and feels.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > PlayerFeel (LocalScript)
 --
 --   * Run: hold Left Shift (PC), press L3 (gamepad) or tap the Run button (mobile, toggles).
@@ -34729,7 +35788,7 @@ task.spawn(function()
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX115"><Properties><string name="Name">QuestPanel</string><ProtectedString name="Source"><![CDATA[-- QuestPanel: compact parchment card on the right edge with today's quests, rebirth and boosts.
+<Item class="LocalScript" referent="RBX116"><Properties><string name="Name">QuestPanel</string><ProtectedString name="Source"><![CDATA[-- QuestPanel: compact parchment card on the right edge with today's quests, rebirth and boosts.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > QuestPanel (LocalScript)
 --
 -- Reads the server's Progress view from ClientState (Daily, Rebirths, RebirthCost, FriendsHere,
@@ -35083,7 +36142,7 @@ task.spawn(function()
 end)
 refresh()
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX116"><Properties><string name="Name">QuestTrackerLayout</string><ProtectedString name="Source"><![CDATA[-- Fit the tracker inside the GUI's safe area. Only its body scrolls; the header/tab remain reachable.
+<Item class="ModuleScript" referent="RBX117"><Properties><string name="Name">QuestTrackerLayout</string><ProtectedString name="Source"><![CDATA[-- Fit the tracker inside the GUI's safe area. Only its body scrolls; the header/tab remain reachable.
 local Layout = {}
 function Layout.Resolve(width, height, contentHeight)
 	local margin, header = 12, 48
@@ -35105,7 +36164,7 @@ function Layout.Resolve(width, height, contentHeight)
 end
 return Layout
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX117"><Properties><string name="Name">RevealTitle</string><ProtectedString name="Source"><![CDATA[-- RevealTitle: on-screen title for a creature reveal, styled after Actions/02_Rarity_Reveal_and_Capture.
+<Item class="ModuleScript" referent="RBX118"><Properties><string name="Name">RevealTitle</string><ProtectedString name="Source"><![CDATA[-- RevealTitle: on-screen title for a creature reveal, styled after Actions/02_Rarity_Reveal_and_Capture.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > RevealTitle (ModuleScript)
 --
 --   Common / Uncommon      nothing on screen: the carved plaque above the pet carries it (restrained tiers)
@@ -35421,7 +36480,7 @@ end
 
 return R
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX118"><Properties><string name="Name">SanctuaryUI</string><ProtectedString name="Source"><![CDATA[-- Medieval guild folios: carved oak, forged iron, vellum and a stitched binding.
+<Item class="ModuleScript" referent="RBX119"><Properties><string name="Name">SanctuaryUI</string><ProtectedString name="Source"><![CDATA[-- Medieval guild folios: carved oak, forged iron, vellum and a stitched binding.
 -- All ornament is inert. The reading surface stays light and the world stays visible.
 local T = require(script.Parent.UITheme)
 local Art = {}
@@ -35615,7 +36674,7 @@ function Art.Selected(button, selected)
 end
 return Art
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX119"><Properties><string name="Name">SceneLighting</string><ProtectedString name="Source"><![CDATA[-- The only runtime owner of scene light, atmosphere, clouds and grading.
+<Item class="ModuleScript" referent="RBX120"><Properties><string name="Name">SceneLighting</string><ProtectedString name="Source"><![CDATA[-- The only runtime owner of scene light, atmosphere, clouds and grading.
 local Lighting = game:GetService("Lighting")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
@@ -35701,7 +36760,7 @@ function Scene.Start()
 end
 return Scene
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX120"><Properties><string name="Name">SkyforgeUI</string><ProtectedString name="Source"><![CDATA[-- Light sanctuary surfaces and large standalone navigation artwork.
+<Item class="ModuleScript" referent="RBX121"><Properties><string name="Name">SkyforgeUI</string><ProtectedString name="Source"><![CDATA[-- Light sanctuary surfaces and large standalone navigation artwork.
 local T = require(script.Parent.UITheme)
 local S = {}
 local pendingImages = {}
@@ -35898,7 +36957,7 @@ function S.Card(frame, icon)
 end
 return S
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX121"><Properties><string name="Name">Sounds</string><ProtectedString name="Source"><![CDATA[-- Restrained event audio. Built-in assets keep the game independent of uploaded audio.
+<Item class="ModuleScript" referent="RBX122"><Properties><string name="Name">Sounds</string><ProtectedString name="Source"><![CDATA[-- Restrained event audio. Built-in assets keep the game independent of uploaded audio.
 local SoundService = game:GetService("SoundService")
 local TweenService = game:GetService("TweenService")
 local Sounds = {}
@@ -36017,7 +37076,7 @@ function Sounds.Get(name)
 end
 return Sounds
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX122"><Properties><string name="Name">ThrowCinematic</string><ProtectedString name="Source"><![CDATA[-- ThrowCinematic: the throw cutscene (owner only). Full screen, no letterbox.
+<Item class="ModuleScript" referent="RBX123"><Properties><string name="Name">ThrowCinematic</string><ProtectedString name="Source"><![CDATA[-- ThrowCinematic: the throw cutscene (owner only). Full screen, no letterbox.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ThrowCinematic (ModuleScript)
 --
 -- A short film in up to four camera shots, with HARD CUTS between them (w = wind-up seconds sent
@@ -36899,7 +37958,7 @@ end
 
 return Cine
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX123"><Properties><string name="Name">ThrowController</string><ProtectedString name="Source"><![CDATA[-- ThrowController: charge meter input, held-portal + arm wind-up, the portal flight arc,
+<Item class="ModuleScript" referent="RBX124"><Properties><string name="Name">ThrowController</string><ProtectedString name="Source"><![CDATA[-- ThrowController: charge meter input, held-portal + arm wind-up, the portal flight arc,
 -- landing bounce, portal gate opening and creature reveal choreography (for ALL players' throws).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ThrowController (ModuleScript)
 
@@ -37910,7 +38969,7 @@ end)
 
 return TC
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX124"><Properties><string name="Name">UIIcons</string><ProtectedString name="Source"><![CDATA[-- Original cutout art with immediately visible native geometry while images load.
+<Item class="ModuleScript" referent="RBX125"><Properties><string name="Name">UIIcons</string><ProtectedString name="Source"><![CDATA[-- Original cutout art with immediately visible native geometry while images load.
 local T = require(script.Parent.UITheme)
 local Sky = require(script.Parent.SkyforgeUI)
 local Icons = {}
@@ -38066,7 +39125,7 @@ function Icons.Draw(name, parent, size, color, position)
 end
 return Icons
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX125"><Properties><string name="Name">UIKit</string><ProtectedString name="Source"><![CDATA[-- Native sanctuary components. No uploaded icon/font dependency.
+<Item class="ModuleScript" referent="RBX126"><Properties><string name="Name">UIKit</string><ProtectedString name="Source"><![CDATA[-- Native sanctuary components. No uploaded icon/font dependency.
 local TweenService = game:GetService("TweenService")
 local Sounds = require(script.Parent.Sounds)
 local Settings = require(script.Parent.ClientSettings)
@@ -38443,7 +39502,7 @@ end
 
 return K
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX126"><Properties><string name="Name">UIMotion</string><ProtectedString name="Source"><![CDATA[-- Short, interruptible interface motion. No render loop or delayed gameplay actions.
+<Item class="ModuleScript" referent="RBX127"><Properties><string name="Name">UIMotion</string><ProtectedString name="Source"><![CDATA[-- Short, interruptible interface motion. No render loop or delayed gameplay actions.
 local TweenService = game:GetService("TweenService")
 local Settings = require(script.Parent.ClientSettings)
 local Theme = require(script.Parent.UITheme)
@@ -38598,7 +39657,7 @@ end)
 
 return Motion
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX127"><Properties><string name="Name">UITheme</string><ProtectedString name="Source"><![CDATA[-- Sanctuary UI tokens, shared by the HUD, icons and every shop.
+<Item class="ModuleScript" referent="RBX128"><Properties><string name="Name">UITheme</string><ProtectedString name="Source"><![CDATA[-- Sanctuary UI tokens, shared by the HUD, icons and every shop.
 -- Fonts: Builder Sans for controls and data, Merriweather for sanctuary headings;
 -- resolved with a fallback so an older client without these enums still renders.
 local function font(name, fallback)
@@ -38665,7 +39724,7 @@ function T.Rarity(name, config)
 end
 return T
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX128"><Properties><string name="Name">WorldFx</string><ProtectedString name="Source"><![CDATA[-- WorldFx: ONE shared, staggered scheduler for environment motion on tagged map parts
+<Item class="ModuleScript" referent="RBX129"><Properties><string name="Name">WorldFx</string><ProtectedString name="Source"><![CDATA[-- WorldFx: ONE shared, staggered scheduler for environment motion on tagged map parts
 -- (no per-prop RenderStepped connections, no camera-following particles).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > WorldFx (ModuleScript)
 --

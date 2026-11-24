@@ -58,11 +58,11 @@ end)
 local function load(path, name, extra)
 	local game = {
 		GetService = function(_, svc)
-			return { Shared = { ExpeditionBattle = "Battle", CreatureBuilder = "Builder", Config = "Config" } }
+			return { Shared = { ExpeditionBattle = "Battle", CreatureBuilder = "Builder", Config = "Config", PetCombat = "PetCombat" } }
 		end,
 		ReplicatedStorage = { Shared = { Config = "Config" } },
 	}
-	local mods = { Battle = Battle, Builder = Builder, Config = Config }
+	local mods = { Battle = Battle, Builder = Builder, Config = Config, PetCombat = H.require(S .. "/PetCombat") }
 	local env = setmetatable({
 		game = game,
 		require = function(x)
@@ -178,7 +178,7 @@ for _, world in Config.WorldOrder do
 		end
 		check(sawFight and sawSpark, world .. " fights and hit sparks happen")
 		for i, rec in ctx.monsters do
-			check(rec.down == true, world .. " monster " .. i .. " knocked down at the end")
+			check((rec.down == true) == (i <= plan.summary.defeated), world .. " monster " .. i .. " is down exactly when the team beat it")
 		end
 		if impactState then
 			Fight.Update(ctx, impactState, impactTime, 1 / 60, { ReducedFlashes = true })

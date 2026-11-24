@@ -12,6 +12,24 @@ local Variants = require(RS.Shared.Variants)
 local Farm = require(RS.Shared.FarmConfig)
 local PetCombat = require(RS.Shared.PetCombat)
 local PetGear = require(RS.Shared.PetGear)
+local Planner = require(RS.Shared.ExpeditionPlanner)
+local function bagKey(d)
+	local bag = d.Expeditions and d.Expeditions.gearBag
+	if not bag then return "" end
+	local parts = {}
+	for _, kind in ipairs({ "weapon", "armor" }) do
+		for id, n in pairs(bag[kind] or {}) do table.insert(parts, kind .. id .. n) end
+	end
+	table.sort(parts)
+	return table.concat(parts, ",")
+end
+local function teamKey(d)
+	local a = d.Expeditions and d.Expeditions.active
+	if not a then return "" end
+	local ids = { tostring(a.petUid) }
+	for _, m in ipairs(a.team or {}) do table.insert(ids, tostring(m.u)) end
+	return table.concat(ids, "+")
+end
 local K = require(script.Parent.UIKit)
 local T = K.Theme
 local HUD = require(script.Parent.HUD)
@@ -496,7 +514,7 @@ local function renderCreatureDetail()
 			break
 		end
 	end
-	local awayUid = d.Expeditions and d.Expeditions.active and d.Expeditions.active.petUid
+	local awayUid = teamKey(d)
 	local key = entry
 			and entry.u .. ":" .. tostring(State.IsPlaced(entry.u)) .. ":" .. tostring(armedUid) .. ":" .. tostring(
 				awayUid
@@ -505,7 +523,7 @@ local function renderCreatureDetail()
 	if entry then
 		key ..= ":" .. tostring(entry.l or 1) .. ":" .. tostring(entry.e or 0) .. ":" .. tostring(entry.pw or 0) .. ":" .. tostring(
 			entry.wp
-		) .. ":" .. tostring(entry.ar) .. ":" .. table.concat(
+		) .. ":" .. tostring(entry.ar) .. ":" .. bagKey(d) .. ":" .. table.concat(
 			d.EquippedPets or {},
 			","
 		) .. ":" .. #d.Creatures
@@ -565,7 +583,7 @@ local function renderCreatureDetail()
 	progress.Name = "PetExperience"
 
 	local isPlaced = State.IsPlaced(entry.u)
-	local away = awayUid == entry.u
+	local away = Planner.OnTeam(d.Expeditions and d.Expeditions.active, entry.u)
 	local place = K.button(
 		away and "On expedition" or isPlaced and "Remove from garden" or "Place in garden",
 		T.Gold,
@@ -771,6 +789,31 @@ local function renderCreatureDetail()
 				function() return request("BuyGear", entry.u .. "|" .. kind .. "|" .. nextItem.id, nextItem.name .. " equipped!") end
 			)
 		end
+		-- loot won on expeditions: equip it here (the old piece goes back into the bag)
+		local bag = d.Expeditions and d.Expeditions.gearBag or {}
+		local n = 0
+		for _, kind in ipairs({ "weapon", "armor" }) do
+			local list = PetCombat.Catalog(kind)
+			for ti = #list, 1, -1 do
+				local item = list[ti]
+				local count = bag[kind] and bag[kind][item.id] or 0
+				if count > 0 then
+					n += 1
+					local b = K.button(
+						string.format("Equip %s (x%d) · %s x%.1f", item.name, count, kind == "weapon" and "ATK" or "HP", item.mult),
+						T.Jade, nil, UDim2.new(1, -12, 0, 38),
+						{ Name = string.format("ZBag%02d", n), LayoutOrder = 14, Parent = invDetail }
+					)
+					K.bind(b, function()
+						clearArm()
+						if request("EquipGear", entry.u .. "|" .. kind .. "|" .. item.id, item.name .. " equipped!") then
+							detailKey = nil
+							renderCreatureDetail()
+						end
+					end)
+				end
+			end
+		end
 		K.label(
 			"Stronger pets win expedition battles faster. Gear stays on this pet and shows on it in your garden.",
 			UDim2.new(1, -12, 0, 36),
@@ -797,7 +840,7 @@ inv.refresh = function()
 	local key = table.concat(ids, ",")
 		.. invSearch.Text:lower()
 		.. ":"
-		.. tostring(d.Expeditions and d.Expeditions.active and d.Expeditions.active.petUid)
+		.. teamKey(d)
 		.. ":"
 		.. table.concat(d.EquippedPets or {}, ",")
 	if inventoryKey ~= key then
@@ -874,7 +917,7 @@ inv.refresh = function()
 				rarityLabel.Name = "PetRarity"
 				local statusLabel = K.text(
 					b,
-					(d.Expeditions and d.Expeditions.active and d.Expeditions.active.petUid == entry.u)
+					Planner.OnTeam(d.Expeditions and d.Expeditions.active, entry.u)
 							and "On expedition"
 						or table.find(d.EquippedPets or {}, entry.u) and "Following"
 						or State.IsPlaced(entry.u) and "In courtyard"

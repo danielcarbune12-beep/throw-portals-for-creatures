@@ -90,6 +90,23 @@ local function cluster(rig, cfs, anchor, reach, avoid)
 	return lo, hi
 end
 
+-- size of the whole visible creature in its own (root) frame, without moving anything
+function Gear.Extents(rig)
+	local cfs = solve(rig)
+	local lo, hi = V(math.huge, math.huge, math.huge), V(-math.huge, -math.huge, -math.huge)
+	local found = false
+	for part, cf in pairs(cfs) do
+		if part ~= rig.root and part.Transparency < 0.5 then
+			local half = extent(part) / 2
+			local p = cf.Position
+			lo = V(math.min(lo.X, p.X - half.X), math.min(lo.Y, p.Y - half.Y), math.min(lo.Z, p.Z - half.Z))
+			hi = V(math.max(hi.X, p.X + half.X), math.max(hi.Y, p.Y + half.Y), math.max(hi.Z, p.Z + half.Z))
+			found = true
+		end
+	end
+	return found and (hi - lo) or V(2, 2, 2)
+end
+
 function Gear.Clear(model)
 	for _, d in ipairs(model:GetDescendants()) do
 		if d:IsA("BasePart") and d:GetAttribute("PetGear") then

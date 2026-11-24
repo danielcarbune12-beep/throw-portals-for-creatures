@@ -925,11 +925,41 @@ function Actions.StartExpedition(player, data, st, arg)
 	if not ok or type(request) ~= "table" then
 		return false, "Choose a pet and biome."
 	end
-	local started, message = Expeditions.Start(player, data, st.base, request.route, request.petUid)
-	if started and st.base then
-		BaseBuilder.Refresh(st.base, data)
+	-- request.pets: up to 3 uids for a team (older clients send petUid); request.level: 1..5
+	local pets = request.petUid
+	if type(request.pets) == "table" then
+		pets = {}
+		for i, uid in ipairs(request.pets) do
+			if i > 3 then
+				break
+			end
+			pets[i] = uid
+		end
+	end
+	local started, message = Expeditions.Start(player, data, st.base, request.route, pets, nil, request.level)
+	if started then
+		-- pets on the team stop following you while they are away
+		for i = #data.EquippedPets, 1, -1 do
+			if Expeditions.IsAway(data, data.EquippedPets[i]) then
+				table.remove(data.EquippedPets, i)
+			end
+		end
+		if st.base then
+			BaseBuilder.Refresh(st.base, data)
+		end
 	end
 	return started, message
+end
+-- arg "uid|weapon|Iron": equip a looted sword/armour from your bag (the old one goes back in)
+function Actions.EquipGear(player, data, st, arg)
+	if type(arg) ~= "string" or #arg > 64 then
+		return false, "Bad request"
+	end
+	local uidText, kind, id = string.match(arg, "^(%d+)|(%a+)|(%a+)$")
+	if not uidText then
+		return false, "Bad request"
+	end
+	return Expeditions.EquipFromBag(data, tonumber(uidText), kind, id)
 end
 function Actions.ClaimExpedition(player, data, st, id)
 	local claimed, message = Expeditions.Claim(player, data, st.base, id)

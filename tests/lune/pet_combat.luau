@@ -80,7 +80,7 @@ for _, c in CreatureData.List do
 end
 
 -- a stronger, geared pet wins its expedition with fewer hits than the same pet bare
-local function beats(p)
+local function beats(p) -- returns beats, plan
 	local hp, atk = PC.Stats(p)
 	local plan = Battle.Plan({ id = "t", world = "Crystal", creature = p.c, startedAt = 0, endsAt = 300, hp = hp, atk = atk })
 	local n = 0
@@ -90,7 +90,7 @@ local function beats(p)
 	return n, plan
 end
 local bare, plan = beats({ c = pet.c })
-local strong = beats({ c = pet.c, pw = 20, wp = "Crystal", ar = "Crystal" })
-check(strong < bare, "upgrades shorten the battle (" .. strong .. " vs " .. bare .. ")")
+local strong, strongPlan = beats({ c = pet.c, pw = 20, wp = "Crystal", ar = "Crystal" })
+check(strongPlan.victory and (not plan.victory or strong < bare), "upgrades turn a lost or long battle into a win (" .. strong .. " vs " .. bare .. ")")
 check(plan.pet.maxHp == hp0, "the battle uses the pet's real health")
 H.summary()
