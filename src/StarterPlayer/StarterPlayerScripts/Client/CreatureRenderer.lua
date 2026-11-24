@@ -24,6 +24,7 @@ local Effects = require(script.Parent.Effects)
 local Entrances = require(script.Parent.Entrances) -- themed portal entrances (motion style + element FX)
 local Sounds = require(script.Parent.Sounds)
 local Settings = require(script.Parent.ClientSettings)
+local Budget = require(script.Parent.CreatureBudget)
 local Plaque = require(script.Parent.Plaque)
 local TweenService = game:GetService("TweenService")
 
@@ -36,6 +37,7 @@ folder.Name = "Creatures"
 folder.Parent = workspace
 
 local active = {} -- set of entries { model, anim, kind, ... }
+local counters = { frames = 0, groundRays = 0, poseSteps = 0 }
 local groundParams = RaycastParams.new()
 groundParams.FilterType = Enum.RaycastFilterType.Exclude
 local basePets = {} -- [userId] = array of entries
@@ -996,39 +998,40 @@ local function myRoot()
 end
 
 -- update rate tiers with hysteresis: near every frame, mid 20 Hz, far 8 Hz, beyond: pose frozen
-local TIERS = { { 70, 0 }, { 150, 1 / 20 }, { 260, 1 / 8 } }
-local function tierFor(e, d)
-	local cur = e.tier
-	local margin = 10
-	for i, t in ipairs(TIERS) do
-		local limit = t[1] + ((i >= cur) and margin or -margin)
-		if d < limit then
-			return i
-		end
-	end
-	return #TIERS + 1
-end
-
 RunService.RenderStepped:Connect(function(dt)
+	camera = workspace.CurrentCamera
+	if not camera then
+		return
+	end
+	debug.profilebegin("TPFC.Creature.Frame")
+	counters.frames += 1
 	local camPos = camera.CFrame.Position
 	local root = myRoot()
 	local myPos = root and root.Position
 	local head = player.Character and player.Character:FindFirstChild("Head")
 	local now = os.clock()
+	local lowVFX = Settings.LowVFX()
 	for e in pairs(active) do
 		local anim = e.anim
 		if not anim or not anim.rig then
 			active[e] = nil
 			continue
 		end
+		local critical = e.kind == "wild"
+		local tier = critical and 1 or Budget.Tier(e.tier, (anim.pos - camPos).Magnitude)
 		-- pop-in
 		if e.popT then
-			e.popT += dt
-			local k = math.clamp(e.popT / e.popDur, 0, 1)
-			anim:SetScale(math.max(0.01, elastic(k)))
-			if k >= 1 then
+			if tier > Budget.LastAnimatedTier then
 				e.popT = nil
 				anim:SetScale(1)
+			else
+				e.popT += dt
+				local k = math.clamp(e.popT / e.popDur, 0, 1)
+				anim:SetScale(math.max(0.01, elastic(k)))
+				if k >= 1 then
+					e.popT = nil
+					anim:SetScale(1)
+				end
 			end
 		end
 		if e.entrance and not e.collectT and not e.fadeT then
@@ -1055,7 +1058,7 @@ RunService.RenderStepped:Connect(function(dt)
 			end
 		end
 		-- free-roaming base pets: inside their own base, around (not through) solid decor
-		if e.kind == "base" and e.baseCF then
+		if e.kind == "base" and e.baseCF and tier <= Budget.LastAnimatedTier then
 			if not anim.moveTarget and anim.home and not anim.reactT and not anim.sigT then
 				e.roamT = (e.roamT or anim.rng:NextNumber(1, 5)) - dt
 				if e.roamT <= 0 then
@@ -1071,6 +1074,7 @@ RunService.RenderStepped:Connect(function(dt)
 			if e.groundT <= 0 then
 				e.groundT = 0.4
 				groundParams.FilterDescendantsInstances = { folder, Effects.Folder, player.Character }
+				counters.groundRays += 1
 				local hit = workspace:Raycast(anim.pos + Vector3.new(0, 12, 0), Vector3.new(0, -30, 0), groundParams)
 				if hit and hit.Position.Y < 2.5 then
 					e.targetGround = hit.Position.Y
@@ -1097,22 +1101,20 @@ RunService.RenderStepped:Connect(function(dt)
 			end
 		end
 		-- LOD tiers (with hysteresis); wild reveals and captures always update every frame
-		local d = (anim.pos - camPos).Magnitude
-		local tier = (e.kind == "wild") and 1 or tierFor(e, d)
-		if tier ~= e.tier then
-			e.tier = tier
-			local emit = tier <= 2
+		e.tier = tier
+		local emit = Budget.Emit(tier, lowVFX, critical)
+		if emit ~= e.lodEmit then
+			e.lodEmit = emit
 			for _, pe in ipairs(e.rig.emitters) do
 				pe.Enabled = emit
 			end
 		end
-		e.acc += dt
-		if tier <= #TIERS and now >= e.nextStep then
-			e.nextStep = now + TIERS[tier][2]
+		local elapsed = Budget.Step(e, dt, now, tier, critical)
+		if elapsed then
 			-- attention: look at the local player when close; a reaction at most every ~15 s
 			if myPos and e.kind == "base" then
 				local pd = (anim.pos - myPos).Magnitude
-				e.reactCd -= e.acc
+				e.reactCd -= elapsed
 				if pd < 12 then
 					anim:LookAt(head and head.Position or myPos)
 					if pd < 7 and e.reactCd <= 0 then
@@ -1123,8 +1125,10 @@ RunService.RenderStepped:Connect(function(dt)
 					anim:LookAt(nil)
 				end
 			end
-			anim:Step(e.acc)
-			e.acc = 0
+			debug.profilebegin("TPFC.Creature.Pose")
+			anim:Step(elapsed)
+			debug.profileend()
+			counters.poseSteps += 1
 		end
 		if e.tag and not e.tagFixed and e.model.Parent and (e.kind ~= "wild" or not e.entrance) then
 			-- place the name tag above the VISIBLE geometry once it has been solved
@@ -1138,6 +1142,7 @@ RunService.RenderStepped:Connect(function(dt)
 			end
 		end
 	end
+	debug.profileend()
 end)
 
 ---------------------------------------------------------------- wiring
@@ -1220,6 +1225,19 @@ function Renderer.ActiveCount()
 end
 function Renderer.Entries()
 	return active
+end
+function Renderer.Diagnostics()
+	local tiers = { 0, 0, 0, 0 }
+	for entry in pairs(active) do
+		local tier = entry.tier or 1
+		tiers[tier] += 1
+	end
+	return {
+		frames = counters.frames,
+		groundRays = counters.groundRays,
+		poseSteps = counters.poseSteps,
+		tiers = tiers,
+	}
 end
 
 return Renderer
