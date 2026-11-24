@@ -1,7 +1,7 @@
 <roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" version="4">
 <Item class="Workspace" referent="RBX1"><Properties><string name="Name">Workspace</string><bool name="StreamingEnabled">false</bool></Properties></Item>
 <Item class="Lighting" referent="RBX2"><Properties><string name="Name">Lighting</string><token name="Technology">4</token><token name="LightingStyle">0</token><bool name="PrioritizeLightingQuality">true</bool><bool name="GlobalShadows">true</bool></Properties></Item>
-<Item class="ReplicatedStorage" referent="RBX38"><Properties><string name="Name">ReplicatedStorage</string></Properties>
+<Item class="ReplicatedStorage" referent="RBX39"><Properties><string name="Name">ReplicatedStorage</string></Properties>
 <Item class="Folder" referent="RBX3"><Properties><string name="Name">Shared</string></Properties>
 <Item class="ModuleScript" referent="RBX4"><Properties><string name="Name">Config</string><ProtectedString name="Source"><![CDATA[-- Config: every tunable number in the game lives here.
 -- Location: ReplicatedStorage > Shared > Config (ModuleScript)
@@ -3337,7 +3337,107 @@ Farm.DailyMult = { 1, 1.5, 2, 2.5, 3, 4, 8 }
 
 return Farm
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX14"><Properties><string name="Name">ForgeRules</string><ProtectedString name="Source"><![CDATA[-- Shared recipes and pure transaction rules. Only the server commits real profiles.
+<Item class="ModuleScript" referent="RBX14"><Properties><string name="Name">FarmMarketRules</string><ProtectedString name="Source"><![CDATA[-- Seed ownership and purchases. Prices come from the existing server farm economy.
+local Farm = require(script.Parent.FarmConfig)
+local Rules = {}
+Rules.Layout = {
+	Buy = CFrame.new(-29, 0, -184) * CFrame.Angles(0, -math.pi / 2, 0),
+	Sell = CFrame.new(29, 0, -184) * CFrame.Angles(0, math.pi / 2, 0),
+}
+Rules.Range = 12
+
+function Rules.Ensure(farm)
+	farm.SeedStock = type(farm.SeedStock) == "table" and farm.SeedStock or {}
+	for _, crop in Farm.Crops do
+		local count = tonumber(farm.SeedStock[crop.id]) or 0
+		farm.SeedStock[crop.id] = count == count and count < math.huge and math.max(0, math.floor(count)) or 0
+	end
+	return farm.SeedStock
+end
+
+function Rules.Buy(data, cropId, quantity, unitPrice)
+	local crop, farm = Farm.ById[cropId], data.Farm
+	if not crop or farm.Level < crop.level then
+		return false, "This seed is not unlocked yet."
+	end
+	if quantity ~= 1 and quantity ~= 5 then
+		return false, "Choose one or five seeds."
+	end
+	if type(unitPrice) ~= "number" or unitPrice ~= unitPrice or unitPrice <= 0 or unitPrice == math.huge then
+		return false, "Seed price unavailable."
+	end
+	local price = unitPrice * quantity
+	if data.Money < price then
+		return false, "Not enough coins for these seeds."
+	end
+	local stock = Rules.Ensure(farm)
+	data.Money -= price
+	stock[cropId] += quantity
+	farm.Seed = cropId
+	return true, "Bought " .. quantity .. " " .. crop.name .. " seed" .. (quantity == 1 and "." or "s.")
+end
+
+function Rules.Select(data, cropId)
+	local crop = Farm.ById[cropId]
+	if not crop or data.Farm.Level < crop.level or (Rules.Ensure(data.Farm)[cropId] or 0) < 1 then
+		return false, "Buy some of these seeds first."
+	end
+	data.Farm.Seed = cropId
+	return true, crop.name .. " selected for planting."
+end
+
+function Rules.Use(data, cropId, unitPrice, automatic)
+	local stock = Rules.Ensure(data.Farm)
+	if (stock[cropId] or 0) > 0 then
+		stock[cropId] -= 1
+		return true
+	end
+	-- Preserve the purchased Harvest Spirit's existing coin-funded automation.
+	if automatic and data.Money >= unitPrice then
+		data.Money -= unitPrice
+		return true
+	end
+	return false, automatic and "Not enough coins to replant." or "Buy seeds at the BUY stall beside the Great Hall."
+end
+
+function Rules.Upgrade(data, kind)
+	local f = data.Farm
+	local field, price, limit
+	if kind == "Beds" then
+		field, limit = "PlotsOwned", Farm.MaxPlots
+		price = Farm.PlotPrices[f.PlotsOwned - Farm.StartPlots + 1]
+	elseif kind == "Sprinkler" then
+		field, limit = "Sprinkler", #Farm.SprinklerPrices
+		price = Farm.SprinklerPrices[f.Sprinkler + 1]
+	elseif kind == "Spirit" then
+		if f.Spirit then
+			return false, "Harvest Spirit already hired."
+		end
+		if f.Level < Farm.SpiritLevel then
+			return false, "Reach Farmer Lv " .. Farm.SpiritLevel .. " first."
+		end
+		price = Farm.SpiritPrice
+	else
+		return false, "Unknown farm supply."
+	end
+	if field and f[field] >= limit then
+		return false, "Already fully upgraded."
+	end
+	if not price or data.Money < price then
+		return false, "Not enough coins for this supply."
+	end
+	data.Money -= price
+	if field then
+		f[field] += 1
+	else
+		f.Spirit = true
+	end
+	return true, kind == "Spirit" and "Harvest Spirit hired." or "Farm supply upgraded."
+end
+
+return Rules
+]]></ProtectedString></Properties></Item>
+<Item class="ModuleScript" referent="RBX15"><Properties><string name="Name">ForgeRules</string><ProtectedString name="Source"><![CDATA[-- Shared recipes and pure transaction rules. Only the server commits real profiles.
 local Creatures = require(script.Parent.CreatureData)
 local Rules = {}
 Rules.Chances = { [2] = 0.44, [3] = 0.66, [4] = 0.88, [5] = 1 }
@@ -3482,7 +3582,7 @@ end
 
 return Rules
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX15"><Properties><string name="Name">Format</string><ProtectedString name="Source"><![CDATA[-- Format: number formatting helpers.
+<Item class="ModuleScript" referent="RBX16"><Properties><string name="Name">Format</string><ProtectedString name="Source"><![CDATA[-- Format: number formatting helpers.
 -- Location: ReplicatedStorage > Shared > Format (ModuleScript)
 local Format = {}
 local SUFFIX = { "", "K", "M", "B", "T", "Qa", "Qi", "Sx", "Sp", "Oc", "No", "Dc" }
@@ -3520,7 +3620,7 @@ end
 
 return Format
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX16"><Properties><string name="Name">GuideKnight</string><ProtectedString name="Source"><![CDATA[-- Original block-built knight used in the hall and in the guide's portrait.
+<Item class="ModuleScript" referent="RBX17"><Properties><string name="Name">GuideKnight</string><ProtectedString name="Source"><![CDATA[-- Original block-built knight used in the hall and in the guide's portrait.
 local Knight = {}
 function Knight.Build()
 	local model = Instance.new("Model")
@@ -3576,7 +3676,7 @@ function Knight.Build()
 end
 return Knight
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX17"><Properties><string name="Name">ModelKit</string><ProtectedString name="Source"><![CDATA[-- ModelKit: shared construction helpers for the hand-authored SpeciesModels (Volcano / Candy / Crystal).
+<Item class="ModuleScript" referent="RBX18"><Properties><string name="Name">ModelKit</string><ProtectedString name="Source"><![CDATA[-- ModelKit: shared construction helpers for the hand-authored SpeciesModels (Volcano / Candy / Crystal).
 -- Location: ReplicatedStorage > Shared > ModelKit (ModuleScript)
 --
 -- All sizes and positions are in creature units (multiplied by the rarity size `s`). Models face -Z,
@@ -3798,7 +3898,7 @@ end
 
 return K
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX18"><Properties><string name="Name">Odds</string><ProtectedString name="Source"><![CDATA[-- Odds: the single source of truth for creature chances ("1 in X").
+<Item class="ModuleScript" referent="RBX19"><Properties><string name="Name">Odds</string><ProtectedString name="Source"><![CDATA[-- Odds: the single source of truth for creature chances ("1 in X").
 -- Used by the server to roll and by the client to display odds.
 -- Location: ReplicatedStorage > Shared > Odds (ModuleScript)
 
@@ -3917,7 +4017,7 @@ end
 
 return Odds
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX19"><Properties><string name="Name">PetMeshManifest</string><ProtectedString name="Source"><![CDATA[-- PetMeshManifest: AI-generated, textured meshes (Roblox Studio mesh generation) for species that
+<Item class="ModuleScript" referent="RBX20"><Properties><string name="Name">PetMeshManifest</string><ProtectedString name="Source"><![CDATA[-- PetMeshManifest: AI-generated, textured meshes (Roblox Studio mesh generation) for species that
 -- have been upgraded to sculpted meshes. Each part is a separate MeshPart so the rig can still animate
 -- head / ears / legs / tail / wings. Positions are relative to the model's ground-centre, facing -Z,
 -- at their generated size (studs). Species NOT listed here use the procedural builder (fallback).
@@ -4072,7 +4172,7 @@ return {
 	} },
 }
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX20"><Properties><string name="Name">PortalBuilder</string><ProtectedString name="Source"><![CDATA[-- PortalBuilder: builds the throwable portal orb and the opened portal gate.
+<Item class="ModuleScript" referent="RBX21"><Properties><string name="Name">PortalBuilder</string><ProtectedString name="Source"><![CDATA[-- PortalBuilder: builds the throwable portal orb and the opened portal gate.
 -- Location: ReplicatedStorage > Shared > PortalBuilder (ModuleScript)
 
 local Config = require(script.Parent.Config)
@@ -4133,7 +4233,7 @@ end
 
 return require(script.Parent.PortalDesign)(PortalBuilder, Config)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX21"><Properties><string name="Name">PortalDesign</string><ProtectedString name="Source"><![CDATA[-- Architectural portals and faceted throw orbs. No uploaded meshes or textures required.
+<Item class="ModuleScript" referent="RBX22"><Properties><string name="Name">PortalDesign</string><ProtectedString name="Source"><![CDATA[-- Architectural portals and faceted throw orbs. No uploaded meshes or textures required.
 -- API refs deliberately match ThrowController/UIKit. Structural frames do not spin.
 local V, CF, A = Vector3.new, CFrame.new, CFrame.Angles
 local PI, M = math.pi, Enum.Material
@@ -4654,7 +4754,7 @@ return function(API, Config)
 	return API
 end
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX22"><Properties><string name="Name">PresentationTimeline</string><ProtectedString name="Source"><![CDATA[-- PresentationTimeline: the ONE table of reveal / capture / card timings used by every client
+<Item class="ModuleScript" referent="RBX23"><Properties><string name="Name">PresentationTimeline</string><ProtectedString name="Source"><![CDATA[-- PresentationTimeline: the ONE table of reveal / capture / card timings used by every client
 -- module (CreatureRenderer, ThrowController, ClientMain). Presentation only: the server still owns
 -- the authoritative catch deadline (Config.CatchDelay, unchanged) and never waits for clients.
 -- Location: ReplicatedStorage > Shared > PresentationTimeline (ModuleScript)
@@ -4734,7 +4834,7 @@ end
 
 return T
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX23"><Properties><string name="Name">SanctuaryLook</string><ProtectedString name="Source"><![CDATA[-- One art-direction source for Studio, every biome and farm weather.
+<Item class="ModuleScript" referent="RBX24"><Properties><string name="Name">SanctuaryLook</string><ProtectedString name="Source"><![CDATA[-- One art-direction source for Studio, every biome and farm weather.
 local Config = require(script.Parent.Config)
 local C = Color3.fromRGB
 local Look = {
@@ -4891,7 +4991,7 @@ function Look.Apply(lighting)
 end
 return Look
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX24"><Properties><string name="Name">SpeciesAnatomy</string><ProtectedString name="Source"><![CDATA[-- SpeciesAnatomy: species-specific anatomy for every creature + extra body plans.
+<Item class="ModuleScript" referent="RBX25"><Properties><string name="Name">SpeciesAnatomy</string><ProtectedString name="Source"><![CDATA[-- SpeciesAnatomy: species-specific anatomy for every creature + extra body plans.
 -- Location: ReplicatedStorage > Shared > SpeciesAnatomy (ModuleScript)
 --
 -- Each builder is called as A[key](H, rig, vd, s, prof) AFTER the generic body plan, face,
@@ -5959,7 +6059,7 @@ end
 
 return A
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX25"><Properties><string name="Name">SpeciesModels</string><ProtectedString name="Source"><![CDATA[-- SpeciesModels: hand-authored, reference-faithful creature models (highest priority path).
+<Item class="ModuleScript" referent="RBX26"><Properties><string name="Name">SpeciesModels</string><ProtectedString name="Source"><![CDATA[-- SpeciesModels: hand-authored, reference-faithful creature models (highest priority path).
 -- Location: ReplicatedStorage > Shared > SpeciesModels (ModuleScript)
 --
 -- Each entry is model(H, rig, vd, s) and must fill the standard rig channels used by
@@ -6131,7 +6231,7 @@ end
 
 return M
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX26"><Properties><string name="Name">SpeciesModelsCandy</string><ProtectedString name="Source"><![CDATA[-- SpeciesModelsCandy: hand-authored, reference-faithful models for the Candy world
+<Item class="ModuleScript" referent="RBX27"><Properties><string name="Name">SpeciesModelsCandy</string><ProtectedString name="Source"><![CDATA[-- SpeciesModelsCandy: hand-authored, reference-faithful models for the Candy world
 -- (Gumdrop, Cocoa Cub, Lollipup, Marshmallow Ghost, Sugarcorn, Cotton Candy Kirin, Candy Queen Bee,
 -- Chocolate Colossus).
 -- Location: ReplicatedStorage > Shared > SpeciesModelsCandy (ModuleScript), merged into SpeciesModels.
@@ -6575,7 +6675,7 @@ end
 
 return M
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX27"><Properties><string name="Name">SpeciesModelsCrystal</string><ProtectedString name="Source"><![CDATA[-- SpeciesModelsCrystal: hand-authored, reference-faithful models for the Crystal world
+<Item class="ModuleScript" referent="RBX28"><Properties><string name="Name">SpeciesModelsCrystal</string><ProtectedString name="Source"><![CDATA[-- SpeciesModelsCrystal: hand-authored, reference-faithful models for the Crystal world
 -- (Gemmy, Quartz Beetle, Glimmer Bat, Amethyst Eel). Prism Lion lives in SpeciesModels.
 -- Location: ReplicatedStorage > Shared > SpeciesModelsCrystal (ModuleScript), merged into SpeciesModels.
 
@@ -6763,7 +6863,7 @@ end
 
 return M
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX28"><Properties><string name="Name">SpeciesModelsDivine</string><ProtectedString name="Source"><![CDATA[-- SpeciesModelsDivine: hand-authored, reference-faithful models for the Divine portal creatures
+<Item class="ModuleScript" referent="RBX29"><Properties><string name="Name">SpeciesModelsDivine</string><ProtectedString name="Source"><![CDATA[-- SpeciesModelsDivine: hand-authored, reference-faithful models for the Divine portal creatures
 -- (Solaris, Aetherion, Eternity Owl, Genesis, Infinity Fox).
 -- Location: ReplicatedStorage > Shared > SpeciesModelsDivine (ModuleScript), merged into SpeciesModels.
 
@@ -7132,7 +7232,7 @@ end
 
 return M
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX29"><Properties><string name="Name">SpeciesModelsForest</string><ProtectedString name="Source"><![CDATA[-- SpeciesModelsForest: hand-authored, reference-faithful models for the Green Forest world
+<Item class="ModuleScript" referent="RBX30"><Properties><string name="Name">SpeciesModelsForest</string><ProtectedString name="Source"><![CDATA[-- SpeciesModelsForest: hand-authored, reference-faithful models for the Green Forest world
 -- (Mossbun, Acornip, Petalfly, Thornhog, Elderstag Sprite, Oak Titan, Bloomwyrm, Sylph Queen).
 -- Location: ReplicatedStorage > Shared > SpeciesModelsForest (ModuleScript), merged into SpeciesModels.
 
@@ -7630,7 +7730,7 @@ end
 
 return M
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX30"><Properties><string name="Name">SpeciesModelsFrozen</string><ProtectedString name="Source"><![CDATA[-- SpeciesModelsFrozen: hand-authored, reference-faithful models for the Frozen world
+<Item class="ModuleScript" referent="RBX31"><Properties><string name="Name">SpeciesModelsFrozen</string><ProtectedString name="Source"><![CDATA[-- SpeciesModelsFrozen: hand-authored, reference-faithful models for the Frozen world
 -- (Frostpaw, Snowpuff, Icicle Owl, Glacier Yeti, Aurora Fox, Blizzard Bear, Crystalwing Dragon).
 -- Location: ReplicatedStorage > Shared > SpeciesModelsFrozen (ModuleScript), merged into SpeciesModels.
 
@@ -8015,7 +8115,7 @@ end
 
 return M
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX31"><Properties><string name="Name">SpeciesModelsHeaven</string><ProtectedString name="Source"><![CDATA[-- SpeciesModelsHeaven: hand-authored, reference-faithful models for the Heaven world
+<Item class="ModuleScript" referent="RBX32"><Properties><string name="Name">SpeciesModelsHeaven</string><ProtectedString name="Source"><![CDATA[-- SpeciesModelsHeaven: hand-authored, reference-faithful models for the Heaven world
 -- (Cloud Lamb, Halo Chick, Seraphling, Golden Griffin, Celestial Pegasus, Seraph Lion, Archangel Drake,
 -- Throne Guardian).
 -- Location: ReplicatedStorage > Shared > SpeciesModelsHeaven (ModuleScript), merged into SpeciesModels.
@@ -8487,7 +8587,7 @@ end
 
 return M
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX32"><Properties><string name="Name">SpeciesModelsSecret</string><ProtectedString name="Source"><![CDATA[-- SpeciesModelsSecret: hand-authored, reference-faithful models for the Secret portal creatures
+<Item class="ModuleScript" referent="RBX33"><Properties><string name="Name">SpeciesModelsSecret</string><ProtectedString name="Source"><![CDATA[-- SpeciesModelsSecret: hand-authored, reference-faithful models for the Secret portal creatures
 -- (Glitchling, Void Emperor, Error Cat, Null Bunny, The Watcher).
 -- Location: ReplicatedStorage > Shared > SpeciesModelsSecret (ModuleScript), merged into SpeciesModels.
 
@@ -8767,7 +8867,7 @@ end
 
 return M
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX33"><Properties><string name="Name">SpeciesModelsShadow</string><ProtectedString name="Source"><![CDATA[-- SpeciesModelsShadow: hand-authored, reference-faithful models for the Shadow world
+<Item class="ModuleScript" referent="RBX34"><Properties><string name="Name">SpeciesModelsShadow</string><ProtectedString name="Source"><![CDATA[-- SpeciesModelsShadow: hand-authored, reference-faithful models for the Shadow world
 -- (Gloomling, Shade Cat, Night Moth, Void Wisp, Umbra Wolf, Wraith Lord, Nightmare Wyvern).
 -- Location: ReplicatedStorage > Shared > SpeciesModelsShadow (ModuleScript), merged into SpeciesModels.
 
@@ -9140,7 +9240,7 @@ end
 
 return M
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX34"><Properties><string name="Name">SpeciesModelsSpace</string><ProtectedString name="Source"><![CDATA[-- SpeciesModelsSpace: hand-authored, reference-faithful models for the Space world
+<Item class="ModuleScript" referent="RBX35"><Properties><string name="Name">SpeciesModelsSpace</string><ProtectedString name="Source"><![CDATA[-- SpeciesModelsSpace: hand-authored, reference-faithful models for the Space world
 -- (Astro Blob, Moon Mouse, Comet Fish, Nebula Jelly, Star Whale, Nova Phoenix, Cosmic Dragon, Singularity Cat).
 -- Location: ReplicatedStorage > Shared > SpeciesModelsSpace (ModuleScript), merged into SpeciesModels.
 
@@ -9629,7 +9729,7 @@ end
 
 return M
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX35"><Properties><string name="Name">SpeciesModelsVolcano</string><ProtectedString name="Source"><![CDATA[-- SpeciesModelsVolcano: hand-authored, reference-faithful models for the Volcano world
+<Item class="ModuleScript" referent="RBX36"><Properties><string name="Name">SpeciesModelsVolcano</string><ProtectedString name="Source"><![CDATA[-- SpeciesModelsVolcano: hand-authored, reference-faithful models for the Volcano world
 -- (Emberpup, Magmite, Cinderchick, Obsidian Golem, Phoenix Lumen, Magma Kraken, Infernadrake, Solar Serpent).
 -- Location: ReplicatedStorage > Shared > SpeciesModelsVolcano (ModuleScript), merged into SpeciesModels.
 -- Built from the owner's character sheets (hero / front / side + idle, anticipate, power move, recover).
@@ -10118,7 +10218,7 @@ end
 
 return M
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX36"><Properties><string name="Name">SpeciesProfiles</string><ProtectedString name="Source"><![CDATA[-- SpeciesProfiles: per-species VISUAL + MOTION metadata for all 74 creatures.
+<Item class="ModuleScript" referent="RBX37"><Properties><string name="Name">SpeciesProfiles</string><ProtectedString name="Source"><![CDATA[-- SpeciesProfiles: per-species VISUAL + MOTION metadata for all 74 creatures.
 -- Location: ReplicatedStorage > Shared > SpeciesProfiles (ModuleScript)
 --
 -- Identity (id, name, rarity, world, palette, economy) stays in CreatureData and is never
@@ -10822,7 +10922,7 @@ end
 
 return Profiles
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX37"><Properties><string name="Name">Variants</string><ProtectedString name="Source"><![CDATA[-- Variants: pet SIZES (Big / Huge / Titan) and MATERIALS (Gold / Emerald / Ruby / Diamond).
+<Item class="ModuleScript" referent="RBX38"><Properties><string name="Name">Variants</string><ProtectedString name="Source"><![CDATA[-- Variants: pet SIZES (Big / Huge / Titan) and MATERIALS (Gold / Emerald / Ruby / Diamond).
 -- Rolled by the server on every catch, independently of the creature itself, and saved on the
 -- creature entry ({ u, c, s = size, v = material }). Both multiply the creature's income.
 -- Shared by server (rolls, income, selling) and client (looks, names).
@@ -10950,9 +11050,9 @@ return V
 ]]></ProtectedString></Properties></Item>
 </Item>
 </Item>
-<Item class="ServerScriptService" referent="RBX74"><Properties><string name="Name">ServerScriptService</string></Properties>
-<Item class="Folder" referent="RBX39"><Properties><string name="Name">Server</string></Properties>
-<Item class="ModuleScript" referent="RBX40"><Properties><string name="Name">BaseBuilder</string><ProtectedString name="Source"><![CDATA[-- BaseBuilder: builds eight Skyforge courtyards and owned decorations.
+<Item class="ServerScriptService" referent="RBX76"><Properties><string name="Name">ServerScriptService</string></Properties>
+<Item class="Folder" referent="RBX40"><Properties><string name="Name">Server</string></Properties>
+<Item class="ModuleScript" referent="RBX41"><Properties><string name="Name">BaseBuilder</string><ProtectedString name="Source"><![CDATA[-- BaseBuilder: builds eight Skyforge courtyards and owned decorations.
 -- Location: ServerScriptService > Server > BaseBuilder (ModuleScript)
 --
 -- Open timber lodge, portal shrine, floating relic pavilion and expedition map table.
@@ -11333,7 +11433,7 @@ end
 
 return BaseBuilder
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX41"><Properties><string name="Name">BiomeCandy</string><ProtectedString name="Source"><![CDATA[-- BiomeCandy: Candy World, Z [900, 1300). Reference: roblox pets/Maps/05_Candy_Biome_Final.png (1:1 inventory).
+<Item class="ModuleScript" referent="RBX42"><Properties><string name="Name">BiomeCandy</string><ProtectedString name="Source"><![CDATA[-- BiomeCandy: Candy World, Z [900, 1300). Reference: roblox pets/Maps/05_Candy_Biome_Final.png (1:1 inventory).
 -- Authored as seen in the reference (K.mirror = true: design -X = screen-left). ONE palace, no plots/hall/houses.
 --  LEFT : CaL1 faceted chocolate cliff with icing caps, three-step chocolate waterfall + gold-edged canal ·
 --         CaL2 chunky pink candy trees · CaL3 swirl lollipops on striped sticks · CaL4 pink crystals ·
@@ -11599,7 +11699,7 @@ end
 
 return B
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX42"><Properties><string name="Name">BiomeCrystal</string><ProtectedString name="Source"><![CDATA[-- BiomeCrystal: Crystal Caves, Z [600, 900). Reference: roblox pets/Maps/04_Crystal_Biome_Final.png (1:1 inventory).
+<Item class="ModuleScript" referent="RBX43"><Properties><string name="Name">BiomeCrystal</string><ProtectedString name="Source"><![CDATA[-- BiomeCrystal: Crystal Caves, Z [600, 900). Reference: roblox pets/Maps/04_Crystal_Biome_Final.png (1:1 inventory).
 -- Authored as seen in the reference (K.mirror = true: design -X = screen-left). NO creature landmark.
 --  LEFT : CL1 giant split geode (purple shell, pale-pink quartz rim, huge cyan + violet crystal fan, stepped
 --         ledges) · CL2 turquoise mineral pool with ledges · CL3 rune monolith (dark slab, gold trim, cyan
@@ -11830,7 +11930,7 @@ end
 
 return B
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX43"><Properties><string name="Name">BiomeForest</string><ProtectedString name="Source"><![CDATA[-- BiomeForest: Green Forest, Z [0, 150). Reference: roblox pets/Maps/01_Forest_Biome.png (built 1:1 from
+<Item class="ModuleScript" referent="RBX44"><Properties><string name="Name">BiomeForest</string><ProtectedString name="Source"><![CDATA[-- BiomeForest: Green Forest, Z [0, 150). Reference: roblox pets/Maps/01_Forest_Biome.png (built 1:1 from
 -- its element inventory). Authored as seen in the reference (K.mirror = true: design -X = screen-left).
 --  LEFT : L1 big curved-trunk tree (near) · L2 vine-covered ruin arch with carved leaf panels ·
 --         L3 turquoise pool + small fall behind the arch · L4 corner bed: lilies, spotted mushrooms, ferns,
@@ -12190,7 +12290,7 @@ end
 
 return B
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX44"><Properties><string name="Name">BiomeFrozen</string><ProtectedString name="Source"><![CDATA[-- BiomeFrozen: Frozen Kingdom, Z [350, 600). Reference: roblox pets/Maps/03_Frozen_Biome.png (1:1 inventory).
+<Item class="ModuleScript" referent="RBX45"><Properties><string name="Name">BiomeFrozen</string><ProtectedString name="Source"><![CDATA[-- BiomeFrozen: Frozen Kingdom, Z [350, 600). Reference: roblox pets/Maps/03_Frozen_Biome.png (1:1 inventory).
 -- Authored as seen in the reference (K.mirror = true: design -X = screen-left).
 --  LEFT : FL1 two natural ice-rock arches with snow drapes, icicles, glowing ice · FL2 ice cave with glowing
 --         crystals + snowman (goggles, scarf, satchel) + sled and lantern · FL3 small frozen fall + pond with
@@ -12478,7 +12578,7 @@ end
 
 return B
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX45"><Properties><string name="Name">BiomeHeaven</string><ProtectedString name="Source"><![CDATA[-- BiomeHeaven: Heaven World, Z [2400, 3200). Reference: roblox pets/Maps/08_Heaven_Biome.png (1:1 inventory).
+<Item class="ModuleScript" referent="RBX46"><Properties><string name="Name">BiomeHeaven</string><ProtectedString name="Source"><![CDATA[-- BiomeHeaven: Heaven World, Z [2400, 3200). Reference: roblox pets/Maps/08_Heaven_Biome.png (1:1 inventory).
 -- Authored as seen in the reference (K.mirror = true: design -X = screen-left).
 --  LEFT : HL1 winged angel statue (hooded robe, praying hands, feathered wings, golden halo ring + star, gold-banded
 --         plinth) · HL2 cascading blue waterfalls down grassy marble tiers · HL3 green bonsai trees · HL4 cypresses ·
@@ -12759,7 +12859,7 @@ end
 
 return B
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX46"><Properties><string name="Name">BiomeShadow</string><ProtectedString name="Source"><![CDATA[-- BiomeShadow: Shadow Dimension, Z [1800, 2400). Reference: roblox pets/Maps/07_Shadow_Biome.png (1:1 inventory).
+<Item class="ModuleScript" referent="RBX47"><Properties><string name="Name">BiomeShadow</string><ProtectedString name="Source"><![CDATA[-- BiomeShadow: Shadow Dimension, Z [1800, 2400). Reference: roblox pets/Maps/07_Shadow_Biome.png (1:1 inventory).
 -- Authored as seen in the reference (K.mirror = true: design -X = screen-left).
 --  LEFT : ShL1 decorative side chasm (teal glowing veins, mist) · ShL2 twisted bare trees · ShL3 crimson plants ·
 --         ShL4 broken double-arch ruin · ShL5 red banner posts, small shrines
@@ -13046,7 +13146,7 @@ end
 
 return B
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX47"><Properties><string name="Name">BiomeSpace</string><ProtectedString name="Source"><![CDATA[-- BiomeSpace: Space Galaxy, Z [1300, 1800). Reference: roblox pets/Maps/06_Space_Biome.png (1:1 inventory).
+<Item class="ModuleScript" referent="RBX48"><Properties><string name="Name">BiomeSpace</string><ProtectedString name="Source"><![CDATA[-- BiomeSpace: Space Galaxy, Z [1300, 1800). Reference: roblox pets/Maps/06_Space_Biome.png (1:1 inventory).
 -- Authored as seen in the reference (K.mirror = true: design -X = screen-left).
 --  LEFT : SL1 observatory (ribbed stone/brass dome with an open slot + brass telescope, drum with gold bands,
 --         columned portico with blue emblem banners, wide stairs, segmented brass orbital arc, golden beacon star
@@ -13283,7 +13383,7 @@ end
 
 return B
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX48"><Properties><string name="Name">BiomeVolcano</string><ProtectedString name="Source"><![CDATA[-- BiomeVolcano: Volcano World, Z [150, 350). Reference: roblox pets/Maps/02_Volcano_Biome.png (1:1 inventory).
+<Item class="ModuleScript" referent="RBX49"><Properties><string name="Name">BiomeVolcano</string><ProtectedString name="Source"><![CDATA[-- BiomeVolcano: Volcano World, Z [150, 350). Reference: roblox pets/Maps/02_Volcano_Biome.png (1:1 inventory).
 -- Authored as seen in the reference (K.mirror = true: design -X = screen-left).
 --  LEFT : VL1 giant jagged volcano (spiky peaks, crater, smoke plume, two winding lava rivers) ·
 --         VL2 cliff lavafall into a glowing pool · VL3 hexagonal basalt column clusters with molten seams ·
@@ -13560,7 +13660,7 @@ end
 
 return B
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX49"><Properties><string name="Name">CastleWalls</string><ProtectedString name="Source"><![CDATA[-- CastleWalls: the Portal Sanctuary becomes a fortified castle courtyard.
+<Item class="ModuleScript" referent="RBX50"><Properties><string name="Name">CastleWalls</string><ProtectedString name="Source"><![CDATA[-- CastleWalls: the Portal Sanctuary becomes a fortified castle courtyard.
 -- Location: ServerScriptService > Server > CastleWalls (ModuleScript)
 --
 -- Curtain walls with a battered base, string course, wall-walk and crenellated parapets run along both
@@ -13789,7 +13889,7 @@ end
 
 return W
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX50"><Properties><string name="Name">CinematicEnvironment</string><ProtectedString name="Source"><![CDATA[-- Authored focal details and world-anchored atmosphere. No gameplay geometry is moved.
+<Item class="ModuleScript" referent="RBX51"><Properties><string name="Name">CinematicEnvironment</string><ProtectedString name="Source"><![CDATA[-- Authored focal details and world-anchored atmosphere. No gameplay geometry is moved.
 local Collection = game:GetService("CollectionService")
 local Config = require(game.ReplicatedStorage.Shared.Config)
 local Lettering = require(script.Parent.HeraldicText)
@@ -14000,7 +14100,7 @@ function E.Apply()
 end
 return E
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX51"><Properties><string name="Name">DataService</string><ProtectedString name="Source"><![CDATA[-- DataService: DataStore saving with session locking, retries, autosave and BindToClose.
+<Item class="ModuleScript" referent="RBX52"><Properties><string name="Name">DataService</string><ProtectedString name="Source"><![CDATA[-- DataService: DataStore saving with session locking, retries, autosave and BindToClose.
 -- Location: ServerScriptService > Server > DataService (ModuleScript)
 
 local DataStoreService = game:GetService("DataStoreService")
@@ -14191,7 +14291,7 @@ end)
 
 return DataService
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX52"><Properties><string name="Name">ExpeditionService</string><ProtectedString name="Source"><![CDATA[-- One saved expedition per player. Dispatch/claim never yield: identity, time,
+<Item class="ModuleScript" referent="RBX53"><Properties><string name="Name">ExpeditionService</string><ProtectedString name="Source"><![CDATA[-- One saved expedition per player. Dispatch/claim never yield: identity, time,
 -- ownership and rewards are resolved on the server and a claim consumes its ID.
 local RS = game:GetService("ReplicatedStorage")
 local Http = game:GetService("HttpService")
@@ -14499,21 +14599,111 @@ end
 
 return Service
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX53"><Properties><string name="Name">FarmService</string><ProtectedString name="Source"><![CDATA[-- FarmService: the courtyard farm and the long-term grind around it.
+<Item class="ModuleScript" referent="RBX54"><Properties><string name="Name">FarmMarket</string><ProtectedString name="Source"><![CDATA[-- Two public medieval stalls. Geometry only; the server validates every trade.
+local Lettering = require(script.Parent.HeraldicText)
+local Market = {}
+local V, CF, A = Vector3.new, CFrame.new, CFrame.Angles
+local C, M = Color3.fromRGB, Enum.Material
+
+function Market.Build(parent, layout)
+	local old = parent:FindFirstChild("FarmMarket")
+	if old then
+		assert(old:GetAttribute("TPFCGenerated"), "Preserve unowned FarmMarket geometry")
+		old:Destroy()
+	end
+	local market = Instance.new("Model")
+	market.Name = "FarmMarket"
+	market:SetAttribute("TPFCGenerated", true)
+	market:SetAttribute("MarketRevision", 1)
+	local function part(owner, name, cf, size, color, material, collide)
+		local p = Instance.new("Part")
+		p.Name, p.CFrame, p.Size = name, cf, size
+		p.Color, p.Material = color, material
+		p.Anchored, p.CanCollide, p.CanTouch, p.CanQuery = true, collide == true, false, collide == true
+		p.TopSurface, p.BottomSurface = Enum.SurfaceType.Smooth, Enum.SurfaceType.Smooth
+		p.CastShadow = math.max(size.X, size.Y, size.Z) > 0.5
+		p.Parent = owner
+		return p
+	end
+	for _, kind in { "Buy", "Sell" } do
+		local stall = Instance.new("Model")
+		stall.Name, stall.Parent = kind .. "Stall", market
+		local origin = layout[kind]
+		local function block(name, at, size, color, material, collide)
+			return part(stall, name, origin * at, size, color, material, collide)
+		end
+		local oak, iron, brass = C(87, 64, 43), C(50, 56, 56), C(162, 126, 65)
+		local cloth = kind == "Buy" and C(35, 81, 66) or C(122, 44, 46)
+		block("StonePad", CF(0, 0.18, -1.3), V(11, 0.36, 10), C(163, 163, 151), M.Limestone, true)
+		block("CounterBase", CF(0, 1.3, 0), V(8.2, 2.3, 3), oak, M.WoodPlanks, true)
+		block("CounterTop", CF(0, 2.6, -0.15), V(8.8, 0.25, 3.6), C(121, 91, 56), M.WoodPlanks, true)
+		for _, x in { -4.2, 4.2 } do
+			for _, z in { -1.6, 1.6 } do
+				block("OakPost", CF(x, 3.7, z), V(0.4, 7.1, 0.4), oak, M.Wood, true)
+				block("IronPostFoot", CF(x, 0.8, z), V(0.46, 0.6, 0.46), iron, M.Metal)
+			end
+		end
+		for _, side in { -1, 1 } do
+			local a, b = V(side * 4.2, 5.4, -1.6), V(side * 2.7, 7.2, -1.6)
+			block("OakKneeBrace", CFrame.lookAt((a + b) / 2, b), V(0.25, 0.25, (b - a).Magnitude), oak, M.Wood)
+			block("CounterIronStrap", CF(side * 3.5, 1.35, -1.56), V(0.17, 2.3, 0.13), iron, M.Metal)
+			for _, y in { 0.55, 1.35, 2.15 } do
+				block("BrassRivet", CF(side * 3.5, y, -1.65), V(0.12, 0.12, 0.1), brass, M.Metal)
+			end
+		end
+		for _, side in { -1, 1 } do
+			local slope = CF(side * 2.4, 7.3, 0) * A(0, 0, -side * 0.28)
+			block("SlateRoof", slope, V(5.2, 0.3, 5.2), C(51, 64, 71), M.Slate)
+			for row = -2, 2 do
+				block("RoofSeam", slope * CF(0, 0.18, row), V(5.2, 0.06, 0.07), iron, M.Metal)
+			end
+		end
+		block("RoofRidge", CF(0, 8.05, 0), V(0.3, 0.3, 5.4), brass, M.Metal)
+		local board = block("TradeSign", CF(0, 6.4, -1.9), V(7.8, 1.5, 0.25), cloth, M.WoodPlanks)
+		Lettering.Build(board, kind == "Buy" and "BUY" or "SELL", 1.05).Parent = stall
+		for _, x in { -3.65, 3.65 } do
+			block("SignIronHanger", CF(x, 6.5, -1.75), V(0.14, 1.9, 0.14), iron, M.Metal)
+		end
+		for i = -1, 1 do
+			local x = i * 2.5
+			block("ProduceCrate", CF(x, 2.95, 0), V(2.1, 0.5, 2), oak, M.WoodPlanks)
+			for n = 1, 4 do
+				local hue = kind == "Buy" and C(205, 180, 119)
+					or ({ C(142, 85, 170), C(218, 175, 73), C(110, 157, 88) })[i + 2]
+				block(
+					kind == "Buy" and "SeedPouch" or "HarvestProduce",
+					CF(x + (n % 2 - 0.5) * 0.75, 3.4, (math.floor((n - 1) / 2) - 0.5) * 0.8),
+					V(0.65, 0.7, 0.65),
+					hue,
+					M.SmoothPlastic
+				)
+			end
+		end
+		block("Banner", CF(-4.45, 4.5, -1.65), V(0.8, 2.1, 0.12), cloth, M.Fabric)
+		local anchor = block(kind .. "Anchor", CF(0, 2.6, -3.1), V(1, 1, 1), brass, M.Metal)
+		anchor.Transparency = 1
+		anchor:SetAttribute("FarmMarket", kind)
+	end
+	market.Parent = parent
+	return market
+end
+
+return Market
+]]></ProtectedString></Properties></Item>
+<Item class="ModuleScript" referent="RBX55"><Properties><string name="Name">FarmService</string><ProtectedString name="Source"><![CDATA[-- FarmService: the courtyard farm and the long-term grind around it.
 -- Location: ServerScriptService > Server > FarmService (ModuleScript), started by GameServer.
 --
 --  * Six planter beds per courtyard (3 free, 3 bought). Crops grow on os.time(), so they keep growing
 --    while you are offline. A mutation (Watered / Golden / Giant / Rainbow) is rolled when you plant
 --    and shows on the plant while it grows. Harvest = produce into the Pantry + Farmer XP.
---  * Feeding Trough: feed the Pantry to your courtyard pets (pet XP -> pet levels -> +6% income per
---    level, see PetMult) or sell it. Mutations multiply both the food and the sale value.
---  * Farm Stand: pick your seed, buy beds, buy Sprinklers (faster growth), hire the Harvest Spirit
---    (auto-harvests into the Treasury and resows, also offline: the 24/7 farm).
+--  * Feeding Trough: feed crops to courtyard pets for XP/levels and the Well Fed bonus.
+--  * Hall market: BUY seeds/supplies, plant from owned stock, harvest, then SELL crops.
+--    Optional supplies retain the existing beds, Sprinklers and paid Harvest Spirit.
 --  * Farmer Level: XP from harvests and catches; levels unlock crops and add yield.
 --  * Bounty Board: three rotating jobs (harvest, catch, collect, throw, zone) with rewards.
 --  * Daily Gift chest: once every 20 h, 7-day streak.
--- Everything is physical, in the courtyard, driven by ProximityPrompts (the HUD has exactly four
--- menu destinations by design). Feedback stays on permanent farm signs; no screen or character message bursts.
+-- Everyday trade lives in two stalls beside the Great Hall. Advanced farm systems stay optional.
+-- Feedback uses permanent signs and open menus; no screen or character message bursts.
 -- All prices, rolls and timers are decided here; the client only triggers prompts.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -14521,6 +14711,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
 local Farm = require(Shared.FarmConfig)
 local Care = require(Shared.FarmCare)
+local MarketRules = require(Shared.FarmMarketRules)
 local Format = require(Shared.Format)
 local CreatureData = require(Shared.CreatureData)
 -- Geometry previews must not start the profile service or its autosave loop.
@@ -14580,6 +14771,7 @@ local function ensure(data)
 	f.FedProgress = math.clamp(math.floor(tonumber(f.FedProgress) or 0), 0, Farm.WellFed.min - 1)
 	f.FedUntil = tonumber(f.FedUntil) or 0
 	f.Almanac = type(f.Almanac) == "table" and f.Almanac or {} -- ["Crop|Mutation"] = true
+	MarketRules.Ensure(f)
 	data.Bounties = type(data.Bounties) == "table" and data.Bounties or {}
 	data.Daily = type(data.Daily) == "table" and data.Daily or { last = 0, streak = 0 }
 	return f
@@ -14910,17 +15102,17 @@ local function harvest(player, data, base, i, auto)
 	return 1
 end
 
-local function plant(_player, data, i, cropId, at)
+local function plant(_player, data, i, cropId, at, automatic)
 	local f = data.Farm
 	local crop = Farm.ById[cropId]
 	if not crop or not unlocked(data, crop) then
 		return false, "Locked crop"
 	end
 	local cost = seedCost(data, crop)
-	if data.Money < cost then
-		return false, "Need " .. Format.Money(cost) .. " for " .. crop.name .. " seeds"
+	local paid, message = MarketRules.Use(data, cropId, cost, automatic)
+	if not paid then
+		return false, message
 	end
-	data.Money -= cost
 	local m = rollMutation(data, at or os.time())
 	f.Plots[tostring(i)] = { c = crop.id, t = at or os.time(), m = m }
 	return true, nil, m
@@ -14961,7 +15153,7 @@ local function runSpirit(player, data, base)
 			if not crop then
 				-- sow an empty bed with the selected seed
 				local seed = Farm.ById[f.Seed]
-				if seed and unlocked(data, seed) and plant(player, data, i, seed.id) then
+				if seed and unlocked(data, seed) and plant(player, data, i, seed.id, nil, true) then
 					changed = true
 				end
 				break
@@ -14973,7 +15165,7 @@ local function runSpirit(player, data, base)
 			harvest(player, data, base, i, true)
 			changed = true
 			cycles += 1
-			if not plant(player, data, i, crop.id, readyAt) then
+			if not plant(player, data, i, crop.id, readyAt, true) then
 				break
 			end
 		end
@@ -15203,46 +15395,7 @@ local function buildBase(base)
 			{ soil = soilPart, plants = plants, label = label, prompt = pr, cf = pcf, stage = -1, crop = nil }
 		K.SetFolder(root)
 	end
-	-- Farm Stand: timber counter under a violet awning, four goods with their own keys
-	local scf = L(STAND.X, 0, STAND.Z) * A(0, -PI / 2, 0) -- counter faces the courtyard centre (+X)
-	K.block(scf * CF(0, 1.4, 0), V(7.2, 0.6, 3.4), Style.stone, M.Limestone, true)
-	K.block(scf * CF(0, 2.6, 0), V(6.8, 1.8, 2.6), woodD, M.WoodPlanks, true)
-	K.block(scf * CF(0, 3.6, 0), V(7.2, 0.3, 3.0), wood, M.WoodPlanks)
-	for _, x in ipairs({ -3.3, 3.3 }) do
-		for _, z in ipairs({ -1.3, 1.3 }) do
-			K.block(scf * CF(x, 5.2, z), V(0.45, 6.4, 0.45), woodD, M.Wood)
-		end
-	end
-	Art.Gable(scf * CF(0, 8.4, 0) * A(0, PI / 2, 0), 4.6, 1.8, 8.2, Style.roof)
-	K.block(scf * CF(0, 8.35, 0), V(8.2, 0.3, 4.8), gold, M.Metal)
-	local goods = {
-		{ name = "Seeds", x = -2.4, key = Enum.KeyCode.E, pad = Enum.KeyCode.ButtonX, col = C(150, 110, 230) },
-		{ name = "Beds", x = -0.8, key = Enum.KeyCode.R, pad = Enum.KeyCode.ButtonY, col = C(145, 100, 61) },
-		{ name = "Sprinkler", x = 0.8, key = Enum.KeyCode.T, pad = Enum.KeyCode.ButtonL1, col = C(110, 190, 230) },
-		{ name = "Spirit", x = 2.4, key = Enum.KeyCode.G, pad = Enum.KeyCode.ButtonR1, col = C(190, 160, 255) },
-	}
-	farm.stand = {}
-	for _, g in ipairs(goods) do
-		local item =
-			K.block(scf * CF(g.x, 4.2, -0.2), V(1.1, 0.9, 1.1), g.col, g.name == "Spirit" and M.Neon or M.SmoothPlastic)
-		item.Name = "Stand" .. g.name
-		local pr = prompt(item, g.key, g.pad, V(0, 0.8, 0))
-		pr.MaxActivationDistance = 5
-		pr:SetAttribute("FarmStation", "Stand")
-		pr:SetAttribute("BaseIndex", base.index)
-		pr.Triggered:Connect(function(player)
-			FarmService.OnStand(base, g.name, player)
-		end)
-		farm.stand[g.name] = pr
-	end
-	feedbackPlate(
-		scf * CF(0, 2.6, -1.36),
-		V(6.4, 1.35, 0.12),
-		"Stand",
-		"Plant a crop, harvest it, then feed pets or sell at the Pantry."
-	)
-	local sign = K.block(scf * CF(0, 7.2, -1.5), V(6.4, 1.4, 0.25), Style.roof, M.SmoothPlastic)
-	farm.standLabel = billboard(sign, V(0, 2.2, 0), UDim2.fromOffset(200, 66), 22)
+	-- Everyday trade moved to the two public stalls beside the Great Hall.
 	-- Bounty Board: two posts, a timber board with three parchment cards, a little roof
 	local bcf = L(BOARD.X, 0, BOARD.Z)
 	for _, x in ipairs({ -3.4, 3.4 }) do
@@ -15342,7 +15495,7 @@ local function buildBase(base)
 		tcf * CF(0, 6.1, 1.2),
 		V(7.2, 1.6, 0.2),
 		"Pantry",
-		"Feed up to 5 food. Ordinary food first. Hold to sell the whole Pantry."
+		"Feed pets here. Sell crops at the SELL stall beside the Great Hall."
 	)
 	local summary = feedbackPlate(tcf * CF(0, 8.0, 1.2), V(7.2, 1.9, 0.2), nil, "")
 	farm.troughLabel = summary.SurfaceGui.FarmStatus
@@ -15365,14 +15518,7 @@ local function buildBase(base)
 	feed.Triggered:Connect(function(player)
 		FarmService.OnFeed(base, player)
 	end)
-	local sell = prompt(trough, Enum.KeyCode.R, Enum.KeyCode.ButtonY, V(1.6, 0.9, -1.6))
-	sell.MaxActivationDistance = 6
-	sell.HoldDuration = 1
-	sell:SetAttribute("BaseIndex", base.index)
-	sell.Triggered:Connect(function(player)
-		FarmService.OnSell(base, player)
-	end)
-	farm.feedPrompt, farm.sellPrompt = feed, sell
+	farm.feedPrompt = feed
 	-- Crop Almanac: a 6 x 5 grid board on the lodge's back wall, facing the courtyard
 	local LG = Style.lodge
 	-- sits low on the back wall, under the shortened gable banner (SkyforgeDetails)
@@ -15454,7 +15600,6 @@ local function refreshBase(base)
 				e.prompt.ActionText, e.prompt.ObjectText = "", ""
 				e.soil.Color = SOIL
 			end
-			farm.standLabel.Text = ""
 			farm.chestLabel.Text = ""
 			farm.troughLabel.Text = ""
 			farm.almanacShown = nil
@@ -15489,15 +15634,16 @@ local function refreshBase(base)
 		local mName = mdef and ('<font color="#' .. mdef.color:ToHex() .. '">' .. m .. "</font> ") or ""
 		local stage = 0
 		if state == "locked" then
-			e.label.Text = lockLabelShown and "" or '<font color="#DCD4C8">Locked · Farm Stand</font>'
+			e.label.Text = lockLabelShown and "" or '<font color="#DCD4C8">Locked · BUY stall near hall</font>'
 			lockLabelShown = true
-			e.prompt.ActionText, e.prompt.ObjectText = "Locked", "Farm Stand: R"
+			e.prompt.ActionText, e.prompt.ObjectText = "Locked", "BUY stall near hall"
 			e.soil.Color = LOCKED
 		elseif state == "empty" then
 			local seed = Farm.ById[f.Seed]
 			e.label.Text = ""
 			e.prompt.ActionText = "Plant " .. seed.name
-			e.prompt.ObjectText = Format.Money(seedCost(data, seed))
+			e.prompt.ObjectText = (f.SeedStock[seed.id] or 0) > 0 and ((f.SeedStock[seed.id] or 0) .. " seeds owned")
+				or "Buy seeds near the Great Hall"
 			e.soil.Color = SOIL
 		else
 			local grow = growTime(data, crop)
@@ -15506,11 +15652,7 @@ local function refreshBase(base)
 			e.soil.Color = m == "Watered" and C(60, 62, 70) or SOIL_WET
 			if state == "ready" then
 				e.label.Text = mName .. '<font color="#FFD678">' .. crop.name .. " ready!</font>"
-				local seed = Farm.ById[f.Seed]
-				local replant = seed and unlocked(data, seed) and data.Money >= seedCost(data, seed)
-				e.prompt.ActionText = replant and "Harvest + replant" or "Harvest to Pantry"
-				e.prompt.ObjectText = replant and (seed.name .. " · " .. Format.Money(seedCost(data, seed)))
-					or crop.name
+				e.prompt.ActionText, e.prompt.ObjectText = "Harvest crop", crop.name
 			else
 				e.label.Text = mName
 					.. crop.name
@@ -15529,67 +15671,6 @@ local function refreshBase(base)
 			e.stage, e.crop = stage, visKey
 			plantVisual(e, crop, stage, e.cf, m)
 		end
-	end
-	-- stand
-	local seed = Farm.ById[f.Seed]
-	local need = Farm.XpToNext(f.Level)
-	farm.standLabel.Text = '<font color="#FFD678">FARMER LV '
-		.. f.Level
-		.. "</font>  "
-		.. math.floor(f.XP)
-		.. " / "
-		.. need
-		.. " XP\n"
-		.. "Seed: "
-		.. seed.name
-		.. " ("
-		.. Format.Money(seedCost(data, seed))
-		.. ", "
-		.. fmtTime(growTime(data, seed))
-		.. ")\n"
-		.. '<font color="#DCD4C8">Soil x'
-		.. Format.Money(soil(data)):gsub("%$", "")
-		.. "  ·  "
-		.. f.Harvests
-		.. " harvests"
-		.. (f.Spirit and "  ·  Spirit on" or "")
-		.. "</font>"
-	local dc = demand.crop and Farm.ById[demand.crop]
-	local extra = {}
-	if weather.id then
-		local w = Farm.WeatherById[weather.id]
-		table.insert(extra, '<font color="#9CD8FF">' .. w.name .. " " .. fmtTime(weather.ends - now) .. "</font>")
-	end
-	if dc then
-		table.insert(extra, '<font color="#9CFFA8">Demand: ' .. dc.name .. " x" .. Farm.DemandMult .. "</font>")
-	end
-	if #extra > 0 then
-		farm.standLabel.Text ..= "\n" .. table.concat(extra, "  ·  ")
-	end
-	local st = farm.stand
-	st.Seeds.ActionText, st.Seeds.ObjectText = "Next seed", seed.name
-	st.Seeds:SetAttribute("FarmAvailable", true)
-	st.Beds:SetAttribute("FarmAvailable", f.PlotsOwned < Farm.MaxPlots)
-	st.Sprinkler:SetAttribute("FarmAvailable", f.Sprinkler < #Farm.SprinklerPrices)
-	st.Spirit:SetAttribute("FarmAvailable", not f.Spirit)
-	if f.PlotsOwned < Farm.MaxPlots then
-		st.Beds.ActionText = "Buy bed " .. (f.PlotsOwned + 1)
-		st.Beds.ObjectText = Format.Money(Farm.PlotPrices[f.PlotsOwned - Farm.StartPlots + 1])
-	else
-		st.Beds.ActionText, st.Beds.ObjectText = "All beds owned", ""
-	end
-	if f.Sprinkler < #Farm.SprinklerPrices then
-		st.Sprinkler.ActionText = "Sprinkler Lv " .. (f.Sprinkler + 1)
-		st.Sprinkler.ObjectText = Format.Money(Farm.SprinklerPrices[f.Sprinkler + 1]) .. "  (-8% grow time)"
-	else
-		st.Sprinkler.ActionText, st.Sprinkler.ObjectText = "Sprinklers maxed", ""
-	end
-	if f.Spirit then
-		st.Spirit.ActionText, st.Spirit.ObjectText = "Harvest Spirit hired", "auto-harvest, 24/7"
-	elseif f.Level < Farm.SpiritLevel then
-		st.Spirit.ActionText, st.Spirit.ObjectText = "Harvest Spirit", "needs Farmer Lv " .. Farm.SpiritLevel
-	else
-		st.Spirit.ActionText, st.Spirit.ObjectText = "Hire Harvest Spirit", Format.Money(Farm.SpiritPrice)
 	end
 	-- board (rewrite only when something changed)
 	fillBounties(data)
@@ -15656,11 +15737,9 @@ local function refreshBase(base)
 		.. " pets at home · "
 		.. condition
 	farm.feedPrompt:SetAttribute("FarmAvailable", n > 0 and #pets > 0)
-	farm.sellPrompt:SetAttribute("FarmAvailable", n > 0)
 	farm.feedPrompt.ActionText = n > 0 and ("Feed " .. math.min(n, Farm.WellFed.min) .. " food") or "Feed pets"
 	farm.feedPrompt.ObjectText = "Ordinary food first"
-	farm.sellPrompt.ActionText = n > 0 and ("Sell all " .. n .. " produce") or "Nothing to sell"
-	farm.sellPrompt.ObjectText = n > 0 and Format.Money(value) or ""
+
 	-- almanac board (rewrite only when the count changes)
 	local found = FarmService.AlmanacCount(data)
 	if farm.almanacShown ~= found then
@@ -15731,19 +15810,12 @@ function FarmService.OnPlot(base, i, player)
 	local pos = base.cf:PointToWorldSpace(PLOTS[i] + V(0, 4, 0))
 	local state, crop, left = plotState(data, i)
 	if state == "locked" then
-		say(player, "Buy this bed at the Farm Stand", pos)
+		say(player, "Buy another bed at the BUY stall beside the Great Hall.", pos)
 	elseif state == "growing" then
 		say(player, crop.name .. ": " .. fmtTime(left) .. " left", pos)
 	elseif state == "ready" then
 		harvest(player, data, base, i, false)
-		-- one press re-sows with your selected seed (if you can afford it)
-		local seed = Farm.ById[data.Farm.Seed]
-		if seed and unlocked(data, seed) and data.Money >= seedCost(data, seed) then
-			local _, _, m = plant(player, data, i, seed.id)
-			if m then
-				task.delay(0.9, fx, player, "mutation", { pos = pos, mutation = m, crop = seed.name })
-			end
-		end
+		-- Harvest leaves the bed empty; the player chooses when to spend another seed.
 		syncMoney(player)
 	else
 		local ok, msg, m = plant(player, data, i, data.Farm.Seed)
@@ -15756,85 +15828,6 @@ function FarmService.OnPlot(base, i, player)
 			syncMoney(player)
 		else
 			say(player, msg, pos)
-		end
-	end
-	refreshBase(base)
-end
-
-function FarmService.OnStand(base, what, player)
-	if not base.farm.stand[what] then
-		return
-	end
-	local data = ownerData(base, player, STAND)
-	if not data then
-		return
-	end
-	local f = data.Farm
-	local pos = base.cf:PointToWorldSpace(STAND + V(0, 6, 0))
-	if what == "Seeds" then
-		-- cycle through the crops you have unlocked
-		local list = {}
-		for _, c in ipairs(Farm.Crops) do
-			if unlocked(data, c) then
-				table.insert(list, c.id)
-			end
-		end
-		local idx = table.find(list, f.Seed) or 0
-		f.Seed = list[idx % #list + 1]
-		local nextLocked
-		for _, c in ipairs(Farm.Crops) do
-			if not unlocked(data, c) then
-				nextLocked = c
-				break
-			end
-		end
-		say(
-			player,
-			Farm.ById[f.Seed].name
-				.. " seeds"
-				.. (nextLocked and ("  ·  " .. nextLocked.name .. " at Lv " .. nextLocked.level) or ""),
-			pos
-		)
-	elseif what == "Beds" then
-		if f.PlotsOwned >= Farm.MaxPlots then
-			say(player, "All six beds are yours", pos)
-		else
-			local price = Farm.PlotPrices[f.PlotsOwned - Farm.StartPlots + 1]
-			if data.Money < price then
-				say(player, "Need " .. Format.Money(price), pos)
-			else
-				data.Money -= price
-				f.PlotsOwned += 1
-				fx(player, "buy", { pos = pos, text = "New bed!" })
-				syncMoney(player)
-			end
-		end
-	elseif what == "Sprinkler" then
-		if f.Sprinkler >= #Farm.SprinklerPrices then
-			say(player, "Sprinklers maxed", pos)
-		else
-			local price = Farm.SprinklerPrices[f.Sprinkler + 1]
-			if data.Money < price then
-				say(player, "Need " .. Format.Money(price), pos)
-			else
-				data.Money -= price
-				f.Sprinkler += 1
-				fx(player, "buy", { pos = pos, text = "Sprinkler Lv " .. f.Sprinkler .. "!" })
-				syncMoney(player)
-			end
-		end
-	elseif what == "Spirit" then
-		if f.Spirit then
-			say(player, "Your Harvest Spirit tends the farm, even offline", pos)
-		elseif f.Level < Farm.SpiritLevel then
-			say(player, "Reach Farmer Lv " .. Farm.SpiritLevel .. " first", pos)
-		elseif data.Money < Farm.SpiritPrice then
-			say(player, "Need " .. Format.Money(Farm.SpiritPrice), pos)
-		else
-			data.Money -= Farm.SpiritPrice
-			f.Spirit = true
-			fx(player, "buy", { pos = pos, text = "Harvest Spirit hired!" })
-			syncMoney(player)
 		end
 	end
 	refreshBase(base)
@@ -15969,6 +15962,138 @@ function FarmService.OnSell(base, player)
 	refreshBase(base)
 end
 
+-- One shared quote path drives both the public sell menu and its authoritative payout.
+local function marketProduce(data)
+	local rows, total, count = {}, 0, 0
+	for key, amount in pairs(data.Farm.Pantry) do
+		local crop, mutation = splitKey(key)
+		if crop and type(amount) == "number" and amount == amount and amount > 0 and amount < math.huge then
+			amount = math.floor(amount)
+			local value = itemValue(data, crop, mutation) * amount
+			table.insert(
+				rows,
+				{ key = key, name = (mutation and mutation .. " " or "") .. crop.name, count = amount, value = value }
+			)
+			total += value
+			count += amount
+		end
+	end
+	table.sort(rows, function(a, b)
+		return a.name < b.name
+	end)
+	return rows, total, count
+end
+
+function FarmService.MarketView(data)
+	local f = ensure(data)
+	local seeds = {}
+	for _, crop in Farm.Crops do
+		table.insert(
+			seeds,
+			{
+				id = crop.id,
+				name = crop.name,
+				price = seedCost(data, crop),
+				grow = growTime(data, crop),
+				stock = f.SeedStock[crop.id],
+				level = crop.level,
+				unlocked = unlocked(data, crop),
+				selected = f.Seed == crop.id,
+			}
+		)
+	end
+	local produce, value, count = marketProduce(data)
+	return {
+		seeds = seeds,
+		produce = produce,
+		total = value,
+		count = count,
+		level = f.Level,
+		upgrades = {
+			{
+				id = "Beds",
+				name = "Another garden bed",
+				price = Farm.PlotPrices[f.PlotsOwned - Farm.StartPlots + 1],
+				owned = f.PlotsOwned >= Farm.MaxPlots,
+			},
+			{
+				id = "Sprinkler",
+				name = "Faster watering",
+				price = Farm.SprinklerPrices[f.Sprinkler + 1],
+				owned = f.Sprinkler >= #Farm.SprinklerPrices,
+			},
+			{
+				id = "Spirit",
+				name = "Harvest Spirit",
+				price = Farm.SpiritPrice,
+				owned = f.Spirit,
+				level = Farm.SpiritLevel,
+			},
+		},
+	}
+end
+
+function FarmService.MarketTrade(player, data, base, encoded)
+	if type(encoded) ~= "string" or #encoded > 512 then
+		return false, "Invalid market request."
+	end
+	local decoded, request = pcall(game:GetService("HttpService").JSONDecode, game:GetService("HttpService"), encoded)
+	if not decoded or type(request) ~= "table" then
+		return false, "Invalid market request."
+	end
+	local side = request.op == "Sell" and "Sell" or "Buy"
+	local map = workspace:FindFirstChild("Map")
+	local start = map and map:FindFirstChild("Start")
+	local market = start and start:FindFirstChild("FarmMarket")
+	local stall = market and market:GetAttribute("TPFCGenerated") and market:FindFirstChild(side .. "Stall")
+	local anchor = stall and stall:FindFirstChild(side .. "Anchor")
+	local character = player.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if
+		not anchor
+		or not root
+		or not humanoid
+		or humanoid.Health <= 0
+		or (root.Position - anchor.Position).Magnitude > MarketRules.Range
+	then
+		return false, "Visit the " .. side:upper() .. " stall beside the Great Hall."
+	end
+	ensure(data)
+	local ok, message
+	if request.op == "Buy" then
+		local crop = type(request.crop) == "string" and Farm.ById[request.crop]
+		if not crop then
+			return false, "Choose a seed."
+		end
+		ok, message = MarketRules.Buy(data, crop.id, request.quantity, seedCost(data, crop))
+	elseif request.op == "Select" then
+		ok, message = MarketRules.Select(data, request.crop)
+	elseif request.op == "Upgrade" then
+		ok, message = MarketRules.Upgrade(data, request.supply)
+	elseif request.op == "Sell" then
+		local rows, total, count = marketProduce(data)
+		if count == 0 then
+			return false, "Harvest a crop at your garden first."
+		end
+		for _, row in rows do
+			data.Farm.Pantry[row.key] = nil
+		end
+		data.Money += total
+		data.TotalEarned = (data.TotalEarned or 0) + total
+		ok, message = true, "Sold " .. count .. " crops for " .. Format.Money(total) .. "."
+		if MoneyFxRE then
+			MoneyFxRE:FireClient(player, total, anchor.Position)
+		end
+	else
+		return false, "Unknown market action."
+	end
+	if ok and base and base.owner == player then
+		refreshBase(base)
+	end
+	return ok, message
+end
+
 ---------------------------------------------------------------- game events (from GameServer)
 -- kind: "catch" (info.rarity) | "collect" (amount = money) | "throw" (info.world)
 function FarmService.Event(player, kind, amount, info)
@@ -16047,13 +16172,18 @@ end
 -- Build the same physical stations in the shared Studio preview without
 -- starting weather, income, profile or remote-event loops.
 function FarmService.BuildPreview(baseBuilder)
-    assert(game:GetService("RunService"):IsStudio() and not game:GetService("RunService"):IsRunning(), "Edit-mode preview only")
-    for _, base in ipairs(baseBuilder.Bases) do
-        local prior = base.model:FindFirstChild("Farm")
-        if prior then prior:Destroy() end
-        buildBase(base)
-        task.wait()
-    end
+	assert(
+		game:GetService("RunService"):IsStudio() and not game:GetService("RunService"):IsRunning(),
+		"Edit-mode preview only"
+	)
+	for _, base in ipairs(baseBuilder.Bases) do
+		local prior = base.model:FindFirstChild("Farm")
+		if prior then
+			prior:Destroy()
+		end
+		buildBase(base)
+		task.wait()
+	end
 end
 
 function FarmService.Init(baseBuilder, h)
@@ -16126,7 +16256,7 @@ end
 
 return FarmService
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX54"><Properties><string name="Name">ForgeHall</string><ProtectedString name="Source"><![CDATA[-- Fortified guild forge. World geometry only; the existing recipes and station anchors stay authoritative.
+<Item class="ModuleScript" referent="RBX56"><Properties><string name="Name">ForgeHall</string><ProtectedString name="Source"><![CDATA[-- Fortified guild forge. World geometry only; the existing recipes and station anchors stay authoritative.
 local RS = game:GetService("ReplicatedStorage")
 local Collection = game:GetService("CollectionService")
 local Knight = require(RS.Shared.GuideKnight)
@@ -16911,7 +17041,7 @@ function Hall.Build(parent)
 end
 return Hall
 ]]></ProtectedString></Properties></Item>
-<Item class="Script" referent="RBX55"><Properties><string name="Name">GameServer</string><ProtectedString name="Source"><![CDATA[-- GameServer: authoritative game logic (throwing, rolling, collecting, income, shop, upgrades).
+<Item class="Script" referent="RBX57"><Properties><string name="Name">GameServer</string><ProtectedString name="Source"><![CDATA[-- GameServer: authoritative game logic (throwing, rolling, collecting, income, shop, upgrades).
 -- Location: ServerScriptService > Server > GameServer (Script)
 -- The client only sends *requests*; every price, cooldown, distance and roll is decided here.
 
@@ -17138,6 +17268,7 @@ local function sync(player, partial)
 		Progress = Progression.View(player, data),
 		TutorialStep = data.TutorialStep,
 		LastForge = data.LastForge,
+		FarmMarket = FarmService.MarketView(data),
 		BaseIndex = st and st.base and st.base.index or 0,
 		Expeditions = Expeditions.BuildView(data),
 	})
@@ -17635,6 +17766,10 @@ function Actions.Forge(player, data, st, json)
 		table.insert(data.Placed, receipt.uid)
 	end
 	return ok, message
+end
+
+function Actions.FarmMarket(player, data, st, encoded)
+	return FarmService.MarketTrade(player, data, st.base, encoded)
 end
 
 function Actions.Rebirth(player, data, st)
@@ -18219,7 +18354,7 @@ end, function(player)
 	sync(player)
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX56"><Properties><string name="Name">HeraldicText</string><ProtectedString name="Source"><![CDATA[-- Raised, angular bronze lettering made from actual parts, not a flat font.
+<Item class="ModuleScript" referent="RBX58"><Properties><string name="Name">HeraldicText</string><ProtectedString name="Source"><![CDATA[-- Raised, angular bronze lettering made from actual parts, not a flat font.
 local Text = {}
 -- Normalized pen strokes; deliberately open counters stay readable at distance.
 local glyphs = {
@@ -18319,7 +18454,7 @@ function Text.Build(board, word, maxHeight)
 end
 return Text
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX57"><Properties><string name="Name">KnightTutorial</string><ProtectedString name="Source"><![CDATA[-- Saved, skippable guide. Location checks cannot award anything or bypass progression.
+<Item class="ModuleScript" referent="RBX59"><Properties><string name="Name">KnightTutorial</string><ProtectedString name="Source"><![CDATA[-- Saved, skippable guide. Location checks cannot award anything or bypass progression.
 local Rules = require(game.ReplicatedStorage.Shared.ForgeRules)
 local Config = require(game.ReplicatedStorage.Shared.Config)
 local Tutorial = {}
@@ -18359,7 +18494,7 @@ function Tutorial.Act(player, data, st, arg)
 end
 return Tutorial
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX58"><Properties><string name="Name">MedievalDressing</string><ProtectedString name="Source"><![CDATA[-- MedievalDressing: art-direction pass that runs after the hub, courtyards and lane are built.
+<Item class="ModuleScript" referent="RBX60"><Properties><string name="Name">MedievalDressing</string><ProtectedString name="Source"><![CDATA[-- MedievalDressing: art-direction pass that runs after the hub, courtyards and lane are built.
 -- Location: ServerScriptService > Server > MedievalDressing (ModuleScript)
 --
 -- It never rebuilds anyone else's geometry. It finds existing landmarks by name and adds purposeful,
@@ -18897,7 +19032,7 @@ end
 
 return D
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX59"><Properties><string name="Name">OuterForest</string><ProtectedString name="Source"><![CDATA[-- OuterForest: the world OUTSIDE the Forest lane, from the outer-world design canvas (sheet "01 Forest").
+<Item class="ModuleScript" referent="RBX61"><Properties><string name="Name">OuterForest</string><ProtectedString name="Source"><![CDATA[-- OuterForest: the world OUTSIDE the Forest lane, from the outer-world design canvas (sheet "01 Forest").
 -- The lane module (BiomeForest) owns |X| < ~130; this owns |X| >= 130 out to the skyline.
 -- Authored in design coordinates with K.mirror = true (design -X = screen-left from the hall camera).
 --  LEFT  (wild):  terraced overgrown cliff + root spills + high-ledge waterfall into a gorge pool,
@@ -19242,7 +19377,7 @@ end
 
 return O
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX60"><Properties><string name="Name">OuterHub</string><ProtectedString name="Source"><![CDATA[-- OuterHub: the world OUTSIDE the Portal Sanctuary walls (|X| > ~120 and Z < -470), from the
+<Item class="ModuleScript" referent="RBX62"><Properties><string name="Name">OuterHub</string><ProtectedString name="Source"><![CDATA[-- OuterHub: the world OUTSIDE the Portal Sanctuary walls (|X| > ~120 and Z < -470), from the
 -- outer-world design canvas (sheet "00 Hub") and Maps/00_Portal_Sanctuary_Hub.png. The lobby itself
 -- (SanctuaryHub) is untouched. World coordinates, no mirror: viewer-left down the lane is world +X.
 --  LEFT  (+X): lilac crags just past the walls, a stepped cliff with a two-step waterfall, flowering
@@ -19513,7 +19648,7 @@ end
 
 return O
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX61"><Properties><string name="Name">PetMeshLoader</string><ProtectedString name="Source"><![CDATA[-- PetMeshLoader: builds ReplicatedStorage.PetMeshes/<CreatureId>/<role> MeshPart templates from the
+<Item class="ModuleScript" referent="RBX63"><Properties><string name="Name">PetMeshLoader</string><ProtectedString name="Source"><![CDATA[-- PetMeshLoader: builds ReplicatedStorage.PetMeshes/<CreatureId>/<role> MeshPart templates from the
 -- asset ids in PetMeshManifest, so the client CreatureBuilder can use sculpted meshes.
 -- Location: ServerScriptService > Server > PetMeshLoader (ModuleScript)
 -- If a mesh can't be created (offline, permissions), that species simply keeps the procedural model.
@@ -19570,7 +19705,7 @@ end
 
 return Loader
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX62"><Properties><string name="Name">Progression</string><ProtectedString name="Source"><![CDATA[-- Progression: daily quests, rebirth, friend bonus, game passes / luck potion and pet fusion.
+<Item class="ModuleScript" referent="RBX64"><Properties><string name="Name">Progression</string><ProtectedString name="Source"><![CDATA[-- Progression: daily quests, rebirth, friend bonus, game passes / luck potion and pet fusion.
 -- Location: ServerScriptService > Server > Progression (ModuleScript)
 --
 -- Pure server logic. GameServer owns the data and remotes and calls in here; this module never fires
@@ -19815,7 +19950,7 @@ end
 
 return P
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX63"><Properties><string name="Name">SanctuaryArchitecture</string><ProtectedString name="Source"><![CDATA[-- Original block/wedge architecture matching Maps/00_Portal_Sanctuary_Hub.png.
+<Item class="ModuleScript" referent="RBX65"><Properties><string name="Name">SanctuaryArchitecture</string><ProtectedString name="Source"><![CDATA[-- Original block/wedge architecture matching Maps/00_Portal_Sanctuary_Hub.png.
 -- Shared by the public sanctuary and the eight gardens. All decoration is non-queryable.
 local K = require(script.Parent.WorldKit)
 local Art = {}
@@ -20000,7 +20135,7 @@ function Art.Planter(cf, length, pink)
 end
 return Art
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX64"><Properties><string name="Name">SanctuaryBase</string><ProtectedString name="Source"><![CDATA[-- Skyforge Courtyard, matching the owner's approved concept2. Original plot,
+<Item class="ModuleScript" referent="RBX66"><Properties><string name="Name">SanctuaryBase</string><ProtectedString name="Source"><![CDATA[-- Skyforge Courtyard, matching the owner's approved concept2. Original plot,
 -- collection and pet-slot anchors stay compatible with saved player gardens.
 local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
 local K = require(script.Parent.WorldKit)
@@ -20429,7 +20564,7 @@ end
 
 return Base
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX65"><Properties><string name="Name">SanctuaryDetails</string><ProtectedString name="Source"><![CDATA[-- Deliberate close-up detail for the lobby. Decorative only; all gameplay paths stay clear.
+<Item class="ModuleScript" referent="RBX67"><Properties><string name="Name">SanctuaryDetails</string><ProtectedString name="Source"><![CDATA[-- Deliberate close-up detail for the lobby. Decorative only; all gameplay paths stay clear.
 local P = require(script.Parent.SanctuaryArchitecture).Palette
 local Details = {}
 local V, CF, A = Vector3.new, CFrame.new, CFrame.Angles
@@ -20653,7 +20788,7 @@ function Details.Build(start)
 end
 return Details
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX66"><Properties><string name="Name">SanctuaryHub</string><ProtectedString name="Source"><![CDATA[-- Portal Sanctuary: a composed, walkable lobby, built from the supplied hub reference.
+<Item class="ModuleScript" referent="RBX68"><Properties><string name="Name">SanctuaryHub</string><ProtectedString name="Source"><![CDATA[-- Portal Sanctuary: a composed, walkable lobby, built from the supplied hub reference.
 -- Plot centers, throw zone, collision barrier and lane direction retain their existing contracts.
 local RS = game:GetService("ReplicatedStorage")
 local Config = require(RS.Shared.Config)
@@ -21052,10 +21187,11 @@ function Hub.Build(folder, textLabel)
 	garden()
 	require(script.Parent.SanctuaryDetails).Build(folder)
 	require(script.Parent.ForgeHall).Build(folder)
+	require(script.Parent.FarmMarket).Build(folder, require(RS.Shared.FarmMarketRules).Layout)
 end
 return Hub
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX67"><Properties><string name="Name">SkyforgeDetails</string><ProtectedString name="Source"><![CDATA[-- Small-scale craft for the approved Skyforge courtyard. No extra prompts or
+<Item class="ModuleScript" referent="RBX69"><Properties><string name="Name">SkyforgeDetails</string><ProtectedString name="Source"><![CDATA[-- Small-scale craft for the approved Skyforge courtyard. No extra prompts or
 -- physics obstacles are created here; the expedition table owns interaction.
 local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
 local P = require(script.Parent.SkyforgeStyle)
@@ -21247,7 +21383,7 @@ end
 
 return Details
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX68"><Properties><string name="Name">SkyforgeStyle</string><ProtectedString name="Source"><![CDATA[-- Approved Skyforge concept: pale stone, dark timber, violet tiled roofs and
+<Item class="ModuleScript" referent="RBX70"><Properties><string name="Name">SkyforgeStyle</string><ProtectedString name="Source"><![CDATA[-- Approved Skyforge concept: pale stone, dark timber, violet tiled roofs and
 -- small warm brass accents. Colors stay readable under the sanctuary lighting.
 local C = Color3.fromRGB
 return {
@@ -21278,7 +21414,7 @@ return {
 	lodge = { x = -18, z = 24, w = 26, d = 17, deck = 1.6, postH = 9, rise = 5.6 },
 }
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX69"><Properties><string name="Name">Waterfalls</string><ProtectedString name="Source"><![CDATA[-- Waterfalls: turns the flat water panels in the sanctuary into living waterfalls.
+<Item class="ModuleScript" referent="RBX71"><Properties><string name="Name">Waterfalls</string><ProtectedString name="Source"><![CDATA[-- Waterfalls: turns the flat water panels in the sanctuary into living waterfalls.
 -- Location: ServerScriptService > Server > Waterfalls (ModuleScript)
 --
 -- For each fall: rocks breaking the lip, a sheet of falling water streaks (particles stretched along
@@ -21459,7 +21595,7 @@ end
 
 return F
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX70"><Properties><string name="Name">WorldBuilder</string><ProtectedString name="Source"><![CDATA[-- WorldBuilder: builds ONE long map — the hub (bases + launch hall) and the 3200-stud throwing
+<Item class="ModuleScript" referent="RBX72"><Properties><string name="Name">WorldBuilder</string><ProtectedString name="Source"><![CDATA[-- WorldBuilder: builds ONE long map — the hub (bases + launch hall) and the 3200-stud throwing
 -- lane split into 8 biome zones. Each biome lives in its own module (Biome<Id>) built with the
 -- shared WorldKit; this file only orchestrates terrain, zones, markers and boundaries.
 -- Location: ServerScriptService > Server > WorldBuilder (ModuleScript)
@@ -21668,10 +21804,10 @@ end
 
 return WorldBuilder
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX71"><Properties><string name="Name">WorldHub</string><ProtectedString name="Source"><![CDATA[-- Compatibility entry point for the reference-based sanctuary lobby.
+<Item class="ModuleScript" referent="RBX73"><Properties><string name="Name">WorldHub</string><ProtectedString name="Source"><![CDATA[-- Compatibility entry point for the reference-based sanctuary lobby.
 return require(script.Parent.SanctuaryHub)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX72"><Properties><string name="Name">WorldKit</string><ProtectedString name="Source"><![CDATA[-- WorldKit: the shared blocky construction kit used by the hub and all eight biomes.
+<Item class="ModuleScript" referent="RBX74"><Properties><string name="Name">WorldKit</string><ProtectedString name="Source"><![CDATA[-- WorldKit: the shared blocky construction kit used by the hub and all eight biomes.
 -- Location: ServerScriptService > Server > WorldKit (ModuleScript)
 --
 -- CONTRACT (map brief + GameServer landing contract):
@@ -22387,7 +22523,7 @@ end
 
 return K
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX73"><Properties><string name="Name">WorldLandmarks</string><ProtectedString name="Source"><![CDATA[-- WorldLandmarks: construction kit + the hero landmarks for the hub, launch hall and all
+<Item class="ModuleScript" referent="RBX75"><Properties><string name="Name">WorldLandmarks</string><ProtectedString name="Source"><![CDATA[-- WorldLandmarks: construction kit + the hero landmarks for the hub, launch hall and all
 -- eight biomes (blocky architectural language from the map reference pack).
 -- Location: ServerScriptService > Server > WorldLandmarks (ModuleScript)
 --
@@ -23167,10 +23303,10 @@ return L
 ]]></ProtectedString></Properties></Item>
 </Item>
 </Item>
-<Item class="StarterPlayer" referent="RBX122"><Properties><string name="Name">StarterPlayer</string></Properties>
-<Item class="StarterPlayerScripts" referent="RBX75"><Properties><string name="Name">StarterPlayerScripts</string></Properties>
-<Item class="Folder" referent="RBX76"><Properties><string name="Name">Client</string></Properties>
-<Item class="ModuleScript" referent="RBX77"><Properties><string name="Name">CaughtPresentation</string><ProtectedString name="Source"><![CDATA[-- A brief bestiary slip for discoveries and Rare+ catches. Routine catches stay quiet.
+<Item class="StarterPlayer" referent="RBX125"><Properties><string name="Name">StarterPlayer</string></Properties>
+<Item class="StarterPlayerScripts" referent="RBX77"><Properties><string name="Name">StarterPlayerScripts</string></Properties>
+<Item class="Folder" referent="RBX78"><Properties><string name="Name">Client</string></Properties>
+<Item class="ModuleScript" referent="RBX79"><Properties><string name="Name">CaughtPresentation</string><ProtectedString name="Source"><![CDATA[-- A brief bestiary slip for discoveries and Rare+ catches. Routine catches stay quiet.
 local RS = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 local Data = require(RS.Shared.CreatureData)
@@ -23287,10 +23423,10 @@ return function(key, discovery)
 	end)
 end
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX78"><Properties><string name="Name">CinematicLook</string><ProtectedString name="Source"><![CDATA[-- One controller owns the scene, including biome and weather transitions.
+<Item class="LocalScript" referent="RBX80"><Properties><string name="Name">CinematicLook</string><ProtectedString name="Source"><![CDATA[-- One controller owns the scene, including biome and weather transitions.
 require(script.Parent.SceneLighting).Start()
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX79"><Properties><string name="Name">ClientMain</string><ProtectedString name="Source"><![CDATA[-- ClientMain: wires all client modules together.
+<Item class="LocalScript" referent="RBX81"><Properties><string name="Name">ClientMain</string><ProtectedString name="Source"><![CDATA[-- ClientMain: wires all client modules together.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ClientMain (LocalScript)
 
 local Players = game:GetService("Players")
@@ -23334,6 +23470,7 @@ TC.OnThrowResult = HUD.ThrowFeedback
 HUD.Refresh()
 require(Client.ExpeditionPanel).Init()
 require(Client.ForgePanel).Init()
+require(Client.FarmMarketPanel).Init()
 require(Client.KnightGuide).Init()
 
 -- ask the server for a full data sync (retries until our save has loaded)
@@ -23584,7 +23721,7 @@ task.spawn(function()
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX80"><Properties><string name="Name">ClientSettings</string><ProtectedString name="Source"><![CDATA[-- ClientSettings: presentation-only player settings (never affect odds, charge, rewards).
+<Item class="ModuleScript" referent="RBX82"><Properties><string name="Name">ClientSettings</string><ProtectedString name="Source"><![CDATA[-- ClientSettings: presentation-only player settings (never affect odds, charge, rewards).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ClientSettings (ModuleScript)
 -- Values persist for the session via player attributes; defaults are safe for everyone.
 
@@ -23620,7 +23757,7 @@ end
 
 return Settings
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX81"><Properties><string name="Name">ClientState</string><ProtectedString name="Source"><![CDATA[-- ClientState: local mirror of the player's data + change signal + request helper.
+<Item class="ModuleScript" referent="RBX83"><Properties><string name="Name">ClientState</string><ProtectedString name="Source"><![CDATA[-- ClientState: local mirror of the player's data + change signal + request helper.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ClientState (ModuleScript)
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -23660,7 +23797,7 @@ end
 
 return State
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX82"><Properties><string name="Name">CreatureBudget</string><ProtectedString name="Source"><![CDATA[-- Presentation scheduling only. Catch deadlines, rewards and pet ownership remain on the server.
+<Item class="ModuleScript" referent="RBX84"><Properties><string name="Name">CreatureBudget</string><ProtectedString name="Source"><![CDATA[-- Presentation scheduling only. Catch deadlines, rewards and pet ownership remain on the server.
 local Budget = {}
 Budget.LastAnimatedTier = 3
 local tiers = { { 70, 0 }, { 150, 1 / 20 }, { 260, 1 / 8 } }
@@ -23699,7 +23836,7 @@ end
 
 return Budget
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX83"><Properties><string name="Name">CreatureRenderer</string><ProtectedString name="Source"><![CDATA[-- CreatureRenderer: renders every creature on this client — base pets of all players,
+<Item class="ModuleScript" referent="RBX85"><Properties><string name="Name">CreatureRenderer</string><ProtectedString name="Source"><![CDATA[-- CreatureRenderer: renders every creature on this client — base pets of all players,
 -- creatures being carried, and freshly revealed wild creatures. Handles species entrances,
 -- capture presentation, reactions, click-to-pet, distance LOD and previews.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > CreatureRenderer (ModuleScript)
@@ -24943,7 +25080,7 @@ end
 
 return Renderer
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX84"><Properties><string name="Name">CustomCursor</string><ProtectedString name="Source"><![CDATA[-- Ivory and brass cursor. Native pointer stays available until artwork loads.
+<Item class="LocalScript" referent="RBX86"><Properties><string name="Name">CustomCursor</string><ProtectedString name="Source"><![CDATA[-- Ivory and brass cursor. Native pointer stays available until artwork loads.
 local Input = game:GetService("UserInputService")
 local Gui = game:GetService("GuiService")
 local Run = game:GetService("RunService")
@@ -25091,7 +25228,7 @@ script.Destroying:Connect(function()
 	layer:Destroy()
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX85"><Properties><string name="Name">Effects</string><ProtectedString name="Source"><![CDATA[-- Effects: camera shake, flashes, shockwaves, particle bursts, light beams, floating text,
+<Item class="ModuleScript" referent="RBX87"><Properties><string name="Name">Effects</string><ProtectedString name="Source"><![CDATA[-- Effects: camera shake, flashes, shockwaves, particle bursts, light beams, floating text,
 -- flying-coin money effect, rarity banners and per-world lighting.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > Effects (ModuleScript)
 
@@ -25613,7 +25750,7 @@ end
 
 return Effects
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX86"><Properties><string name="Name">Entrances</string><ProtectedString name="Source"><![CDATA[-- Entrances: themed portal entrances for freshly revealed wild creatures.
+<Item class="ModuleScript" referent="RBX88"><Properties><string name="Name">Entrances</string><ProtectedString name="Source"><![CDATA[-- Entrances: themed portal entrances for freshly revealed wild creatures.
 -- Location: StarterPlayerScripts > Client > Entrances (ModuleScript), used by CreatureRenderer.
 --
 -- Each creature gets a MOTION STYLE from what kind of animal it is (cats pounce, dragons swoop in and
@@ -26082,7 +26219,7 @@ end
 
 return E
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX87"><Properties><string name="Name">ExchangeView</string><ProtectedString name="Source"><![CDATA[-- Four direct trade signs linked to an architectural model of the sanctuary.
+<Item class="ModuleScript" referent="RBX89"><Properties><string name="Name">ExchangeView</string><ProtectedString name="Source"><![CDATA[-- Four direct trade signs linked to an architectural model of the sanctuary.
 local K = require(script.Parent.UIKit)
 local T = K.Theme
 local Craft = require(script.Parent.SanctuaryUI)
@@ -26315,7 +26452,7 @@ function E.Mount(hub, HUD)
 end
 return E
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX88"><Properties><string name="Name">ExpeditionFight</string><ProtectedString name="Source"><![CDATA[-- Animated expedition battle inside the journey-map ViewportFrame: the real pet walks the route,
+<Item class="ModuleScript" referent="RBX90"><Properties><string name="Name">ExpeditionFight</string><ProtectedString name="Source"><![CDATA[-- Animated expedition battle inside the journey-map ViewportFrame: the real pet walks the route,
 -- fights each biome monster (lunges, hits, sparks, knock-downs) and the camera follows the action.
 -- Timing comes from Shared/ExpeditionBattle, so it always matches the HUD mini-map.
 local RS = game:GetService("ReplicatedStorage")
@@ -26687,7 +26824,7 @@ end
 
 return Fight
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX89"><Properties><string name="Name">ExpeditionMiniMap</string><ProtectedString name="Source"><![CDATA[-- Always-on HUD mini-map for the active expedition: the route, every monster (waiting, fighting,
+<Item class="ModuleScript" referent="RBX91"><Properties><string name="Name">ExpeditionMiniMap</string><ProtectedString name="Source"><![CDATA[-- Always-on HUD mini-map for the active expedition: the route, every monster (waiting, fighting,
 -- defeated), the pet marker moving and lunging, live HP bars and a one-line battle log.
 local RS = game:GetService("ReplicatedStorage")
 local Config = require(RS.Shared.Config)
@@ -26909,7 +27046,7 @@ end
 
 return Mini
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX90"><Properties><string name="Name">ExpeditionPanel</string><ProtectedString name="Source"><![CDATA[-- Skyforge visual planning; all mission authority remains on the server.
+<Item class="ModuleScript" referent="RBX92"><Properties><string name="Name">ExpeditionPanel</string><ProtectedString name="Source"><![CDATA[-- Skyforge visual planning; all mission authority remains on the server.
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -27997,7 +28134,7 @@ function Panel.Init()
 end
 return Panel
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX91"><Properties><string name="Name">ExpeditionScene</string><ProtectedString name="Source"><![CDATA[-- Detailed, deterministic native biome vignettes for the expedition map.
+<Item class="ModuleScript" referent="RBX93"><Properties><string name="Name">ExpeditionScene</string><ProtectedString name="Source"><![CDATA[-- Detailed, deterministic native biome vignettes for the expedition map.
 local Config = require(game.ReplicatedStorage.Shared.Config)
 local Scene = {}
 local V, C = Vector3.new, Color3.fromRGB
@@ -28187,7 +28324,7 @@ function Scene.Build(id)
 end
 return Scene
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX92"><Properties><string name="Name">FarmClient</string><ProtectedString name="Source"><![CDATA[-- FarmClient: client side of the courtyard farm (server: FarmService).
+<Item class="LocalScript" referent="RBX94"><Properties><string name="Name">FarmClient</string><ProtectedString name="Source"><![CDATA[-- FarmClient: client side of the courtyard farm (server: FarmService).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > FarmClient (LocalScript)
 --  * Shows only YOUR courtyard's farm prompts (beds, stand, board, chest); others' stay hidden.
 --  * Updates permanent physical farm signs. No screen toasts or character message bursts.
@@ -28310,6 +28447,9 @@ end)
 
 local feedbackVersion = setmetatable({}, { __mode = "k" })
 local function feedback(station, text)
+	if station == "Stand" then
+		station = "Pantry"
+	end
 	local ownedFarm
 	for prompt in pairs(prompts) do
 		if prompt:GetAttribute("BaseIndex") == player:GetAttribute("BaseIndex") then
@@ -28573,7 +28713,7 @@ FarmFx.OnClientEvent:Connect(function(kind, d)
 		feedback(
 			"Stand",
 			d.sold and ("Pantry full. Sold " .. name .. " for " .. Format.Money(d.sold))
-				or (name .. " added to the Pantry. Feed pets or sell at the trough.")
+				or (name .. " harvested. Sell crops beside the Great Hall, or feed pets at home.")
 		)
 		play(d.tag and "Rare" or "Money", 0.5)
 	elseif kind == "mutation" then
@@ -28658,7 +28798,261 @@ FarmFx.OnClientEvent:Connect(function(kind, d)
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX93"><Properties><string name="Name">ForgePanel</string><ProtectedString name="Source"><![CDATA[-- The hall is the entry point. Explicit copies, visible odds, then a consumption confirmation.
+<Item class="ModuleScript" referent="RBX95"><Properties><string name="Name">FarmMarketPanel</string><ProtectedString name="Source"><![CDATA[-- Two physical entrances, one small shop. No additional HUD destination.
+local Players = game:GetService("Players")
+local Http = game:GetService("HttpService")
+local RS = game:GetService("ReplicatedStorage")
+local Format = require(RS.Shared.Format)
+local K = require(script.Parent.UIKit)
+local HUD = require(script.Parent.HUD)
+local State = require(script.Parent.ClientState)
+local T = K.Theme
+local Panel = {}
+local player = Players.LocalPlayer
+local page, status, footer, ready, busy
+local side, supplies = "Buy", false
+local prompts, rows = {}, {}
+local render
+
+local function duration(seconds)
+	if seconds < 60 then
+		return math.ceil(seconds) .. "s"
+	end
+	if seconds < 3600 then
+		return math.ceil(seconds / 60) .. " min"
+	end
+	return string.format("%.0f hr", seconds / 3600)
+end
+
+local function trade(request)
+	if busy or not State.Loaded then
+		return
+	end
+	busy = true
+	render()
+	local ok, message = State.Request("FarmMarket", Http:JSONEncode(request))
+	busy = false
+	HUD.SetPanelMessage(
+		"FarmMarket",
+		message or (ok and "Updated." or "Please try again."),
+		ok and T.Success or T.Danger
+	)
+	render()
+end
+
+local function row(height, order)
+	local r = K.new("Frame", {
+		Name = "MarketRow",
+		Size = UDim2.new(1, -8, 0, height),
+		BackgroundTransparency = 1,
+		LayoutOrder = order,
+		Parent = page.content,
+	})
+	table.insert(rows, r)
+	return r
+end
+
+render = function()
+	if not ready then
+		return
+	end
+	local canvas = page.content.CanvasPosition
+	for _, r in rows do
+		r:Destroy()
+	end
+	table.clear(rows)
+	local view = State.Data.FarmMarket
+	page.title.Text = side == "Sell" and "Crop buyer" or (supplies and "Farm supplies" or "Seed merchant")
+	if not view then
+		local r = row(50, 1)
+		K.text(r, "Loading your garden...", 0, 0, -8, 40, 16, T.Muted)
+	elseif side == "Sell" then
+		if #view.produce == 0 then
+			local r = row(90, 1)
+			K.text(r, "Your crop bag is empty", 0, 0, -8, 30, 21, T.Text, true)
+			K.text(r, "Harvest a ripe crop in your garden, then bring it here.", 0, 34, -8, 48, 16, T.Muted)
+		end
+		for i, item in view.produce do
+			local r = row(70, i)
+			K.text(r, item.name, 0, 0, -8, 28, 18, T.Text, true)
+			K.text(r, item.count .. " crops  ·  " .. Format.Money(item.value), 0, 32, -8, 24, 15, T.Muted)
+		end
+	elseif supplies then
+		for i, item in view.upgrades do
+			local r = row(102, i)
+			K.text(r, item.name, 0, 0, -8, 28, 19, T.Text, true)
+			local locked = item.level and view.level < item.level
+			local text = item.owned and "Owned"
+				or (locked and ("Farmer Lv " .. item.level) or ("Buy · " .. Format.Money(item.price or 0)))
+			local b =
+				K.button(text, T.Gold, nil, UDim2.new(1, -8, 0, 42), { Position = UDim2.fromOffset(0, 40), Parent = r })
+			K.setEnabled(
+				b,
+				not busy and not item.owned and not locked and State.Data.Money >= (item.price or math.huge)
+			)
+			K.bind(b, function()
+				trade({ op = "Upgrade", supply = item.id })
+			end)
+		end
+	else
+		local nextLockedShown = false
+		for i, seed in view.seeds do
+			if not seed.unlocked and nextLockedShown then
+				continue
+			end
+			if not seed.unlocked then
+				nextLockedShown = true
+			end
+			local r = row(126, i)
+			K.text(r, seed.name, 0, 0, -108, 28, 19, T.Text, true)
+			K.text(r, "Grows in " .. duration(seed.grow) .. "  ·  Owned " .. seed.stock, 0, 34, -8, 26, 14, T.Muted)
+			local use = K.button(
+				seed.selected and "Selected" or "Use seed",
+				T.Raised,
+				nil,
+				UDim2.fromOffset(96, 32),
+				{ Position = UDim2.new(1, -104, 0, 0), Parent = r }
+			)
+			use:SetAttribute("Selected", seed.selected)
+			K.setEnabled(use, not busy and seed.stock > 0 and not seed.selected)
+			K.bind(use, function()
+				trade({ op = "Select", crop = seed.id })
+			end)
+			for _, quantity in { 1, 5 } do
+				local price = seed.price * quantity
+				local b = K.button(
+					seed.unlocked and ("Buy " .. quantity .. " · " .. Format.Money(price))
+						or ("Farmer Lv " .. seed.level),
+					T.Gold,
+					nil,
+					UDim2.new(0.5, -8, 0, 42),
+					{ Position = UDim2.new(quantity == 1 and 0 or 0.5, 0, 0, 70), Parent = r }
+				)
+				K.setEnabled(b, not busy and seed.unlocked and State.Data.Money >= price)
+				K.bind(b, function()
+					trade({ op = "Buy", crop = seed.id, quantity = quantity })
+				end)
+			end
+		end
+	end
+	footer.Label.Text = side == "Sell"
+			and (busy and "Selling..." or ("Sell all · " .. Format.Money(view and view.total or 0)))
+		or (supplies and "Back to seeds" or "Farm supplies")
+	K.setEnabled(footer, not busy and view ~= nil and (side ~= "Sell" or view.count > 0))
+	page.content.CanvasPosition = canvas
+end
+
+function Panel.Open(kind)
+	if not ready or busy then
+		return
+	end
+	side, supplies = kind == "Sell" and "Sell" or "Buy", false
+	if HUD.IsOpen("FarmMarket") then
+		render()
+	else
+		HUD.Open("FarmMarket")
+	end
+	page.content.CanvasPosition = Vector2.zero
+	page.inlineMessage("")
+	task.spawn(function()
+		local ok, message = State.Request("Sync")
+		if not ok and HUD.IsOpen("FarmMarket") then
+			HUD.SetPanelMessage("FarmMarket", message or "Could not load garden.", T.Danger)
+		end
+	end)
+end
+
+function Panel.Init()
+	if ready then
+		return
+	end
+	page = HUD.MakePanel("FarmMarket", "Seed merchant", "", "Shop")
+	page.subtitle.Visible = false
+	K.list(nil, 12, Enum.HorizontalAlignment.Left).Parent = page.content
+	status = K.text(page.frame, "", 20, 0, -40, 36, 14, T.Muted)
+	footer = K.button(
+		"Farm supplies",
+		T.Gold,
+		nil,
+		UDim2.new(1, -40, 0, 44),
+		{ Name = "MarketAction", Position = UDim2.new(0, 20, 1, -64), Parent = page.frame }
+	)
+	K.bind(footer, function()
+		if side == "Sell" then
+			trade({ op = "Sell" })
+		else
+			supplies = not supplies
+			page.content.CanvasPosition = Vector2.zero
+			render()
+		end
+	end)
+	page.inlineMessage = function(message, color)
+		status.Text = message ~= "" and message
+			or (
+				side == "Sell" and "Harvest at your garden, then sell your crops here."
+				or "Buy seeds, then plant them at your garden."
+			)
+		status.TextColor3 = color or T.Muted
+	end
+	page.layout = function()
+		local top = page.compact and 64 or 82
+		local tight = page.frame.Size.Y.Offset < 300
+		page.content.Position, page.content.Size =
+			UDim2.fromOffset(20, top), UDim2.new(1, -40, 1, -top - (tight and 104 or 112))
+		status.Position = UDim2.new(0, 20, 1, tight and -100 or -106)
+		status.Size = UDim2.new(1, -40, 0, tight and 32 or 36)
+		status.TextSize = tight and 13 or 14
+	end
+	page.refresh = function(full)
+		if full ~= false then
+			render()
+		end
+	end
+	ready = true
+	task.spawn(function()
+		while page.frame.Parent do
+			local map = workspace:FindFirstChild("Map")
+			local start = map and map:FindFirstChild("Start")
+			local market = start and start:FindFirstChild("FarmMarket")
+			for _, kind in { "Buy", "Sell" } do
+				local existing = prompts[kind]
+				if existing and existing.Parent and market and existing:IsDescendantOf(market) then
+					continue
+				end
+				local stall = market and market:FindFirstChild(kind .. "Stall")
+				local anchor = stall and stall:FindFirstChild(kind .. "Anchor")
+				if anchor then
+					if existing then
+						existing:Destroy()
+					end
+					local p = K.new("ProximityPrompt", {
+						Name = kind .. "FarmMarket",
+						ActionText = kind == "Buy" and "Buy seeds" or "Sell crops",
+						ObjectText = "Great Hall market",
+						MaxActivationDistance = 9,
+						RequiresLineOfSight = false,
+						HoldDuration = 0,
+						KeyboardKeyCode = Enum.KeyCode.E,
+						GamepadKeyCode = Enum.KeyCode.ButtonX,
+						Parent = anchor,
+					})
+					p.Triggered:Connect(function(who)
+						if who == player then
+							Panel.Open(kind)
+						end
+					end)
+					prompts[kind] = p
+				end
+			end
+			task.wait(1)
+		end
+	end)
+	HUD.Rescale()
+end
+
+return Panel
+]]></ProtectedString></Properties></Item>
+<Item class="ModuleScript" referent="RBX96"><Properties><string name="Name">ForgePanel</string><ProtectedString name="Source"><![CDATA[-- The hall is the entry point. Explicit copies, visible odds, then a consumption confirmation.
 local RS = game:GetService("ReplicatedStorage")
 local Http = game:GetService("HttpService")
 local Rules = require(RS.Shared.ForgeRules)
@@ -29175,7 +29569,7 @@ function Panel.Init()
 end
 return Panel
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX94"><Properties><string name="Name">GameplayFeel</string><ProtectedString name="Source"><![CDATA[-- Batched treasury collection feedback. Sir Rowan owns tutorial guidance.
+<Item class="ModuleScript" referent="RBX97"><Properties><string name="Name">GameplayFeel</string><ProtectedString name="Source"><![CDATA[-- Batched treasury collection feedback. Sir Rowan owns tutorial guidance.
 local RS = game:GetService("ReplicatedStorage")
 local Format = require(RS.Shared.Format)
 local Settings = require(script.Parent.ClientSettings)
@@ -29211,7 +29605,7 @@ function Feel.Money(amount, position)
 end
 return Feel
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX95"><Properties><string name="Name">GuildModel</string><ProtectedString name="Source"><![CDATA[-- An architectural model of the four sanctuary trades, made for the exchange folio.
+<Item class="ModuleScript" referent="RBX98"><Properties><string name="Name">GuildModel</string><ProtectedString name="Source"><![CDATA[-- An architectural model of the four sanctuary trades, made for the exchange folio.
 local Merchant = require(script.Parent.MerchantDisplay)
 local Portal = require(game:GetService("ReplicatedStorage").Shared.PortalBuilder)
 local K = require(script.Parent.UIKit)
@@ -29383,7 +29777,7 @@ function G.Pedestal(model)
 end
 return G
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX96"><Properties><string name="Name">HUD</string><ProtectedString name="Source"><![CDATA[-- Direct Pets, Shop and Expeditions navigation with a shared responsive panel layer.
+<Item class="ModuleScript" referent="RBX99"><Properties><string name="Name">HUD</string><ProtectedString name="Source"><![CDATA[-- Direct Pets, Shop and Expeditions navigation with a shared responsive panel layer.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Input = game:GetService("UserInputService")
@@ -29941,7 +30335,7 @@ end)
 task.defer(rescale)
 return HUD
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX97"><Properties><string name="Name">Intro</string><ProtectedString name="Source"><![CDATA[-- Intro: cinematic fly-over when you join. The camera sweeps down the whole lane (every zone),
+<Item class="ModuleScript" referent="RBX100"><Properties><string name="Name">Intro</string><ProtectedString name="Source"><![CDATA[-- Intro: cinematic fly-over when you join. The camera sweeps down the whole lane (every zone),
 -- past the Portal Launch Hall, and lands at your base while the title animates in.
 -- Click / tap / any key to skip.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > Intro (ModuleScript)
@@ -30207,7 +30601,7 @@ end
 
 return Intro
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX98"><Properties><string name="Name">IntroReadiness</string><ProtectedString name="Source"><![CDATA[-- Loading stages describe actual readiness, rather than a percentage of arbitrary instance counts.
+<Item class="ModuleScript" referent="RBX101"><Properties><string name="Name">IntroReadiness</string><ProtectedString name="Source"><![CDATA[-- Loading stages describe actual readiness, rather than a percentage of arbitrary instance counts.
 local Readiness = {}
 function Readiness.Resolve(state)
 	if not state.loaded or not state.map then
@@ -30226,7 +30620,7 @@ function Readiness.Resolve(state)
 end
 return Readiness
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX99"><Properties><string name="Name">KnightGuide</string><ProtectedString name="Source"><![CDATA[-- A short saved guide, with a real knight portrait and ground arrows on known hub paths.
+<Item class="ModuleScript" referent="RBX102"><Properties><string name="Name">KnightGuide</string><ProtectedString name="Source"><![CDATA[-- A short saved guide, with a real knight portrait and ground arrows on known hub paths.
 local RS = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Rules = require(RS.Shared.ForgeRules)
@@ -30664,7 +31058,7 @@ function Guide.Init()
 end
 return Guide
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX100"><Properties><string name="Name">LabelDeclutter</string><ProtectedString name="Source"><![CDATA[-- LabelDeclutter: keeps floating world labels (BillboardGuis) from piling on top of each other.
+<Item class="LocalScript" referent="RBX103"><Properties><string name="Name">LabelDeclutter</string><ProtectedString name="Source"><![CDATA[-- LabelDeclutter: keeps floating world labels (BillboardGuis) from piling on top of each other.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > LabelDeclutter (LocalScript)
 --
 -- Most labels are drawn at a fixed pixel size, so a label 30 studs away is as big on screen as one
@@ -30852,7 +31246,7 @@ RunService.Heartbeat:Connect(function(dt)
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX101"><Properties><string name="Name">MenuWidgets</string><ProtectedString name="Source"><![CDATA[-- Gameplay widgets yield to menus and the loading intro, preserving their enabled state.
+<Item class="LocalScript" referent="RBX104"><Properties><string name="Name">MenuWidgets</string><ProtectedString name="Source"><![CDATA[-- Gameplay widgets yield to menus and the loading intro, preserving their enabled state.
 local player = game:GetService("Players").LocalPlayer
 local gui = player:WaitForChild("PlayerGui")
 local names = { MomentumUI = true, QuestPanel = true }
@@ -30878,7 +31272,7 @@ workspace:GetAttributeChangedSignal("TPFC_IntroPlaying"):Connect(update)
 gui.ChildAdded:Connect(update)
 update()
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX102"><Properties><string name="Name">MerchantDisplay</string><ProtectedString name="Source"><![CDATA[-- A small, actual sanctuary shop display for the menu. No image or asset dependency.
+<Item class="ModuleScript" referent="RBX105"><Properties><string name="Name">MerchantDisplay</string><ProtectedString name="Source"><![CDATA[-- A small, actual sanctuary shop display for the menu. No image or asset dependency.
 local D = {}
 local C, V, CF = Color3.fromRGB, Vector3.new, CFrame.new
 local wood, stone, brass, slate = C(88, 62, 40), C(224, 221, 206), C(178, 142, 74), C(39, 65, 69)
@@ -30989,7 +31383,7 @@ function D.Emblem(kind)
 end
 return D
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX103"><Properties><string name="Name">MomentumUI</string><ProtectedString name="Source"><![CDATA[-- MomentumUI: shows the perfect-throw streak and the server-wide Rift Storm.
+<Item class="LocalScript" referent="RBX106"><Properties><string name="Name">MomentumUI</string><ProtectedString name="Source"><![CDATA[-- MomentumUI: shows the perfect-throw streak and the server-wide Rift Storm.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > MomentumUI (LocalScript)
 --
 --   * Streak badge (bottom centre): appears after a perfect throw, "PERFECT STREAK x3 · +15% luck",
@@ -31133,7 +31527,7 @@ RunService.Heartbeat:Connect(function(dt)
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX104"><Properties><string name="Name">MovementFov</string><ProtectedString name="Source"><![CDATA[-- Reversible sprint lens offset. Cinematics release it before saving their lens.
+<Item class="ModuleScript" referent="RBX107"><Properties><string name="Name">MovementFov</string><ProtectedString name="Source"><![CDATA[-- Reversible sprint lens offset. Cinematics release it before saving their lens.
 local Fov = {}
 local owner, offset, output
 local function close(a, b)
@@ -31169,7 +31563,7 @@ function Fov.Update(camera, target, dt)
 end
 return Fov
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX105"><Properties><string name="Name">Panels</string><ProtectedString name="Source"><![CDATA[-- Sanctuary shops, collection, index, customization and settings.
+<Item class="ModuleScript" referent="RBX108"><Properties><string name="Name">Panels</string><ProtectedString name="Source"><![CDATA[-- Sanctuary shops, collection, index, customization and settings.
 -- All spending and ownership changes use the existing authoritative server actions.
 local RS = game:GetService("ReplicatedStorage")
 local Http = game:GetService("HttpService")
@@ -32521,7 +32915,7 @@ function Panels.Init()
 end
 return Panels
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX106"><Properties><string name="Name">Plaque</string><ProtectedString name="Source"><![CDATA[-- Plaque: the carved rarity plaque from the reveal reference sheet (Actions/02_Rarity_Reveal_and_Capture):
+<Item class="ModuleScript" referent="RBX109"><Properties><string name="Name">Plaque</string><ProtectedString name="Source"><![CDATA[-- Plaque: the carved rarity plaque from the reveal reference sheet (Actions/02_Rarity_Reveal_and_Capture):
 -- a bevelled bar with pointed diamond ends, double gold trim, small gold diamond ornaments, serif caps,
 -- and gold laurels for the showcase tiers. Pixel sized, so it works in ScreenGuis and BillboardGuis.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > Plaque (ModuleScript)
@@ -32678,7 +33072,7 @@ end
 
 return P
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX107"><Properties><string name="Name">PlayerFeel</string><ProtectedString name="Source"><![CDATA[-- PlayerFeel: how the local player's character moves and feels.
+<Item class="LocalScript" referent="RBX110"><Properties><string name="Name">PlayerFeel</string><ProtectedString name="Source"><![CDATA[-- PlayerFeel: how the local player's character moves and feels.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > PlayerFeel (LocalScript)
 --
 --   * Run: hold Left Shift (PC), press L3 (gamepad) or tap the Run button (mobile, toggles).
@@ -32994,7 +33388,7 @@ task.spawn(function()
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX108"><Properties><string name="Name">QuestPanel</string><ProtectedString name="Source"><![CDATA[-- QuestPanel: compact parchment card on the right edge with today's quests, rebirth and boosts.
+<Item class="LocalScript" referent="RBX111"><Properties><string name="Name">QuestPanel</string><ProtectedString name="Source"><![CDATA[-- QuestPanel: compact parchment card on the right edge with today's quests, rebirth and boosts.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > QuestPanel (LocalScript)
 --
 -- Reads the server's Progress view from ClientState (Daily, Rebirths, RebirthCost, FriendsHere,
@@ -33348,7 +33742,7 @@ task.spawn(function()
 end)
 refresh()
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX109"><Properties><string name="Name">QuestTrackerLayout</string><ProtectedString name="Source"><![CDATA[-- Fit the tracker inside the GUI's safe area. Only its body scrolls; the header/tab remain reachable.
+<Item class="ModuleScript" referent="RBX112"><Properties><string name="Name">QuestTrackerLayout</string><ProtectedString name="Source"><![CDATA[-- Fit the tracker inside the GUI's safe area. Only its body scrolls; the header/tab remain reachable.
 local Layout = {}
 function Layout.Resolve(width, height, contentHeight)
 	local margin, header = 12, 48
@@ -33370,7 +33764,7 @@ function Layout.Resolve(width, height, contentHeight)
 end
 return Layout
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX110"><Properties><string name="Name">RevealTitle</string><ProtectedString name="Source"><![CDATA[-- RevealTitle: on-screen title for a creature reveal, styled after Actions/02_Rarity_Reveal_and_Capture.
+<Item class="ModuleScript" referent="RBX113"><Properties><string name="Name">RevealTitle</string><ProtectedString name="Source"><![CDATA[-- RevealTitle: on-screen title for a creature reveal, styled after Actions/02_Rarity_Reveal_and_Capture.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > RevealTitle (ModuleScript)
 --
 --   Common / Uncommon      nothing on screen: the carved plaque above the pet carries it (restrained tiers)
@@ -33686,7 +34080,7 @@ end
 
 return R
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX111"><Properties><string name="Name">SanctuaryUI</string><ProtectedString name="Source"><![CDATA[-- Medieval guild folios: carved oak, forged iron, vellum and a stitched binding.
+<Item class="ModuleScript" referent="RBX114"><Properties><string name="Name">SanctuaryUI</string><ProtectedString name="Source"><![CDATA[-- Medieval guild folios: carved oak, forged iron, vellum and a stitched binding.
 -- All ornament is inert. The reading surface stays light and the world stays visible.
 local T = require(script.Parent.UITheme)
 local Art = {}
@@ -33880,7 +34274,7 @@ function Art.Selected(button, selected)
 end
 return Art
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX112"><Properties><string name="Name">SceneLighting</string><ProtectedString name="Source"><![CDATA[-- The only runtime owner of scene light, atmosphere, clouds and grading.
+<Item class="ModuleScript" referent="RBX115"><Properties><string name="Name">SceneLighting</string><ProtectedString name="Source"><![CDATA[-- The only runtime owner of scene light, atmosphere, clouds and grading.
 local Lighting = game:GetService("Lighting")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
@@ -33966,7 +34360,7 @@ function Scene.Start()
 end
 return Scene
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX113"><Properties><string name="Name">SkyforgeUI</string><ProtectedString name="Source"><![CDATA[-- Light sanctuary surfaces and large standalone navigation artwork.
+<Item class="ModuleScript" referent="RBX116"><Properties><string name="Name">SkyforgeUI</string><ProtectedString name="Source"><![CDATA[-- Light sanctuary surfaces and large standalone navigation artwork.
 local T = require(script.Parent.UITheme)
 local S = {}
 local pendingImages = {}
@@ -34163,7 +34557,7 @@ function S.Card(frame, icon)
 end
 return S
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX114"><Properties><string name="Name">Sounds</string><ProtectedString name="Source"><![CDATA[-- Restrained event audio. Built-in assets keep the game independent of uploaded audio.
+<Item class="ModuleScript" referent="RBX117"><Properties><string name="Name">Sounds</string><ProtectedString name="Source"><![CDATA[-- Restrained event audio. Built-in assets keep the game independent of uploaded audio.
 local SoundService = game:GetService("SoundService")
 local TweenService = game:GetService("TweenService")
 local Sounds = {}
@@ -34282,7 +34676,7 @@ function Sounds.Get(name)
 end
 return Sounds
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX115"><Properties><string name="Name">ThrowCinematic</string><ProtectedString name="Source"><![CDATA[-- ThrowCinematic: the throw cutscene (owner only). Full screen, no letterbox.
+<Item class="ModuleScript" referent="RBX118"><Properties><string name="Name">ThrowCinematic</string><ProtectedString name="Source"><![CDATA[-- ThrowCinematic: the throw cutscene (owner only). Full screen, no letterbox.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ThrowCinematic (ModuleScript)
 --
 -- A short film in up to four camera shots, with HARD CUTS between them (w = wind-up seconds sent
@@ -35164,7 +35558,7 @@ end
 
 return Cine
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX116"><Properties><string name="Name">ThrowController</string><ProtectedString name="Source"><![CDATA[-- ThrowController: charge meter input, held-portal + arm wind-up, the portal flight arc,
+<Item class="ModuleScript" referent="RBX119"><Properties><string name="Name">ThrowController</string><ProtectedString name="Source"><![CDATA[-- ThrowController: charge meter input, held-portal + arm wind-up, the portal flight arc,
 -- landing bounce, portal gate opening and creature reveal choreography (for ALL players' throws).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ThrowController (ModuleScript)
 
@@ -36175,7 +36569,7 @@ end)
 
 return TC
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX117"><Properties><string name="Name">UIIcons</string><ProtectedString name="Source"><![CDATA[-- Original cutout art with immediately visible native geometry while images load.
+<Item class="ModuleScript" referent="RBX120"><Properties><string name="Name">UIIcons</string><ProtectedString name="Source"><![CDATA[-- Original cutout art with immediately visible native geometry while images load.
 local T = require(script.Parent.UITheme)
 local Sky = require(script.Parent.SkyforgeUI)
 local Icons = {}
@@ -36331,7 +36725,7 @@ function Icons.Draw(name, parent, size, color, position)
 end
 return Icons
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX118"><Properties><string name="Name">UIKit</string><ProtectedString name="Source"><![CDATA[-- Native sanctuary components. No uploaded icon/font dependency.
+<Item class="ModuleScript" referent="RBX121"><Properties><string name="Name">UIKit</string><ProtectedString name="Source"><![CDATA[-- Native sanctuary components. No uploaded icon/font dependency.
 local TweenService = game:GetService("TweenService")
 local Sounds = require(script.Parent.Sounds)
 local Settings = require(script.Parent.ClientSettings)
@@ -36697,7 +37091,7 @@ end
 
 return K
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX119"><Properties><string name="Name">UIMotion</string><ProtectedString name="Source"><![CDATA[-- Short, interruptible interface motion. No render loop or delayed gameplay actions.
+<Item class="ModuleScript" referent="RBX122"><Properties><string name="Name">UIMotion</string><ProtectedString name="Source"><![CDATA[-- Short, interruptible interface motion. No render loop or delayed gameplay actions.
 local TweenService = game:GetService("TweenService")
 local Settings = require(script.Parent.ClientSettings)
 local Theme = require(script.Parent.UITheme)
@@ -36852,7 +37246,7 @@ end)
 
 return Motion
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX120"><Properties><string name="Name">UITheme</string><ProtectedString name="Source"><![CDATA[-- Sanctuary UI tokens, shared by the HUD, icons and every shop.
+<Item class="ModuleScript" referent="RBX123"><Properties><string name="Name">UITheme</string><ProtectedString name="Source"><![CDATA[-- Sanctuary UI tokens, shared by the HUD, icons and every shop.
 -- Fonts: Builder Sans for controls and data, Merriweather for sanctuary headings;
 -- resolved with a fallback so an older client without these enums still renders.
 local function font(name, fallback)
@@ -36919,7 +37313,7 @@ function T.Rarity(name, config)
 end
 return T
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX121"><Properties><string name="Name">WorldFx</string><ProtectedString name="Source"><![CDATA[-- WorldFx: ONE shared, staggered scheduler for environment motion on tagged map parts
+<Item class="ModuleScript" referent="RBX124"><Properties><string name="Name">WorldFx</string><ProtectedString name="Source"><![CDATA[-- WorldFx: ONE shared, staggered scheduler for environment motion on tagged map parts
 -- (no per-prop RenderStepped connections, no camera-following particles).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > WorldFx (ModuleScript)
 --

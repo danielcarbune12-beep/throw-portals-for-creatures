@@ -42,6 +42,7 @@ TC.OnThrowResult = HUD.ThrowFeedback
 HUD.Refresh()
 require(Client.ExpeditionPanel).Init()
 require(Client.ForgePanel).Init()
+require(Client.FarmMarketPanel).Init()
 require(Client.KnightGuide).Init()
 
 -- ask the server for a full data sync (retries until our save has loaded)

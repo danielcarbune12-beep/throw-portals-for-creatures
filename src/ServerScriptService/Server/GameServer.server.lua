@@ -225,6 +225,7 @@ local function sync(player, partial)
 		Progress = Progression.View(player, data),
 		TutorialStep = data.TutorialStep,
 		LastForge = data.LastForge,
+		FarmMarket = FarmService.MarketView(data),
 		BaseIndex = st and st.base and st.base.index or 0,
 		Expeditions = Expeditions.BuildView(data),
 	})
@@ -722,6 +723,10 @@ function Actions.Forge(player, data, st, json)
 		table.insert(data.Placed, receipt.uid)
 	end
 	return ok, message
+end
+
+function Actions.FarmMarket(player, data, st, encoded)
+	return FarmService.MarketTrade(player, data, st.base, encoded)
 end
 
 function Actions.Rebirth(player, data, st)

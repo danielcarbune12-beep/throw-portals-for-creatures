@@ -56,6 +56,11 @@ local function fixture(options)
 		newNode("StarterPlayerScripts", "StarterPlayerScripts"),
 		newNode("Folder", "Client")
 	scripts.Parent, client.Parent = starter, scripts
+	local serverService, replicated =
+		newNode("ServerScriptService", "ServerScriptService"), newNode("ReplicatedStorage", "ReplicatedStorage")
+	local server, shared = newNode("Folder", "Server"), newNode("Folder", "Shared")
+	server.Parent, shared.Parent = serverService, replicated
+	local folders = { Client = client, Server = server, Shared = shared }
 	for _, plan in manifest.plans do
 		if not plan.allowCreate then
 			local node = newNode(plan.className, plan.name)
@@ -63,7 +68,7 @@ local function fixture(options)
 			if plan.name == "KnightGuide" then
 				node.Source = node.Source:gsub("\n", "\r\n")
 			end
-			node.Parent = client
+			node.Parent = folders[plan.scope or "Client"]
 		end
 	end
 	local sibling = newNode("ModuleScript", "BrotherUnpublished")
@@ -77,19 +82,34 @@ local function fixture(options)
 	if options.missing then
 		client:FindFirstChild("Intro").Parent = nil
 	end
+	if options.serverUnknown then
+		server:FindFirstChild("GameServer").Source = "-- Brother's unpublished server change"
+	end
+	if options.sharedWrongClass then
+		shared._values.ClassName = "Model"
+	end
 	local function snapshot()
 		local out = {}
-		for name, node in client._children do
-			out[name] = node.ClassName .. "\0" .. node.Source
+		for scope, folder in folders do
+			for name, node in folder._children do
+				out[scope .. "/" .. name] = node.ClassName .. "\0" .. node.Source
+			end
 		end
 		return out
 	end
 	f.before, f.snapshot = snapshot(), snapshot
 	f.client, f.sibling = client, sibling
+	f.folders = folders
 	f.env = setmetatable({
 		game = {
 			PlaceId = options.wrongPlace and 123 or 129975585465401,
 			GetService = function(_, name)
+				if name == "ServerScriptService" then
+					return serverService
+				end
+				if name == "ReplicatedStorage" then
+					return replicated
+				end
 				if name == "StarterPlayer" then
 					return starter
 				end
@@ -146,9 +166,18 @@ H.check(
 	"read-only audit never mutates native sources"
 )
 for _, options in
-	{ { wrongPlace = true }, { play = true }, { notStudio = true }, { unknown = true }, { wrongClass = true }, {
-		missing = true,
-	} }
+	{
+		{ wrongPlace = true },
+		{ play = true },
+		{ notStudio = true },
+		{ unknown = true },
+		{ wrongClass = true },
+		{ serverUnknown = true },
+		{ sharedWrongClass = true },
+		{
+			missing = true,
+		},
+	}
 do
 	local f = fixture(options)
 	local ok = pcall(luau.load(bundle, { environment = f.env }))
@@ -162,7 +191,7 @@ result = luau.load(bundle, { environment = success.env })()
 H.check(result.status == "synced" and result.files == #manifest.plans, "valid context applies the complete plan")
 local exact = true
 for _, plan in manifest.plans do
-	local node = success.client:FindFirstChild(plan.name)
+	local node = success.folders[plan.scope or "Client"]:FindFirstChild(plan.name)
 	exact = exact and node.ClassName == plan.className and node.Source:gsub("\r\n", "\n") == plan.source
 end
 H.check(exact, "all target sources and script classes match the current checkout")
@@ -177,7 +206,7 @@ H.check(
 	result.changed == 0 and success.writes == 0 and success.creates == 0,
 	"reapplying the same release does not rewrite or duplicate scripts"
 )
-for _, name in { "Intro", "CreatureBudget" } do
+for _, name in { "Intro", "CreatureBudget", "FarmService", "FarmMarketRules" } do
 	local f = fixture({ failName = name })
 	local ok, message = pcall(luau.load(bundle, { environment = f.env }))
 	H.check(

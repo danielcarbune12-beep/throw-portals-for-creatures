@@ -121,6 +121,9 @@ end)
 
 local feedbackVersion = setmetatable({}, { __mode = "k" })
 local function feedback(station, text)
+	if station == "Stand" then
+		station = "Pantry"
+	end
 	local ownedFarm
 	for prompt in pairs(prompts) do
 		if prompt:GetAttribute("BaseIndex") == player:GetAttribute("BaseIndex") then
@@ -384,7 +387,7 @@ FarmFx.OnClientEvent:Connect(function(kind, d)
 		feedback(
 			"Stand",
 			d.sold and ("Pantry full. Sold " .. name .. " for " .. Format.Money(d.sold))
-				or (name .. " added to the Pantry. Feed pets or sell at the trough.")
+				or (name .. " harvested. Sell crops beside the Great Hall, or feed pets at home.")
 		)
 		play(d.tag and "Rare" or "Money", 0.5)
 	elseif kind == "mutation" then

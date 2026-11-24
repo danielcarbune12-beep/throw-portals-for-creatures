@@ -12,7 +12,14 @@ FILES = (
     "IntroReadiness.lua", "QuestPanel.client.lua", "QuestTrackerLayout.lua",
     "ClientMain.client.lua", "FarmClient.client.lua", "MenuWidgets.client.lua", "GameplayFeel.lua",
     "ForgePanel.lua", "ExpeditionPanel.lua", "ExpeditionFight.lua", "ExpeditionMiniMap.lua",
-    "UIMotion.lua", "UIKit.lua", "HUD.lua",
+    "UIMotion.lua", "UIKit.lua", "HUD.lua", "FarmMarketPanel.lua",
+)
+EXTRA = (
+    ("Shared", "src/ReplicatedStorage/Shared/FarmMarketRules.lua"),
+    ("Server", "src/ServerScriptService/Server/FarmMarket.lua"),
+    ("Server", "src/ServerScriptService/Server/FarmService.lua"),
+    ("Server", "src/ServerScriptService/Server/GameServer.server.lua"),
+    ("Server", "src/ServerScriptService/Server/SanctuaryHub.lua"),
 )
 BASELINE = "7c03f46"
 
@@ -38,20 +45,23 @@ def literal(source):
 
 
 def build(apply=False):
-    paths = [f"{CLIENT}/{name}" for name in FILES]
+    targets = [("Client", f"{CLIENT}/{name}") for name in FILES] + list(EXTRA)
+    paths = [path for _, path in targets]
     revisions = list(dict.fromkeys([
         BASELINE, git("rev-parse", "HEAD").strip(),
         *git("rev-list", f"{BASELINE}..HEAD", "--", *paths).splitlines(),
     ]))
     plans = []
-    for name, path in zip(FILES, paths):
+    for scope, path in targets:
+        name = Path(path).name
         source = (ROOT / path).read_text(encoding="utf-8").replace("\r\n", "\n")
-        module = name.removesuffix(".lua").removesuffix(".client")
+        module = name.removesuffix(".lua").removesuffix(".client").removesuffix(".server")
         historical = [git("show", f"{rev}:{path}", optional=True) for rev in revisions]
         known = {adler(text) for text in historical if text is not None}
         known.add(adler(source))
         plans.append({
-            "name": module, "className": "LocalScript" if ".client." in name else "ModuleScript",
+            "name": module, "scope": scope, "path": path,
+            "className": "LocalScript" if ".client." in name else ("Script" if ".server." in name else "ModuleScript"),
             "source": source, "hash": adler(source), "known": sorted(known),
             "allowCreate": historical[0] is None,
             "baselineSource": historical[0],
@@ -59,11 +69,11 @@ def build(apply=False):
     entries = []
     for p in plans:
         hashes = ",".join(f"[{h}]=true" for h in p["known"])
-        entries.append("{name=" + json.dumps(p["name"]) + ",className=" + json.dumps(p["className"])
+        entries.append("{name=" + json.dumps(p["name"]) + ",scope=" + json.dumps(p["scope"]) + ",className=" + json.dumps(p["className"])
                        + ",allowCreate=" + str(p["allowCreate"]).lower() + ",hash=" + str(p["hash"])
                        + ",known={" + hashes + "},source=" + literal(p["source"]) + "}")
     header = (
-        "-- Generated guarded client polish sync. Paste/run in the EXISTING shared Studio command bar.\n"
+        "-- Generated guarded gameplay polish sync. Paste/run in the EXISTING shared Studio command bar.\n"
         "-- Does not save, publish, remove fixtures, change permissions or open another Studio.\n"
         "-- Unknown native edits reject the entire plan before any source is changed.\n"
         f"local APPLY = {str(apply).lower()}\n"
@@ -77,6 +87,15 @@ assert(run:IsStudio() and not run:IsRunning(), "EDIT_MODE_REQUIRED: no changes m
 local starter = game:GetService("StarterPlayer"):FindFirstChild("StarterPlayerScripts")
 local client = starter and starter:FindFirstChild("Client")
 assert(client and client:IsA("Folder"), "CLIENT_FOLDER_MISSING: no changes made")
+local folders = {
+    Client = client,
+    Server = game:GetService("ServerScriptService"):FindFirstChild("Server"),
+    Shared = game:GetService("ReplicatedStorage"):FindFirstChild("Shared"),
+}
+assert(folders.Server and folders.Shared, "DEPENDENCY_FOLDER_MISSING: no changes made")
+for scope, folder in pairs(folders) do
+    assert(folder:IsA("Folder"), "UNEXPECTED_SCOPE_CLASS: " .. scope)
+end
 local function hash(source)
     local a, b = 1, 0
     source = source:gsub("\r\n", "\n")
@@ -89,7 +108,7 @@ end
 -- Complete preflight, including an unrelated late plan failure, precedes every mutation.
 local originals, created = {}, {}
 for _, plan in ipairs(plans) do
-    local existing = client:FindFirstChild(plan.name)
+    local existing = folders[plan.scope]:FindFirstChild(plan.name)
     if existing then
         assert(existing:IsA(plan.className), "UNEXPECTED_CLASS: " .. plan.name)
         local current = hash(existing.Source)
@@ -107,12 +126,12 @@ local changed = 0
 local ok, failure = pcall(function()
     -- Modules are inert in Edit; all dependencies exist before the next play session.
     for _, plan in ipairs(plans) do
-        local object = client:FindFirstChild(plan.name)
+        local object = folders[plan.scope]:FindFirstChild(plan.name)
         if not object then
             object = Instance.new(plan.className)
             table.insert(created, object)
             object.Name, object.Source = plan.name, plan.source
-            object.Parent = client
+            object.Parent = folders[plan.scope]
             changed += 1
         elseif hash(object.Source) ~= plan.hash then
             object.Source = plan.source
@@ -120,7 +139,7 @@ local ok, failure = pcall(function()
         end
     end
     for _, plan in ipairs(plans) do
-        assert(hash(client:FindFirstChild(plan.name).Source) == plan.hash, "POST_SYNC_MISMATCH: " .. plan.name)
+        assert(hash(folders[plan.scope]:FindFirstChild(plan.name).Source) == plan.hash, "POST_SYNC_MISMATCH: " .. plan.name)
     end
 end)
 if not ok then

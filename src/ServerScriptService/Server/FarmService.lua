@@ -4,15 +4,14 @@
 --  * Six planter beds per courtyard (3 free, 3 bought). Crops grow on os.time(), so they keep growing
 --    while you are offline. A mutation (Watered / Golden / Giant / Rainbow) is rolled when you plant
 --    and shows on the plant while it grows. Harvest = produce into the Pantry + Farmer XP.
---  * Feeding Trough: feed the Pantry to your courtyard pets (pet XP -> pet levels -> +6% income per
---    level, see PetMult) or sell it. Mutations multiply both the food and the sale value.
---  * Farm Stand: pick your seed, buy beds, buy Sprinklers (faster growth), hire the Harvest Spirit
---    (auto-harvests into the Treasury and resows, also offline: the 24/7 farm).
+--  * Feeding Trough: feed crops to courtyard pets for XP/levels and the Well Fed bonus.
+--  * Hall market: BUY seeds/supplies, plant from owned stock, harvest, then SELL crops.
+--    Optional supplies retain the existing beds, Sprinklers and paid Harvest Spirit.
 --  * Farmer Level: XP from harvests and catches; levels unlock crops and add yield.
 --  * Bounty Board: three rotating jobs (harvest, catch, collect, throw, zone) with rewards.
 --  * Daily Gift chest: once every 20 h, 7-day streak.
--- Everything is physical, in the courtyard, driven by ProximityPrompts (the HUD has exactly four
--- menu destinations by design). Feedback stays on permanent farm signs; no screen or character message bursts.
+-- Everyday trade lives in two stalls beside the Great Hall. Advanced farm systems stay optional.
+-- Feedback uses permanent signs and open menus; no screen or character message bursts.
 -- All prices, rolls and timers are decided here; the client only triggers prompts.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -20,6 +19,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
 local Farm = require(Shared.FarmConfig)
 local Care = require(Shared.FarmCare)
+local MarketRules = require(Shared.FarmMarketRules)
 local Format = require(Shared.Format)
 local CreatureData = require(Shared.CreatureData)
 -- Geometry previews must not start the profile service or its autosave loop.
@@ -79,6 +79,7 @@ local function ensure(data)
 	f.FedProgress = math.clamp(math.floor(tonumber(f.FedProgress) or 0), 0, Farm.WellFed.min - 1)
 	f.FedUntil = tonumber(f.FedUntil) or 0
 	f.Almanac = type(f.Almanac) == "table" and f.Almanac or {} -- ["Crop|Mutation"] = true
+	MarketRules.Ensure(f)
 	data.Bounties = type(data.Bounties) == "table" and data.Bounties or {}
 	data.Daily = type(data.Daily) == "table" and data.Daily or { last = 0, streak = 0 }
 	return f
@@ -409,17 +410,17 @@ local function harvest(player, data, base, i, auto)
 	return 1
 end
 
-local function plant(_player, data, i, cropId, at)
+local function plant(_player, data, i, cropId, at, automatic)
 	local f = data.Farm
 	local crop = Farm.ById[cropId]
 	if not crop or not unlocked(data, crop) then
 		return false, "Locked crop"
 	end
 	local cost = seedCost(data, crop)
-	if data.Money < cost then
-		return false, "Need " .. Format.Money(cost) .. " for " .. crop.name .. " seeds"
+	local paid, message = MarketRules.Use(data, cropId, cost, automatic)
+	if not paid then
+		return false, message
 	end
-	data.Money -= cost
 	local m = rollMutation(data, at or os.time())
 	f.Plots[tostring(i)] = { c = crop.id, t = at or os.time(), m = m }
 	return true, nil, m
@@ -460,7 +461,7 @@ local function runSpirit(player, data, base)
 			if not crop then
 				-- sow an empty bed with the selected seed
 				local seed = Farm.ById[f.Seed]
-				if seed and unlocked(data, seed) and plant(player, data, i, seed.id) then
+				if seed and unlocked(data, seed) and plant(player, data, i, seed.id, nil, true) then
 					changed = true
 				end
 				break
@@ -472,7 +473,7 @@ local function runSpirit(player, data, base)
 			harvest(player, data, base, i, true)
 			changed = true
 			cycles += 1
-			if not plant(player, data, i, crop.id, readyAt) then
+			if not plant(player, data, i, crop.id, readyAt, true) then
 				break
 			end
 		end
@@ -702,46 +703,7 @@ local function buildBase(base)
 			{ soil = soilPart, plants = plants, label = label, prompt = pr, cf = pcf, stage = -1, crop = nil }
 		K.SetFolder(root)
 	end
-	-- Farm Stand: timber counter under a violet awning, four goods with their own keys
-	local scf = L(STAND.X, 0, STAND.Z) * A(0, -PI / 2, 0) -- counter faces the courtyard centre (+X)
-	K.block(scf * CF(0, 1.4, 0), V(7.2, 0.6, 3.4), Style.stone, M.Limestone, true)
-	K.block(scf * CF(0, 2.6, 0), V(6.8, 1.8, 2.6), woodD, M.WoodPlanks, true)
-	K.block(scf * CF(0, 3.6, 0), V(7.2, 0.3, 3.0), wood, M.WoodPlanks)
-	for _, x in ipairs({ -3.3, 3.3 }) do
-		for _, z in ipairs({ -1.3, 1.3 }) do
-			K.block(scf * CF(x, 5.2, z), V(0.45, 6.4, 0.45), woodD, M.Wood)
-		end
-	end
-	Art.Gable(scf * CF(0, 8.4, 0) * A(0, PI / 2, 0), 4.6, 1.8, 8.2, Style.roof)
-	K.block(scf * CF(0, 8.35, 0), V(8.2, 0.3, 4.8), gold, M.Metal)
-	local goods = {
-		{ name = "Seeds", x = -2.4, key = Enum.KeyCode.E, pad = Enum.KeyCode.ButtonX, col = C(150, 110, 230) },
-		{ name = "Beds", x = -0.8, key = Enum.KeyCode.R, pad = Enum.KeyCode.ButtonY, col = C(145, 100, 61) },
-		{ name = "Sprinkler", x = 0.8, key = Enum.KeyCode.T, pad = Enum.KeyCode.ButtonL1, col = C(110, 190, 230) },
-		{ name = "Spirit", x = 2.4, key = Enum.KeyCode.G, pad = Enum.KeyCode.ButtonR1, col = C(190, 160, 255) },
-	}
-	farm.stand = {}
-	for _, g in ipairs(goods) do
-		local item =
-			K.block(scf * CF(g.x, 4.2, -0.2), V(1.1, 0.9, 1.1), g.col, g.name == "Spirit" and M.Neon or M.SmoothPlastic)
-		item.Name = "Stand" .. g.name
-		local pr = prompt(item, g.key, g.pad, V(0, 0.8, 0))
-		pr.MaxActivationDistance = 5
-		pr:SetAttribute("FarmStation", "Stand")
-		pr:SetAttribute("BaseIndex", base.index)
-		pr.Triggered:Connect(function(player)
-			FarmService.OnStand(base, g.name, player)
-		end)
-		farm.stand[g.name] = pr
-	end
-	feedbackPlate(
-		scf * CF(0, 2.6, -1.36),
-		V(6.4, 1.35, 0.12),
-		"Stand",
-		"Plant a crop, harvest it, then feed pets or sell at the Pantry."
-	)
-	local sign = K.block(scf * CF(0, 7.2, -1.5), V(6.4, 1.4, 0.25), Style.roof, M.SmoothPlastic)
-	farm.standLabel = billboard(sign, V(0, 2.2, 0), UDim2.fromOffset(200, 66), 22)
+	-- Everyday trade moved to the two public stalls beside the Great Hall.
 	-- Bounty Board: two posts, a timber board with three parchment cards, a little roof
 	local bcf = L(BOARD.X, 0, BOARD.Z)
 	for _, x in ipairs({ -3.4, 3.4 }) do
@@ -841,7 +803,7 @@ local function buildBase(base)
 		tcf * CF(0, 6.1, 1.2),
 		V(7.2, 1.6, 0.2),
 		"Pantry",
-		"Feed up to 5 food. Ordinary food first. Hold to sell the whole Pantry."
+		"Feed pets here. Sell crops at the SELL stall beside the Great Hall."
 	)
 	local summary = feedbackPlate(tcf * CF(0, 8.0, 1.2), V(7.2, 1.9, 0.2), nil, "")
 	farm.troughLabel = summary.SurfaceGui.FarmStatus
@@ -864,14 +826,7 @@ local function buildBase(base)
 	feed.Triggered:Connect(function(player)
 		FarmService.OnFeed(base, player)
 	end)
-	local sell = prompt(trough, Enum.KeyCode.R, Enum.KeyCode.ButtonY, V(1.6, 0.9, -1.6))
-	sell.MaxActivationDistance = 6
-	sell.HoldDuration = 1
-	sell:SetAttribute("BaseIndex", base.index)
-	sell.Triggered:Connect(function(player)
-		FarmService.OnSell(base, player)
-	end)
-	farm.feedPrompt, farm.sellPrompt = feed, sell
+	farm.feedPrompt = feed
 	-- Crop Almanac: a 6 x 5 grid board on the lodge's back wall, facing the courtyard
 	local LG = Style.lodge
 	-- sits low on the back wall, under the shortened gable banner (SkyforgeDetails)
@@ -953,7 +908,6 @@ local function refreshBase(base)
 				e.prompt.ActionText, e.prompt.ObjectText = "", ""
 				e.soil.Color = SOIL
 			end
-			farm.standLabel.Text = ""
 			farm.chestLabel.Text = ""
 			farm.troughLabel.Text = ""
 			farm.almanacShown = nil
@@ -988,15 +942,16 @@ local function refreshBase(base)
 		local mName = mdef and ('<font color="#' .. mdef.color:ToHex() .. '">' .. m .. "</font> ") or ""
 		local stage = 0
 		if state == "locked" then
-			e.label.Text = lockLabelShown and "" or '<font color="#DCD4C8">Locked · Farm Stand</font>'
+			e.label.Text = lockLabelShown and "" or '<font color="#DCD4C8">Locked · BUY stall near hall</font>'
 			lockLabelShown = true
-			e.prompt.ActionText, e.prompt.ObjectText = "Locked", "Farm Stand: R"
+			e.prompt.ActionText, e.prompt.ObjectText = "Locked", "BUY stall near hall"
 			e.soil.Color = LOCKED
 		elseif state == "empty" then
 			local seed = Farm.ById[f.Seed]
 			e.label.Text = ""
 			e.prompt.ActionText = "Plant " .. seed.name
-			e.prompt.ObjectText = Format.Money(seedCost(data, seed))
+			e.prompt.ObjectText = (f.SeedStock[seed.id] or 0) > 0 and ((f.SeedStock[seed.id] or 0) .. " seeds owned")
+				or "Buy seeds near the Great Hall"
 			e.soil.Color = SOIL
 		else
 			local grow = growTime(data, crop)
@@ -1005,11 +960,7 @@ local function refreshBase(base)
 			e.soil.Color = m == "Watered" and C(60, 62, 70) or SOIL_WET
 			if state == "ready" then
 				e.label.Text = mName .. '<font color="#FFD678">' .. crop.name .. " ready!</font>"
-				local seed = Farm.ById[f.Seed]
-				local replant = seed and unlocked(data, seed) and data.Money >= seedCost(data, seed)
-				e.prompt.ActionText = replant and "Harvest + replant" or "Harvest to Pantry"
-				e.prompt.ObjectText = replant and (seed.name .. " · " .. Format.Money(seedCost(data, seed)))
-					or crop.name
+				e.prompt.ActionText, e.prompt.ObjectText = "Harvest crop", crop.name
 			else
 				e.label.Text = mName
 					.. crop.name
@@ -1028,67 +979,6 @@ local function refreshBase(base)
 			e.stage, e.crop = stage, visKey
 			plantVisual(e, crop, stage, e.cf, m)
 		end
-	end
-	-- stand
-	local seed = Farm.ById[f.Seed]
-	local need = Farm.XpToNext(f.Level)
-	farm.standLabel.Text = '<font color="#FFD678">FARMER LV '
-		.. f.Level
-		.. "</font>  "
-		.. math.floor(f.XP)
-		.. " / "
-		.. need
-		.. " XP\n"
-		.. "Seed: "
-		.. seed.name
-		.. " ("
-		.. Format.Money(seedCost(data, seed))
-		.. ", "
-		.. fmtTime(growTime(data, seed))
-		.. ")\n"
-		.. '<font color="#DCD4C8">Soil x'
-		.. Format.Money(soil(data)):gsub("%$", "")
-		.. "  ·  "
-		.. f.Harvests
-		.. " harvests"
-		.. (f.Spirit and "  ·  Spirit on" or "")
-		.. "</font>"
-	local dc = demand.crop and Farm.ById[demand.crop]
-	local extra = {}
-	if weather.id then
-		local w = Farm.WeatherById[weather.id]
-		table.insert(extra, '<font color="#9CD8FF">' .. w.name .. " " .. fmtTime(weather.ends - now) .. "</font>")
-	end
-	if dc then
-		table.insert(extra, '<font color="#9CFFA8">Demand: ' .. dc.name .. " x" .. Farm.DemandMult .. "</font>")
-	end
-	if #extra > 0 then
-		farm.standLabel.Text ..= "\n" .. table.concat(extra, "  ·  ")
-	end
-	local st = farm.stand
-	st.Seeds.ActionText, st.Seeds.ObjectText = "Next seed", seed.name
-	st.Seeds:SetAttribute("FarmAvailable", true)
-	st.Beds:SetAttribute("FarmAvailable", f.PlotsOwned < Farm.MaxPlots)
-	st.Sprinkler:SetAttribute("FarmAvailable", f.Sprinkler < #Farm.SprinklerPrices)
-	st.Spirit:SetAttribute("FarmAvailable", not f.Spirit)
-	if f.PlotsOwned < Farm.MaxPlots then
-		st.Beds.ActionText = "Buy bed " .. (f.PlotsOwned + 1)
-		st.Beds.ObjectText = Format.Money(Farm.PlotPrices[f.PlotsOwned - Farm.StartPlots + 1])
-	else
-		st.Beds.ActionText, st.Beds.ObjectText = "All beds owned", ""
-	end
-	if f.Sprinkler < #Farm.SprinklerPrices then
-		st.Sprinkler.ActionText = "Sprinkler Lv " .. (f.Sprinkler + 1)
-		st.Sprinkler.ObjectText = Format.Money(Farm.SprinklerPrices[f.Sprinkler + 1]) .. "  (-8% grow time)"
-	else
-		st.Sprinkler.ActionText, st.Sprinkler.ObjectText = "Sprinklers maxed", ""
-	end
-	if f.Spirit then
-		st.Spirit.ActionText, st.Spirit.ObjectText = "Harvest Spirit hired", "auto-harvest, 24/7"
-	elseif f.Level < Farm.SpiritLevel then
-		st.Spirit.ActionText, st.Spirit.ObjectText = "Harvest Spirit", "needs Farmer Lv " .. Farm.SpiritLevel
-	else
-		st.Spirit.ActionText, st.Spirit.ObjectText = "Hire Harvest Spirit", Format.Money(Farm.SpiritPrice)
 	end
 	-- board (rewrite only when something changed)
 	fillBounties(data)
@@ -1155,11 +1045,9 @@ local function refreshBase(base)
 		.. " pets at home · "
 		.. condition
 	farm.feedPrompt:SetAttribute("FarmAvailable", n > 0 and #pets > 0)
-	farm.sellPrompt:SetAttribute("FarmAvailable", n > 0)
 	farm.feedPrompt.ActionText = n > 0 and ("Feed " .. math.min(n, Farm.WellFed.min) .. " food") or "Feed pets"
 	farm.feedPrompt.ObjectText = "Ordinary food first"
-	farm.sellPrompt.ActionText = n > 0 and ("Sell all " .. n .. " produce") or "Nothing to sell"
-	farm.sellPrompt.ObjectText = n > 0 and Format.Money(value) or ""
+
 	-- almanac board (rewrite only when the count changes)
 	local found = FarmService.AlmanacCount(data)
 	if farm.almanacShown ~= found then
@@ -1230,19 +1118,12 @@ function FarmService.OnPlot(base, i, player)
 	local pos = base.cf:PointToWorldSpace(PLOTS[i] + V(0, 4, 0))
 	local state, crop, left = plotState(data, i)
 	if state == "locked" then
-		say(player, "Buy this bed at the Farm Stand", pos)
+		say(player, "Buy another bed at the BUY stall beside the Great Hall.", pos)
 	elseif state == "growing" then
 		say(player, crop.name .. ": " .. fmtTime(left) .. " left", pos)
 	elseif state == "ready" then
 		harvest(player, data, base, i, false)
-		-- one press re-sows with your selected seed (if you can afford it)
-		local seed = Farm.ById[data.Farm.Seed]
-		if seed and unlocked(data, seed) and data.Money >= seedCost(data, seed) then
-			local _, _, m = plant(player, data, i, seed.id)
-			if m then
-				task.delay(0.9, fx, player, "mutation", { pos = pos, mutation = m, crop = seed.name })
-			end
-		end
+		-- Harvest leaves the bed empty; the player chooses when to spend another seed.
 		syncMoney(player)
 	else
 		local ok, msg, m = plant(player, data, i, data.Farm.Seed)
@@ -1255,85 +1136,6 @@ function FarmService.OnPlot(base, i, player)
 			syncMoney(player)
 		else
 			say(player, msg, pos)
-		end
-	end
-	refreshBase(base)
-end
-
-function FarmService.OnStand(base, what, player)
-	if not base.farm.stand[what] then
-		return
-	end
-	local data = ownerData(base, player, STAND)
-	if not data then
-		return
-	end
-	local f = data.Farm
-	local pos = base.cf:PointToWorldSpace(STAND + V(0, 6, 0))
-	if what == "Seeds" then
-		-- cycle through the crops you have unlocked
-		local list = {}
-		for _, c in ipairs(Farm.Crops) do
-			if unlocked(data, c) then
-				table.insert(list, c.id)
-			end
-		end
-		local idx = table.find(list, f.Seed) or 0
-		f.Seed = list[idx % #list + 1]
-		local nextLocked
-		for _, c in ipairs(Farm.Crops) do
-			if not unlocked(data, c) then
-				nextLocked = c
-				break
-			end
-		end
-		say(
-			player,
-			Farm.ById[f.Seed].name
-				.. " seeds"
-				.. (nextLocked and ("  ·  " .. nextLocked.name .. " at Lv " .. nextLocked.level) or ""),
-			pos
-		)
-	elseif what == "Beds" then
-		if f.PlotsOwned >= Farm.MaxPlots then
-			say(player, "All six beds are yours", pos)
-		else
-			local price = Farm.PlotPrices[f.PlotsOwned - Farm.StartPlots + 1]
-			if data.Money < price then
-				say(player, "Need " .. Format.Money(price), pos)
-			else
-				data.Money -= price
-				f.PlotsOwned += 1
-				fx(player, "buy", { pos = pos, text = "New bed!" })
-				syncMoney(player)
-			end
-		end
-	elseif what == "Sprinkler" then
-		if f.Sprinkler >= #Farm.SprinklerPrices then
-			say(player, "Sprinklers maxed", pos)
-		else
-			local price = Farm.SprinklerPrices[f.Sprinkler + 1]
-			if data.Money < price then
-				say(player, "Need " .. Format.Money(price), pos)
-			else
-				data.Money -= price
-				f.Sprinkler += 1
-				fx(player, "buy", { pos = pos, text = "Sprinkler Lv " .. f.Sprinkler .. "!" })
-				syncMoney(player)
-			end
-		end
-	elseif what == "Spirit" then
-		if f.Spirit then
-			say(player, "Your Harvest Spirit tends the farm, even offline", pos)
-		elseif f.Level < Farm.SpiritLevel then
-			say(player, "Reach Farmer Lv " .. Farm.SpiritLevel .. " first", pos)
-		elseif data.Money < Farm.SpiritPrice then
-			say(player, "Need " .. Format.Money(Farm.SpiritPrice), pos)
-		else
-			data.Money -= Farm.SpiritPrice
-			f.Spirit = true
-			fx(player, "buy", { pos = pos, text = "Harvest Spirit hired!" })
-			syncMoney(player)
 		end
 	end
 	refreshBase(base)
@@ -1468,6 +1270,138 @@ function FarmService.OnSell(base, player)
 	refreshBase(base)
 end
 
+-- One shared quote path drives both the public sell menu and its authoritative payout.
+local function marketProduce(data)
+	local rows, total, count = {}, 0, 0
+	for key, amount in pairs(data.Farm.Pantry) do
+		local crop, mutation = splitKey(key)
+		if crop and type(amount) == "number" and amount == amount and amount > 0 and amount < math.huge then
+			amount = math.floor(amount)
+			local value = itemValue(data, crop, mutation) * amount
+			table.insert(
+				rows,
+				{ key = key, name = (mutation and mutation .. " " or "") .. crop.name, count = amount, value = value }
+			)
+			total += value
+			count += amount
+		end
+	end
+	table.sort(rows, function(a, b)
+		return a.name < b.name
+	end)
+	return rows, total, count
+end
+
+function FarmService.MarketView(data)
+	local f = ensure(data)
+	local seeds = {}
+	for _, crop in Farm.Crops do
+		table.insert(
+			seeds,
+			{
+				id = crop.id,
+				name = crop.name,
+				price = seedCost(data, crop),
+				grow = growTime(data, crop),
+				stock = f.SeedStock[crop.id],
+				level = crop.level,
+				unlocked = unlocked(data, crop),
+				selected = f.Seed == crop.id,
+			}
+		)
+	end
+	local produce, value, count = marketProduce(data)
+	return {
+		seeds = seeds,
+		produce = produce,
+		total = value,
+		count = count,
+		level = f.Level,
+		upgrades = {
+			{
+				id = "Beds",
+				name = "Another garden bed",
+				price = Farm.PlotPrices[f.PlotsOwned - Farm.StartPlots + 1],
+				owned = f.PlotsOwned >= Farm.MaxPlots,
+			},
+			{
+				id = "Sprinkler",
+				name = "Faster watering",
+				price = Farm.SprinklerPrices[f.Sprinkler + 1],
+				owned = f.Sprinkler >= #Farm.SprinklerPrices,
+			},
+			{
+				id = "Spirit",
+				name = "Harvest Spirit",
+				price = Farm.SpiritPrice,
+				owned = f.Spirit,
+				level = Farm.SpiritLevel,
+			},
+		},
+	}
+end
+
+function FarmService.MarketTrade(player, data, base, encoded)
+	if type(encoded) ~= "string" or #encoded > 512 then
+		return false, "Invalid market request."
+	end
+	local decoded, request = pcall(game:GetService("HttpService").JSONDecode, game:GetService("HttpService"), encoded)
+	if not decoded or type(request) ~= "table" then
+		return false, "Invalid market request."
+	end
+	local side = request.op == "Sell" and "Sell" or "Buy"
+	local map = workspace:FindFirstChild("Map")
+	local start = map and map:FindFirstChild("Start")
+	local market = start and start:FindFirstChild("FarmMarket")
+	local stall = market and market:GetAttribute("TPFCGenerated") and market:FindFirstChild(side .. "Stall")
+	local anchor = stall and stall:FindFirstChild(side .. "Anchor")
+	local character = player.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if
+		not anchor
+		or not root
+		or not humanoid
+		or humanoid.Health <= 0
+		or (root.Position - anchor.Position).Magnitude > MarketRules.Range
+	then
+		return false, "Visit the " .. side:upper() .. " stall beside the Great Hall."
+	end
+	ensure(data)
+	local ok, message
+	if request.op == "Buy" then
+		local crop = type(request.crop) == "string" and Farm.ById[request.crop]
+		if not crop then
+			return false, "Choose a seed."
+		end
+		ok, message = MarketRules.Buy(data, crop.id, request.quantity, seedCost(data, crop))
+	elseif request.op == "Select" then
+		ok, message = MarketRules.Select(data, request.crop)
+	elseif request.op == "Upgrade" then
+		ok, message = MarketRules.Upgrade(data, request.supply)
+	elseif request.op == "Sell" then
+		local rows, total, count = marketProduce(data)
+		if count == 0 then
+			return false, "Harvest a crop at your garden first."
+		end
+		for _, row in rows do
+			data.Farm.Pantry[row.key] = nil
+		end
+		data.Money += total
+		data.TotalEarned = (data.TotalEarned or 0) + total
+		ok, message = true, "Sold " .. count .. " crops for " .. Format.Money(total) .. "."
+		if MoneyFxRE then
+			MoneyFxRE:FireClient(player, total, anchor.Position)
+		end
+	else
+		return false, "Unknown market action."
+	end
+	if ok and base and base.owner == player then
+		refreshBase(base)
+	end
+	return ok, message
+end
+
 ---------------------------------------------------------------- game events (from GameServer)
 -- kind: "catch" (info.rarity) | "collect" (amount = money) | "throw" (info.world)
 function FarmService.Event(player, kind, amount, info)
@@ -1546,13 +1480,18 @@ end
 -- Build the same physical stations in the shared Studio preview without
 -- starting weather, income, profile or remote-event loops.
 function FarmService.BuildPreview(baseBuilder)
-    assert(game:GetService("RunService"):IsStudio() and not game:GetService("RunService"):IsRunning(), "Edit-mode preview only")
-    for _, base in ipairs(baseBuilder.Bases) do
-        local prior = base.model:FindFirstChild("Farm")
-        if prior then prior:Destroy() end
-        buildBase(base)
-        task.wait()
-    end
+	assert(
+		game:GetService("RunService"):IsStudio() and not game:GetService("RunService"):IsRunning(),
+		"Edit-mode preview only"
+	)
+	for _, base in ipairs(baseBuilder.Bases) do
+		local prior = base.model:FindFirstChild("Farm")
+		if prior then
+			prior:Destroy()
+		end
+		buildBase(base)
+		task.wait()
+	end
 end
 
 function FarmService.Init(baseBuilder, h)

@@ -25,6 +25,8 @@ backplate, visible text or caption strip. Desktop art is 56px and compact art is
 Settings from a separate 44px control. Focus uses a gold outline. Menu panels use carved oak edges, forged corners and parchment surfaces.
 Small utility symbols remain native geometry.
 
+Farming trade has two physical entrances beside the Great Hall: jade BUY for seeds and optional supplies, oxblood SELL for harvested crops. It adds no HUD icon. The seed menu shows owned quantities, explicit one/five purchases, growth time and the next locked crop. Advanced supplies sit behind one secondary action. Selling has a visible crop list and one total. Manual planting consumes prepaid stock; manual harvesting leaves the bed empty. Existing Harvest Spirit automation is retained.
+
 Expeditions use an expanded desktop map/scout composition. Eight native biome
 vignettes have distinct landmarks, terrain and marked routes. The active map
 marker follows authoritative timer progress through Departure, Exploration and

@@ -397,5 +397,6 @@ function Hub.Build(folder, textLabel)
 	garden()
 	require(script.Parent.SanctuaryDetails).Build(folder)
 	require(script.Parent.ForgeHall).Build(folder)
+	require(script.Parent.FarmMarket).Build(folder, require(RS.Shared.FarmMarketRules).Layout)
 end
 return Hub
