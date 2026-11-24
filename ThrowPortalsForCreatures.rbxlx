@@ -1,7 +1,7 @@
 <roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" version="4">
 <Item class="Workspace" referent="RBX2"><Properties><string name="Name">Workspace</string><bool name="StreamingEnabled">false</bool></Properties><Item class="Terrain" referent="RBX1"><Properties><string name="Name">Terrain</string><bool name="Decoration">false</bool></Properties></Item></Item>
 <Item class="Lighting" referent="RBX3"><Properties><string name="Name">Lighting</string><token name="Technology">4</token><token name="LightingStyle">0</token><bool name="PrioritizeLightingQuality">false</bool><bool name="GlobalShadows">true</bool></Properties></Item>
-<Item class="ReplicatedStorage" referent="RBX40"><Properties><string name="Name">ReplicatedStorage</string></Properties>
+<Item class="ReplicatedStorage" referent="RBX42"><Properties><string name="Name">ReplicatedStorage</string></Properties>
 <Item class="Folder" referent="RBX4"><Properties><string name="Name">Shared</string></Properties>
 <Item class="ModuleScript" referent="RBX5"><Properties><string name="Name">Config</string><ProtectedString name="Source"><![CDATA[-- Config: every tunable number in the game lives here.
 -- Location: ReplicatedStorage > Shared > Config (ModuleScript)
@@ -2698,6 +2698,7 @@ return Policy
 -- anything extra. Purely presentational: payouts stay in ExpeditionPlanner/ExpeditionService.
 local Config = require(script.Parent.Config)
 local Creatures = require(script.Parent.CreatureData)
+local PetCombat = require(script.Parent.PetCombat)
 local Battle = {}
 
 -- Route through the biome vignette (x, z), shared with ExpeditionScene and the mini-map.
@@ -2808,17 +2809,27 @@ function Battle.Plan(active)
 		return lo + (hi - lo) * rand()
 	end
 
-	-- A stronger pet (rarity, home biome) wins in fewer hits; a weak pet in a late biome has to retreat.
-	local power = 1 + 0.4 * (order - 1) + ((def and def.world == world) and 0.4 or 0)
-	local ratio = math.clamp(power / (0.7 + 0.3 * tier), 0.5, 3.5)
+	-- The pet fights with its real stats (PetCombat: rarity, variant, feeding, Power, sword, armour),
+	-- snapshotted when it departed. Biome monsters have their own strength that grows each world,
+	-- bounded relative to the pet so a weak pet still has a (hard) fight and a strong one crushes it.
+	local hp0, atk0 = tonumber(active.hp), tonumber(active.atk)
+	if not (hp0 and atk0 and hp0 > 0 and atk0 > 0) then
+		hp0, atk0 = PetCombat.Stats({ c = active.creature, s = active.s, v = active.v, wp = active.wp, ar = active.ar })
+	end
+	local home = def and def.world == world
 	local pet = {
 		name = def and def.name or "Your pet",
-		maxHp = 100,
-		hp = 100,
-		atk = 10 + 9 * ratio,
+		maxHp = math.max(1, math.floor(hp0)),
+		hp = math.max(1, math.floor(hp0)),
+		atk = math.max(1, atk0 * (home and 1.2 or 1)),
 		crit = math.min(0.4, 0.12 + 0.03 * order),
 		dodge = math.min(0.35, 0.08 + 0.025 * order),
 	}
+	local wb = 2.1 ^ (tier - 1)
+	local minionHp, minionAtk = 50 * wb, 7 * wb
+	local function bound(v, lo, hi)
+		return math.max(1, math.floor(math.clamp(v, lo, math.max(lo, hi))))
+	end
 
 	local count = 4 + math.min(2, math.floor((tier - 1) / 3))
 	local encounters = {}
@@ -2827,16 +2838,17 @@ function Battle.Plan(active)
 		if i > 1 and rand() < 0.45 then
 			pick = theme.minions[math.floor(rand() * #theme.minions) + 1]
 		end
-		local hp = math.floor(38 + 6 * i + roll(0, 10))
 		table.insert(encounters, {
 			name = pick[1], kind = pick[2], boss = false,
 			p = 0.1 + 0.72 * (i - 0.5) / count + roll(-0.015, 0.015),
-			maxHp = hp, atk = math.min(24, (7 + i) / ratio),
+			maxHp = bound(minionHp * (0.85 + 0.06 * i + roll(0, 0.1)), pet.atk * 2, pet.atk * 9),
+			atk = bound(minionAtk * (0.9 + 0.05 * i), pet.maxHp * 0.06, pet.maxHp * 0.34),
 		})
 	end
 	table.insert(encounters, {
 		name = theme.boss[1], kind = theme.boss[2], boss = true, p = 0.9,
-		maxHp = math.floor(110 + 8 * tier), atk = math.min(26, 12 / ratio),
+		maxHp = bound(minionHp * 4.5, pet.atk * 6, pet.atk * 16),
+		atk = bound(minionAtk * 1.8, pet.maxHp * 0.1, pet.maxHp * 0.45),
 	})
 
 	-- Simulate every fight as a list of beats.
@@ -4017,7 +4029,353 @@ end
 
 return Odds
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX21"><Properties><string name="Name">PetMeshManifest</string><ProtectedString name="Source"><![CDATA[-- PetMeshManifest: AI-generated, textured meshes (Roblox Studio mesh generation) for species that
+<Item class="ModuleScript" referent="RBX21"><Properties><string name="Name">PetCombat</string><ProtectedString name="Source"><![CDATA[-- PetCombat: every pet's battle stats, its Power upgrades and the armory (swords + armour).
+-- Location: ReplicatedStorage > Shared > PetCombat (ModuleScript). Shared so the server (costs,
+-- validation, expedition snapshots) and the client (menus, HP bars, battle scene) always agree.
+--
+-- Health and attack start from rarity (Common is the weakest, Divine the strongest), then grow with
+-- the pet's size/material variant, its feeding level, its Power upgrades and the gear it wears.
+-- Saved per pet on the creature entry: pw = Power level, wp = weapon id, ar = armour id.
+local Config = require(script.Parent.Config)
+local CreatureData = require(script.Parent.CreatureData)
+local Variants = require(script.Parent.Variants)
+
+local C = {}
+local RGB = Color3.fromRGB
+
+C.MaxPower = 30
+C.PowerStep = 0.15 -- +15% health and attack per Power level
+C.FeedStep = 0.04 -- +4% per feeding level above 1
+
+C.Weapons = {
+	{ id = "Wood", name = "Wooden Sword", mult = 1.3, cost = 400, color = RGB(176, 124, 72), trim = RGB(110, 76, 44), glow = false },
+	{ id = "Iron", name = "Iron Sword", mult = 1.7, cost = 6000, color = RGB(196, 202, 212), trim = RGB(92, 70, 52), glow = false },
+	{ id = "Gold", name = "Golden Sword", mult = 2.2, cost = 90000, color = RGB(244, 198, 72), trim = RGB(150, 40, 40), glow = false },
+	{ id = "Crystal", name = "Crystal Sword", mult = 2.9, cost = 1200000, color = RGB(130, 225, 255), trim = RGB(190, 150, 255), glow = true },
+	{ id = "Void", name = "Void Blade", mult = 3.8, cost = 18000000, color = RGB(160, 80, 240), trim = RGB(30, 12, 50), glow = true },
+	{ id = "Celestial", name = "Celestial Blade", mult = 5.0, cost = 300000000, color = RGB(255, 244, 190), trim = RGB(240, 196, 70), glow = true },
+}
+C.Armors = {
+	{ id = "Leather", name = "Leather Armour", mult = 1.3, cost = 300, color = RGB(140, 96, 58), trim = RGB(96, 64, 38), glow = false },
+	{ id = "Iron", name = "Iron Armour", mult = 1.7, cost = 5000, color = RGB(176, 184, 196), trim = RGB(110, 116, 128), glow = false },
+	{ id = "Gold", name = "Golden Armour", mult = 2.2, cost = 75000, color = RGB(240, 194, 70), trim = RGB(200, 60, 50), glow = false },
+	{ id = "Crystal", name = "Crystal Armour", mult = 2.9, cost = 1000000, color = RGB(140, 215, 255), trim = RGB(200, 160, 255), glow = true },
+	{ id = "Void", name = "Void Armour", mult = 3.8, cost = 15000000, color = RGB(80, 40, 130), trim = RGB(190, 110, 255), glow = true },
+	{ id = "Celestial", name = "Celestial Armour", mult = 5.0, cost = 250000000, color = RGB(255, 246, 214), trim = RGB(240, 196, 70), glow = true },
+}
+
+local function index(list)
+	local byId = {}
+	for i, g in ipairs(list) do
+		g.tier = i
+		byId[g.id] = g
+	end
+	return byId
+end
+C.WeaponById = index(C.Weapons)
+C.ArmorById = index(C.Armors)
+
+function C.Catalog(kind)
+	if kind == "weapon" then return C.Weapons, C.WeaponById end
+	if kind == "armor" then return C.Armors, C.ArmorById end
+	return nil, nil
+end
+
+local function order(pet)
+	local def = pet and CreatureData.ById[pet.c]
+	local r = def and Config.Rarities[def.rarity]
+	return r and r.order or 1
+end
+C.Order = order
+
+-- base health / attack for a rarity tier: Common 80 / 10 ... Divine about 3300 / 410
+function C.Base(tier)
+	local k = 1.7 ^ (math.clamp(tier or 1, 1, 8) - 1)
+	return math.floor(80 * k), math.floor(10 * k)
+end
+
+function C.Weapon(pet)
+	return pet and C.WeaponById[pet.wp]
+end
+function C.Armor(pet)
+	return pet and C.ArmorById[pet.ar]
+end
+
+-- full stats for a saved creature entry { c, s, v, l, pw, wp, ar }
+function C.Stats(pet)
+	local hp, atk = C.Base(order(pet))
+	local ok, vm = pcall(Variants.Mult, pet.s, pet.v)
+	local variant = math.sqrt(ok and type(vm) == "number" and vm > 0 and vm or 1)
+	local feed = 1 + C.FeedStep * (math.clamp(tonumber(pet.l) or 1, 1, 100) - 1)
+	local power = 1 + C.PowerStep * math.clamp(tonumber(pet.pw) or 0, 0, C.MaxPower)
+	local w, a = C.Weapon(pet), C.Armor(pet)
+	return math.floor(hp * variant * feed * power * (a and a.mult or 1)),
+		math.floor(atk * variant * feed * power * (w and w.mult or 1))
+end
+
+-- one number to compare pets
+function C.Rating(hp, atk)
+	return math.floor(math.sqrt(math.max(hp, 0) * math.max(atk, 0)) + 0.5)
+end
+
+function C.PowerCost(pet)
+	local pw = math.clamp(tonumber(pet and pet.pw) or 0, 0, C.MaxPower)
+	return math.floor(250 * 1.5 ^ pw * (1 + 0.6 * (order(pet) - 1)))
+end
+
+-- the next piece the pet can buy in this slot, or nil at the top tier
+function C.NextGear(kind, pet)
+	local list, byId = C.Catalog(kind)
+	if not list then return nil end
+	local cur = byId[kind == "weapon" and pet.wp or pet.ar]
+	return list[(cur and cur.tier or 0) + 1]
+end
+
+-- compact gear/stat summary replicated for pets in the world: "wp|ar|hp|atk"
+function C.Encode(pet)
+	local hp, atk = C.Stats(pet)
+	return (pet.wp or "") .. "|" .. (pet.ar or "") .. "|" .. hp .. "|" .. atk
+end
+function C.Decode(s)
+	if type(s) ~= "string" then return nil end
+	local wp, ar, hp, atk = string.match(s, "^(%a*)|(%a*)|(%d+)|(%d+)$")
+	if not hp then return nil end
+	return { wp = wp ~= "" and wp or nil, ar = ar ~= "" and ar or nil, hp = tonumber(hp), atk = tonumber(atk) }
+end
+
+return C
+]]></ProtectedString></Properties></Item>
+<Item class="ModuleScript" referent="RBX22"><Properties><string name="Name">PetGear</string><ProtectedString name="Source"><![CDATA[-- PetGear: puts a pet's sword and armour on its model, and draws its health bar.
+-- Location: ReplicatedStorage > Shared > PetGear (ModuleScript). Pure presentation, used by the
+-- renderer (followers, garden pets, menu previews) and the battle scene. Gear pieces are attached
+-- like the builder's own parts (Weld + rig.all entry + SpecialMesh), so they move, animate and
+-- scale with the pet, and UIKit.bakeWelds places them correctly in ViewportFrames.
+local PetCombat = require(script.Parent.PetCombat)
+
+local Gear = {}
+local V, CF, ANG = Vector3.new, CFrame.new, CFrame.Angles
+
+local function piece(rig, parent, name, size, color, c0, meshType, glow)
+	local p = Instance.new("Part")
+	p.Name = name
+	p.Size = size
+	p.Color = color
+	p.Material = glow and Enum.Material.Neon or Enum.Material.SmoothPlastic
+	p.CanCollide, p.CanQuery, p.CanTouch, p.Massless, p.Anchored = false, false, false, true, false
+	p.CastShadow = false
+	p.TopSurface, p.BottomSurface = Enum.SurfaceType.Smooth, Enum.SurfaceType.Smooth
+	local m = Instance.new("SpecialMesh")
+	m.MeshType = meshType or Enum.MeshType.Brick
+	m.Parent = p
+	p:SetAttribute("PetGear", true)
+	p.Parent = rig.model
+	local w = Instance.new("Weld")
+	w.Part0, w.Part1, w.C0, w.C1 = parent, p, c0, CFrame.identity
+	w.Parent = p
+	table.insert(rig.all, { w = w, c0 = c0, c1 = w.C1, mesh = m, part = p })
+	return p
+end
+
+-- visible extent of a rig part (sphere-mesh pieces use part.Size; FileMeshes report their scale)
+local function extent(part)
+	local m = part:FindFirstChildOfClass("SpecialMesh")
+	if m and m.MeshType == Enum.MeshType.FileMesh then
+		return part.Size
+	end
+	return part.Size * (m and m.Scale or Vector3.one)
+end
+
+-- Solve every rig part's pose relative to the root (like UIKit.bakeWelds), without moving anything.
+local function solve(rig)
+	local cfs = { [rig.root] = CFrame.identity }
+	local progress = true
+	while progress do
+		progress = false
+		for _, e in ipairs(rig.all) do
+			local w = e.w
+			if w and w.Part0 and w.Part1 and cfs[w.Part0] and not cfs[w.Part1] then
+				cfs[w.Part1] = cfs[w.Part0] * w.C0 * w.C1:Inverse()
+				progress = true
+			end
+		end
+	end
+	return cfs
+end
+
+-- Bounding box (in `anchor`'s frame) of the visible parts clustered around it: the torso blocks
+-- around the body core, or the head blocks around the head. Limbs, wings and tails far from the
+-- core are left out so armour hugs the creature's real silhouette.
+local function cluster(rig, cfs, anchor, reach, avoid)
+	local base = cfs[anchor]
+	if not base then return nil end
+	local inv = base:Inverse()
+	local lo, hi = V(math.huge, math.huge, math.huge), V(-math.huge, -math.huge, -math.huge)
+	local found = false
+	for part, cf in pairs(cfs) do
+		if part ~= rig.root and part.Transparency < 0.5 and not part:GetAttribute("PetGear") then
+			local rel = inv * cf
+			local p = rel.Position
+			local skip = math.abs(p.X) > reach.X or math.abs(p.Z) > reach.Z or p.Y < -reach.Y or p.Y > reach.Y
+			if not skip and avoid then
+				local q = (inv * avoid.cf).Position
+				skip = (p - q).Magnitude < avoid.r
+			end
+			if not skip then
+				local half = extent(part) / 2
+				-- conservative AABB of the rotated part
+				local r = rel.Rotation
+				local hx = math.abs(r.RightVector.X) * half.X + math.abs(r.UpVector.X) * half.Y + math.abs(r.LookVector.X) * half.Z
+				local hy = math.abs(r.RightVector.Y) * half.X + math.abs(r.UpVector.Y) * half.Y + math.abs(r.LookVector.Y) * half.Z
+				local hz = math.abs(r.RightVector.Z) * half.X + math.abs(r.UpVector.Z) * half.Y + math.abs(r.LookVector.Z) * half.Z
+				lo = V(math.min(lo.X, p.X - hx), math.min(lo.Y, p.Y - hy), math.min(lo.Z, p.Z - hz))
+				hi = V(math.max(hi.X, p.X + hx), math.max(hi.Y, p.Y + hy), math.max(hi.Z, p.Z + hz))
+				found = true
+			end
+		end
+	end
+	if not found then return nil end
+	return lo, hi
+end
+
+function Gear.Clear(model)
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("BasePart") and d:GetAttribute("PetGear") then
+			d:Destroy()
+		end
+	end
+end
+
+-- gear = { wp = "Iron", ar = "Gold" } (a saved creature entry works as is)
+function Gear.Apply(model, rig, gear)
+	if not (model and rig and rig.body and gear) then return end
+	local sword = PetCombat.WeaponById[gear.wp]
+	local armour = PetCombat.ArmorById[gear.ar]
+	if not sword and not armour then return end
+	local body = rig.body
+	local b = extent(body)
+	local cfs = solve(rig)
+	local head = rig.head ~= body and rig.head or nil
+	local headAvoid = head and cfs[head] and { cf = cfs[head], r = math.max(extent(head).X, extent(head).Y) * 0.55 } or nil
+	-- torso silhouette around the body core (falls back to the core block itself)
+	local lo, hi = cluster(rig, cfs, body, b * 0.5 + V(0.05, 0.05, 0.05), headAvoid)
+	lo = lo or -b / 2
+	hi = hi or b / 2
+	local size = hi - lo
+	local mid = (lo + hi) / 2
+	local s = math.clamp(math.max(size.X, size.Y, size.Z), 0.6, 8)
+	if armour then
+		local tier = armour.tier
+		local t = math.max(0.12, s * 0.06)
+		-- saddle-style breastplate over the back, trim band, side plates hanging down the flanks
+		piece(rig, body, "ArmourBack", V(size.X * 0.9, t, size.Z * 0.62), armour.color, CF(mid.X, hi.Y + t * 0.3, mid.Z), nil, false)
+		piece(rig, body, "ArmourTrim", V(size.X * 0.94, t * 0.6, size.Z * 0.12), armour.trim, CF(mid.X, hi.Y + t * 0.45, mid.Z - size.Z * 0.31), nil, armour.glow)
+		for _, sx in { -1, 1 } do
+			local x = sx > 0 and hi.X or lo.X
+			piece(rig, body, "ArmourSide", V(t, size.Y * 0.5, size.Z * 0.56), armour.color, CF(x + sx * t * 0.3, mid.Y + size.Y * 0.15, mid.Z), nil, false)
+			piece(rig, body, "ArmourSideTrim", V(t * 1.05, t * 0.6, size.Z * 0.58), armour.trim, CF(x + sx * t * 0.35, mid.Y - size.Y * 0.1, mid.Z), nil, armour.glow)
+			if tier >= 3 then
+				piece(rig, body, "ArmourStud", V(t * 1.6, t * 1.6, t * 1.6), armour.trim, CF(x + sx * t * 0.6, mid.Y + size.Y * 0.2, mid.Z), Enum.MeshType.Sphere, armour.glow)
+			end
+		end
+		if head and cfs[head] then
+			local h = extent(head)
+			local hlo, hhi = cluster(rig, cfs, head, V(h.X * 0.6, h.Y * 0.45, h.Z * 0.6), nil) -- ears/horns sit above and stay out
+			hlo, hhi = hlo or -h / 2, hhi or h / 2
+			local hs, hm = hhi - hlo, (hlo + hhi) / 2
+			local ht = math.max(0.1, math.max(hs.X, hs.Z) * 0.12)
+			piece(rig, head, "Helmet", V(hs.X * 0.82, ht, hs.Z * 0.82), armour.color, CF(hm.X, hhi.Y + ht * 0.3, hm.Z), nil, false)
+			piece(rig, head, "HelmetBand", V(hs.X * 0.86, ht * 0.55, hs.Z * 0.86), armour.trim, CF(hm.X, hhi.Y - ht * 0.2, hm.Z), nil, armour.glow)
+			if tier >= 4 then
+				piece(rig, head, "HelmetCrest", V(ht * 0.8, hs.Y * 0.35, hs.Z * 0.55), armour.trim, CF(hm.X, hhi.Y + hs.Y * 0.18, hm.Z), nil, armour.glow)
+			end
+		end
+	end
+	if sword then
+		-- carried on the right side, blade raised and angled forward
+		local len = math.clamp(s * 0.85, 0.8, 7)
+		s = math.clamp(s * 0.8, 0.6, 7)
+		local hilt = CF(hi.X + s * 0.08, mid.Y, mid.Z - size.Z * 0.15) * ANG(-0.55, 0, -0.18)
+		piece(rig, body, "SwordGrip", V(s * 0.09, s * 0.26, s * 0.09), sword.trim, hilt, Enum.MeshType.Cylinder, false)
+		piece(rig, body, "SwordGuard", V(s * 0.34, s * 0.07, s * 0.11), sword.trim, hilt * CF(0, s * 0.15, 0), nil, sword.glow)
+		piece(rig, body, "SwordBlade", V(s * 0.13, len, s * 0.04), sword.color, hilt * CF(0, s * 0.18 + len / 2, 0), nil, sword.glow)
+		piece(rig, body, "SwordTip", V(s * 0.04, s * 0.13, s * 0.13), sword.color, hilt * CF(0, s * 0.18 + len + s * 0.05, 0) * ANG(0, math.pi / 2, 0), Enum.MeshType.Wedge, sword.glow)
+	end
+end
+
+-- compact health bar + attack for a pet in the world (BillboardGui above the model)
+function Gear.HealthBar(adornee, offsetY, hp, maxHp, atk)
+	local bb = Instance.new("BillboardGui")
+	bb.Name = "PetHealth"
+	bb.Size = UDim2.fromOffset(92, 22)
+	bb.StudsOffsetWorldSpace = Vector3.new(0, offsetY, 0)
+	bb.MaxDistance = 60
+	bb.LightInfluence = 0
+	bb.AlwaysOnTop = false
+	bb.ResetOnSpawn = false
+	local back = Instance.new("Frame")
+	back.Name = "Back"
+	back.AnchorPoint = Vector2.new(0.5, 0)
+	back.Position = UDim2.new(0.5, 0, 0, 0)
+	back.Size = UDim2.new(1, 0, 0, 9)
+	back.BackgroundColor3 = Color3.fromRGB(30, 26, 36)
+	back.BorderSizePixel = 0
+	back.Parent = bb
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(1, 0)
+	corner.Parent = back
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = Color3.fromRGB(14, 10, 20)
+	stroke.Thickness = 1.2
+	stroke.Parent = back
+	local fill = Instance.new("Frame")
+	fill.Name = "Fill"
+	fill.BackgroundColor3 = Color3.fromRGB(96, 214, 110)
+	fill.BorderSizePixel = 0
+	fill.Size = UDim2.fromScale(1, 1)
+	fill.Parent = back
+	corner:Clone().Parent = fill
+	local text = Instance.new("TextLabel")
+	text.Name = "Stats"
+	text.BackgroundTransparency = 1
+	text.Position = UDim2.fromOffset(0, 9)
+	text.Size = UDim2.new(1, 0, 0, 13)
+	text.Font = Enum.Font.GothamBold
+	text.TextSize = 11
+	text.TextColor3 = Color3.new(1, 1, 1)
+	text.TextStrokeTransparency = 0.35
+	text.Parent = bb
+	bb.Parent = adornee
+	Gear.SetHealth(bb, hp, maxHp, atk)
+	return bb
+end
+
+function Gear.SetHealth(bb, hp, maxHp, atk)
+	if not bb then return end
+	local back = bb:FindFirstChild("Back")
+	local fill = back and back:FindFirstChild("Fill")
+	local frac = (maxHp and maxHp > 0) and math.clamp((hp or maxHp) / maxHp, 0, 1) or 1
+	if fill then
+		fill.Size = UDim2.fromScale(frac, 1)
+		fill.BackgroundColor3 = frac > 0.5 and Color3.fromRGB(96, 214, 110)
+			or (frac > 0.25 and Color3.fromRGB(240, 196, 70) or Color3.fromRGB(235, 80, 70))
+	end
+	local text = bb:FindFirstChild("Stats")
+	if text then
+		text.Text = string.format("HP %s   ATK %s", Gear.Short(hp or maxHp or 0), Gear.Short(atk or 0))
+	end
+end
+
+function Gear.Short(n)
+	n = math.floor(tonumber(n) or 0)
+	if n >= 1e9 then return string.format("%.1fB", n / 1e9) end
+	if n >= 1e6 then return string.format("%.1fM", n / 1e6) end
+	if n >= 1e4 then return string.format("%.1fK", n / 1e3) end
+	return tostring(n)
+end
+
+return Gear
+]]></ProtectedString></Properties></Item>
+<Item class="ModuleScript" referent="RBX23"><Properties><string name="Name">PetMeshManifest</string><ProtectedString name="Source"><![CDATA[-- PetMeshManifest: AI-generated, textured meshes (Roblox Studio mesh generation) for species that
 -- have been upgraded to sculpted meshes. Each part is a separate MeshPart so the rig can still animate
 -- head / ears / legs / tail / wings. Positions are relative to the model's ground-centre, facing -Z,
 -- at their generated size (studs). Species NOT listed here use the procedural builder (fallback).
@@ -4172,7 +4530,7 @@ return {
 	} },
 }
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX22"><Properties><string name="Name">PortalBuilder</string><ProtectedString name="Source"><![CDATA[-- PortalBuilder: builds the throwable portal orb and the opened portal gate.
+<Item class="ModuleScript" referent="RBX24"><Properties><string name="Name">PortalBuilder</string><ProtectedString name="Source"><![CDATA[-- PortalBuilder: builds the throwable portal orb and the opened portal gate.
 -- Location: ReplicatedStorage > Shared > PortalBuilder (ModuleScript)
 
 local Config = require(script.Parent.Config)
@@ -4233,7 +4591,7 @@ end
 
 return require(script.Parent.PortalDesign)(PortalBuilder, Config)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX23"><Properties><string name="Name">PortalDesign</string><ProtectedString name="Source"><![CDATA[-- Architectural portals and faceted throw orbs. No uploaded meshes or textures required.
+<Item class="ModuleScript" referent="RBX25"><Properties><string name="Name">PortalDesign</string><ProtectedString name="Source"><![CDATA[-- Architectural portals and faceted throw orbs. No uploaded meshes or textures required.
 -- API refs deliberately match ThrowController/UIKit. Structural frames do not spin.
 local V, CF, A = Vector3.new, CFrame.new, CFrame.Angles
 local PI, M = math.pi, Enum.Material
@@ -4754,7 +5112,7 @@ return function(API, Config)
 	return API
 end
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX24"><Properties><string name="Name">PresentationTimeline</string><ProtectedString name="Source"><![CDATA[-- PresentationTimeline: the ONE table of reveal / capture / card timings used by every client
+<Item class="ModuleScript" referent="RBX26"><Properties><string name="Name">PresentationTimeline</string><ProtectedString name="Source"><![CDATA[-- PresentationTimeline: the ONE table of reveal / capture / card timings used by every client
 -- module (CreatureRenderer, ThrowController, ClientMain). Presentation only: the server still owns
 -- the authoritative catch deadline (Config.CatchDelay, unchanged) and never waits for clients.
 -- Location: ReplicatedStorage > Shared > PresentationTimeline (ModuleScript)
@@ -4834,7 +5192,7 @@ end
 
 return T
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX25"><Properties><string name="Name">SanctuaryLook</string><ProtectedString name="Source"><![CDATA[-- One art-direction source for Studio, every biome and farm weather.
+<Item class="ModuleScript" referent="RBX27"><Properties><string name="Name">SanctuaryLook</string><ProtectedString name="Source"><![CDATA[-- One art-direction source for Studio, every biome and farm weather.
 local Config = require(script.Parent.Config)
 local C = Color3.fromRGB
 local Look = {
@@ -4991,7 +5349,7 @@ function Look.Apply(lighting)
 end
 return Look
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX26"><Properties><string name="Name">SpeciesAnatomy</string><ProtectedString name="Source"><![CDATA[-- SpeciesAnatomy: species-specific anatomy for every creature + extra body plans.
+<Item class="ModuleScript" referent="RBX28"><Properties><string name="Name">SpeciesAnatomy</string><ProtectedString name="Source"><![CDATA[-- SpeciesAnatomy: species-specific anatomy for every creature + extra body plans.
 -- Location: ReplicatedStorage > Shared > SpeciesAnatomy (ModuleScript)
 --
 -- Each builder is called as A[key](H, rig, vd, s, prof) AFTER the generic body plan, face,
@@ -6059,7 +6417,7 @@ end
 
 return A
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX27"><Properties><string name="Name">SpeciesModels</string><ProtectedString name="Source"><![CDATA[-- SpeciesModels: hand-authored, reference-faithful creature models (highest priority path).
+<Item class="ModuleScript" referent="RBX29"><Properties><string name="Name">SpeciesModels</string><ProtectedString name="Source"><![CDATA[-- SpeciesModels: hand-authored, reference-faithful creature models (highest priority path).
 -- Location: ReplicatedStorage > Shared > SpeciesModels (ModuleScript)
 --
 -- Each entry is model(H, rig, vd, s) and must fill the standard rig channels used by
@@ -6231,7 +6589,7 @@ end
 
 return M
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX28"><Properties><string name="Name">SpeciesModelsCandy</string><ProtectedString name="Source"><![CDATA[-- SpeciesModelsCandy: hand-authored, reference-faithful models for the Candy world
+<Item class="ModuleScript" referent="RBX30"><Properties><string name="Name">SpeciesModelsCandy</string><ProtectedString name="Source"><![CDATA[-- SpeciesModelsCandy: hand-authored, reference-faithful models for the Candy world
 -- (Gumdrop, Cocoa Cub, Lollipup, Marshmallow Ghost, Sugarcorn, Cotton Candy Kirin, Candy Queen Bee,
 -- Chocolate Colossus).
 -- Location: ReplicatedStorage > Shared > SpeciesModelsCandy (ModuleScript), merged into SpeciesModels.
@@ -6675,7 +7033,7 @@ end
 
 return M
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX29"><Properties><string name="Name">SpeciesModelsCrystal</string><ProtectedString name="Source"><![CDATA[-- SpeciesModelsCrystal: hand-authored, reference-faithful models for the Crystal world
+<Item class="ModuleScript" referent="RBX31"><Properties><string name="Name">SpeciesModelsCrystal</string><ProtectedString name="Source"><![CDATA[-- SpeciesModelsCrystal: hand-authored, reference-faithful models for the Crystal world
 -- (Gemmy, Quartz Beetle, Glimmer Bat, Amethyst Eel). Prism Lion lives in SpeciesModels.
 -- Location: ReplicatedStorage > Shared > SpeciesModelsCrystal (ModuleScript), merged into SpeciesModels.
 
@@ -6863,7 +7221,7 @@ end
 
 return M
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX30"><Properties><string name="Name">SpeciesModelsDivine</string><ProtectedString name="Source"><![CDATA[-- SpeciesModelsDivine: hand-authored, reference-faithful models for the Divine portal creatures
+<Item class="ModuleScript" referent="RBX32"><Properties><string name="Name">SpeciesModelsDivine</string><ProtectedString name="Source"><![CDATA[-- SpeciesModelsDivine: hand-authored, reference-faithful models for the Divine portal creatures
 -- (Solaris, Aetherion, Eternity Owl, Genesis, Infinity Fox).
 -- Location: ReplicatedStorage > Shared > SpeciesModelsDivine (ModuleScript), merged into SpeciesModels.
 
@@ -7232,7 +7590,7 @@ end
 
 return M
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX31"><Properties><string name="Name">SpeciesModelsForest</string><ProtectedString name="Source"><![CDATA[-- SpeciesModelsForest: hand-authored, reference-faithful models for the Green Forest world
+<Item class="ModuleScript" referent="RBX33"><Properties><string name="Name">SpeciesModelsForest</string><ProtectedString name="Source"><![CDATA[-- SpeciesModelsForest: hand-authored, reference-faithful models for the Green Forest world
 -- (Mossbun, Acornip, Petalfly, Thornhog, Elderstag Sprite, Oak Titan, Bloomwyrm, Sylph Queen).
 -- Location: ReplicatedStorage > Shared > SpeciesModelsForest (ModuleScript), merged into SpeciesModels.
 
@@ -7730,7 +8088,7 @@ end
 
 return M
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX32"><Properties><string name="Name">SpeciesModelsFrozen</string><ProtectedString name="Source"><![CDATA[-- SpeciesModelsFrozen: hand-authored, reference-faithful models for the Frozen world
+<Item class="ModuleScript" referent="RBX34"><Properties><string name="Name">SpeciesModelsFrozen</string><ProtectedString name="Source"><![CDATA[-- SpeciesModelsFrozen: hand-authored, reference-faithful models for the Frozen world
 -- (Frostpaw, Snowpuff, Icicle Owl, Glacier Yeti, Aurora Fox, Blizzard Bear, Crystalwing Dragon).
 -- Location: ReplicatedStorage > Shared > SpeciesModelsFrozen (ModuleScript), merged into SpeciesModels.
 
@@ -8115,7 +8473,7 @@ end
 
 return M
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX33"><Properties><string name="Name">SpeciesModelsHeaven</string><ProtectedString name="Source"><![CDATA[-- SpeciesModelsHeaven: hand-authored, reference-faithful models for the Heaven world
+<Item class="ModuleScript" referent="RBX35"><Properties><string name="Name">SpeciesModelsHeaven</string><ProtectedString name="Source"><![CDATA[-- SpeciesModelsHeaven: hand-authored, reference-faithful models for the Heaven world
 -- (Cloud Lamb, Halo Chick, Seraphling, Golden Griffin, Celestial Pegasus, Seraph Lion, Archangel Drake,
 -- Throne Guardian).
 -- Location: ReplicatedStorage > Shared > SpeciesModelsHeaven (ModuleScript), merged into SpeciesModels.
@@ -8587,7 +8945,7 @@ end
 
 return M
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX34"><Properties><string name="Name">SpeciesModelsSecret</string><ProtectedString name="Source"><![CDATA[-- SpeciesModelsSecret: hand-authored, reference-faithful models for the Secret portal creatures
+<Item class="ModuleScript" referent="RBX36"><Properties><string name="Name">SpeciesModelsSecret</string><ProtectedString name="Source"><![CDATA[-- SpeciesModelsSecret: hand-authored, reference-faithful models for the Secret portal creatures
 -- (Glitchling, Void Emperor, Error Cat, Null Bunny, The Watcher).
 -- Location: ReplicatedStorage > Shared > SpeciesModelsSecret (ModuleScript), merged into SpeciesModels.
 
@@ -8867,7 +9225,7 @@ end
 
 return M
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX35"><Properties><string name="Name">SpeciesModelsShadow</string><ProtectedString name="Source"><![CDATA[-- SpeciesModelsShadow: hand-authored, reference-faithful models for the Shadow world
+<Item class="ModuleScript" referent="RBX37"><Properties><string name="Name">SpeciesModelsShadow</string><ProtectedString name="Source"><![CDATA[-- SpeciesModelsShadow: hand-authored, reference-faithful models for the Shadow world
 -- (Gloomling, Shade Cat, Night Moth, Void Wisp, Umbra Wolf, Wraith Lord, Nightmare Wyvern).
 -- Location: ReplicatedStorage > Shared > SpeciesModelsShadow (ModuleScript), merged into SpeciesModels.
 
@@ -9240,7 +9598,7 @@ end
 
 return M
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX36"><Properties><string name="Name">SpeciesModelsSpace</string><ProtectedString name="Source"><![CDATA[-- SpeciesModelsSpace: hand-authored, reference-faithful models for the Space world
+<Item class="ModuleScript" referent="RBX38"><Properties><string name="Name">SpeciesModelsSpace</string><ProtectedString name="Source"><![CDATA[-- SpeciesModelsSpace: hand-authored, reference-faithful models for the Space world
 -- (Astro Blob, Moon Mouse, Comet Fish, Nebula Jelly, Star Whale, Nova Phoenix, Cosmic Dragon, Singularity Cat).
 -- Location: ReplicatedStorage > Shared > SpeciesModelsSpace (ModuleScript), merged into SpeciesModels.
 
@@ -9729,7 +10087,7 @@ end
 
 return M
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX37"><Properties><string name="Name">SpeciesModelsVolcano</string><ProtectedString name="Source"><![CDATA[-- SpeciesModelsVolcano: hand-authored, reference-faithful models for the Volcano world
+<Item class="ModuleScript" referent="RBX39"><Properties><string name="Name">SpeciesModelsVolcano</string><ProtectedString name="Source"><![CDATA[-- SpeciesModelsVolcano: hand-authored, reference-faithful models for the Volcano world
 -- (Emberpup, Magmite, Cinderchick, Obsidian Golem, Phoenix Lumen, Magma Kraken, Infernadrake, Solar Serpent).
 -- Location: ReplicatedStorage > Shared > SpeciesModelsVolcano (ModuleScript), merged into SpeciesModels.
 -- Built from the owner's character sheets (hero / front / side + idle, anticipate, power move, recover).
@@ -10218,7 +10576,7 @@ end
 
 return M
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX38"><Properties><string name="Name">SpeciesProfiles</string><ProtectedString name="Source"><![CDATA[-- SpeciesProfiles: per-species VISUAL + MOTION metadata for all 74 creatures.
+<Item class="ModuleScript" referent="RBX40"><Properties><string name="Name">SpeciesProfiles</string><ProtectedString name="Source"><![CDATA[-- SpeciesProfiles: per-species VISUAL + MOTION metadata for all 74 creatures.
 -- Location: ReplicatedStorage > Shared > SpeciesProfiles (ModuleScript)
 --
 -- Identity (id, name, rarity, world, palette, economy) stays in CreatureData and is never
@@ -10922,7 +11280,7 @@ end
 
 return Profiles
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX39"><Properties><string name="Name">Variants</string><ProtectedString name="Source"><![CDATA[-- Variants: pet SIZES (Big / Huge / Titan) and MATERIALS (Gold / Emerald / Ruby / Diamond).
+<Item class="ModuleScript" referent="RBX41"><Properties><string name="Name">Variants</string><ProtectedString name="Source"><![CDATA[-- Variants: pet SIZES (Big / Huge / Titan) and MATERIALS (Gold / Emerald / Ruby / Diamond).
 -- Rolled by the server on every catch, independently of the creature itself, and saved on the
 -- creature entry ({ u, c, s = size, v = material }). Both multiply the creature's income.
 -- Shared by server (rolls, income, selling) and client (looks, names).
@@ -11050,9 +11408,9 @@ return V
 ]]></ProtectedString></Properties></Item>
 </Item>
 </Item>
-<Item class="ServerScriptService" referent="RBX77"><Properties><string name="Name">ServerScriptService</string></Properties>
-<Item class="Folder" referent="RBX41"><Properties><string name="Name">Server</string></Properties>
-<Item class="ModuleScript" referent="RBX42"><Properties><string name="Name">BaseBuilder</string><ProtectedString name="Source"><![CDATA[-- BaseBuilder: builds eight Skyforge courtyards and owned decorations.
+<Item class="ServerScriptService" referent="RBX79"><Properties><string name="Name">ServerScriptService</string></Properties>
+<Item class="Folder" referent="RBX43"><Properties><string name="Name">Server</string></Properties>
+<Item class="ModuleScript" referent="RBX44"><Properties><string name="Name">BaseBuilder</string><ProtectedString name="Source"><![CDATA[-- BaseBuilder: builds eight Skyforge courtyards and owned decorations.
 -- Location: ServerScriptService > Server > BaseBuilder (ModuleScript)
 --
 -- Open timber lodge, portal shrine, floating relic pavilion and expedition map table.
@@ -11433,7 +11791,7 @@ end
 
 return BaseBuilder
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX43"><Properties><string name="Name">BiomeCandy</string><ProtectedString name="Source"><![CDATA[-- BiomeCandy: Candy World, Z [900, 1300). Reference: roblox pets/Maps/05_Candy_Biome_Final.png (1:1 inventory).
+<Item class="ModuleScript" referent="RBX45"><Properties><string name="Name">BiomeCandy</string><ProtectedString name="Source"><![CDATA[-- BiomeCandy: Candy World, Z [900, 1300). Reference: roblox pets/Maps/05_Candy_Biome_Final.png (1:1 inventory).
 -- Authored as seen in the reference (K.mirror = true: design -X = screen-left). ONE palace, no plots/hall/houses.
 --  LEFT : CaL1 faceted chocolate cliff with icing caps, three-step chocolate waterfall + gold-edged canal ·
 --         CaL2 chunky pink candy trees · CaL3 swirl lollipops on striped sticks · CaL4 pink crystals ·
@@ -11699,7 +12057,7 @@ end
 
 return B
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX44"><Properties><string name="Name">BiomeCrystal</string><ProtectedString name="Source"><![CDATA[-- BiomeCrystal: Crystal Caves, Z [600, 900). Reference: roblox pets/Maps/04_Crystal_Biome_Final.png (1:1 inventory).
+<Item class="ModuleScript" referent="RBX46"><Properties><string name="Name">BiomeCrystal</string><ProtectedString name="Source"><![CDATA[-- BiomeCrystal: Crystal Caves, Z [600, 900). Reference: roblox pets/Maps/04_Crystal_Biome_Final.png (1:1 inventory).
 -- Authored as seen in the reference (K.mirror = true: design -X = screen-left). NO creature landmark.
 --  LEFT : CL1 giant split geode (purple shell, pale-pink quartz rim, huge cyan + violet crystal fan, stepped
 --         ledges) · CL2 turquoise mineral pool with ledges · CL3 rune monolith (dark slab, gold trim, cyan
@@ -11930,7 +12288,7 @@ end
 
 return B
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX45"><Properties><string name="Name">BiomeForest</string><ProtectedString name="Source"><![CDATA[-- BiomeForest: Green Forest, Z [0, 150). Reference: roblox pets/Maps/01_Forest_Biome.png (built 1:1 from
+<Item class="ModuleScript" referent="RBX47"><Properties><string name="Name">BiomeForest</string><ProtectedString name="Source"><![CDATA[-- BiomeForest: Green Forest, Z [0, 150). Reference: roblox pets/Maps/01_Forest_Biome.png (built 1:1 from
 -- its element inventory). Authored as seen in the reference (K.mirror = true: design -X = screen-left).
 --  LEFT : L1 big curved-trunk tree (near) · L2 vine-covered ruin arch with carved leaf panels ·
 --         L3 turquoise pool + small fall behind the arch · L4 corner bed: lilies, spotted mushrooms, ferns,
@@ -12290,7 +12648,7 @@ end
 
 return B
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX46"><Properties><string name="Name">BiomeFrozen</string><ProtectedString name="Source"><![CDATA[-- BiomeFrozen: Frozen Kingdom, Z [350, 600). Reference: roblox pets/Maps/03_Frozen_Biome.png (1:1 inventory).
+<Item class="ModuleScript" referent="RBX48"><Properties><string name="Name">BiomeFrozen</string><ProtectedString name="Source"><![CDATA[-- BiomeFrozen: Frozen Kingdom, Z [350, 600). Reference: roblox pets/Maps/03_Frozen_Biome.png (1:1 inventory).
 -- Authored as seen in the reference (K.mirror = true: design -X = screen-left).
 --  LEFT : FL1 two natural ice-rock arches with snow drapes, icicles, glowing ice · FL2 ice cave with glowing
 --         crystals + snowman (goggles, scarf, satchel) + sled and lantern · FL3 small frozen fall + pond with
@@ -12578,7 +12936,7 @@ end
 
 return B
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX47"><Properties><string name="Name">BiomeHeaven</string><ProtectedString name="Source"><![CDATA[-- BiomeHeaven: Heaven World, Z [2400, 3200). Reference: roblox pets/Maps/08_Heaven_Biome.png (1:1 inventory).
+<Item class="ModuleScript" referent="RBX49"><Properties><string name="Name">BiomeHeaven</string><ProtectedString name="Source"><![CDATA[-- BiomeHeaven: Heaven World, Z [2400, 3200). Reference: roblox pets/Maps/08_Heaven_Biome.png (1:1 inventory).
 -- Authored as seen in the reference (K.mirror = true: design -X = screen-left).
 --  LEFT : HL1 winged angel statue (hooded robe, praying hands, feathered wings, golden halo ring + star, gold-banded
 --         plinth) · HL2 cascading blue waterfalls down grassy marble tiers · HL3 green bonsai trees · HL4 cypresses ·
@@ -12859,7 +13217,7 @@ end
 
 return B
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX48"><Properties><string name="Name">BiomeShadow</string><ProtectedString name="Source"><![CDATA[-- BiomeShadow: Shadow Dimension, Z [1800, 2400). Reference: roblox pets/Maps/07_Shadow_Biome.png (1:1 inventory).
+<Item class="ModuleScript" referent="RBX50"><Properties><string name="Name">BiomeShadow</string><ProtectedString name="Source"><![CDATA[-- BiomeShadow: Shadow Dimension, Z [1800, 2400). Reference: roblox pets/Maps/07_Shadow_Biome.png (1:1 inventory).
 -- Authored as seen in the reference (K.mirror = true: design -X = screen-left).
 --  LEFT : ShL1 decorative side chasm (teal glowing veins, mist) · ShL2 twisted bare trees · ShL3 crimson plants ·
 --         ShL4 broken double-arch ruin · ShL5 red banner posts, small shrines
@@ -13146,7 +13504,7 @@ end
 
 return B
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX49"><Properties><string name="Name">BiomeSpace</string><ProtectedString name="Source"><![CDATA[-- BiomeSpace: Space Galaxy, Z [1300, 1800). Reference: roblox pets/Maps/06_Space_Biome.png (1:1 inventory).
+<Item class="ModuleScript" referent="RBX51"><Properties><string name="Name">BiomeSpace</string><ProtectedString name="Source"><![CDATA[-- BiomeSpace: Space Galaxy, Z [1300, 1800). Reference: roblox pets/Maps/06_Space_Biome.png (1:1 inventory).
 -- Authored as seen in the reference (K.mirror = true: design -X = screen-left).
 --  LEFT : SL1 observatory (ribbed stone/brass dome with an open slot + brass telescope, drum with gold bands,
 --         columned portico with blue emblem banners, wide stairs, segmented brass orbital arc, golden beacon star
@@ -13383,7 +13741,7 @@ end
 
 return B
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX50"><Properties><string name="Name">BiomeVolcano</string><ProtectedString name="Source"><![CDATA[-- BiomeVolcano: Volcano World, Z [150, 350). Reference: roblox pets/Maps/02_Volcano_Biome.png (1:1 inventory).
+<Item class="ModuleScript" referent="RBX52"><Properties><string name="Name">BiomeVolcano</string><ProtectedString name="Source"><![CDATA[-- BiomeVolcano: Volcano World, Z [150, 350). Reference: roblox pets/Maps/02_Volcano_Biome.png (1:1 inventory).
 -- Authored as seen in the reference (K.mirror = true: design -X = screen-left).
 --  LEFT : VL1 giant jagged volcano (spiky peaks, crater, smoke plume, two winding lava rivers) ·
 --         VL2 cliff lavafall into a glowing pool · VL3 hexagonal basalt column clusters with molten seams ·
@@ -13660,7 +14018,7 @@ end
 
 return B
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX51"><Properties><string name="Name">CastleWalls</string><ProtectedString name="Source"><![CDATA[-- CastleWalls: the Portal Sanctuary becomes a fortified castle courtyard.
+<Item class="ModuleScript" referent="RBX53"><Properties><string name="Name">CastleWalls</string><ProtectedString name="Source"><![CDATA[-- CastleWalls: the Portal Sanctuary becomes a fortified castle courtyard.
 -- Location: ServerScriptService > Server > CastleWalls (ModuleScript)
 --
 -- Curtain walls with a battered base, string course, wall-walk and crenellated parapets run along both
@@ -13889,7 +14247,7 @@ end
 
 return W
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX52"><Properties><string name="Name">CinematicEnvironment</string><ProtectedString name="Source"><![CDATA[-- Authored focal details and world-anchored atmosphere. No gameplay geometry is moved.
+<Item class="ModuleScript" referent="RBX54"><Properties><string name="Name">CinematicEnvironment</string><ProtectedString name="Source"><![CDATA[-- Authored focal details and world-anchored atmosphere. No gameplay geometry is moved.
 local Collection = game:GetService("CollectionService")
 local Config = require(game.ReplicatedStorage.Shared.Config)
 local Lettering = require(script.Parent.HeraldicText)
@@ -14100,7 +14458,7 @@ function E.Apply()
 end
 return E
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX53"><Properties><string name="Name">DataService</string><ProtectedString name="Source"><![CDATA[-- DataService: DataStore saving with session locking, retries, autosave and BindToClose.
+<Item class="ModuleScript" referent="RBX55"><Properties><string name="Name">DataService</string><ProtectedString name="Source"><![CDATA[-- DataService: DataStore saving with session locking, retries, autosave and BindToClose.
 -- Location: ServerScriptService > Server > DataService (ModuleScript)
 
 local DataStoreService = game:GetService("DataStoreService")
@@ -14291,13 +14649,14 @@ end)
 
 return DataService
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX54"><Properties><string name="Name">ExpeditionService</string><ProtectedString name="Source"><![CDATA[-- One saved expedition per player. Dispatch/claim never yield: identity, time,
+<Item class="ModuleScript" referent="RBX56"><Properties><string name="Name">ExpeditionService</string><ProtectedString name="Source"><![CDATA[-- One saved expedition per player. Dispatch/claim never yield: identity, time,
 -- ownership and rewards are resolved on the server and a claim consumes its ID.
 local RS = game:GetService("ReplicatedStorage")
 local Http = game:GetService("HttpService")
 local Rules = require(RS.Shared.ExpeditionConfig)
 local Creatures = require(RS.Shared.CreatureData)
 local Planner = require(RS.Shared.ExpeditionPlanner)
+local PetCombat = require(RS.Shared.PetCombat)
 local okBattle, Battle = pcall(require, RS.Shared.ExpeditionBattle)
 if not okBattle then
 	warn("[Expedition] battle summaries disabled: " .. tostring(Battle))
@@ -14320,6 +14679,10 @@ end
 
 local function validUid(n)
 	return integer(n) and n > 0 and n <= 2 ^ 53 - 1
+end
+
+local function statValue(n)
+	return integer(n) and n > 0 and n <= 1e12 and n or nil
 end
 
 local function getPet(data, uid)
@@ -14420,6 +14783,11 @@ local function cleanActive(data, active)
 		coins = active.coins,
 		matched = active.matched == true,
 		wasPlaced = active.wasPlaced == true,
+		-- battle snapshot taken at departure (PetCombat); gear bought later applies to the next trip
+		hp = statValue(active.hp),
+		atk = statValue(active.atk),
+		wp = type(active.wp) == "string" and #active.wp <= 16 and active.wp or nil,
+		ar = type(active.ar) == "string" and #active.ar <= 16 and active.ar or nil,
 	}
 end
 
@@ -14531,6 +14899,7 @@ function Service.Start(player, data, base, routeId, petUid, now)
 	local resolved = routeView(route, data)
 	local quote = Planner.Quote(pet, resolved)
 	local duration = resolved.duration
+	local hp, atk = PetCombat.Stats(pet)
 	local startedAt = unix(now)
 	data.ActiveExpedition = {
 		id = Http:GenerateGUID(false),
@@ -14544,6 +14913,10 @@ function Service.Start(player, data, base, routeId, petUid, now)
 		coins = quote.coins,
 		matched = quote.matched,
 		wasPlaced = type(data.Placed) == "table" and table.find(data.Placed, petUid) ~= nil,
+		hp = hp,
+		atk = atk,
+		wp = pet.wp,
+		ar = pet.ar,
 	}
 	return true, creature.name .. " departed for " .. route.name .. "."
 end
@@ -14599,7 +14972,7 @@ end
 
 return Service
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX55"><Properties><string name="Name">FarmMarket</string><ProtectedString name="Source"><![CDATA[-- Two public medieval stalls. Geometry only; the server validates every trade.
+<Item class="ModuleScript" referent="RBX57"><Properties><string name="Name">FarmMarket</string><ProtectedString name="Source"><![CDATA[-- Two public medieval stalls. Geometry only; the server validates every trade.
 local Lettering = require(script.Parent.HeraldicText)
 local Market = {}
 local V, CF, A = Vector3.new, CFrame.new, CFrame.Angles
@@ -14690,7 +15063,7 @@ end
 
 return Market
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX56"><Properties><string name="Name">FarmService</string><ProtectedString name="Source"><![CDATA[-- FarmService: the courtyard farm and the long-term grind around it.
+<Item class="ModuleScript" referent="RBX58"><Properties><string name="Name">FarmService</string><ProtectedString name="Source"><![CDATA[-- FarmService: the courtyard farm and the long-term grind around it.
 -- Location: ServerScriptService > Server > FarmService (ModuleScript), started by GameServer.
 --
 --  * Six planter beds per courtyard (3 free, 3 bought). Crops grow on os.time(), so they keep growing
@@ -16256,7 +16629,7 @@ end
 
 return FarmService
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX57"><Properties><string name="Name">ForgeHall</string><ProtectedString name="Source"><![CDATA[-- Fortified guild forge. World geometry only; the existing recipes and station anchors stay authoritative.
+<Item class="ModuleScript" referent="RBX59"><Properties><string name="Name">ForgeHall</string><ProtectedString name="Source"><![CDATA[-- Fortified guild forge. World geometry only; the existing recipes and station anchors stay authoritative.
 local RS = game:GetService("ReplicatedStorage")
 local Collection = game:GetService("CollectionService")
 local Knight = require(RS.Shared.GuideKnight)
@@ -17041,7 +17414,7 @@ function Hall.Build(parent)
 end
 return Hall
 ]]></ProtectedString></Properties></Item>
-<Item class="Script" referent="RBX58"><Properties><string name="Name">GameServer</string><ProtectedString name="Source"><![CDATA[-- GameServer: authoritative game logic (throwing, rolling, collecting, income, shop, upgrades).
+<Item class="Script" referent="RBX60"><Properties><string name="Name">GameServer</string><ProtectedString name="Source"><![CDATA[-- GameServer: authoritative game logic (throwing, rolling, collecting, income, shop, upgrades).
 -- Location: ServerScriptService > Server > GameServer (Script)
 -- The client only sends *requests*; every price, cooldown, distance and roll is decided here.
 
@@ -17057,6 +17430,7 @@ local Odds = require(Shared.Odds)
 local Variants = require(Shared.Variants)
 local variantRng = Random.new()
 local Timeline = require(Shared.PresentationTimeline)
+local PetCombat = require(Shared.PetCombat)
 local DataService = require(script.Parent.DataService)
 local WorldBuilder = require(script.Parent.WorldBuilder)
 local BaseBuilder = require(script.Parent.BaseBuilder)
@@ -17200,25 +17574,31 @@ local function freeSpace(player, data)
 end
 
 local function updateAttributes(player, data)
-	local ids, levels = {}, {}
+	local ids, levels, gear = {}, {}, {}
 	for _, uid in ipairs(data.Placed) do
 		local c = findCreature(data, uid)
 		if c and not Expeditions.IsAway(data, uid) then
 			table.insert(ids, Variants.Key(c.c, c.s, c.v))
 			table.insert(levels, c.l or 1)
+			table.insert(gear, PetCombat.Encode(c))
 		end
 	end
+	-- gear + battle stats ("wp|ar|hp|atk"), aligned with BaseCreatures / Equipped, so every
+	-- client can dress the pets and draw their health bars. Set before the lists they align with.
+	player:SetAttribute("BaseGear", HttpService:JSONEncode(gear))
 	player:SetAttribute("BaseCreatures", HttpService:JSONEncode(ids))
 	-- pet levels (from feeding), aligned with BaseCreatures, for the name tags
 	player:SetAttribute("BaseLevels", HttpService:JSONEncode(levels))
 	equippedBuffs(data)
-	local eq = {}
+	local eq, eqGear = {}, {}
 	for _, uid in ipairs(data.EquippedPets) do
 		local c = findCreature(data, uid)
 		if c then
 			table.insert(eq, Variants.Key(c.c, c.s, c.v))
+			table.insert(eqGear, PetCombat.Encode(c))
 		end
 	end
+	player:SetAttribute("EquippedGear", HttpService:JSONEncode(eqGear))
 	player:SetAttribute("Equipped", HttpService:JSONEncode(eq))
 	local ls = player:FindFirstChild("leaderstats")
 	if ls then
@@ -17905,6 +18285,54 @@ end
 function Actions.UpgradeEquipment()
 	return false, "Equipment lifting has been replaced by pet expeditions."
 end
+
+---------------------------------------------------------------- pet battle power and armory
+-- Power: +15% health and attack per level, paid in coins (Shared/PetCombat owns the numbers).
+function Actions.PetPower(player, data, st, uid)
+	local c = type(uid) == "number" and findCreature(data, uid)
+	if not c then
+		return false, "Choose a pet you own."
+	end
+	local pw = math.clamp(tonumber(c.pw) or 0, 0, PetCombat.MaxPower)
+	if pw >= PetCombat.MaxPower then
+		return false, "Max power!"
+	end
+	local cost = PetCombat.PowerCost(c)
+	if data.Money < cost then
+		return false, "Not enough money"
+	end
+	data.Money -= cost
+	c.pw = pw + 1
+	return true, "Power upgraded to Lv " .. c.pw .. "!"
+end
+
+-- arg "uid|weapon|Iron" or "uid|armor|Gold": buys a better sword/armour and puts it on that pet.
+function Actions.BuyGear(player, data, st, arg)
+	if type(arg) ~= "string" or #arg > 64 then
+		return false, "Bad request"
+	end
+	local uidText, kind, id = string.match(arg, "^(%d+)|(%a+)|(%a+)$")
+	local c = uidText and findCreature(data, tonumber(uidText))
+	if not c then
+		return false, "Choose a pet you own."
+	end
+	local list, byId = PetCombat.Catalog(kind)
+	local item = byId and byId[id]
+	if not item then
+		return false, "Unknown item"
+	end
+	local field = kind == "weapon" and "wp" or "ar"
+	local current = byId[c[field]]
+	if current and current.tier >= item.tier then
+		return false, "This pet already has better gear."
+	end
+	if data.Money < item.cost then
+		return false, "Not enough money"
+	end
+	data.Money -= item.cost
+	c[field] = item.id
+	return true, item.name .. " equipped!"
+end
 function Actions.StartExpedition(player, data, st, arg)
 	if type(arg) ~= "string" or #arg > 256 then
 		return false, "Invalid expedition request."
@@ -18354,7 +18782,7 @@ end, function(player)
 	sync(player)
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX59"><Properties><string name="Name">HeraldicText</string><ProtectedString name="Source"><![CDATA[-- Raised, angular bronze lettering made from actual parts, not a flat font.
+<Item class="ModuleScript" referent="RBX61"><Properties><string name="Name">HeraldicText</string><ProtectedString name="Source"><![CDATA[-- Raised, angular bronze lettering made from actual parts, not a flat font.
 local Text = {}
 -- Normalized pen strokes; deliberately open counters stay readable at distance.
 local glyphs = {
@@ -18454,7 +18882,7 @@ function Text.Build(board, word, maxHeight)
 end
 return Text
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX60"><Properties><string name="Name">KnightTutorial</string><ProtectedString name="Source"><![CDATA[-- Saved, skippable guide. Location checks cannot award anything or bypass progression.
+<Item class="ModuleScript" referent="RBX62"><Properties><string name="Name">KnightTutorial</string><ProtectedString name="Source"><![CDATA[-- Saved, skippable guide. Location checks cannot award anything or bypass progression.
 local Rules = require(game.ReplicatedStorage.Shared.ForgeRules)
 local Config = require(game.ReplicatedStorage.Shared.Config)
 local Tutorial = {}
@@ -18494,7 +18922,7 @@ function Tutorial.Act(player, data, st, arg)
 end
 return Tutorial
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX61"><Properties><string name="Name">MedievalDressing</string><ProtectedString name="Source"><![CDATA[-- MedievalDressing: art-direction pass that runs after the hub, courtyards and lane are built.
+<Item class="ModuleScript" referent="RBX63"><Properties><string name="Name">MedievalDressing</string><ProtectedString name="Source"><![CDATA[-- MedievalDressing: art-direction pass that runs after the hub, courtyards and lane are built.
 -- Location: ServerScriptService > Server > MedievalDressing (ModuleScript)
 --
 -- It never rebuilds anyone else's geometry. It finds existing landmarks by name and adds purposeful,
@@ -19229,7 +19657,7 @@ end
 
 return D
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX62"><Properties><string name="Name">OuterForest</string><ProtectedString name="Source"><![CDATA[-- OuterForest: the world OUTSIDE the Forest lane, from the outer-world design canvas (sheet "01 Forest").
+<Item class="ModuleScript" referent="RBX64"><Properties><string name="Name">OuterForest</string><ProtectedString name="Source"><![CDATA[-- OuterForest: the world OUTSIDE the Forest lane, from the outer-world design canvas (sheet "01 Forest").
 -- The lane module (BiomeForest) owns |X| < ~130; this owns |X| >= 130 out to the skyline.
 -- Authored in design coordinates with K.mirror = true (design -X = screen-left from the hall camera).
 --  LEFT  (wild):  terraced overgrown cliff + root spills + high-ledge waterfall into a gorge pool,
@@ -19574,7 +20002,7 @@ end
 
 return O
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX63"><Properties><string name="Name">OuterHub</string><ProtectedString name="Source"><![CDATA[-- OuterHub: the world OUTSIDE the Portal Sanctuary walls (|X| > ~120 and Z < -470), from the
+<Item class="ModuleScript" referent="RBX65"><Properties><string name="Name">OuterHub</string><ProtectedString name="Source"><![CDATA[-- OuterHub: the world OUTSIDE the Portal Sanctuary walls (|X| > ~120 and Z < -470), from the
 -- outer-world design canvas (sheet "00 Hub") and Maps/00_Portal_Sanctuary_Hub.png. The lobby itself
 -- (SanctuaryHub) is untouched. World coordinates, no mirror: viewer-left down the lane is world +X.
 --  LEFT  (+X): lilac crags just past the walls, a stepped cliff with a two-step waterfall, flowering
@@ -19845,7 +20273,7 @@ end
 
 return O
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX64"><Properties><string name="Name">PetMeshLoader</string><ProtectedString name="Source"><![CDATA[-- PetMeshLoader: builds ReplicatedStorage.PetMeshes/<CreatureId>/<role> MeshPart templates from the
+<Item class="ModuleScript" referent="RBX66"><Properties><string name="Name">PetMeshLoader</string><ProtectedString name="Source"><![CDATA[-- PetMeshLoader: builds ReplicatedStorage.PetMeshes/<CreatureId>/<role> MeshPart templates from the
 -- asset ids in PetMeshManifest, so the client CreatureBuilder can use sculpted meshes.
 -- Location: ServerScriptService > Server > PetMeshLoader (ModuleScript)
 -- If a mesh can't be created (offline, permissions), that species simply keeps the procedural model.
@@ -19902,7 +20330,7 @@ end
 
 return Loader
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX65"><Properties><string name="Name">Progression</string><ProtectedString name="Source"><![CDATA[-- Progression: daily quests, rebirth, friend bonus, game passes / luck potion and pet fusion.
+<Item class="ModuleScript" referent="RBX67"><Properties><string name="Name">Progression</string><ProtectedString name="Source"><![CDATA[-- Progression: daily quests, rebirth, friend bonus, game passes / luck potion and pet fusion.
 -- Location: ServerScriptService > Server > Progression (ModuleScript)
 --
 -- Pure server logic. GameServer owns the data and remotes and calls in here; this module never fires
@@ -20147,7 +20575,7 @@ end
 
 return P
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX66"><Properties><string name="Name">SanctuaryArchitecture</string><ProtectedString name="Source"><![CDATA[-- Original block/wedge architecture matching Maps/00_Portal_Sanctuary_Hub.png.
+<Item class="ModuleScript" referent="RBX68"><Properties><string name="Name">SanctuaryArchitecture</string><ProtectedString name="Source"><![CDATA[-- Original block/wedge architecture matching Maps/00_Portal_Sanctuary_Hub.png.
 -- Shared by the public sanctuary and the eight gardens. All decoration is non-queryable.
 local K = require(script.Parent.WorldKit)
 local Art = {}
@@ -20332,7 +20760,7 @@ function Art.Planter(cf, length, pink)
 end
 return Art
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX67"><Properties><string name="Name">SanctuaryBase</string><ProtectedString name="Source"><![CDATA[-- Skyforge Courtyard, matching the owner's approved concept2. Original plot,
+<Item class="ModuleScript" referent="RBX69"><Properties><string name="Name">SanctuaryBase</string><ProtectedString name="Source"><![CDATA[-- Skyforge Courtyard, matching the owner's approved concept2. Original plot,
 -- collection and pet-slot anchors stay compatible with saved player gardens.
 local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
 local K = require(script.Parent.WorldKit)
@@ -20761,7 +21189,7 @@ end
 
 return Base
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX68"><Properties><string name="Name">SanctuaryDetails</string><ProtectedString name="Source"><![CDATA[-- Deliberate close-up detail for the lobby. Decorative only; all gameplay paths stay clear.
+<Item class="ModuleScript" referent="RBX70"><Properties><string name="Name">SanctuaryDetails</string><ProtectedString name="Source"><![CDATA[-- Deliberate close-up detail for the lobby. Decorative only; all gameplay paths stay clear.
 local P = require(script.Parent.SanctuaryArchitecture).Palette
 local Details = {}
 local V, CF, A = Vector3.new, CFrame.new, CFrame.Angles
@@ -20985,7 +21413,7 @@ function Details.Build(start)
 end
 return Details
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX69"><Properties><string name="Name">SanctuaryHub</string><ProtectedString name="Source"><![CDATA[-- Portal Sanctuary: a composed, walkable lobby, built from the supplied hub reference.
+<Item class="ModuleScript" referent="RBX71"><Properties><string name="Name">SanctuaryHub</string><ProtectedString name="Source"><![CDATA[-- Portal Sanctuary: a composed, walkable lobby, built from the supplied hub reference.
 -- Plot centers, throw zone, collision barrier and lane direction retain their existing contracts.
 local RS = game:GetService("ReplicatedStorage")
 local Config = require(RS.Shared.Config)
@@ -21388,7 +21816,7 @@ function Hub.Build(folder, textLabel)
 end
 return Hub
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX70"><Properties><string name="Name">SkyforgeDetails</string><ProtectedString name="Source"><![CDATA[-- Small-scale craft for the approved Skyforge courtyard. No extra prompts or
+<Item class="ModuleScript" referent="RBX72"><Properties><string name="Name">SkyforgeDetails</string><ProtectedString name="Source"><![CDATA[-- Small-scale craft for the approved Skyforge courtyard. No extra prompts or
 -- physics obstacles are created here; the expedition table owns interaction.
 local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
 local P = require(script.Parent.SkyforgeStyle)
@@ -21580,7 +22008,7 @@ end
 
 return Details
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX71"><Properties><string name="Name">SkyforgeStyle</string><ProtectedString name="Source"><![CDATA[-- Approved Skyforge concept: pale stone, dark timber, violet tiled roofs and
+<Item class="ModuleScript" referent="RBX73"><Properties><string name="Name">SkyforgeStyle</string><ProtectedString name="Source"><![CDATA[-- Approved Skyforge concept: pale stone, dark timber, violet tiled roofs and
 -- small warm brass accents. Colors stay readable under the sanctuary lighting.
 local C = Color3.fromRGB
 return {
@@ -21611,7 +22039,7 @@ return {
 	lodge = { x = -18, z = 24, w = 26, d = 17, deck = 1.6, postH = 9, rise = 5.6 },
 }
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX72"><Properties><string name="Name">Waterfalls</string><ProtectedString name="Source"><![CDATA[-- Waterfalls: turns the flat water panels in the sanctuary into living waterfalls.
+<Item class="ModuleScript" referent="RBX74"><Properties><string name="Name">Waterfalls</string><ProtectedString name="Source"><![CDATA[-- Waterfalls: turns the flat water panels in the sanctuary into living waterfalls.
 -- Location: ServerScriptService > Server > Waterfalls (ModuleScript)
 --
 -- For each fall: rocks breaking the lip, a sheet of falling water streaks (particles stretched along
@@ -21792,7 +22220,7 @@ end
 
 return F
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX73"><Properties><string name="Name">WorldBuilder</string><ProtectedString name="Source"><![CDATA[-- WorldBuilder: builds ONE long map — the hub (bases + launch hall) and the 3200-stud throwing
+<Item class="ModuleScript" referent="RBX75"><Properties><string name="Name">WorldBuilder</string><ProtectedString name="Source"><![CDATA[-- WorldBuilder: builds ONE long map — the hub (bases + launch hall) and the 3200-stud throwing
 -- lane split into 8 biome zones. Each biome lives in its own module (Biome<Id>) built with the
 -- shared WorldKit; this file only orchestrates terrain, zones, markers and boundaries.
 -- Location: ServerScriptService > Server > WorldBuilder (ModuleScript)
@@ -22001,10 +22429,10 @@ end
 
 return WorldBuilder
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX74"><Properties><string name="Name">WorldHub</string><ProtectedString name="Source"><![CDATA[-- Compatibility entry point for the reference-based sanctuary lobby.
+<Item class="ModuleScript" referent="RBX76"><Properties><string name="Name">WorldHub</string><ProtectedString name="Source"><![CDATA[-- Compatibility entry point for the reference-based sanctuary lobby.
 return require(script.Parent.SanctuaryHub)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX75"><Properties><string name="Name">WorldKit</string><ProtectedString name="Source"><![CDATA[-- WorldKit: the shared blocky construction kit used by the hub and all eight biomes.
+<Item class="ModuleScript" referent="RBX77"><Properties><string name="Name">WorldKit</string><ProtectedString name="Source"><![CDATA[-- WorldKit: the shared blocky construction kit used by the hub and all eight biomes.
 -- Location: ServerScriptService > Server > WorldKit (ModuleScript)
 --
 -- CONTRACT (map brief + GameServer landing contract):
@@ -22720,7 +23148,7 @@ end
 
 return K
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX76"><Properties><string name="Name">WorldLandmarks</string><ProtectedString name="Source"><![CDATA[-- WorldLandmarks: construction kit + the hero landmarks for the hub, launch hall and all
+<Item class="ModuleScript" referent="RBX78"><Properties><string name="Name">WorldLandmarks</string><ProtectedString name="Source"><![CDATA[-- WorldLandmarks: construction kit + the hero landmarks for the hub, launch hall and all
 -- eight biomes (blocky architectural language from the map reference pack).
 -- Location: ServerScriptService > Server > WorldLandmarks (ModuleScript)
 --
@@ -23500,10 +23928,10 @@ return L
 ]]></ProtectedString></Properties></Item>
 </Item>
 </Item>
-<Item class="StarterPlayer" referent="RBX126"><Properties><string name="Name">StarterPlayer</string></Properties>
-<Item class="StarterPlayerScripts" referent="RBX78"><Properties><string name="Name">StarterPlayerScripts</string></Properties>
-<Item class="Folder" referent="RBX79"><Properties><string name="Name">Client</string></Properties>
-<Item class="ModuleScript" referent="RBX80"><Properties><string name="Name">CaughtPresentation</string><ProtectedString name="Source"><![CDATA[-- A brief bestiary slip for discoveries and Rare+ catches. Routine catches stay quiet.
+<Item class="StarterPlayer" referent="RBX129"><Properties><string name="Name">StarterPlayer</string></Properties>
+<Item class="StarterPlayerScripts" referent="RBX80"><Properties><string name="Name">StarterPlayerScripts</string></Properties>
+<Item class="Folder" referent="RBX81"><Properties><string name="Name">Client</string></Properties>
+<Item class="ModuleScript" referent="RBX82"><Properties><string name="Name">CaughtPresentation</string><ProtectedString name="Source"><![CDATA[-- A brief bestiary slip for discoveries and Rare+ catches. Routine catches stay quiet.
 local RS = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 local Data = require(RS.Shared.CreatureData)
@@ -23620,10 +24048,10 @@ return function(key, discovery)
 	end)
 end
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX81"><Properties><string name="Name">CinematicLook</string><ProtectedString name="Source"><![CDATA[-- One controller owns the scene, including biome and weather transitions.
+<Item class="LocalScript" referent="RBX83"><Properties><string name="Name">CinematicLook</string><ProtectedString name="Source"><![CDATA[-- One controller owns the scene, including biome and weather transitions.
 require(script.Parent.SceneLighting).Start()
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX82"><Properties><string name="Name">ClientMain</string><ProtectedString name="Source"><![CDATA[-- ClientMain: wires all client modules together.
+<Item class="LocalScript" referent="RBX84"><Properties><string name="Name">ClientMain</string><ProtectedString name="Source"><![CDATA[-- ClientMain: wires all client modules together.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ClientMain (LocalScript)
 
 local Players = game:GetService("Players")
@@ -23919,7 +24347,7 @@ task.spawn(function()
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX83"><Properties><string name="Name">ClientSettings</string><ProtectedString name="Source"><![CDATA[-- ClientSettings: presentation-only player settings (never affect odds, charge, rewards).
+<Item class="ModuleScript" referent="RBX85"><Properties><string name="Name">ClientSettings</string><ProtectedString name="Source"><![CDATA[-- ClientSettings: presentation-only player settings (never affect odds, charge, rewards).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ClientSettings (ModuleScript)
 -- Values persist for the session via player attributes; defaults are safe for everyone.
 
@@ -23955,7 +24383,7 @@ end
 
 return Settings
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX84"><Properties><string name="Name">ClientState</string><ProtectedString name="Source"><![CDATA[-- ClientState: local mirror of the player's data + change signal + request helper.
+<Item class="ModuleScript" referent="RBX86"><Properties><string name="Name">ClientState</string><ProtectedString name="Source"><![CDATA[-- ClientState: local mirror of the player's data + change signal + request helper.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ClientState (ModuleScript)
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -23995,7 +24423,7 @@ end
 
 return State
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX85"><Properties><string name="Name">CreatureBudget</string><ProtectedString name="Source"><![CDATA[-- Presentation scheduling only. Catch deadlines, rewards and pet ownership remain on the server.
+<Item class="ModuleScript" referent="RBX87"><Properties><string name="Name">CreatureBudget</string><ProtectedString name="Source"><![CDATA[-- Presentation scheduling only. Catch deadlines, rewards and pet ownership remain on the server.
 local Budget = {}
 Budget.LastAnimatedTier = 3
 local tiers = { { 70, 0 }, { 150, 1 / 20 }, { 260, 1 / 8 } }
@@ -24034,7 +24462,7 @@ end
 
 return Budget
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX86"><Properties><string name="Name">CreatureRenderer</string><ProtectedString name="Source"><![CDATA[-- CreatureRenderer: renders every creature on this client — base pets of all players,
+<Item class="ModuleScript" referent="RBX88"><Properties><string name="Name">CreatureRenderer</string><ProtectedString name="Source"><![CDATA[-- CreatureRenderer: renders every creature on this client — base pets of all players,
 -- creatures being carried, and freshly revealed wild creatures. Handles species entrances,
 -- capture presentation, reactions, click-to-pet, distance LOD and previews.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > CreatureRenderer (ModuleScript)
@@ -24062,6 +24490,8 @@ local Sounds = require(script.Parent.Sounds)
 local Settings = require(script.Parent.ClientSettings)
 local Budget = require(script.Parent.CreatureBudget)
 local Plaque = require(script.Parent.Plaque)
+local PetGear = require(Shared.PetGear) -- swords/armour on pets + their health bars
+local PetCombat = require(Shared.PetCombat)
 local TweenService = game:GetService("TweenService")
 
 local Renderer = {}
@@ -24254,9 +24684,12 @@ local function onFx(kind, anim)
 	pcall(Effects.Motif, kind, pos, rig.root.CFrame.LookVector, rig.pal.a, math.clamp(rig.size, 0.8, 2))
 end
 
-local function spawnEntry(creatureId, cf, kind, popTime, size, material)
+local function spawnEntry(creatureId, cf, kind, popTime, size, material, gear)
 	local model, rig = Builder.Build(creatureId, Variants.Scale(size))
 	Variants.Apply(model, material) -- Gold / Emerald / Ruby / Diamond look
+	if gear then
+		pcall(PetGear.Apply, model, rig, gear) -- after the variant tint, so gear keeps its own colours
+	end
 	model:PivotTo(cf)
 	model.Parent = folder
 	local anim = Animator.new(rig, cf)
@@ -24383,6 +24816,35 @@ local function pickRoam(e)
 	return nil
 end
 
+-- "wp|ar|hp|atk" strings replicated by the server (GameServer.updateAttributes), aligned with the
+-- BaseCreatures / Equipped lists
+local function readGear(plr, attr)
+	local out = {}
+	local ok, res = pcall(HttpService.JSONDecode, HttpService, plr:GetAttribute(attr) or "[]")
+	if ok and type(res) == "table" then
+		for i, s in ipairs(res) do
+			out[i] = PetCombat.Decode(s)
+		end
+	end
+	return out
+end
+
+local function gearKey(g)
+	return g and ((g.wp or "") .. "/" .. (g.ar or "")) or "/"
+end
+
+-- health bar (+ attack) above a pet in the world; pets heal fully outside battle
+local function petHealth(entry, gear, offsetY)
+	if not gear or not gear.hp or not entry.model.PrimaryPart then
+		return
+	end
+	if entry.health then
+		PetGear.SetHealth(entry.health, gear.hp, gear.hp, gear.atk)
+	else
+		entry.health = PetGear.HealthBar(entry.model.PrimaryPart, offsetY, gear.hp, gear.hp, gear.atk)
+	end
+end
+
 local function refreshBase(plr)
 	local idx = plr:GetAttribute("BaseIndex")
 	local raw = plr:GetAttribute("BaseCreatures")
@@ -24402,6 +24864,7 @@ local function refreshBase(plr)
 			levels = res
 		end
 	end
+	local gearList = readGear(plr, "BaseGear")
 	local base = idx and idx > 0 and baseModel(idx)
 	local existing = basePets[plr.UserId] or {}
 	if not base then
@@ -24414,7 +24877,7 @@ local function refreshBase(plr)
 	-- multiset diff: keep creatures that are still placed, add new ones, remove the rest
 	local pool = {}
 	for _, e in ipairs(existing) do
-		local k = e.key or e.id
+		local k = e.poolKey or e.key or e.id
 		pool[k] = pool[k] or {}
 		table.insert(pool[k], e)
 	end
@@ -24422,11 +24885,14 @@ local function refreshBase(plr)
 	for i, key in ipairs(list) do
 		-- entries are "CreatureId" or "CreatureId|Size|Material" (Big/Huge/Titan, Gold/Emerald/Ruby/Diamond)
 		local cid, vsize, vmat = Variants.Parse(key)
-		local cand = pool[key] and table.remove(pool[key])
+		local gear = gearList[i]
+		local poolKey = key .. "#" .. gearKey(gear) -- new sword/armour = rebuilt model wearing it
+		local cand = pool[poolKey] and table.remove(pool[poolKey])
 		if not cand and CreatureData.ById[cid] then
 			local cf = slotCF(base, i)
-			cand = spawnEntry(cid, cf, "base", 0.7, vsize, vmat)
+			cand = spawnEntry(cid, cf, "base", 0.7, vsize, vmat, gear)
 			cand.key = key
+			cand.poolKey = poolKey
 			local def = CreatureData.ById[cid]
 			local rc = Variants.Color(vsize, vmat) or Config.Rarities[def.rarity].color
 			tag(
@@ -24479,6 +24945,9 @@ local function refreshBase(plr)
 					.. "/s</font>"
 			end
 		end
+		if cand and tdef then
+			petHealth(cand, gear, heightFor(tdef, vsize) + 1.5)
+		end
 		table.insert(result, cand)
 	end
 	for _, arr in pairs(pool) do
@@ -24524,29 +24993,37 @@ end
 local function refreshEquipped(plr)
 	local ok, keys = pcall(function() return HttpService:JSONDecode(plr:GetAttribute("Equipped") or "[]") end)
 	keys = ok and keys or {}
+	local gearList = readGear(plr, "EquippedGear")
 	local existing = equippedPets[plr.UserId] or {}
 	while #existing > #keys do
 		destroyEntry(table.remove(existing))
 	end
 	for i, key in ipairs(keys) do
 		local e = existing[i]
-		if e and e.key ~= key then
+		local gear = gearList[i]
+		local poolKey = key .. "#" .. gearKey(gear)
+		if e and (e.poolKey or e.key) ~= poolKey then
 			destroyEntry(e)
 			e = nil
 		end
+		local cid, vsize, vmat = Variants.Parse(key)
 		if not e then
-			local cid, vsize, vmat = Variants.Parse(key)
 			if CreatureData.ById[cid] then
 				local hrp = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
 				local cf = hrp and (hrp.CFrame * CFrame.new(0, -2.5, 3 + i * 2.6)) or CFrame.new()
-				e = spawnEntry(cid, cf, "carry", 0.45, vsize, vmat)
+				e = spawnEntry(cid, cf, "carry", 0.45, vsize, vmat, gear)
 				e.key = key
+				e.poolKey = poolKey
 				existing[i] = e
 			end
 		end
 		if e then
 			e.follow = plr
 			e.followIndex = i
+			local def = CreatureData.ById[cid]
+			if def then
+				petHealth(e, gear, heightFor(def, vsize) + 0.6)
+			end
 		end
 	end
 	equippedPets[plr.UserId] = existing
@@ -25198,6 +25675,13 @@ local function watchPlayer(plr)
 	plr:GetAttributeChangedSignal("Equipped"):Connect(function()
 		refreshEquipped(plr)
 	end)
+	-- a new sword/armour or Power upgrade changes only the gear lists
+	plr:GetAttributeChangedSignal("EquippedGear"):Connect(function()
+		refreshEquipped(plr)
+	end)
+	plr:GetAttributeChangedSignal("BaseGear"):Connect(function()
+		refreshBase(plr)
+	end)
 	plr.CharacterAdded:Connect(function()
 		task.wait(1)
 		refreshEquipped(plr)
@@ -25237,9 +25721,12 @@ function Renderer.Start()
 end
 
 -- Builds a static (non-animated) creature for UI ViewportFrames, in its bind pose.
-function Renderer.BuildPreview(creatureId, material)
+function Renderer.BuildPreview(creatureId, material, gear)
 	local model, rig = Builder.Build(creatureId)
 	Variants.Apply(model, material)
+	if gear then
+		pcall(PetGear.Apply, model, rig, gear)
+	end
 	for _, e in ipairs(rig.emitters) do
 		e.Enabled = false
 	end
@@ -25278,7 +25765,7 @@ end
 
 return Renderer
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX87"><Properties><string name="Name">CustomCursor</string><ProtectedString name="Source"><![CDATA[-- Ivory and brass cursor. Native pointer stays available until artwork loads.
+<Item class="LocalScript" referent="RBX89"><Properties><string name="Name">CustomCursor</string><ProtectedString name="Source"><![CDATA[-- Ivory and brass cursor. Native pointer stays available until artwork loads.
 local Input = game:GetService("UserInputService")
 local Gui = game:GetService("GuiService")
 local Run = game:GetService("RunService")
@@ -25426,7 +25913,7 @@ script.Destroying:Connect(function()
 	layer:Destroy()
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX88"><Properties><string name="Name">Effects</string><ProtectedString name="Source"><![CDATA[-- Effects: camera shake, flashes, shockwaves, particle bursts, light beams, floating text,
+<Item class="ModuleScript" referent="RBX90"><Properties><string name="Name">Effects</string><ProtectedString name="Source"><![CDATA[-- Effects: camera shake, flashes, shockwaves, particle bursts, light beams, floating text,
 -- flying-coin money effect, rarity banners and per-world lighting.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > Effects (ModuleScript)
 
@@ -25948,7 +26435,7 @@ end
 
 return Effects
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX89"><Properties><string name="Name">Entrances</string><ProtectedString name="Source"><![CDATA[-- Entrances: themed portal entrances for freshly revealed wild creatures.
+<Item class="ModuleScript" referent="RBX91"><Properties><string name="Name">Entrances</string><ProtectedString name="Source"><![CDATA[-- Entrances: themed portal entrances for freshly revealed wild creatures.
 -- Location: StarterPlayerScripts > Client > Entrances (ModuleScript), used by CreatureRenderer.
 --
 -- Each creature gets a MOTION STYLE from what kind of animal it is (cats pounce, dragons swoop in and
@@ -26417,7 +26904,7 @@ end
 
 return E
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX90"><Properties><string name="Name">ExchangeView</string><ProtectedString name="Source"><![CDATA[-- Four direct trade signs linked to an architectural model of the sanctuary.
+<Item class="ModuleScript" referent="RBX92"><Properties><string name="Name">ExchangeView</string><ProtectedString name="Source"><![CDATA[-- Four direct trade signs linked to an architectural model of the sanctuary.
 local K = require(script.Parent.UIKit)
 local T = K.Theme
 local Craft = require(script.Parent.SanctuaryUI)
@@ -26650,7 +27137,283 @@ function E.Mount(hub, HUD)
 end
 return E
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX91"><Properties><string name="Name">ExpeditionFight</string><ProtectedString name="Source"><![CDATA[-- Animated expedition battle inside the journey-map ViewportFrame: the real pet walks the route,
+<Item class="ModuleScript" referent="RBX93"><Properties><string name="Name">ExpeditionArena</string><ProtectedString name="Source"><![CDATA[-- ExpeditionArena: full-screen battle scene. You "enter" the expedition and watch it from above:
+-- your pet (wearing its sword and armour) walks the biome, fights every monster and finally the boss,
+-- with HP bars, damage numbers, a boss intro and a victory screen.
+-- Location: StarterPlayer > StarterPlayerScripts > Client > ExpeditionArena (ModuleScript)
+--
+-- It replays the same deterministic battle the expedition timer runs (Shared/ExpeditionBattle), so
+-- results always match the mini-map and the claim. Walking is fast-forwarded and every fight plays at
+-- a readable pace, so the whole battle fits in about a minute whenever you watch it.
+local RS = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local Config = require(RS.Shared.Config)
+local Battle = require(RS.Shared.ExpeditionBattle)
+local PetGear = require(RS.Shared.PetGear)
+local K = require(script.Parent.UIKit)
+local T = K.Theme
+local Scene = require(script.Parent.ExpeditionScene)
+local Fight = require(script.Parent.ExpeditionFight)
+local Renderer = require(script.Parent.CreatureRenderer)
+local Settings = require(script.Parent.ClientSettings)
+local Sounds = require(script.Parent.Sounds)
+local Arena = {}
+
+local player = Players.LocalPlayer
+local open -- the running scene
+Arena.HideHud = nil -- set by the panel: function(hidden)
+
+-- arena seconds per plan segment: walks fast-forwarded, fights at a watchable beat
+local MIN_BEAT, WALK_MAX, DEPART, LOOT, BACK = 0.75, 1.4, 1.2, 2.2, 2.2
+local function arenaTimeline(plan)
+	local out, t = {}, 0
+	for _, s in ipairs(plan.segments) do
+		local len
+		if s.kind == "fight" then
+			local beats = 0
+			for _, b in ipairs(s.beats) do beats += b.len or 1 end
+			len = beats * math.max(MIN_BEAT, s.beat or MIN_BEAT)
+		elseif s.kind == "walk" then
+			len = math.min(WALK_MAX, math.max(0.4, s.len))
+		elseif s.kind == "depart" then
+			len = DEPART
+		elseif s.kind == "loot" then
+			len = LOOT
+		else
+			len = BACK
+		end
+		table.insert(out, { a0 = t, a1 = t + len, seg = s })
+		t += len
+	end
+	return out, t
+end
+
+local function planTime(map, total, at)
+	if at >= total then return math.huge end
+	for _, m in ipairs(map) do
+		if at < m.a1 then
+			local f = (at - m.a0) / math.max(1e-6, m.a1 - m.a0)
+			return m.seg.t0 + f * m.seg.len
+		end
+	end
+	return math.huge
+end
+
+local function label(parent, props)
+	local l = K.new("TextLabel", {
+		BackgroundTransparency = 1, Font = T.Bold, TextColor3 = Color3.new(1, 1, 1),
+		TextStrokeTransparency = 0.3, TextScaled = false, Parent = parent,
+	})
+	for k, v in pairs(props) do l[k] = v end
+	return l
+end
+
+local function hpBar(parent, color, w, h)
+	local back = K.new("Frame", { Size = UDim2.fromOffset(w, h), BackgroundColor3 = Color3.fromRGB(26, 22, 32), Parent = parent })
+	K.corner(h // 2).Parent = back
+	K.new("UIStroke", { Color = Color3.fromRGB(10, 8, 14), Thickness = 2, Parent = back })
+	local fill = K.new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = color, Parent = back })
+	K.corner(h // 2).Parent = fill
+	local text = label(back, { Size = UDim2.fromScale(1, 1), TextSize = math.max(11, h - 6), ZIndex = 3 })
+	return { back = back, fill = fill, text = text }
+end
+
+local function setBar(bar, cur, max, text)
+	local f = max > 0 and math.clamp(cur / max, 0, 1) or 0
+	bar.fill.Size = UDim2.fromScale(f, 1)
+	bar.text.Text = text or (PetGear.Short(cur) .. " / " .. PetGear.Short(max))
+end
+
+function Arena.IsOpen()
+	return open ~= nil
+end
+
+function Arena.Close()
+	local o = open
+	if not o then return end
+	open = nil
+	if o.conn then o.conn:Disconnect() end
+	if o.gui then o.gui:Destroy() end
+	if Arena.HideHud then pcall(Arena.HideHud, false) end
+end
+
+-- active = the expedition record (Expeditions.active from the server view)
+function Arena.Open(active)
+	if not active then return end
+	Arena.Close()
+	local ok, plan = pcall(Battle.Plan, active)
+	if not ok or not plan then
+		warn("[Arena] battle plan failed: " .. tostring(plan))
+		return
+	end
+	local map, total = arenaTimeline(plan)
+	local o = { plan = plan, t = 0, speed = 1 }
+	open = o
+	if Arena.HideHud then pcall(Arena.HideHud, true) end
+
+	local gui = K.new("ScreenGui", { Name = "BattleArena", IgnoreGuiInset = true, ResetOnSpawn = false, DisplayOrder = 45,
+		Parent = player:WaitForChild("PlayerGui") })
+	o.gui = gui
+	local bg = K.new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(14, 12, 22), Parent = gui })
+	K.new("UIGradient", { Rotation = 90, Color = ColorSequence.new(Color3.fromRGB(46, 40, 70), Color3.fromRGB(10, 8, 16)), Parent = bg })
+
+	-- the biome, your geared pet and the monsters, rendered full screen
+	local scene = Scene.Build(plan.world)
+	local gear = { wp = active.wp, ar = active.ar }
+	local okPet, petModel = pcall(Renderer.BuildPreview, active.creature, active.v, gear)
+	if okPet and petModel then
+		petModel.Name = "Scout"
+		petModel.Parent = scene
+	else
+		petModel = nil
+	end
+	local vp = K.viewport(scene, UDim2.fromScale(1, 1), false)
+	vp.Name = "ArenaView"
+	vp.Ambient = Color3.fromRGB(170, 170, 185)
+	vp.LightDirection = Vector3.new(-0.4, -1, -0.3)
+	vp.Parent = bg
+	local cam = vp.CurrentCamera
+	cam.FieldOfView = 40
+	local okFight, ctx = pcall(Fight.Attach, scene, plan, petModel, cam)
+	if not okFight then
+		warn("[Arena] could not build the battle: " .. tostring(ctx))
+		Arena.Close()
+		return
+	end
+	ctx.camDir = Vector3.new(-0.32, 0.86, -0.4) -- looking down on the fight from above
+	ctx.camZoom = 1.15
+	o.ctx = ctx
+
+	------------------------------------------------------------ overlay
+	local def = Config.Worlds[plan.world]
+	local top = K.new("Frame", { BackgroundColor3 = Color3.fromRGB(16, 12, 24), BackgroundTransparency = 0.25,
+		Size = UDim2.new(1, 0, 0, 52), Parent = gui })
+	label(top, { Text = string.upper((def and def.name or plan.world) .. " expedition"), TextSize = 20,
+		TextColor3 = T.CinematicGold, Position = UDim2.fromOffset(18, 0), Size = UDim2.new(0.5, 0, 1, 0), TextXAlignment = Enum.TextXAlignment.Left })
+	local counter = label(top, { Text = "", TextSize = 18, AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.fromScale(0.5, 0), Size = UDim2.new(0, 260, 1, 0) })
+	local leave = K.button("Leave", T.Raised, nil, UDim2.fromOffset(96, 36), { AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -12, 0.5, 0), Parent = top })
+	K.bind(leave, Arena.Close)
+	local speedBtn = K.button("Speed x1", T.Raised, nil, UDim2.fromOffset(110, 36), { AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -118, 0.5, 0), Parent = top })
+	K.bind(speedBtn, function()
+		o.speed = o.speed == 1 and 2 or (o.speed == 2 and 4 or 1)
+		K.setButton(speedBtn, "Speed x" .. o.speed)
+	end)
+
+	-- your pet (bottom left) and the current enemy (top centre)
+	local petCard = K.new("Frame", { BackgroundColor3 = Color3.fromRGB(16, 12, 24), BackgroundTransparency = 0.2,
+		AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 16, 1, -16), Size = UDim2.fromOffset(300, 74), Parent = gui })
+	K.corner(12).Parent = petCard
+	label(petCard, { Text = plan.pet.name, TextSize = 18, Position = UDim2.fromOffset(12, 6), Size = UDim2.new(1, -24, 0, 22), TextXAlignment = Enum.TextXAlignment.Left })
+	local petBar = hpBar(petCard, Color3.fromRGB(96, 214, 110), 276, 20)
+	petBar.back.Position = UDim2.fromOffset(12, 30)
+	label(petCard, { Text = "ATK " .. PetGear.Short(plan.pet.atk), TextSize = 13, TextColor3 = Color3.fromRGB(255, 214, 140),
+		Position = UDim2.fromOffset(12, 52), Size = UDim2.new(1, -24, 0, 16), TextXAlignment = Enum.TextXAlignment.Left })
+	local enemy = K.new("Frame", { BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 62),
+		Size = UDim2.fromOffset(420, 52), Visible = false, Parent = gui })
+	local enemyName = label(enemy, { Text = "", TextSize = 20, Size = UDim2.new(1, 0, 0, 24) })
+	local enemyBar = hpBar(enemy, Color3.fromRGB(235, 80, 70), 420, 20)
+	enemyBar.back.Position = UDim2.fromOffset(0, 28)
+
+	local log = label(gui, { Text = "", TextSize = 20, AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -24),
+		Size = UDim2.new(0.6, 0, 0, 28) })
+	local popup = label(gui, { Text = "", TextSize = 34, AnchorPoint = Vector2.new(0.5, 1), Size = UDim2.fromOffset(200, 40), Visible = false, ZIndex = 6 })
+	local banner = label(gui, { Text = "", TextSize = 56, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.38),
+		Size = UDim2.new(1, 0, 0, 70), TextTransparency = 1, TextStrokeTransparency = 1, ZIndex = 8 })
+	local bannerSub = label(gui, { Text = "", TextSize = 24, TextColor3 = T.CinematicGold, AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.46), Size = UDim2.new(1, 0, 0, 30), TextTransparency = 1, TextStrokeTransparency = 1, ZIndex = 8 })
+	local flash = K.new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(255, 60, 50), BackgroundTransparency = 1, ZIndex = 7, Parent = gui })
+	local bannerT, bannerLife = 99, 1.6
+	local function showBanner(text, sub, color, life)
+		banner.Text, bannerSub.Text = text, sub or ""
+		banner.TextColor3 = color or Color3.new(1, 1, 1)
+		bannerT, bannerLife = 0, life or 1.6
+	end
+
+	local seenBoss, lastCleared, finished = false, 0, false
+	local calm = Settings.ReducedMotion
+	o.conn = RunService.RenderStepped:Connect(function(dt)
+		if open ~= o then return end
+		o.t += dt * o.speed
+		local pt = planTime(map, total, o.t)
+		local state = Battle.At(plan, math.min(pt, plan.duration - 1e-3))
+		local now = os.clock()
+		pcall(Fight.Update, ctx, state, now, dt, Settings)
+
+		counter.Text = "Monsters " .. state.cleared .. " / " .. #plan.encounters
+		setBar(petBar, state.hp, state.maxHp, "HP " .. PetGear.Short(state.hp) .. " / " .. PetGear.Short(state.maxHp))
+		local enc = state.enc and plan.encounters[state.enc]
+		enemy.Visible = enc ~= nil
+		if enc then
+			enemyName.Text = (enc.boss and "BOSS  " or "") .. enc.name
+			enemyName.TextColor3 = enc.boss and Color3.fromRGB(255, 120, 90) or Color3.new(1, 1, 1)
+			setBar(enemyBar, state.monHp, state.monMax)
+			if enc.boss and not seenBoss then
+				seenBoss = true
+				showBanner("BOSS FIGHT!", enc.name, Color3.fromRGB(255, 90, 70), 2)
+				flash.BackgroundTransparency = 0.55
+				pcall(Sounds.Play, "Rare", 0.8)
+			end
+		end
+		if state.cleared > lastCleared then
+			lastCleared = state.cleared
+			local beaten = plan.encounters[state.cleared]
+			if beaten and not beaten.boss then
+				showBanner("DEFEATED!", beaten.name, Color3.fromRGB(140, 255, 150), 1.1)
+			end
+		end
+		log.Text = state.text or ""
+
+		-- damage numbers over whoever got hit
+		local beat, phase = state.beat, state.phase or 0
+		local petHead, monHead = Fight.Anchors(ctx)
+		local show = beat and (beat.who == "pet" or beat.who == "mon") and phase >= 0.45
+		popup.Visible = false
+		if show then
+			local at = Fight.Project(cam, vp.AbsoluteSize, beat.who == "pet" and monHead or petHead)
+			if at then
+				popup.Visible = true
+				popup.Position = UDim2.fromOffset(at.X, at.Y - (phase - 0.45) * 60)
+				popup.Text = beat.dodged and "MISS" or ((beat.crit and "CRIT " or "") .. "-" .. PetGear.Short(beat.dmg))
+				popup.TextColor3 = beat.dodged and Color3.fromRGB(200, 220, 255)
+					or (beat.who == "pet" and (beat.crit and Color3.fromRGB(255, 200, 60) or Color3.new(1, 1, 1)) or Color3.fromRGB(255, 90, 80))
+				popup.TextTransparency = math.clamp((phase - 0.75) * 4, 0, 1)
+			end
+			-- the screen jolts on boss slams and big hits
+			if not calm and phase < 0.6 and (beat.special or beat.crit) then
+				vp.Position = UDim2.fromOffset(math.random(-6, 6), math.random(-6, 6))
+			else
+				vp.Position = UDim2.new()
+			end
+		else
+			vp.Position = UDim2.new()
+		end
+
+		-- banners and the boss flash
+		bannerT += dt
+		local bk = bannerT / bannerLife
+		local alpha = bk < 0.15 and 1 - bk / 0.15 or (bk > 0.75 and math.clamp((bk - 0.75) / 0.25, 0, 1) or 0)
+		banner.TextTransparency, banner.TextStrokeTransparency = alpha, math.max(alpha, 0.2)
+		bannerSub.TextTransparency, bannerSub.TextStrokeTransparency = alpha, math.max(alpha, 0.3)
+		banner.Size = UDim2.new(1, 0, 0, 70 * (bk < 0.15 and (1.6 - bk / 0.15 * 0.6) or 1))
+		flash.BackgroundTransparency = math.min(1, flash.BackgroundTransparency + dt * 1.5)
+
+		if pt == math.huge and not finished then
+			finished = true
+			local s = plan.summary
+			showBanner("VICTORY!", string.format("%d monsters defeated, including the %s", s.defeated, s.boss), T.CinematicGold, 1e9)
+			pcall(Sounds.Play, "Rare", 1)
+			enemy.Visible = false
+			local back = K.button("Back to the game", T.Gold, nil, UDim2.fromOffset(240, 50),
+				{ AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.fromScale(0.5, 0.54), Parent = gui })
+			K.bind(back, Arena.Close)
+		end
+	end)
+end
+
+return Arena
+]]></ProtectedString></Properties></Item>
+<Item class="ModuleScript" referent="RBX94"><Properties><string name="Name">ExpeditionFight</string><ProtectedString name="Source"><![CDATA[-- Animated expedition battle inside the journey-map ViewportFrame: the real pet walks the route,
 -- fights each biome monster (lunges, hits, sparks, knock-downs) and the camera follows the action.
 -- Timing comes from Shared/ExpeditionBattle, so it always matches the HUD mini-map.
 local RS = game:GetService("ReplicatedStorage")
@@ -26905,7 +27668,7 @@ function Fight.Update(ctx, state, now, dt, settings)
 		local defeated = state.cleared >= i
 		if defeated then
 			if not rec.down then
-				rec.down = true
+				rec.down, rec.flash = true, 0 -- a knockout blow must not leave its hit flash behind
 				tint(rec, Color3.fromRGB(90, 90, 96), 0.55)
 				fade(rec, 0.35)
 			end
@@ -26996,7 +27759,8 @@ function Fight.Update(ctx, state, now, dt, settings)
 		elseif state.kind == "loot" then
 			dist = 20
 		end
-		local wantPos = focus + V(-0.55, 0.55, -0.63).Unit * dist
+		-- ctx.camDir / ctx.camZoom let the full-screen battle scene use a steeper, top-down view
+		local wantPos = focus + (ctx.camDir or V(-0.55, 0.55, -0.63)).Unit * dist * (ctx.camZoom or 1)
 		local k = ctx.camPos and (1 - math.exp(-2.5 * math.max(0, dt or 1 / 60))) or 1
 		ctx.camPos = ctx.camPos and ctx.camPos:Lerp(wantPos, k) or wantPos
 		ctx.camFocus = ctx.camFocus and ctx.camFocus:Lerp(focus, k) or focus
@@ -27022,7 +27786,7 @@ end
 
 return Fight
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX92"><Properties><string name="Name">ExpeditionMiniMap</string><ProtectedString name="Source"><![CDATA[-- Always-on HUD mini-map for the active expedition: the route, every monster (waiting, fighting,
+<Item class="ModuleScript" referent="RBX95"><Properties><string name="Name">ExpeditionMiniMap</string><ProtectedString name="Source"><![CDATA[-- Always-on HUD mini-map for the active expedition: the route, every monster (waiting, fighting,
 -- defeated), the pet marker moving and lunging, live HP bars and a one-line battle log.
 local RS = game:GetService("ReplicatedStorage")
 local Config = require(RS.Shared.Config)
@@ -27244,7 +28008,7 @@ end
 
 return Mini
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX93"><Properties><string name="Name">ExpeditionPanel</string><ProtectedString name="Source"><![CDATA[-- Skyforge visual planning; all mission authority remains on the server.
+<Item class="ModuleScript" referent="RBX96"><Properties><string name="Name">ExpeditionPanel</string><ProtectedString name="Source"><![CDATA[-- Skyforge visual planning; all mission authority remains on the server.
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -27261,6 +28025,7 @@ local Scene = require(script.Parent.ExpeditionScene)
 local Battle = require(RS.Shared.ExpeditionBattle)
 local Fight = require(script.Parent.ExpeditionFight)
 local Mini = require(script.Parent.ExpeditionMiniMap)
+local Arena = require(script.Parent.ExpeditionArena) -- full-screen top-down battle scene
 local Renderer = require(script.Parent.CreatureRenderer)
 local HUD = require(script.Parent.HUD)
 local State = require(script.Parent.ClientState)
@@ -27274,7 +28039,7 @@ local routeDirection = 1
 local manualSelection, routeInitialized = false, false
 local activeHint
 local lastView, serverClock, localClock = nil, 0, 0
-local page, notice, planning, activeBox, portraits, petLabel, reward, bonus, send, claim
+local page, notice, planning, activeBox, portraits, petLabel, reward, bonus, send, claim, watch
 local routeTitle, sceneFrame, stats, relicLink
 local activeTitle, activeTime, activeReward, activePortrait, progressFill
 local tracker, trackerText, trackerFill
@@ -27529,7 +28294,19 @@ local function request(name, arg)
 		State.Request("Sync")
 		if name == "StartExpedition" then
 			HUD.Close()
-			HUD.Notify("Pet dispatched. Your timer is on the HUD.", "success")
+			HUD.Notify("Pet dispatched. Watch the battle!", "success")
+			-- go straight into the battle scene once the new expedition arrives from the server
+			task.spawn(function()
+				local t0 = os.clock()
+				while os.clock() - t0 < 4 do
+					local a = activeTrip()
+					if a then
+						Arena.Open(a)
+						return
+					end
+					task.wait(0.1)
+				end
+			end)
 		else
 			routeInitialized, manualSelection = false, false
 			HUD.Notify(err or "Expedition finds claimed.", "success")
@@ -27975,6 +28752,24 @@ function Panel.Init()
 			request("ClaimExpedition", a.id)
 		end
 	end)
+	-- re-enter the battle scene at any time while the pet is away (or before claiming)
+	watch = K.button(
+		"Watch battle",
+		T.Jade,
+		nil,
+		UDim2.new(0.68, -8, 0, 40),
+		{ Name = "WatchBattle", Position = UDim2.new(0.32, 0, 1, -96), Parent = activeBox }
+	)
+	K.bind(watch, function()
+		local a = activeTrip()
+		if a then
+			HUD.Close()
+			Arena.Open(a)
+		end
+	end)
+	Arena.HideHud = function(hidden)
+		HUD.Gui.Enabled = not hidden
+	end
 	activeHint = K.text(activeBox, "", 0, 148, -8, 38, 14, T.Muted)
 	local hint = activeHint
 	hint.Name = "ScoutCommitment"
@@ -28071,7 +28866,15 @@ function Panel.Init()
 	tiny.ClipsDescendants = true
 	trackerFill = K.new("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = T.Gold, Parent = tiny })
 	K.bind(tracker, Panel.Open)
-	miniMap = Mini.Create(HUD.Root.Gameplay, Panel.Open)
+	-- tapping the mini-map takes you into the battle scene
+	miniMap = Mini.Create(HUD.Root.Gameplay, function()
+		local a = activeTrip()
+		if a then
+			Arena.Open(a)
+		else
+			Panel.Open()
+		end
+	end)
 	selectedHero = K.new("Frame", { Name = "SelectedScout", BackgroundTransparency = 1, ClipsDescendants = true, Parent = right })
 	petMeta = K.text(right, "", 0, 0, -4, 22, 13, T.Muted)
 	relicHint = K.text(right, "", 0, 0, -4, 20, 13, T.Muted)
@@ -28138,6 +28941,8 @@ function Panel.Init()
 		activeTitle.Size = UDim2.new(0.68, -8, 0, 30)
 		claim.Position = UDim2.new(0.32, 0, 1, -48)
 		claim.Size = UDim2.new(0.68, -8, 0, 44)
+		watch.Position = UDim2.new(0.32, 0, 1, -96)
+		watch.Size = UDim2.new(0.68, -8, 0, 40)
 		hint.Position = UDim2.new(0.32, 0, 0, 148)
 		hint.Size = UDim2.new(0.68, -8, 0, 38)
 		track.Size = UDim2.new(0.68, -8, 0, 8)
@@ -28265,6 +29070,8 @@ function Panel.Init()
 			hint.Size = UDim2.new(0.5, -8, 0, 38)
 			claim.Position = UDim2.new(0.5, 0, 1, -48)
 			claim.Size = UDim2.new(0.5, -8, 0, 48)
+			watch.Position = UDim2.new(0.5, 0, 1, -102)
+			watch.Size = UDim2.new(0.5, -8, 0, 46)
 		end
 	end
 	State.Changed:Connect(function()
@@ -28353,7 +29160,7 @@ function Panel.Init()
 end
 return Panel
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX94"><Properties><string name="Name">ExpeditionScene</string><ProtectedString name="Source"><![CDATA[-- Detailed, deterministic native biome vignettes for the expedition map.
+<Item class="ModuleScript" referent="RBX97"><Properties><string name="Name">ExpeditionScene</string><ProtectedString name="Source"><![CDATA[-- Detailed, deterministic native biome vignettes for the expedition map.
 local Config = require(game.ReplicatedStorage.Shared.Config)
 local Scene = {}
 local V, C = Vector3.new, Color3.fromRGB
@@ -28543,7 +29350,7 @@ function Scene.Build(id)
 end
 return Scene
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX95"><Properties><string name="Name">FarmClient</string><ProtectedString name="Source"><![CDATA[-- FarmClient: client side of the courtyard farm (server: FarmService).
+<Item class="LocalScript" referent="RBX98"><Properties><string name="Name">FarmClient</string><ProtectedString name="Source"><![CDATA[-- FarmClient: client side of the courtyard farm (server: FarmService).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > FarmClient (LocalScript)
 --  * Shows only YOUR courtyard's farm prompts (beds, feeding, board, chest); others' stay hidden.
 --  * Updates permanent physical farm signs. No screen toasts or character message bursts.
@@ -28976,7 +29783,7 @@ FarmFx.OnClientEvent:Connect(function(kind, d)
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX96"><Properties><string name="Name">FarmMarketPanel</string><ProtectedString name="Source"><![CDATA[-- Two physical entrances, one small shop. No additional HUD destination.
+<Item class="ModuleScript" referent="RBX99"><Properties><string name="Name">FarmMarketPanel</string><ProtectedString name="Source"><![CDATA[-- Two physical entrances, one small shop. No additional HUD destination.
 local Players = game:GetService("Players")
 local Http = game:GetService("HttpService")
 local RS = game:GetService("ReplicatedStorage")
@@ -29288,7 +30095,7 @@ end
 
 return Panel
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX97"><Properties><string name="Name">ForgePanel</string><ProtectedString name="Source"><![CDATA[-- The hall is the entry point. Explicit copies, visible odds, then a consumption confirmation.
+<Item class="ModuleScript" referent="RBX100"><Properties><string name="Name">ForgePanel</string><ProtectedString name="Source"><![CDATA[-- The hall is the entry point. Explicit copies, visible odds, then a consumption confirmation.
 local RS = game:GetService("ReplicatedStorage")
 local Http = game:GetService("HttpService")
 local Rules = require(RS.Shared.ForgeRules)
@@ -29805,7 +30612,7 @@ function Panel.Init()
 end
 return Panel
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX98"><Properties><string name="Name">GameplayFeel</string><ProtectedString name="Source"><![CDATA[-- Batched treasury collection feedback. Sir Rowan owns tutorial guidance.
+<Item class="ModuleScript" referent="RBX101"><Properties><string name="Name">GameplayFeel</string><ProtectedString name="Source"><![CDATA[-- Batched treasury collection feedback. Sir Rowan owns tutorial guidance.
 local RS = game:GetService("ReplicatedStorage")
 local Format = require(RS.Shared.Format)
 local Settings = require(script.Parent.ClientSettings)
@@ -29841,7 +30648,7 @@ function Feel.Money(amount, position)
 end
 return Feel
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX99"><Properties><string name="Name">GuildModel</string><ProtectedString name="Source"><![CDATA[-- An architectural model of the four sanctuary trades, made for the exchange folio.
+<Item class="ModuleScript" referent="RBX102"><Properties><string name="Name">GuildModel</string><ProtectedString name="Source"><![CDATA[-- An architectural model of the four sanctuary trades, made for the exchange folio.
 local Merchant = require(script.Parent.MerchantDisplay)
 local Portal = require(game:GetService("ReplicatedStorage").Shared.PortalBuilder)
 local K = require(script.Parent.UIKit)
@@ -30013,7 +30820,7 @@ function G.Pedestal(model)
 end
 return G
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX100"><Properties><string name="Name">HUD</string><ProtectedString name="Source"><![CDATA[-- Direct Pets, Shop and Expeditions navigation with a shared responsive panel layer.
+<Item class="ModuleScript" referent="RBX103"><Properties><string name="Name">HUD</string><ProtectedString name="Source"><![CDATA[-- Direct Pets, Shop and Expeditions navigation with a shared responsive panel layer.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Input = game:GetService("UserInputService")
@@ -30571,7 +31378,7 @@ end)
 task.defer(rescale)
 return HUD
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX101"><Properties><string name="Name">Intro</string><ProtectedString name="Source"><![CDATA[-- Intro: the portal arrival you see when you join.
+<Item class="ModuleScript" referent="RBX104"><Properties><string name="Name">Intro</string><ProtectedString name="Source"><![CDATA[-- Intro: the portal arrival you see when you join.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > Intro (ModuleScript)
 --
 --   Intro.Cover(hud)  runs the moment the client starts, entirely in 2D so it never waits on the map:
@@ -31064,7 +31871,7 @@ end
 
 return Intro
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX102"><Properties><string name="Name">IntroReadiness</string><ProtectedString name="Source"><![CDATA[-- Loading stages describe actual readiness, rather than a percentage of arbitrary instance counts.
+<Item class="ModuleScript" referent="RBX105"><Properties><string name="Name">IntroReadiness</string><ProtectedString name="Source"><![CDATA[-- Loading stages describe actual readiness, rather than a percentage of arbitrary instance counts.
 local Readiness = {}
 function Readiness.Resolve(state)
 	if not state.loaded or not state.map then
@@ -31083,7 +31890,7 @@ function Readiness.Resolve(state)
 end
 return Readiness
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX103"><Properties><string name="Name">KnightGuide</string><ProtectedString name="Source"><![CDATA[-- A short saved guide, with a real knight portrait and ground arrows on known hub paths.
+<Item class="ModuleScript" referent="RBX106"><Properties><string name="Name">KnightGuide</string><ProtectedString name="Source"><![CDATA[-- A short saved guide, with a real knight portrait and ground arrows on known hub paths.
 local RS = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Rules = require(RS.Shared.ForgeRules)
@@ -31521,7 +32328,7 @@ function Guide.Init()
 end
 return Guide
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX104"><Properties><string name="Name">LabelDeclutter</string><ProtectedString name="Source"><![CDATA[-- LabelDeclutter: keeps floating world labels (BillboardGuis) from piling on top of each other.
+<Item class="LocalScript" referent="RBX107"><Properties><string name="Name">LabelDeclutter</string><ProtectedString name="Source"><![CDATA[-- LabelDeclutter: keeps floating world labels (BillboardGuis) from piling on top of each other.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > LabelDeclutter (LocalScript)
 --
 -- Most labels are drawn at a fixed pixel size, so a label 30 studs away is as big on screen as one
@@ -31709,7 +32516,7 @@ RunService.Heartbeat:Connect(function(dt)
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX105"><Properties><string name="Name">MenuWidgets</string><ProtectedString name="Source"><![CDATA[-- Gameplay widgets yield to menus and the loading intro, preserving their enabled state.
+<Item class="LocalScript" referent="RBX108"><Properties><string name="Name">MenuWidgets</string><ProtectedString name="Source"><![CDATA[-- Gameplay widgets yield to menus and the loading intro, preserving their enabled state.
 local player = game:GetService("Players").LocalPlayer
 local gui = player:WaitForChild("PlayerGui")
 local names = { MomentumUI = true, QuestPanel = true }
@@ -31735,7 +32542,7 @@ workspace:GetAttributeChangedSignal("TPFC_IntroPlaying"):Connect(update)
 gui.ChildAdded:Connect(update)
 update()
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX106"><Properties><string name="Name">MerchantDisplay</string><ProtectedString name="Source"><![CDATA[-- A small, actual sanctuary shop display for the menu. No image or asset dependency.
+<Item class="ModuleScript" referent="RBX109"><Properties><string name="Name">MerchantDisplay</string><ProtectedString name="Source"><![CDATA[-- A small, actual sanctuary shop display for the menu. No image or asset dependency.
 local D = {}
 local C, V, CF = Color3.fromRGB, Vector3.new, CFrame.new
 local wood, stone, brass, slate = C(88, 62, 40), C(224, 221, 206), C(178, 142, 74), C(39, 65, 69)
@@ -31846,7 +32653,7 @@ function D.Emblem(kind)
 end
 return D
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX107"><Properties><string name="Name">MomentumUI</string><ProtectedString name="Source"><![CDATA[-- MomentumUI: shows the perfect-throw streak and the server-wide Rift Storm.
+<Item class="LocalScript" referent="RBX110"><Properties><string name="Name">MomentumUI</string><ProtectedString name="Source"><![CDATA[-- MomentumUI: shows the perfect-throw streak and the server-wide Rift Storm.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > MomentumUI (LocalScript)
 --
 --   * Streak badge (bottom centre): appears after a perfect throw, "PERFECT STREAK x3 · +15% luck",
@@ -31990,7 +32797,7 @@ RunService.Heartbeat:Connect(function(dt)
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX108"><Properties><string name="Name">MovementFov</string><ProtectedString name="Source"><![CDATA[-- Reversible sprint lens offset. Cinematics release it before saving their lens.
+<Item class="ModuleScript" referent="RBX111"><Properties><string name="Name">MovementFov</string><ProtectedString name="Source"><![CDATA[-- Reversible sprint lens offset. Cinematics release it before saving their lens.
 local Fov = {}
 local owner, offset, output
 local function close(a, b)
@@ -32026,7 +32833,7 @@ function Fov.Update(camera, target, dt)
 end
 return Fov
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX109"><Properties><string name="Name">Panels</string><ProtectedString name="Source"><![CDATA[-- Sanctuary shops, collection, index, customization and settings.
+<Item class="ModuleScript" referent="RBX112"><Properties><string name="Name">Panels</string><ProtectedString name="Source"><![CDATA[-- Sanctuary shops, collection, index, customization and settings.
 -- All spending and ownership changes use the existing authoritative server actions.
 local RS = game:GetService("ReplicatedStorage")
 local Http = game:GetService("HttpService")
@@ -32038,6 +32845,8 @@ local Format = require(RS.Shared.Format)
 local Odds = require(RS.Shared.Odds)
 local Variants = require(RS.Shared.Variants)
 local Farm = require(RS.Shared.FarmConfig)
+local PetCombat = require(RS.Shared.PetCombat)
+local PetGear = require(RS.Shared.PetGear)
 local K = require(script.Parent.UIKit)
 local T = K.Theme
 local HUD = require(script.Parent.HUD)
@@ -32099,10 +32908,10 @@ local function empty(parent, title, hint)
 	return f
 end
 local previewCache = {}
-local function petView(id, size, silhouette, material, pedestal)
-	local cacheKey = material and (id .. "|" .. material) or id
+local function petView(id, size, silhouette, material, pedestal, gear)
+	local cacheKey = (material and (id .. "|" .. material) or id) .. ((gear and (gear.wp or gear.ar)) and ("#" .. (gear.wp or "") .. "/" .. (gear.ar or "")) or "")
 	if not previewCache[cacheKey] then
-		previewCache[cacheKey] = (Renderer.BuildPreview(id, material))
+		previewCache[cacheKey] = (Renderer.BuildPreview(id, material, gear))
 	end
 	local model = previewCache[cacheKey]:Clone()
 	if pedestal then
@@ -32529,7 +33338,9 @@ local function renderCreatureDetail()
 			)
 		or "empty"
 	if entry then
-		key ..= ":" .. tostring(entry.l or 1) .. ":" .. tostring(entry.e or 0) .. ":" .. table.concat(
+		key ..= ":" .. tostring(entry.l or 1) .. ":" .. tostring(entry.e or 0) .. ":" .. tostring(entry.pw or 0) .. ":" .. tostring(
+			entry.wp
+		) .. ":" .. tostring(entry.ar) .. ":" .. table.concat(
 			d.EquippedPets or {},
 			","
 		) .. ":" .. #d.Creatures
@@ -32559,7 +33370,7 @@ local function renderCreatureDetail()
 	hero:FindFirstChildOfClass("UIStroke").Transparency = 1
 	hero.LayoutOrder = 1
 	Craft.Specimen(hero)
-	petView(entry.c, UDim2.fromScale(1, 1), nil, entry.v, true).Parent = hero
+	petView(entry.c, UDim2.fromScale(1, 1), nil, entry.v, true, entry).Parent = hero
 	local petHeading = heading(invDetail, Variants.Prefix(entry.s, entry.v) .. def.name, 2)
 	petHeading.Name = "PetNameHeading"
 	K.label(
@@ -32735,6 +33546,73 @@ local function renderCreatureDetail()
 		T.Muted,
 		{ TextSize = 13, LayoutOrder = 8, TextXAlignment = Enum.TextXAlignment.Left, Parent = invDetail }
 	)
+	-- battle: health bar, attack, Power upgrades and the armory (Shared/PetCombat owns the numbers)
+	do
+		local hp, atk = PetCombat.Stats(entry)
+		local pw = entry.pw or 0
+		heading(invDetail, "Battle", 9).Name = "PetBattleHeading"
+		local bar = K.new("Frame", {
+			Name = "PetHealthBar", Size = UDim2.new(1, -12, 0, 22), BackgroundColor3 = Color3.fromRGB(34, 28, 40),
+			LayoutOrder = 10, Parent = invDetail,
+		})
+		K.corner(8).Parent = bar
+		local fill = K.new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(96, 214, 110), Parent = bar })
+		K.corner(8).Parent = fill
+		K.new("TextLabel", {
+			BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Text = "HP " .. PetGear.Short(hp) .. " / " .. PetGear.Short(hp),
+			Font = T.Bold, TextSize = 14, TextColor3 = Color3.new(1, 1, 1), TextStrokeTransparency = 0.4, ZIndex = 3, Parent = bar,
+		})
+		local sword, armour = PetCombat.Weapon(entry), PetCombat.Armor(entry)
+		K.label(
+			string.format(
+				"ATK %s  ·  Power Lv %d/%d  ·  Rating %s\nSword: %s  ·  Armour: %s",
+				PetGear.Short(atk), pw, PetCombat.MaxPower, PetGear.Short(PetCombat.Rating(hp, atk)),
+				sword and sword.name or "none", armour and armour.name or "none"
+			),
+			UDim2.new(1, -12, 0, 40),
+			T.Text,
+			{ Name = "PetBattleStats", TextSize = 14, LayoutOrder = 11, TextXAlignment = Enum.TextXAlignment.Left, Parent = invDetail }
+		)
+
+		local function buyButton(name, order, text, cost, enabled, onClick)
+			local b = K.button(text, enabled and T.Brass or T.Raised, nil, UDim2.new(1, -12, 0, 42), { Name = name, LayoutOrder = order, Parent = invDetail })
+			K.setEnabled(b, enabled)
+			K.bind(b, function()
+				if not enabled then return end
+				clearArm()
+				if onClick() then
+					detailKey = nil
+					renderCreatureDetail()
+				end
+			end)
+			return b
+		end
+		local maxed = pw >= PetCombat.MaxPower
+		local pcost = PetCombat.PowerCost(entry)
+		buyButton(
+			"UpgradePetPower", 12,
+			maxed and "Power maxed" or string.format("Upgrade Power (+15%% HP & ATK) · %s", Format.Money(pcost)),
+			pcost, not maxed,
+			function() return request("PetPower", entry.u, "Power upgraded!") end
+		)
+		for i, kind in ipairs({ "weapon", "armor" }) do
+			local nextItem = PetCombat.NextGear(kind, entry)
+			local label = kind == "weapon" and "ATK" or "HP"
+			buyButton(
+				kind == "weapon" and "BuyPetSword" or "BuyPetArmour", 12 + i,
+				nextItem and string.format("Buy %s (x%.1f %s) · %s", nextItem.name, nextItem.mult, label, Format.Money(nextItem.cost))
+					or (kind == "weapon" and "Best sword equipped" or "Best armour equipped"),
+				nextItem and nextItem.cost or 0, nextItem ~= nil,
+				function() return request("BuyGear", entry.u .. "|" .. kind .. "|" .. nextItem.id, nextItem.name .. " equipped!") end
+			)
+		end
+		K.label(
+			"Stronger pets win expedition battles faster. Gear stays on this pet and shows on it in your garden.",
+			UDim2.new(1, -12, 0, 36),
+			T.Muted,
+			{ TextSize = 12, LayoutOrder = 15, TextXAlignment = Enum.TextXAlignment.Left, Parent = invDetail }
+		)
+	end
 	inv.layout()
 end
 inv.refresh = function()
@@ -32805,7 +33683,7 @@ inv.refresh = function()
 					{ Name = "Creature_" .. entry.u, LayoutOrder = i, Parent = invGrid }
 				)
 				Craft.Leaf(b)
-				petView(entry.c, UDim2.new(1, -8, 0, 108), nil, entry.v).Parent = b
+				petView(entry.c, UDim2.new(1, -8, 0, 108), nil, entry.v, nil, entry).Parent = b
 				local nameLabel = K.text(
 					b,
 					Variants.Prefix(entry.s, entry.v) .. def.name,
@@ -33378,7 +34256,7 @@ function Panels.Init()
 end
 return Panels
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX110"><Properties><string name="Name">Plaque</string><ProtectedString name="Source"><![CDATA[-- Plaque: the carved rarity plaque from the reveal reference sheet (Actions/02_Rarity_Reveal_and_Capture):
+<Item class="ModuleScript" referent="RBX113"><Properties><string name="Name">Plaque</string><ProtectedString name="Source"><![CDATA[-- Plaque: the carved rarity plaque from the reveal reference sheet (Actions/02_Rarity_Reveal_and_Capture):
 -- a bevelled bar with pointed diamond ends, double gold trim, small gold diamond ornaments, serif caps,
 -- and gold laurels for the showcase tiers. Pixel sized, so it works in ScreenGuis and BillboardGuis.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > Plaque (ModuleScript)
@@ -33535,7 +34413,7 @@ end
 
 return P
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX111"><Properties><string name="Name">PlayerFeel</string><ProtectedString name="Source"><![CDATA[-- PlayerFeel: how the local player's character moves and feels.
+<Item class="LocalScript" referent="RBX114"><Properties><string name="Name">PlayerFeel</string><ProtectedString name="Source"><![CDATA[-- PlayerFeel: how the local player's character moves and feels.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > PlayerFeel (LocalScript)
 --
 --   * Run: hold Left Shift (PC), press L3 (gamepad) or tap the Run button (mobile, toggles).
@@ -33851,7 +34729,7 @@ task.spawn(function()
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX112"><Properties><string name="Name">QuestPanel</string><ProtectedString name="Source"><![CDATA[-- QuestPanel: compact parchment card on the right edge with today's quests, rebirth and boosts.
+<Item class="LocalScript" referent="RBX115"><Properties><string name="Name">QuestPanel</string><ProtectedString name="Source"><![CDATA[-- QuestPanel: compact parchment card on the right edge with today's quests, rebirth and boosts.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > QuestPanel (LocalScript)
 --
 -- Reads the server's Progress view from ClientState (Daily, Rebirths, RebirthCost, FriendsHere,
@@ -34205,7 +35083,7 @@ task.spawn(function()
 end)
 refresh()
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX113"><Properties><string name="Name">QuestTrackerLayout</string><ProtectedString name="Source"><![CDATA[-- Fit the tracker inside the GUI's safe area. Only its body scrolls; the header/tab remain reachable.
+<Item class="ModuleScript" referent="RBX116"><Properties><string name="Name">QuestTrackerLayout</string><ProtectedString name="Source"><![CDATA[-- Fit the tracker inside the GUI's safe area. Only its body scrolls; the header/tab remain reachable.
 local Layout = {}
 function Layout.Resolve(width, height, contentHeight)
 	local margin, header = 12, 48
@@ -34227,7 +35105,7 @@ function Layout.Resolve(width, height, contentHeight)
 end
 return Layout
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX114"><Properties><string name="Name">RevealTitle</string><ProtectedString name="Source"><![CDATA[-- RevealTitle: on-screen title for a creature reveal, styled after Actions/02_Rarity_Reveal_and_Capture.
+<Item class="ModuleScript" referent="RBX117"><Properties><string name="Name">RevealTitle</string><ProtectedString name="Source"><![CDATA[-- RevealTitle: on-screen title for a creature reveal, styled after Actions/02_Rarity_Reveal_and_Capture.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > RevealTitle (ModuleScript)
 --
 --   Common / Uncommon      nothing on screen: the carved plaque above the pet carries it (restrained tiers)
@@ -34543,7 +35421,7 @@ end
 
 return R
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX115"><Properties><string name="Name">SanctuaryUI</string><ProtectedString name="Source"><![CDATA[-- Medieval guild folios: carved oak, forged iron, vellum and a stitched binding.
+<Item class="ModuleScript" referent="RBX118"><Properties><string name="Name">SanctuaryUI</string><ProtectedString name="Source"><![CDATA[-- Medieval guild folios: carved oak, forged iron, vellum and a stitched binding.
 -- All ornament is inert. The reading surface stays light and the world stays visible.
 local T = require(script.Parent.UITheme)
 local Art = {}
@@ -34737,7 +35615,7 @@ function Art.Selected(button, selected)
 end
 return Art
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX116"><Properties><string name="Name">SceneLighting</string><ProtectedString name="Source"><![CDATA[-- The only runtime owner of scene light, atmosphere, clouds and grading.
+<Item class="ModuleScript" referent="RBX119"><Properties><string name="Name">SceneLighting</string><ProtectedString name="Source"><![CDATA[-- The only runtime owner of scene light, atmosphere, clouds and grading.
 local Lighting = game:GetService("Lighting")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
@@ -34823,7 +35701,7 @@ function Scene.Start()
 end
 return Scene
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX117"><Properties><string name="Name">SkyforgeUI</string><ProtectedString name="Source"><![CDATA[-- Light sanctuary surfaces and large standalone navigation artwork.
+<Item class="ModuleScript" referent="RBX120"><Properties><string name="Name">SkyforgeUI</string><ProtectedString name="Source"><![CDATA[-- Light sanctuary surfaces and large standalone navigation artwork.
 local T = require(script.Parent.UITheme)
 local S = {}
 local pendingImages = {}
@@ -35020,7 +35898,7 @@ function S.Card(frame, icon)
 end
 return S
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX118"><Properties><string name="Name">Sounds</string><ProtectedString name="Source"><![CDATA[-- Restrained event audio. Built-in assets keep the game independent of uploaded audio.
+<Item class="ModuleScript" referent="RBX121"><Properties><string name="Name">Sounds</string><ProtectedString name="Source"><![CDATA[-- Restrained event audio. Built-in assets keep the game independent of uploaded audio.
 local SoundService = game:GetService("SoundService")
 local TweenService = game:GetService("TweenService")
 local Sounds = {}
@@ -35139,7 +36017,7 @@ function Sounds.Get(name)
 end
 return Sounds
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX119"><Properties><string name="Name">ThrowCinematic</string><ProtectedString name="Source"><![CDATA[-- ThrowCinematic: the throw cutscene (owner only). Full screen, no letterbox.
+<Item class="ModuleScript" referent="RBX122"><Properties><string name="Name">ThrowCinematic</string><ProtectedString name="Source"><![CDATA[-- ThrowCinematic: the throw cutscene (owner only). Full screen, no letterbox.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ThrowCinematic (ModuleScript)
 --
 -- A short film in up to four camera shots, with HARD CUTS between them (w = wind-up seconds sent
@@ -36021,7 +36899,7 @@ end
 
 return Cine
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX120"><Properties><string name="Name">ThrowController</string><ProtectedString name="Source"><![CDATA[-- ThrowController: charge meter input, held-portal + arm wind-up, the portal flight arc,
+<Item class="ModuleScript" referent="RBX123"><Properties><string name="Name">ThrowController</string><ProtectedString name="Source"><![CDATA[-- ThrowController: charge meter input, held-portal + arm wind-up, the portal flight arc,
 -- landing bounce, portal gate opening and creature reveal choreography (for ALL players' throws).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ThrowController (ModuleScript)
 
@@ -37032,7 +37910,7 @@ end)
 
 return TC
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX121"><Properties><string name="Name">UIIcons</string><ProtectedString name="Source"><![CDATA[-- Original cutout art with immediately visible native geometry while images load.
+<Item class="ModuleScript" referent="RBX124"><Properties><string name="Name">UIIcons</string><ProtectedString name="Source"><![CDATA[-- Original cutout art with immediately visible native geometry while images load.
 local T = require(script.Parent.UITheme)
 local Sky = require(script.Parent.SkyforgeUI)
 local Icons = {}
@@ -37188,7 +38066,7 @@ function Icons.Draw(name, parent, size, color, position)
 end
 return Icons
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX122"><Properties><string name="Name">UIKit</string><ProtectedString name="Source"><![CDATA[-- Native sanctuary components. No uploaded icon/font dependency.
+<Item class="ModuleScript" referent="RBX125"><Properties><string name="Name">UIKit</string><ProtectedString name="Source"><![CDATA[-- Native sanctuary components. No uploaded icon/font dependency.
 local TweenService = game:GetService("TweenService")
 local Sounds = require(script.Parent.Sounds)
 local Settings = require(script.Parent.ClientSettings)
@@ -37565,7 +38443,7 @@ end
 
 return K
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX123"><Properties><string name="Name">UIMotion</string><ProtectedString name="Source"><![CDATA[-- Short, interruptible interface motion. No render loop or delayed gameplay actions.
+<Item class="ModuleScript" referent="RBX126"><Properties><string name="Name">UIMotion</string><ProtectedString name="Source"><![CDATA[-- Short, interruptible interface motion. No render loop or delayed gameplay actions.
 local TweenService = game:GetService("TweenService")
 local Settings = require(script.Parent.ClientSettings)
 local Theme = require(script.Parent.UITheme)
@@ -37720,7 +38598,7 @@ end)
 
 return Motion
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX124"><Properties><string name="Name">UITheme</string><ProtectedString name="Source"><![CDATA[-- Sanctuary UI tokens, shared by the HUD, icons and every shop.
+<Item class="ModuleScript" referent="RBX127"><Properties><string name="Name">UITheme</string><ProtectedString name="Source"><![CDATA[-- Sanctuary UI tokens, shared by the HUD, icons and every shop.
 -- Fonts: Builder Sans for controls and data, Merriweather for sanctuary headings;
 -- resolved with a fallback so an older client without these enums still renders.
 local function font(name, fallback)
@@ -37787,7 +38665,7 @@ function T.Rarity(name, config)
 end
 return T
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX125"><Properties><string name="Name">WorldFx</string><ProtectedString name="Source"><![CDATA[-- WorldFx: ONE shared, staggered scheduler for environment motion on tagged map parts
+<Item class="ModuleScript" referent="RBX128"><Properties><string name="Name">WorldFx</string><ProtectedString name="Source"><![CDATA[-- WorldFx: ONE shared, staggered scheduler for environment motion on tagged map parts
 -- (no per-prop RenderStepped connections, no camera-following particles).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > WorldFx (ModuleScript)
 --
