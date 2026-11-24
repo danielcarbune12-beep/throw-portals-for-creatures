@@ -15,3 +15,7 @@ backups/
 
 # generated test places (rebuild with build-place.ps1 -Test)
 *Test.rbxlx
+
+# Python helper bytecode
+__pycache__/
+*.py[cod]
