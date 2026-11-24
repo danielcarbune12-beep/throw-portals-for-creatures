@@ -1,0 +1,90 @@
+{
+  "date": "2026-11-24",
+  "sourceBaseline": "7c03f46",
+  "placeId": 129975585465401,
+  "desktop": {
+    "completed": true,
+    "failures": [],
+    "passed": 19,
+    "samples": {
+      "partsAfterReplay": 14,
+      "walk": {
+        "changed": 74,
+        "frames": 75,
+        "maxArrowJump": 0.49994659423828125
+      }
+    }
+  },
+  "phone": {
+    "completed": true,
+    "failures": [],
+    "passed": 21,
+    "samples": {
+      "partsAfterReplay": 14,
+      "walk": {
+        "changed": 75,
+        "frames": 76,
+        "maxArrowJump": 0.308418333530426
+      }
+    }
+  },
+  "activeCPU": {
+    "last": {
+      "id": 19011,
+      "absoluteId": 4897535
+    },
+    "first": {
+      "id": 18960,
+      "absoluteId": 4897484
+    },
+    "frames": 52,
+    "scopes": {
+      "TPFC.Guide.Update": {
+        "maxMs": 0.08482956719808499,
+        "count": 10,
+        "totalMs": 0.48896433695063024
+      },
+      "TPFC.Guide.Render": {
+        "maxMs": 0.09451478226924337,
+        "count": 52,
+        "totalMs": 3.105207196965466
+      }
+    }
+  },
+  "idleCPU": {
+    "frames": 55,
+    "first": {
+      "id": 16693,
+      "absoluteId": 4885363
+    },
+    "last": {
+      "id": 16747,
+      "absoluteId": 4885417
+    },
+    "scopes": [],
+    "note": "Sample before the final decorative paving clearance adjustment; render scheduling is unchanged."
+  },
+  "layout": {
+    "landscapeSensor": true,
+    "devices": [
+      "iPhone 17 Pro",
+      "Samsung Galaxy A06"
+    ],
+    "longestInstructionFits": true,
+    "clearsQuest": true,
+    "belowSkip": true
+  },
+  "checks": {
+    "production": 109,
+    "test": 112,
+    "sanctuary": 112,
+    "sourceDifferences": 0,
+    "seleneErrors": 0,
+    "seleneWarnings": 0
+  },
+  "sharedStudio": {
+    "saveVerified": false,
+    "status": "Shared Studio disconnected before final cleanup/save; Git source and generated builds are complete. Native resync pending."
+  },
+  "video": []
+}
