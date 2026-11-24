@@ -163,7 +163,7 @@ function Mini.SetPlan(mm, plan, worldId)
 	mm.petInner = inner
 end
 
-function Mini.Update(mm, state, now)
+function Mini.Update(mm, state, now, settings)
 	local plan = mm.plan
 	if not plan or not mm.pet then
 		return
@@ -172,7 +172,9 @@ function Mini.Update(mm, state, now)
 	local x, z = Battle.PathPoint(state.p)
 	local pos = toMap(mm, x, z)
 	local beat, phase = state.beat, state.phase or 0
-	local swing = math.sin(math.pi * math.clamp(phase, 0, 1))
+	local calm = settings and settings.ReducedMotion
+	local flash = not (calm or (settings and settings.ReducedFlashes))
+	local swing = calm and 0 or math.sin(math.pi * math.clamp(phase, 0, 1))
 	local enc = state.enc and plan.encounters[state.enc]
 	if enc and beat and beat.who == "pet" then
 		local mx, mz = Battle.PathPoint(enc.p)
@@ -181,12 +183,12 @@ function Mini.Update(mm, state, now)
 			pos.X.Scale + (target.X.Scale - pos.X.Scale) * 0.6 * swing,
 			pos.Y.Scale + (target.Y.Scale - pos.Y.Scale) * 0.6 * swing
 		)
-	elseif beat and beat.who == "rest" then
+	elseif not calm and beat and beat.who == "rest" then
 		pos = pos + UDim2.fromOffset(-6, 4)
 	end
-	local bob = (state.kind == "walk" or state.kind == "return") and math.abs(math.sin(now * 9)) * 2 or 0
+	local bob = not calm and (state.kind == "walk" or state.kind == "return") and math.abs(math.sin(now * 9)) * 2 or 0
 	mm.pet.Position = pos + UDim2.fromOffset(0, -bob)
-	local hurt = beat and beat.who == "mon" and not beat.dodged and phase >= 0.45 and phase < 0.8
+	local hurt = flash and beat and beat.who == "mon" and not beat.dodged and phase >= 0.45 and phase < 0.8
 	mm.petInner.BackgroundColor3 = hurt and Color3.fromRGB(255, 80, 70) or Color3.fromRGB(70, 160, 255)
 	for i, m in mm.monsters do
 		local defeated = state.cleared >= i
@@ -196,7 +198,7 @@ function Mini.Update(mm, state, now)
 		m.stroke.Color = fighting and Color3.fromRGB(255, 70, 60) or (defeated and Color3.fromRGB(70, 70, 76) or plan.theme.accent)
 		m.mark.Text = defeated and "X" or (fighting and "!" or (m.boss and "B" or ""))
 		local grow = 1
-		if fighting then
+		if fighting and not calm then
 			grow = 1.15 + math.abs(math.sin(now * 8)) * 0.15
 			if beat and beat.who == "mon" then
 				grow += swing * 0.35

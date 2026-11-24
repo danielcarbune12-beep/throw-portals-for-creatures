@@ -127,6 +127,7 @@ for _, world in Config.WorldOrder do
 		local _, ext = Builder.VisualBounds(pet)
 		check(ext.Y <= 2.15 and math.max(ext.X, ext.Z) <= 3.05 and (ext.Y > 2.0 or math.max(ext.X, ext.Z) > 2.9), world .. " pet scaled to map size")
 		local sawFight, sawSpark = false, false
+		local impactState, impactTime
 		local steps = 600
 		for i = 0, steps do
 			local t = plan.duration * i / steps
@@ -151,6 +152,7 @@ for _, world in Config.WorldOrder do
 			end
 			if ctx.spark.CFrame.Position.Y > -10 then
 				sawSpark = true
+				impactState, impactTime = st, t
 			end
 			if snapWorld == world and snapAt and t >= snapAt and not ctx.snapped then
 				ctx.snapped = true
@@ -178,7 +180,43 @@ for _, world in Config.WorldOrder do
 		for i, rec in ctx.monsters do
 			check(rec.down == true, world .. " monster " .. i .. " knocked down at the end")
 		end
+		if impactState then
+			Fight.Update(ctx, impactState, impactTime, 1 / 60, { ReducedFlashes = true })
+			check(ctx.spark.CFrame.Position.Y < -40 and ctx.ring.CFrame.Position.Y < -40, world .. " Reduced Flashes suppresses impact geometry")
+			local flashes = 0
+			for _, rec in ctx.monsters do
+				flashes += rec.flash or 0
+			end
+			check(flashes == 0, world .. " Reduced Flashes clears monster hit flashes")
+			Fight.Update(ctx, impactState, impactTime, 1 / 60, { VFXQuality = "Low" })
+			check(ctx.spark.CFrame.Position.Y < -40 and ctx.ring.CFrame.Position.Y < -40, world .. " Low VFX suppresses impact geometry")
+			Fight.Update(ctx, impactState, impactTime, 1 / 60, { ReducedMotion = true })
+			local calmPet, calmCamera = pet:GetPivot(), cam.CFrame
+			local calmParts = {}
+			for _, rec in ctx.monsters do
+				table.insert(calmParts, { rec.model, rec.model:GetPivot() })
+			end
+			Fight.Update(ctx, impactState, impactTime + 1, 1 / 60, { ReducedMotion = true })
+			check((pet:GetPivot().Position - calmPet.Position).Magnitude < 0.001, world .. " Reduced Motion removes pet bob/lunge")
+			check(cam.CFrame == calmCamera, world .. " Reduced Motion keeps a fixed overview camera")
+			local stable = true
+			for _, item in calmParts do
+				stable = stable and (item[1]:GetPivot().Position - item[2].Position).Magnitude < 0.001
+			end
+			check(stable, world .. " Reduced Motion removes monster hover and hit shake")
+			check(ctx.spark.CFrame.Position.Y < -40 and ctx.ring.CFrame.Position.Y < -40, world .. " Reduced Motion suppresses expanding impacts")
+			Fight.Update(ctx, impactState, impactTime, 1 / 60, {})
+			check(ctx.spark.CFrame.Position.Y > -10, world .. " live setting reversal restores normal impact effects")
+			local function cameraAfter(fps)
+				ctx.camPos, ctx.camFocus = R.Vector3.new(-45, 20, -50), R.Vector3.zero
+				for _ = 1, fps do
+					Fight.Update(ctx, impactState, impactTime, 1 / fps, {})
+				end
+				return cam.CFrame.Position
+			end
+			check((cameraAfter(30) - cameraAfter(60)).Magnitude < 0.001, world .. " action camera settles consistently at 30 and 60 FPS")
+		end
 	end
 	scene:Destroy()
 end
-H.summary()
+assert(H.summary() == 0, "Expedition fight regressions")

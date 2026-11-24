@@ -25,7 +25,9 @@ local hud = {
 local mini, frame, fight = { root = {} }, { Visible = true }, { plan = currentPlan }
 local viewData = { serverNow = 100 }
 local signal
+local settings = { ReducedMotion = false, ReducedFlashes = false, VFXQuality = "High" }
 local env = setmetatable({
+	Settings = settings,
 	ready = true,
 	HUD = hud,
 	page = page,
@@ -70,7 +72,8 @@ local env = setmetatable({
 	},
 	Mini = {
 		SetPlan = function() end,
-		Update = function()
+		Update = function(_, _, _, options)
+			assert(options == settings, "live settings reach the mini-map")
 			miniUpdates += 1
 			if fail then
 				error("simulated view failure")
@@ -78,7 +81,8 @@ local env = setmetatable({
 		end,
 	},
 	Fight = {
-		Update = function()
+		Update = function(_, _, _, _, options)
+			assert(options == settings, "live settings reach the journey fight")
 			fightUpdates += 1
 		end,
 	},
@@ -161,5 +165,50 @@ signal(true)
 H.check(
 	renders == 3 and clocks == before + 1,
 	"visible sync uses HUD routing without a duplicate render or clock update"
+)
+env.Fight.Anchors = function()
+	return H.roblox.Vector3.zero, H.roblox.Vector3.one
+end
+env.Fight.Project = function()
+	return H.roblox.Vector2.new(50, 50)
+end
+env.UDim2, env.Color3 = H.roblox.UDim2, H.roblox.Color3
+local overlay = luau.load(
+	between("local function updateFightOverlay", "\nlocal function view()") .. "\nreturn updateFightOverlay",
+	{ environment = env }
+)()
+local function bar()
+	return { back = {}, fill = {}, name = {} }
+end
+local screen = {
+	vp = { AbsoluteSize = H.roblox.Vector2.new(300, 200) },
+	pet = bar(),
+	mon = bar(),
+	counter = {},
+	log = {},
+	popup = {},
+}
+local overlayState = {
+	hp = 80,
+	maxHp = 100,
+	enc = 1,
+	monHp = 90,
+	monMax = 100,
+	cleared = 0,
+	text = "Scouting",
+	phase = 0.6,
+	beat = { who = "pet", dmg = 5, crit = true },
+}
+settings.ReducedMotion = true
+overlay(screen, { encounters = { { name = "Sentry" } } }, overlayState)
+H.check(
+	screen.popup.Visible == false and screen.log.Text == "Scouting",
+	"Reduced Motion keeps battle log and bars without floating damage numbers"
+)
+settings.ReducedMotion = false
+overlay(screen, { encounters = { { name = "Sentry" } } }, overlayState)
+H.check(
+	screen.popup.Visible and screen.popup.Text == "CRIT -5",
+	"normal motion restores contained battle damage numbers"
 )
 assert(H.summary() == 0, "Expedition presentation budget regressions")

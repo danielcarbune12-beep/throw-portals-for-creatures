@@ -190,8 +190,10 @@ function Fight.Anchors(ctx)
 	return ctx.petHead, ctx.monHead
 end
 
-function Fight.Update(ctx, state, now, dt)
+function Fight.Update(ctx, state, now, dt, settings)
 	local plan = ctx.plan
+	local calm = settings and settings.ReducedMotion
+	local impactFx = not (calm or (settings and (settings.ReducedFlashes or settings.VFXQuality == "Low")))
 	local beat, phase = state.beat, state.phase or 0
 	local pos, fwd = routeAt(state.p)
 	fwd *= state.dir
@@ -234,6 +236,9 @@ function Fight.Update(ctx, state, now, dt)
 			lift = math.abs(math.sin(now * 3)) * 0.15
 		end
 	end
+	if calm then
+		offset, lift, yaw = V(), 0, 0
+	end
 	if ctx.pet then
 		local at = pos + offset + V(0, (ctx.petLift or 0) + lift, 0)
 		ctx.pet:PivotTo(CFrame.lookAt(at, at + fwd) * ANG(0, yaw, 0))
@@ -244,7 +249,7 @@ function Fight.Update(ctx, state, now, dt)
 	ctx.monHead = nil
 	for i, rec in ctx.monsters do
 		local cf = rec.base
-		local hover = rec.flying and (0.35 + math.sin(now * 3 + i) * 0.2) or 0
+		local hover = rec.flying and (calm and 0.35 or (0.35 + math.sin(now * 3 + i) * 0.2)) or 0
 		local defeated = state.cleared >= i
 		if defeated then
 			if not rec.down then
@@ -263,8 +268,8 @@ function Fight.Update(ctx, state, now, dt)
 			local flash = 0
 			if state.enc == i and beat then
 				if beat.who == "mon" then
-					local reach = beat.special and 0 or swing * 0.9
-					o = CFrame.new(0, hover + (beat.special and swing * 1.6 or swing * 0.3), -reach)
+					local lunge = beat.special and 0 or swing * 0.9
+					o = CFrame.new(0, hover + (beat.special and swing * 1.6 or swing * 0.3), -lunge)
 				elseif beat.who == "pet" and landed then
 					flash = 1 - (phase - 0.45) / 0.35
 					o = CFrame.new(0, hover, 0.35 * swing) * ANG(0, math.sin(now * 45) * 0.12, 0)
@@ -273,18 +278,21 @@ function Fight.Update(ctx, state, now, dt)
 						o = CFrame.new(0, hover * (1 - fall), 0) * knockedDown(rec, fall)
 					end
 				end
+				if calm then
+					o = CFrame.new(0, hover, 0)
+				end
 				ctx.monHead = (cf * CFrame.new(0, rec.top + hover + 0.6, 0)).Position
 			elseif state.enc ~= i then
-				o = CFrame.new(0, hover + math.abs(math.sin(now * 2 + i)) * 0.08, 0)
+				o = CFrame.new(0, hover + (calm and 0 or math.abs(math.sin(now * 2 + i)) * 0.08), 0)
 			end
 			rec.model:PivotTo(cf * o)
-			local f = math.floor(flash * 8 + 0.5) / 8
+			local f = impactFx and math.floor(flash * 8 + 0.5) / 8 or 0
 			if f ~= (rec.flash or 0) then
 				rec.flash = f
 				tint(rec, WHITE, f * 0.75)
 			end
 			for _, w in rec.wings do
-				local flap = math.sin(now * 14 + i) * 0.6
+				local flap = calm and 0 or math.sin(now * 14 + i) * 0.6
 				w.part.CFrame = cf * o * w.cf * ANG(0, 0, w.side * flap)
 			end
 		end
@@ -292,7 +300,7 @@ function Fight.Update(ctx, state, now, dt)
 
 	-- Hit spark and boss slam ring
 	local sparkAt
-	if beat and landed and beat.who ~= "rest" and not beat.dodged then
+	if impactFx and beat and landed and beat.who ~= "rest" and not beat.dodged then
 		local k = (phase - 0.45) / 0.35
 		if beat.who == "pet" and monRec then
 			sparkAt = monRec.base.Position + V(0, monRec.top * 0.55, 0) - fwd * 0.4
@@ -323,6 +331,11 @@ function Fight.Update(ctx, state, now, dt)
 
 	-- Action camera: wide while exploring, closes in on fights.
 	if ctx.cam then
+		if calm then
+			ctx.camPos, ctx.camFocus = V(-25, 21, -29), V(0, 1, 0)
+			ctx.cam.CFrame = CFrame.lookAt(ctx.camPos, ctx.camFocus)
+			return
+		end
 		local focus = pos + V(0, 1, 0)
 		local dist = 30
 		if enc then
@@ -332,7 +345,7 @@ function Fight.Update(ctx, state, now, dt)
 			dist = 20
 		end
 		local wantPos = focus + V(-0.55, 0.55, -0.63).Unit * dist
-		local k = ctx.camPos and math.clamp((dt or 0.016) * 2.5, 0, 1) or 1
+		local k = ctx.camPos and (1 - math.exp(-2.5 * math.max(0, dt or 1 / 60))) or 1
 		ctx.camPos = ctx.camPos and ctx.camPos:Lerp(wantPos, k) or wantPos
 		ctx.camFocus = ctx.camFocus and ctx.camFocus:Lerp(focus, k) or focus
 		ctx.cam.CFrame = CFrame.lookAt(ctx.camPos, ctx.camFocus)

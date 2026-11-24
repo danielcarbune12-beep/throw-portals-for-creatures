@@ -19,6 +19,7 @@ local Renderer = require(script.Parent.CreatureRenderer)
 local HUD = require(script.Parent.HUD)
 local State = require(script.Parent.ClientState)
 local Sounds = require(script.Parent.Sounds)
+local Settings = require(script.Parent.ClientSettings)
 local Panel = {}
 local player = Players.LocalPlayer
 local ready, busy = false, false
@@ -130,7 +131,7 @@ local function updateFightOverlay(view, plan, state)
 	view.counter.Text = "Monsters defeated " .. state.cleared .. "/" .. #plan.encounters
 	view.log.Text = state.text or ""
 	local beat, phase = state.beat, state.phase or 0
-	local show = beat and (beat.who == "pet" or beat.who == "mon") and phase >= 0.45
+	local show = not Settings.ReducedMotion and beat and (beat.who == "pet" or beat.who == "mon") and phase >= 0.45
 	view.popup.Visible = show == true
 	if show then
 		local target = beat.who == "pet" and monHead or petHead
@@ -1056,10 +1057,10 @@ function Panel.Init()
 			local now = os.clock()
 			if miniMap.root.Visible then
 				Mini.SetPlan(miniMap, plan, a.world)
-				Mini.Update(miniMap, state, now)
+				Mini.Update(miniMap, state, now, Settings)
 			end
 			if liveFight then
-				Fight.Update(fightCtx, state, now, dt)
+				Fight.Update(fightCtx, state, now, dt, Settings)
 				if fightView then
 					updateFightOverlay(fightView, plan, state)
 				end
