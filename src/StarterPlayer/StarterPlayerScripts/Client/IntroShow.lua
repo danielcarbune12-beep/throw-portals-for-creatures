@@ -1,21 +1,24 @@
--- IntroShow: the creature show that opens the game once the world is ready (played by Intro).
+-- IntroShow: the game's opening throw, played by Intro once the world is ready.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > IntroShow (ModuleScript)
 --
---   SKY      a giant portal tears open in the sky above the Launch Hall; a dragon bursts out of it,
---            flies straight at the camera breathing fire and roars past overhead
---   GROUND   the camera drops to the ground where a second portal opens: a lion leaps out and roars
---            (shockwave), then a parade of little pets hops and runs out past the camera
---   TITLE    everyone poses while the title slams in, then Intro dives the camera down to you
--- Everything is built locally and removed afterwards; any click/key skip ends it at once.
+--   LAUNCH   the portal orb launched from the loading screen streaks in over the Launch Hall
+--   FLIGHT   the camera chases it in a huge arc down the lane, trail blazing, the world below
+--   LANDING  it slams into the ground, bounces twice, the ground shockwaves
+--   REVEAL   a portal gate grows out of it, something powerful charges up inside as a glowing
+--            silhouette, bursts out, lands and does its own signature move (roar, howl, breath...)
+--            with its call popping up - while the title slams onto the screen
+-- Then Intro dives the camera down to you. Built locally, removed afterwards, any skip ends it.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local RS = game:GetService("ReplicatedStorage")
 local CreatureData = require(RS.Shared.CreatureData)
+local Config = require(RS.Shared.Config)
 local Builder = require(RS.Shared.CreatureBuilder)
 local Animator = require(RS.Shared.CreatureAnimator)
 local Effects = require(script.Parent.Effects)
 local Sounds = require(script.Parent.Sounds)
 local okPortal, Portal = pcall(require, RS.Shared.PortalBuilder)
+local okSig, Signatures = pcall(require, script.Parent.Signatures)
 local Show = {}
 
 local V = Vector3.new
@@ -23,13 +26,6 @@ local PI = math.pi
 local player = Players.LocalPlayer
 
 local function smooth(k) k = math.clamp(k, 0, 1); return k * k * (3 - 2 * k) end
-local function pick(list)
-	local have = {}
-	for _, id in ipairs(list) do
-		if CreatureData.ById[id] then table.insert(have, id) end
-	end
-	return have[math.random(1, math.max(1, #have))] or CreatureData.List[1].id
-end
 
 local function groundAt(x, z, fallback)
 	local params = RaycastParams.new()
@@ -38,86 +34,84 @@ local function groundAt(x, z, fallback)
 	if player.Character then table.insert(ignore, player.Character) end
 	if Effects.Folder then table.insert(ignore, Effects.Folder) end
 	params.FilterDescendantsInstances = ignore
-	local hit = workspace:Raycast(V(x, 400, z), V(0, -800, 0), params)
+	local hit = workspace:Raycast(V(x, 500, z), V(0, -1000, 0), params)
 	return hit and hit.Position.Y or fallback
 end
 
--- a creature driven by its own animator (legs, wings and tail move while it travels)
-local function actor(id, folder, at, scale)
-	local model, rig = Builder.Build(id, scale)
-	for _, e in ipairs(rig.emitters or {}) do e.Enabled = true end
-	model.Parent = folder
-	local anim = Animator.new(rig, CFrame.new(at))
-	return { model = model, anim = anim, rig = rig }
-end
-local function place(a, pos, facing, dt, ground, spin)
-	local an = a.anim
-	local flat = V(pos.X - an.pos.X, 0, pos.Z - an.pos.Z)
-	if flat.Magnitude > 0.05 then
-		an:MoveTo(V(pos.X, an.pos.Y, pos.Z), math.max(6, flat.Magnitude / math.max(dt, 1 / 120) * 1.1))
-	else
-		an.moveTarget = nil
-		local yaw = math.atan2(-facing.X, -facing.Z) + (spin or 0)
-		an.yaw, an.targetYaw = yaw, yaw
-	end
-	an.groundY = pos.Y
-	an:Step(dt)
-end
+-- the star of the opening: a big Legendary / Mythical with a signature move
+local STARS = { "PrismLion", "SeraphLion", "UmbraWolf", "AuroraFox", "BlizzardBear", "CosmicDragon", "Infernadrake",
+	"GlacierYeti", "Pegasus", "PhoenixLumen", "StarWhale", "DiamondDrake", "EclipseDragon", "OakTitan" }
 
-local function gate(folder, id, radius, at, facing)
-	if not (okPortal and Portal and Portal.BuildGate) then return nil end
-	local ok, g, refs = pcall(Portal.BuildGate, id, radius)
-	if not ok or not g then return nil end
-	g:PivotTo(CFrame.lookAt(at, at + facing))
-	for _, d in ipairs(g:GetDescendants()) do
-		if d:IsA("BasePart") then d.Anchored = true end
-	end
-	g:ScaleTo(0.05)
-	g.Parent = folder
-	return { model = g, refs = refs, cf = CFrame.lookAt(at, at + facing) }
-end
-
-local function call(pos, text, color)
-	if Effects.FloatingText then pcall(Effects.FloatingText, pos, text, color, 1.6) end
-end
-
--- opts: { camera, skipped = function() -> bool, title = function() (show the title card) }
--- Returns the camera CFrame it ended on, so the next shot can continue smoothly.
+-- opts: { camera, skipped = function() -> bool, title = function() }
+-- Returns the camera CFrame it ended on, so Intro can dive down to the player from there.
 function Show.Run(opts)
 	local camera = opts.camera or workspace.CurrentCamera
 	local folder = Instance.new("Folder")
 	folder.Name = "IntroShow"
 	folder.Parent = workspace
-	local fx = {}
+	local anim
 	local function cleanup()
-		for _, a in ipairs(fx) do pcall(a.anim.Destroy, a.anim) end
+		if anim then pcall(anim.Destroy, anim) end
 		folder:Destroy()
 	end
 
-	-- the stage: in front of the Launch Hall (its open front faces +Z)
-	local g0 = groundAt(0, 70, 0)
-	local skyPortalAt = V(0, g0 + 48, 10)
-	local groundPortalAt = V(0, g0 + 5.2, 46)
-	local camGround = V(-7, g0 + 3.5, 82)
-	local sky = gate(folder, "Divine", 15, skyPortalAt, V(0, 0, 1))
-	local low = gate(folder, "Galaxy", 5, groundPortalAt, V(0, 0, 1))
-
-	local dragonId = pick({ "CosmicDragon", "Infernadrake", "ArchDrake", "EclipseDragon", "Crystalwing", "Bloomwyrm" })
-	local lionId = pick({ "PrismLion", "SeraphLion", "UmbraWolf", "AuroraFox", "BlizzardBear" })
-	local parade = { "Mossbun", "Emberpup", "Gumdrop", "Frostpaw", "CloudLamb", "AstroBlob", "Lollipup", "Gemmy" }
-	local dragon = actor(dragonId, folder, skyPortalAt + V(0, 0, -6), 2.4)
-	table.insert(fx, dragon)
-	local lion = actor(lionId, folder, groundPortalAt + V(0, -4.8, -3), 1.5)
-	table.insert(fx, lion)
-	local pets = {}
-	for i = 1, 5 do
-		local id = table.remove(parade, math.random(1, #parade))
-		if CreatureData.ById[id] then
-			local p = actor(id, folder, groundPortalAt + V(0, -4.8, -3), 1.1)
-			table.insert(pets, p)
-			table.insert(fx, p)
+	-- the throw: from above the Launch Hall's open front, far down the lane (+Z)
+	local gHall = groundAt(0, 50, 0)
+	local launch = V(0, gHall + 34, 30)
+	local landX, landZ = 0, 210
+	local gLand = groundAt(landX, landZ, gHall)
+	local land = V(landX, gLand, landZ)
+	local peak = (launch + land) / 2 + V(0, 70, 0)
+	local orb, orbRefs
+	if okPortal and Portal and Portal.BuildOrb then
+		local ok, o, r = pcall(Portal.BuildOrb, "Galaxy", 2.2)
+		if ok and o then
+			orb, orbRefs = o, r
+			for _, d in ipairs(orb:GetDescendants()) do
+				if d:IsA("BasePart") then d.Anchored = true end
+			end
+			orb.Parent = folder
+			if orbRefs and orbRefs.trail then orbRefs.trail.Enabled = true end
 		end
 	end
+	if not orb then
+		local p = Instance.new("Part")
+		p.Shape = Enum.PartType.Ball
+		p.Size = V(3, 3, 3)
+		p.Material = Enum.Material.Neon
+		p.Color = Color3.fromRGB(150, 110, 255)
+		p.Anchored, p.CanCollide, p.CanQuery, p.CanTouch = true, false, false, false
+		p.Parent = folder
+		orb = Instance.new("Model")
+		p.Parent = orb
+		orb.PrimaryPart = p
+		orb.Parent = folder
+	end
+	local function bezier(a, b, c, t)
+		local u = 1 - t
+		return a * u * u + b * 2 * u * t + c * t * t
+	end
+
+	-- the star, waiting inside its portal
+	local starId = STARS[math.random(1, #STARS)]
+	if not CreatureData.ById[starId] then starId = CreatureData.List[1].id end
+	local def = CreatureData.ById[starId]
+	local sig = okSig and Signatures and Signatures.Get and Signatures.Get(starId) or nil
+	local model, rig = Builder.Build(starId, 1.6)
+	for _, e in ipairs(rig.emitters or {}) do e.Enabled = true end
+	model.Parent = folder
+	local gateAt = land + V(0, 5.6, 0)
+	local hidden = CFrame.new(land + V(0, -60, 0))
+	anim = Animator.new(rig, hidden)
+	local orig = {}
+	for _, p in ipairs(model:GetDescendants()) do
+		if p:IsA("BasePart") and p.Transparency < 0.95 then
+			orig[p] = { p.Color, p.Material }
+		end
+	end
+	local rarityColor = (Config.Rarities[def.rarity] or {}).color or Color3.fromRGB(255, 220, 120)
+	local gate, gateRefs
+	local gateCF = CFrame.lookAt(gateAt, gateAt + V(0, 0, -1))
 
 	local start = os.clock()
 	local last = start
@@ -128,93 +122,131 @@ function Show.Run(opts)
 			pcall(fn)
 		end
 	end
-	local DURATION = 6.2
+	local DURATION = 8.2
 	local camCF = camera.CFrame
+	local FLIGHT_END = 3.2
+	local creatureFront = land + V(0, 0, -7) -- where it lands after bursting out (toward the camera)
 	while os.clock() - start < DURATION do
 		if opts.skipped and opts.skipped() then break end
 		local now = os.clock()
 		local t, dt = now - start, now - last
 		last = now
-		-- portals grow and swirl
-		for _, gg in ipairs({ sky, low }) do
-			if gg then
-				local open = gg == sky and smooth(t / 0.7) or smooth((t - 2.4) / 0.5)
-				gg.model:ScaleTo(math.max(0.05, open))
-				gg.model:PivotTo(gg.cf)
-				if Portal.Spin then pcall(Portal.Spin, gg.refs, t) end
-			end
-		end
-		-- SKY: the dragon bursts out, flies at the camera and roars past overhead
-		local dp
-		if t < 2.6 then
-			local q = smooth(math.clamp((t - 0.5) / 1.9, 0, 1))
-			dp = skyPortalAt:Lerp(V(2, g0 + 30, 74), q) + V(math.sin(q * PI) * 6, math.sin(q * PI * 2) * 2, 0)
+		local orbPos
+		-- FLIGHT: a big arc down the lane, then two bounces
+		if t < FLIGHT_END then
+			local q = t / FLIGHT_END
+			orbPos = bezier(launch, peak, land + V(0, 1.6, 0), q)
+		elseif t < 4.1 then
+			local q = (t - FLIGHT_END) / 0.9
+			local hop = q < 0.6 and math.sin(q / 0.6 * PI) * 4 or math.sin((q - 0.6) / 0.4 * PI) * 1.2
+			orbPos = land + V(0, 1.6 + hop, -q * 2)
 		else
-			local q = math.clamp((t - 2.6) / 2, 0, 1)
-			dp = V(2, g0 + 30, 74):Lerp(V(-30, g0 + 46, 140), q)
+			orbPos = land + V(0, 1.6, -2)
 		end
-		place(dragon, dp, V(0, 0, 1), dt, nil)
-		dragon.anim.groundY = dp.Y
-		once("dragonOut", 0.55, function()
-			Effects.Burst(skyPortalAt, ColorSequence.new(Color3.fromRGB(255, 230, 150), Color3.fromRGB(255, 120, 60)), 40, 24, 1.4)
-			Effects.Shake(0.5, 0.4)
-			pcall(Sounds.Play, "Rare", 0.85)
-		end)
-		if t > 1.1 and t < 2.4 and math.floor(t * 8) ~= done.lastFire then
-			done.lastFire = math.floor(t * 8)
-			Effects.Burst(dp + V(0, 0, 4), ColorSequence.new(Color3.fromRGB(255, 210, 90), Color3.fromRGB(255, 80, 30)), 10, 18, 1.1)
+		if orb.Parent then
+			orb:PivotTo(CFrame.new(orbPos) * CFrame.Angles(t * 6, t * 4, 0))
 		end
-		once("dragonRoar", 1.4, function()
-			call(dp + V(0, 6, 0), "ROOOAR!", Color3.fromRGB(255, 160, 80))
+		once("land", FLIGHT_END, function()
+			Effects.Shockwave(land, Color3.fromRGB(170, 130, 255), 26, 0.8)
+			Effects.Burst(land + V(0, 1, 0), ColorSequence.new(Color3.fromRGB(200, 170, 255), Color3.fromRGB(120, 220, 255)), 40, 22, 1.2)
+			Effects.Shake(0.7, 0.4)
+			pcall(Sounds.Play, "Land", 0.8)
 		end)
-		-- GROUND: the lion leaps out of the low portal and roars, then the parade runs out
-		local lp
-		local lionLand = groundPortalAt + V(0, -4.9, 14)
-		if t < 2.7 then
-			lp = groundPortalAt + V(0, -4.9, -3)
-		elseif t < 3.4 then
-			local q = (t - 2.7) / 0.7
-			lp = (groundPortalAt + V(0, -4.9, -1)):Lerp(lionLand, q) + V(0, 4 * q * (1 - q) * 5, 0)
-		else
-			lp = lionLand
-		end
-		place(lion, lp, V(0, 0, 1), dt)
-		once("lionRoar", 3.45, function()
-			Effects.Shockwave(lionLand, Color3.fromRGB(255, 220, 120), 22, 0.7)
-			Effects.Shake(0.7, 0.45)
-			call(lionLand + V(0, 7, 0), "ROAR!", Color3.fromRGB(255, 220, 120))
-			pcall(Sounds.Play, "Whoosh", 0.7)
+		once("bounce", FLIGHT_END + 0.55, function()
+			Effects.Shockwave(land + V(0, 0, -1.2), Color3.fromRGB(170, 130, 255), 10, 0.5)
 		end)
-		for i, p in ipairs(pets) do
-			local start2 = 3.6 + i * 0.22
-			local pp
-			if t < start2 then
-				pp = groundPortalAt + V(0, -4.9, -3)
-			else
-				local q = math.clamp((t - start2) / 1.8, 0, 1)
-				local lane = (i - 3) * 2.6
-				pp = (groundPortalAt + V(0, -4.9, 0)):Lerp(V(lane, g0, 70), q) + V(0, math.abs(math.sin(q * PI * 5)) * 0.8, 0)
+		-- the gate grows out of the orb
+		once("gate", 4.1, function()
+			if orb.Parent then orb:Destroy() end
+			if okPortal and Portal and Portal.BuildGate then
+				local ok, g, r = pcall(Portal.BuildGate, "Galaxy", 5)
+				if ok and g then
+					gate, gateRefs = g, r
+					for _, d in ipairs(gate:GetDescendants()) do
+						if d:IsA("BasePart") then d.Anchored = true end
+					end
+					gate:PivotTo(gateCF)
+					gate:ScaleTo(0.05)
+					gate.Parent = folder
+				end
 			end
-			place(p, pp, V(0, 0, 1), dt)
-			once("petPop" .. i, start2, function()
-				Effects.Burst(groundPortalAt, ColorSequence.new(Color3.fromRGB(150, 220, 255), Color3.fromRGB(255, 150, 230)), 10, 10, 0.7)
-			end)
+			Effects.Burst(gateAt, ColorSequence.new(Color3.fromRGB(150, 120, 255), Color3.fromRGB(255, 160, 230)), 30, 16, 1)
+			pcall(Sounds.Play, "Open", 0.7)
+		end)
+		if gate then
+			local open = smooth((t - 4.1) / 0.5)
+			gate:ScaleTo(math.max(0.05, open))
+			gate:PivotTo(gateCF)
+			if Portal.Spin then pcall(Portal.Spin, gateRefs, t) end
 		end
-		once("title", 4.4, function()
+		-- REVEAL: glowing silhouette charging inside the portal, burst, landing, signature move
+		local pos, gy, yaw = hidden.Position, hidden.Position.Y, PI
+		if t >= 4.4 and t < 5.4 then
+			local q = (t - 4.4) / 1
+			pos = land + V(math.sin(t * 60) * 0.05 * q, 0, 1.2 - q * 0.8)
+			gy = land.Y
+			anim:SetScale(0.5 + 0.4 * q)
+			local c = rarityColor:Lerp(Color3.new(1, 1, 1), 0.5 + 0.5 * math.sin(t * 16))
+			for p in pairs(orig) do
+				p.Color, p.Material = c, Enum.Material.Neon
+			end
+		elseif t >= 5.4 then
+			local q = math.clamp((t - 5.4) / 0.7, 0, 1)
+			pos = land:Lerp(creatureFront, q)
+			gy = land.Y + 4 * q * (1 - q) * 5
+			anim:SetScale(q < 1 and (1 + 0.15 * math.sin(q * PI)) or 1)
+		end
+		once("burst", 5.4, function()
+			for p, o in pairs(orig) do
+				p.Color, p.Material = o[1], o[2]
+			end
+			Effects.Burst(gateAt, ColorSequence.new(rarityColor, Color3.new(1, 1, 1)), 60, 26, 1.4)
+			Effects.Shockwave(land, rarityColor, 30, 0.9)
+			Effects.Shake(0.8, 0.5)
+			pcall(Sounds.Play, "Rare", 0.9)
+			-- its own signature pose for the rest of the show
+			anim:PlayAccent("enter", 2.6)
+			if sig and anim.life then
+				anim.life.spec = { keys = sig.keys }
+			end
+		end)
+		once("signature", 6.3, function()
+			Effects.Shockwave(creatureFront, rarityColor, 20, 0.7)
+			Effects.Burst(creatureFront + V(0, 3, 0), ColorSequence.new(rarityColor), 30, 16, 1)
+			if Effects.FloatingText then
+				pcall(Effects.FloatingText, creatureFront + V(0, 9, 0), sig and sig.call or "ROAR!", rarityColor, 1.8)
+			end
+			if sig and sig.motif then
+				pcall(Effects.Motif, sig.motif, creatureFront + V(0, 5, 0), V(0, 0, -1), rarityColor, 2)
+			end
+			Effects.Shake(0.6, 0.4)
+		end)
+		once("title", 5.9, function()
 			if opts.title then opts.title() end
 		end)
-		-- camera: look up at the sky portal, track the dragon, drop to the ground for the lion and parade
+		anim.moveTarget = nil
+		anim.pos = V(pos.X, anim.pos.Y, pos.Z)
+		anim.yaw, anim.targetYaw = yaw, yaw
+		anim.groundY = gy
+		anim:Step(dt)
+
+		-- camera: chase the orb, swing round to face the portal, then a low hero angle on the star
 		local cf
-		if t < 2.4 then
-			local q = smooth(t / 2.4)
-			local eye = camGround + V(4, 2 + q * 2, 0)
-			cf = CFrame.lookAt(eye, skyPortalAt:Lerp(dp, q))
-		elseif t < 3.2 then
-			local q = smooth((t - 2.4) / 0.8)
-			cf = CFrame.lookAt(camGround + V(2 - q * 2, 4 - q, 0), dp:Lerp(lionLand + V(0, 2, 0), q))
+		if t < FLIGHT_END then
+			local q = t / FLIGHT_END
+			local ahead = bezier(launch, peak, land + V(0, 1.6, 0), math.min(1, q + 0.06))
+			local behind = orbPos - (ahead - orbPos).Unit * 16 + V(0, 5, 0)
+			cf = CFrame.lookAt(behind, orbPos)
+		elseif t < 4.6 then
+			local q = smooth((t - FLIGHT_END) / 1.4)
+			local from = land + V(0, 8, -16)
+			local to = land + V(-6, 4, -22)
+			cf = CFrame.lookAt(from:Lerp(to, q), land + V(0, 2.5, 0))
 		else
-			local q = smooth((t - 3.2) / 3)
-			cf = CFrame.lookAt(camGround + V(-q * 3, 3 + q * 4, q * 6), lionLand + V(0, 2 + q * 3, 0))
+			local q = smooth((t - 4.6) / (DURATION - 4.6))
+			local a = -0.35 + q * 0.7
+			local eye = creatureFront + V(math.sin(a) * 18, 3.5 + q * 3, -math.cos(a) * 18)
+			cf = CFrame.lookAt(eye, creatureFront + V(0, 3.2, 0))
 		end
 		camera.CFrame = cf
 		camCF = cf

@@ -1,14 +1,30 @@
--- A brief bestiary slip for discoveries and Rare+ catches. Routine catches stay quiet.
+-- The caught-creature showcase: a big card in the middle of the screen right after a catch.
+-- The creature turns slowly in 3D in front of spinning rays in its rarity colour, with a ribbon
+-- ("NEW SPECIES!" or "CAUGHT!"), its name, rarity stars, health, attack and income. It pops in,
+-- holds (longer for rarer pets), then shrinks away toward the bottom of the screen. Click to dismiss.
 local RS = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
+local Config = require(RS.Shared.Config)
 local Data = require(RS.Shared.CreatureData)
 local Timeline = require(RS.Shared.PresentationTimeline)
 local Variants = require(RS.Shared.Variants)
+local Format = require(RS.Shared.Format)
+local PetCombat = require(RS.Shared.PetCombat)
+local PetGear = require(RS.Shared.PetGear)
 local K = require(script.Parent.UIKit)
+local T = K.Theme
 local HUD = require(script.Parent.HUD)
 local Renderer = require(script.Parent.CreatureRenderer)
 local Settings = require(script.Parent.ClientSettings)
-local Plaque = require(script.Parent.Plaque)
+local Sounds = require(script.Parent.Sounds)
+
+local function tw(o, t, props, style, dir)
+	local x = TweenService:Create(o, TweenInfo.new(Settings.ReducedMotion and math.min(t, 0.1) or t, style or Enum.EasingStyle.Quart,
+		dir or Enum.EasingDirection.Out), props)
+	x:Play()
+	return x
+end
 
 return function(key, discovery)
 	local id, size, material = Variants.Parse(key)
@@ -20,97 +36,111 @@ return function(key, discovery)
 	if old then
 		old:Destroy()
 	end
-	local slip = Instance.new("CanvasGroup")
-	local compact = workspace.CurrentCamera.ViewportSize.Y < 480
-	local width, slipHeight = compact and 220 or 272, compact and 64 or 80
-	slip.Name = "CatchReceipt"
-	slip.AnchorPoint = Vector2.new(0.5, 1)
-	slip.Position = UDim2.new(0.5, 0, 1, -20)
-	slip.Size = UDim2.fromOffset(width, slipHeight)
-	slip.BackgroundColor3 = Color3.fromRGB(230, 220, 193)
-	slip.BorderSizePixel = 0
-	slip.GroupTransparency = Settings.ReducedMotion and 0 or 1
-	slip.ZIndex = 30
-	slip:SetAttribute("Discovery", discovery == true)
-	slip.Parent = HUD.Root
-	Instance.new("UICorner", slip).CornerRadius = UDim.new(0, 3)
-	local edge = Instance.new("UIStroke")
-	edge.Color = Color3.fromRGB(131, 108, 65)
-	edge.Thickness = 1
-	edge.Parent = slip
-	local gradient = Instance.new("UIGradient")
-	gradient.Color = ColorSequence.new(Color3.fromRGB(255, 250, 230), Color3.fromRGB(205, 191, 155))
-	gradient.Rotation = 100
-	gradient.Parent = slip
-	local portraitSize = compact and 52 or 64
-	local portrait = K.viewport(
-		Renderer.BuildPreview(id, material),
-		UDim2.fromOffset(portraitSize, portraitSize),
-		false,
-		false,
-		true
-	)
-	portrait.Position = UDim2.fromOffset(6, compact and 6 or 8)
-	portrait.ZIndex = 31
-	portrait.Parent = slip
-	local function line(name, text, y, height, sizePx, color, font)
-		local l = Instance.new("TextLabel")
-		l.Name = name
-		l.BackgroundTransparency = 1
-		local left = compact and 66 or 80
-		l.Position = UDim2.fromOffset(left, y)
-		l.Size = UDim2.new(1, -left - 12, 0, height)
-		l.Text = text
-		l.TextSize = sizePx
-		l.TextColor3 = color
-		l.FontFace = font
-		l.TextXAlignment = Enum.TextXAlignment.Left
-		l.TextTruncate = Enum.TextTruncate.AtEnd
-		l.ZIndex = 31
-		l.Parent = slip
+	local rc = Config.Rarities[def.rarity]
+	local order = rc and rc.order or 1
+	local color = def.rarity == "Secret" and Color3.fromRGB(0, 255, 200) or (rc and rc.color or Color3.new(1, 1, 1))
+	local vcol = Variants.Color(size, material)
+	local compact = workspace.CurrentCamera.ViewportSize.Y < 520
+	local W, H = compact and 300 or 380, compact and 400 or 500
+
+	local root = K.new("Frame", { Name = "CatchReceipt", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.48),
+		Size = UDim2.fromOffset(W, H), BackgroundTransparency = 1, ZIndex = 30, Parent = HUD.Root })
+	root:SetAttribute("Discovery", discovery == true)
+	local scale = K.new("UIScale", { Scale = 0.2, Parent = root })
+
+	-- spinning rays and a soft glow behind the creature
+	local glow = K.new("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.4), Size = UDim2.fromScale(1.3, 1.05),
+		BackgroundColor3 = color, BackgroundTransparency = 0.55, ZIndex = 30, Parent = root })
+	K.new("UICorner", { CornerRadius = UDim.new(0.5, 0), Parent = glow })
+	K.new("UIGradient", { Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.6, 0.6),
+		NumberSequenceKeypoint.new(1, 1) }), Parent = glow })
+	local rays = K.new("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.4), Size = UDim2.fromOffset(W * 1.5, W * 1.5),
+		BackgroundTransparency = 1, ZIndex = 30, Parent = root })
+	for i = 0, 11 do
+		local ray = K.new("Frame", { AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.new(0, 26, 0.5, 0),
+			Rotation = i * 30, BackgroundColor3 = color, BackgroundTransparency = 0.6, ZIndex = 30, Parent = rays })
+		K.new("UIGradient", { Rotation = 90, Transparency = NumberSequence.new(1, 0.2), Parent = ray })
 	end
-	line(
-		"Status",
-		discovery and "NEW SPECIES" or "ADDED TO PETS",
-		compact and 7 or 10,
-		compact and 12 or 14,
-		compact and 9 or 10,
-		Color3.fromRGB(90, 79, 51),
-		Font.fromEnum(Enum.Font.GothamBold)
-	)
-	line(
-		"PetName",
-		Variants.Prefix(size, material) .. def.name,
-		compact and 21 or 26,
-		compact and 22 or 25,
-		compact and 18 or 20,
-		Color3.fromRGB(49, 49, 39),
-		Plaque.SerifHeavy
-	)
-	line(
-		"Rarity",
-		def.rarity,
-		compact and 44 or 54,
-		compact and 13 or 15,
-		compact and 11 or 12,
-		Color3.fromRGB(77, 82, 63),
-		Font.fromEnum(Enum.Font.GothamMedium)
-	)
-	local function fade(value, duration)
-		TweenService:Create(
-			slip,
-			TweenInfo.new(Settings.ReducedMotion and 0 or duration, Enum.EasingStyle.Quad),
-			{ GroupTransparency = value }
-		):Play()
+
+	-- the card itself
+	local card = K.new("Frame", { AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, H * 0.08), Size = UDim2.new(0.86, 0, 0.9, 0),
+		BackgroundColor3 = Color3.fromRGB(22, 18, 34), BackgroundTransparency = 0.12, ZIndex = 31, Parent = root })
+	K.new("UICorner", { CornerRadius = UDim.new(0, 18), Parent = card })
+	K.new("UIStroke", { Color = color, Thickness = 3, Parent = card })
+	K.new("UIGradient", { Rotation = 90, Color = ColorSequence.new(Color3.fromRGB(60, 50, 90), Color3.fromRGB(18, 14, 28)), Parent = card })
+
+	-- ribbon
+	local ribbon = K.new("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0, 0), Size = UDim2.new(0.8, 0, 0, compact and 38 or 46),
+		BackgroundColor3 = discovery and Color3.fromRGB(255, 196, 60) or color, ZIndex = 34, Parent = card })
+	K.new("UICorner", { CornerRadius = UDim.new(0, 10), Parent = ribbon })
+	K.new("UIStroke", { Color = Color3.fromRGB(20, 14, 30), Thickness = 2, Parent = ribbon })
+	K.new("TextLabel", { BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Text = discovery and "NEW SPECIES!" or "CAUGHT!",
+		Font = Enum.Font.GothamBlack, TextScaled = true, TextColor3 = Color3.new(1, 1, 1), TextStrokeTransparency = 0.2, ZIndex = 35, Parent = ribbon })
+
+	-- the creature, big and turning
+	local okModel, model = pcall(Renderer.BuildPreview, id, material)
+	if okModel and model then
+		local vp = K.viewport(model, UDim2.new(1, -20, 0.52, 0), true, false, true)
+		vp.Position = UDim2.new(0, 10, 0.07, 0)
+		vp.ZIndex = 33
+		vp.Parent = card
 	end
-	fade(0, Timeline.Card.enter)
-	task.delay(Timeline.Card.enter + Timeline.Card.hold, function()
-		if not slip.Parent then
-			return
-		end
-		fade(1, Timeline.Card.travel)
-		task.delay(Timeline.Card.travel, function()
-			slip:Destroy()
-		end)
+
+	-- name, rarity stars, stats
+	local name = K.new("TextLabel", { BackgroundTransparency = 1, Position = UDim2.new(0, 10, 0.6, 0), Size = UDim2.new(1, -20, 0.1, 0),
+		Text = Variants.Prefix(size, material) .. def.name, Font = Enum.Font.GothamBlack, TextScaled = true,
+		TextColor3 = vcol and vcol:Lerp(Color3.new(1, 1, 1), 0.25) or Color3.new(1, 1, 1), ZIndex = 33, Parent = card })
+	K.new("UIStroke", { Color = Color3.new(0, 0, 0), Thickness = 2, Transparency = 0.3, Parent = name })
+	local stars = string.rep("★", math.min(order, 8))
+	K.new("TextLabel", { BackgroundTransparency = 1, Position = UDim2.new(0, 10, 0.705, 0), Size = UDim2.new(1, -20, 0.07, 0),
+		Text = string.upper(def.rarity) .. "   " .. stars, Font = Enum.Font.GothamBold, TextScaled = true, TextColor3 = color,
+		TextStrokeTransparency = 0.4, ZIndex = 33, Parent = card })
+	local hp, atk = PetCombat.Stats({ c = id, s = size, v = material })
+	local income = Data.Income(id) * Variants.Mult(size, material)
+	local stats = K.new("Frame", { BackgroundTransparency = 1, Position = UDim2.new(0, 14, 0.8, 0), Size = UDim2.new(1, -28, 0.13, 0), ZIndex = 33, Parent = card })
+	K.new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, HorizontalAlignment = Enum.HorizontalAlignment.Center,
+		Padding = UDim.new(0, 8), Parent = stats })
+	for _, s in ipairs({
+		{ "HP", PetGear.Short(hp), Color3.fromRGB(96, 214, 110) },
+		{ "ATK", PetGear.Short(atk), Color3.fromRGB(255, 170, 90) },
+		{ "INCOME", Format.Money(income) .. "/s", Color3.fromRGB(150, 230, 255) },
+	}) do
+		local chip = K.new("Frame", { Size = UDim2.new(0.31, 0, 1, 0), BackgroundColor3 = Color3.fromRGB(40, 34, 58), ZIndex = 33, Parent = stats })
+		K.new("UICorner", { CornerRadius = UDim.new(0, 10), Parent = chip })
+		K.new("TextLabel", { BackgroundTransparency = 1, Size = UDim2.fromScale(1, 0.4), Text = s[1], Font = Enum.Font.GothamBold, TextScaled = true,
+			TextColor3 = s[3], ZIndex = 34, Parent = chip })
+		K.new("TextLabel", { BackgroundTransparency = 1, Position = UDim2.fromScale(0, 0.38), Size = UDim2.fromScale(1, 0.58), Text = s[2],
+			Font = Enum.Font.GothamBlack, TextScaled = true, TextColor3 = Color3.new(1, 1, 1), ZIndex = 34, Parent = chip })
+	end
+	local hint = K.new("TextLabel", { BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 1, 6),
+		Size = UDim2.new(1, 0, 0, 16), Text = "click to continue", Font = Enum.Font.GothamMedium, TextSize = 12,
+		TextColor3 = Color3.fromRGB(220, 215, 235), TextTransparency = 0.3, TextStrokeTransparency = 0.6, ZIndex = 33, Parent = card })
+
+	-- pop in with a bounce, spin the rays, then fly away
+	local closed = false
+	local spin = RunService.RenderStepped:Connect(function(dt)
+		if not root.Parent then return end
+		rays.Rotation = (rays.Rotation + dt * (12 + order * 3)) % 360
+		glow.BackgroundTransparency = 0.55 + math.sin(os.clock() * 3) * 0.08
 	end)
+	local function close()
+		if closed then return end
+		closed = true
+		tw(scale, Timeline.Card.travel, { Scale = 0.15 }, Enum.EasingStyle.Back, Enum.EasingDirection.In)
+		tw(root, Timeline.Card.travel, { Position = UDim2.new(0.5, 0, 1, -40) }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+		task.delay(Timeline.Card.travel + 0.05, function()
+			spin:Disconnect()
+			root:Destroy()
+		end)
+	end
+	local clicker = K.new("TextButton", { Text = "", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = 40, Parent = root })
+	clicker.Activated:Connect(close)
+	root.Destroying:Connect(function()
+		spin:Disconnect()
+	end)
+	tw(scale, Timeline.Card.enter, { Scale = 1 }, Enum.EasingStyle.Back)
+	pcall(Sounds.Play, discovery and "Rare" or "Collect", discovery and 1.1 or 1)
+	local hold = Timeline.Card.hold + (order >= 5 and 0.8 or (order >= 3 and 0.3 or 0))
+	task.delay(Timeline.Card.enter + hold, close)
+	hint.Visible = true
 end

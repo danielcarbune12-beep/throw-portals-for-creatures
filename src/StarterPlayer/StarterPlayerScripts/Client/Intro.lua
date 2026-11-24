@@ -1,13 +1,13 @@
--- Intro: the portal arrival you see when you join.
+-- Intro: the opening throw you see when you join.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > Intro (ModuleScript)
 --
 --   Intro.Cover(hud)  runs the moment the client starts, entirely in 2D so it never waits on the map:
---                     a living portal swirls in the middle of the screen and creatures from the game
---                     burst out of it one after another (black silhouette -> pop into colour, name and
---                     rarity), while the title slams in and the real loading stages tick along below.
---   Intro.Play(hud)   once your courtyard, character and save are ready: the portal swallows the
---                     screen, the camera flies out through a real portal gate in the sky, spirals down
---                     and lands behind you with a shockwave. About four seconds; click/tap/key skips.
+--                     a launch pad under a starry sky where a portal orb charges up while the loading
+--                     bar fills as a THROW POWER meter, the title drops in word by word, tips rotate.
+--   Intro.Play(hud)   once your courtyard, character and save are ready: the meter hits MAX, the orb is
+--                     thrown off the screen and IntroShow follows it across the world until it lands,
+--                     opens a portal and a powerful creature bursts out; then the camera dives to you.
+--                     Skip button (or Space / Esc / Enter) skips.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -97,111 +97,128 @@ local function creaturePool()
 	return pool
 end
 
+local PI = math.pi
+local TIPS = {
+	"Tip: charge your throw to the PERFECT zone for extra distance",
+	"Tip: rarer portals hold rarer creatures",
+	"Tip: throw farther to reach new worlds",
+	"Tip: send a team of 3 pets on expeditions",
+	"Tip: swords and armour make your pets stronger",
+	"Tip: feed pets at the Pantry to level them up",
+	"Tip: Mythical, Secret and Divine pulls get their own cutscene",
+}
+
+-- The loading screen is a launch pad at night: stars twinkle, a portal orb charges on its pad while
+-- the loading bar fills as a THROW POWER meter, the title drops in word by word and tips rotate.
+-- When the world is ready the meter hits MAX and the orb is thrown off the top of the screen -
+-- straight into IntroShow's flight over the world.
 function Intro.Cover(hud)
 	if ui then return ui end
 	workspace:SetAttribute("TPFC_IntroPlaying", true)
 	if hud then hud.Enabled = false end
+	local calm = Settings.ReducedMotion
 	local gui = K.new("ScreenGui", { Name = "Intro", IgnoreGuiInset = true, ResetOnSpawn = false, DisplayOrder = 50, Parent = player:WaitForChild("PlayerGui") })
-	local black = K.new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(12, 7, 26), Parent = gui })
-	K.new("UIGradient", { Rotation = 90, Color = ColorSequence.new(Color3.fromRGB(40, 20, 80), Color3.fromRGB(8, 5, 18)), Parent = black })
+	local black = K.new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(8, 10, 30), Parent = gui })
+	K.new("UIGradient", { Rotation = 90, Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, Color3.fromRGB(10, 12, 40)), ColorSequenceKeypoint.new(0.6, Color3.fromRGB(40, 24, 80)),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(90, 40, 110)) }), Parent = black })
 	local blur = game:GetService("Lighting"):FindFirstChild("TPFC_IntroBlur") or Instance.new("BlurEffect")
 	blur.Name = "TPFC_IntroBlur"
-	blur.Size = (Settings.ReducedMotion or Settings.LowVFX()) and 0 or 18
+	blur.Size = (calm or Settings.LowVFX()) and 0 or 18
 	blur.Parent = game:GetService("Lighting")
 
-	------------------------------------------------------------ the living portal
-	local art = K.new("Frame", { Name = "PortalArt", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Parent = gui })
-	local portal = K.new("Frame", {
-		Name = "Portal", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.6),
-		Size = UDim2.fromScale(0.36, 0.36), BackgroundTransparency = 1, Parent = art,
-	})
-	K.new("UIAspectRatioConstraint", { AspectRatio = 1, Parent = portal })
-	K.new("UISizeConstraint", { MaxSize = Vector2.new(330, 330), Parent = portal })
-	local portalScale = K.new("UIScale", { Scale = 0.05, Parent = portal })
-	local halo = circle(portal, 1.55, VIOLET, 0.82, 1)
-	local halo2 = circle(portal, 1.25, MAGENTA, 0.8, 1)
-	local core = circle(portal, 0.98, Color3.new(1, 1, 1), 0, 2)
-	local swirl = K.new("UIGradient", {
-		Color = ColorSequence.new({
-			ColorSequenceKeypoint.new(0, VIOLET), ColorSequenceKeypoint.new(0.3, CYAN), ColorSequenceKeypoint.new(0.55, MAGENTA),
-			ColorSequenceKeypoint.new(0.8, Color3.fromRGB(70, 40, 160)), ColorSequenceKeypoint.new(1, VIOLET),
-		}),
-		Parent = core,
-	})
-	local depth = circle(portal, 0.66, Color3.fromRGB(16, 8, 40), 0.15, 3)
-	K.new("UIGradient", { Transparency = NumberSequence.new(0.6, 0), Rotation = 90, Parent = depth })
-	local rings = {}
-	for i, spec in ipairs({ { 0.98, 7, CYAN, VIOLET, 140 }, { 0.84, 4, MAGENTA, CYAN, -210 }, { 0.62, 3, Color3.new(1, 1, 1), VIOLET, 300 } }) do
-		local _, g = arcRing(portal, spec[1], spec[2], spec[3], spec[4], 4 + i)
-		table.insert(rings, { g = g, speed = spec[5] })
+	local art = K.new("Frame", { Name = "LaunchPad", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Parent = gui })
+	-- stars
+	local stars = {}
+	for i = 1, 60 do
+		local s = K.new("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(math.random(), math.random() * 0.75),
+			Size = UDim2.fromOffset(math.random(2, 4), math.random(2, 4)), BackgroundColor3 = Color3.new(1, 1, 1),
+			BackgroundTransparency = math.random() * 0.5, Parent = art })
+		K.new("UICorner", { CornerRadius = UDim.new(1, 0), Parent = s })
+		table.insert(stars, { f = s, p = math.random() * 6, w = 1 + math.random() * 3 })
 	end
-	local frameRing = circle(portal, 1.08, nil, 1, 8)
-	K.new("UIStroke", { Thickness = 5, Color = T.CinematicGold, Parent = frameRing })
+	-- distant hills and the launch pad
+	for i, spec in ipairs({ { 0.2, 0.86, 0.7, Color3.fromRGB(30, 22, 60) }, { 0.75, 0.88, 0.8, Color3.fromRGB(24, 18, 48) } }) do
+		local hill = circle(art, 1, spec[4], 0, 1)
+		hill.SizeConstraint = Enum.SizeConstraint.RelativeXX
+		hill.Size = UDim2.fromScale(spec[3], spec[3])
+		hill.Position = UDim2.fromScale(spec[1], spec[2] + spec[3] * 0.4)
+
+	end
+	K.new("Frame", { AnchorPoint = Vector2.new(0, 1), Position = UDim2.fromScale(0, 1), Size = UDim2.new(1, 0, 0.14, 0),
+		BackgroundColor3 = Color3.fromRGB(18, 14, 36), ZIndex = 2, Parent = art })
+	local pad = K.new("Frame", { AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 0.86, 0), Size = UDim2.fromOffset(220, 26),
+		BackgroundColor3 = Color3.fromRGB(70, 60, 110), ZIndex = 3, Parent = art })
+	K.new("UICorner", { CornerRadius = UDim.new(0.5, 0), Parent = pad })
+	K.new("UIStroke", { Color = T.CinematicGold, Thickness = 3, Parent = pad })
+	local padGlow = K.new("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromScale(0.8, 0.35),
+		BackgroundColor3 = CYAN, ZIndex = 4, Parent = pad })
+	K.new("UICorner", { CornerRadius = UDim.new(0.5, 0), Parent = padGlow })
+
+	-- the portal orb charging on the pad
+	local orb = K.new("Frame", { Name = "Orb", AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 0.86, -18),
+		Size = UDim2.fromOffset(120, 120), BackgroundTransparency = 1, ZIndex = 5, Parent = art })
+	local orbScale = K.new("UIScale", { Scale = 1, Parent = orb })
+	local aura = circle(orb, 1.7, VIOLET, 0.75, 5)
+	local core = circle(orb, 1, Color3.new(1, 1, 1), 0, 6)
+	local swirl = K.new("UIGradient", { Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, VIOLET), ColorSequenceKeypoint.new(0.35, CYAN),
+		ColorSequenceKeypoint.new(0.7, MAGENTA), ColorSequenceKeypoint.new(1, VIOLET) }), Parent = core })
+	local _, ringG = arcRing(orb, 1.02, 5, Color3.new(1, 1, 1), CYAN, 7)
+	local shine = circle(orb, 0.32, Color3.new(1, 1, 1), 0.35, 8)
+	shine.Position = UDim2.fromScale(0.34, 0.3)
 	local sparks = {}
-	for i = 1, 16 do
-		local d = circle(portal, 0.03 + (i % 3) * 0.012, i % 2 == 0 and CYAN or T.CinematicGold, 0, 9)
-		table.insert(sparks, { f = d, a = i / 16 * math.pi * 2, r = 0.56 + (i % 4) * 0.05, w = 0.6 + (i % 5) * 0.25 })
+	for i = 1, 10 do
+		local d = circle(orb, 0.07, i % 2 == 0 and CYAN or T.CinematicGold, 0, 9)
+		table.insert(sparks, { f = d, a = i / 10 * PI * 2, r = 0.7 + (i % 3) * 0.08 })
 	end
 
-	------------------------------------------------------------ creatures bursting out
-	local stage = K.new("Frame", {
-		Name = "Emerging", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromScale(1.25, 1.25), BackgroundTransparency = 1, ZIndex = 10, Parent = portal,
-	})
-	local stageScale = K.new("UIScale", { Scale = 0.4, Parent = stage })
-	local nameplate = K.new("TextLabel", {
-		AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 1, 14), Size = UDim2.new(1.6, 0, 0, 30),
-		BackgroundTransparency = 1, Text = "", TextScaled = true, Font = fnt("MontserratBlack", Enum.Font.GothamBlack),
-		TextColor3 = Color3.new(1, 1, 1), TextTransparency = 1, ZIndex = 12, Parent = portal,
-	})
-	K.new("UITextSizeConstraint", { MaxTextSize = 28, Parent = nameplate })
-	local nameStroke = K.new("UIStroke", { Thickness = 2, Color = Color3.fromRGB(10, 8, 18), Transparency = 1, Parent = nameplate })
-	local rarityLine = K.new("TextLabel", {
-		AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 1, 44), Size = UDim2.new(1.2, 0, 0, 16),
-		BackgroundTransparency = 1, Text = "", TextScaled = true, Font = fnt("MontserratBold", Enum.Font.GothamBold),
-		TextColor3 = T.CinematicGold, TextTransparency = 1, ZIndex = 12, Parent = portal,
-	})
-	K.new("UITextSizeConstraint", { MaxTextSize = 15, Parent = rarityLine })
-
-	------------------------------------------------------------ title
-	local title = K.new("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.2), Size = UDim2.new(0.92, 0, 0, 190), BackgroundTransparency = 1, Parent = gui })
-	K.new("UISizeConstraint", { MaxSize = Vector2.new(1100, 190), Parent = title })
+	-- title: four words dropping in one by one
+	local title = K.new("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.24), Size = UDim2.new(0.94, 0, 0, 120),
+		BackgroundTransparency = 1, Parent = gui })
+	K.new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, HorizontalAlignment = Enum.HorizontalAlignment.Center,
+		VerticalAlignment = Enum.VerticalAlignment.Center, Padding = UDim.new(0, 14), Parent = title })
 	local titleScale = K.new("UIScale", { Scale = 1, Parent = title })
-	local INK = Color3.fromRGB(10, 8, 18)
+	local words = {}
 	local labels = {}
-	local function line(text, font, color, y, h, maxPx, stroke)
-		local l = K.new("TextLabel", { Text = text, Font = font, TextColor3 = color, TextScaled = true, BackgroundTransparency = 1, TextTransparency = 1,
-			AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, y), Size = UDim2.new(1, 0, 0, h), Parent = title })
-		K.new("UITextSizeConstraint", { MaxTextSize = maxPx, Parent = l })
-		K.new("UIStroke", { Color = INK, Thickness = stroke, Transparency = 1, Parent = l })
+	for i, spec in ipairs({ { "THROW", Color3.fromRGB(255, 214, 90) }, { "PORTALS", Color3.fromRGB(140, 230, 255) },
+		{ "FOR", Color3.fromRGB(255, 255, 255) }, { "CREATURES", Color3.fromRGB(255, 140, 220) } }) do
+		local holder = K.new("Frame", { BackgroundTransparency = 1, AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 110), LayoutOrder = i, Parent = title })
+		local l = K.new("TextLabel", { BackgroundTransparency = 1, AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 110),
+			Text = spec[1], Font = fnt("MontserratBlack", Enum.Font.GothamBlack), TextSize = i == 3 and 44 or 76, TextColor3 = spec[2],
+			TextTransparency = 1, Position = UDim2.fromOffset(0, -80), Parent = holder })
+		K.new("UIStroke", { Color = Color3.fromRGB(12, 8, 24), Thickness = 5, Transparency = 1, Parent = l })
+		K.new("UITextSizeConstraint", { MaxTextSize = i == 3 and 44 or 76, Parent = l })
+		table.insert(words, l)
 		table.insert(labels, l)
-		return l
 	end
-	local line1 = line("THROW PORTALS", fnt("MontserratBlack", Enum.Font.GothamBlack), Color3.new(1, 1, 1), 0.38, 96, 96, 4)
-	local line2 = line(Reveal.Track("For creatures"), fnt("MontserratBold", Enum.Font.GothamBold), T.CinematicGold, 0.74, 28, 28, 1.6)
-	local shine = K.new("UIGradient", { Rotation = 12, Offset = Vector2.new(-1, 0), Parent = line1,
-		Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.new(1, 1, 1)), ColorSequenceKeypoint.new(0.42, Color3.new(1, 1, 1)),
-			ColorSequenceKeypoint.new(0.5, CYAN), ColorSequenceKeypoint.new(0.58, Color3.new(1, 1, 1)), ColorSequenceKeypoint.new(1, Color3.new(1, 1, 1)) }) })
-	-- a real Skip button (clicks elsewhere are for tapping the portal)
+	K.new("UISizeConstraint", { MaxSize = Vector2.new(1200, 120), Parent = title })
+	local tip = K.new("TextLabel", { BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0.34, 0),
+		Size = UDim2.new(0.9, 0, 0, 22), Text = TIPS[math.random(1, #TIPS)], Font = fnt("MontserratBold", Enum.Font.GothamBold), TextSize = 16,
+		TextColor3 = Color3.fromRGB(220, 210, 255), TextTransparency = 1, Parent = gui })
+
+	-- loading bar = the THROW POWER meter
+	local loading = K.new("TextLabel", { Text = Reveal.Track("Opening the portal"), Font = fnt("MontserratBold", Enum.Font.GothamBold), TextSize = 13,
+		TextColor3 = T.CinematicGold, TextTransparency = 0.1, BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -46), Size = UDim2.fromOffset(420, 18), ZIndex = 6, Parent = gui })
+	local barBg = K.new("Frame", { AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -22), Size = UDim2.fromOffset(340, 16),
+		BackgroundColor3 = Color3.fromRGB(20, 16, 36), BackgroundTransparency = 0.1, ZIndex = 6, Parent = gui })
+	K.new("UICorner", { CornerRadius = UDim.new(1, 0), Parent = barBg })
+	K.new("UIStroke", { Color = T.CinematicGold, Thickness = 2, Parent = barBg })
+	local bar = K.new("Frame", { Size = UDim2.fromScale(0.05, 1), BackgroundColor3 = Color3.new(1, 1, 1), BackgroundTransparency = 0, ZIndex = 7, Parent = barBg })
+	K.new("UICorner", { CornerRadius = UDim.new(1, 0), Parent = bar })
+	K.new("UIGradient", { Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.fromRGB(90, 230, 120)),
+		ColorSequenceKeypoint.new(0.6, Color3.fromRGB(255, 214, 90)), ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 90, 90)) }), Parent = bar })
+	local power = K.new("TextLabel", { BackgroundTransparency = 1, AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(1, 10, 0.5, 0),
+		Size = UDim2.fromOffset(110, 18), Text = "POWER", Font = fnt("MontserratBlack", Enum.Font.GothamBlack), TextSize = 14,
+		TextColor3 = Color3.new(1, 1, 1), TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 7, Parent = barBg })
+
 	local skip = K.new("TextButton", { Text = Reveal.Track("Skip intro") .. "  >>", Font = fnt("MontserratBold", Enum.Font.GothamBold), TextSize = 14,
 		TextColor3 = Color3.new(1, 1, 1), TextTransparency = 0.1, BackgroundColor3 = Color3.fromRGB(30, 22, 50), BackgroundTransparency = 0.35,
-		AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -20, 1, -20), Size = UDim2.fromOffset(150, 36), ZIndex = 20, Parent = gui })
+		AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -20, 0, 20), Size = UDim2.fromOffset(150, 36), ZIndex = 20, Parent = gui })
 	K.new("UICorner", { CornerRadius = UDim.new(0, 10), Parent = skip })
 	skip.Activated:Connect(function()
 		skipped = true
 	end)
-	local tapHint = K.new("TextLabel", { Text = "TAP THE PORTAL!", Font = fnt("MontserratBlack", Enum.Font.GothamBlack), TextSize = 18,
-		TextColor3 = T.CinematicGold, BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -64),
-		Size = UDim2.fromOffset(420, 22), TextStrokeTransparency = 0.4, Parent = gui })
-	local summoned = 0
-	local loading = K.new("TextLabel", { Text = Reveal.Track("Opening the portal"), Font = fnt("MontserratBold", Enum.Font.GothamBold), TextSize = 13,
-		TextColor3 = T.CinematicGold, TextTransparency = 0.1, BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 1, -40), Size = UDim2.fromOffset(420, 18), Parent = gui })
-	local barBg = K.new("Frame", { AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -28), Size = UDim2.fromOffset(280, 3),
-		BackgroundColor3 = Color3.new(1, 1, 1), BackgroundTransparency = 0.85, Parent = gui })
-	K.new("UICorner", { CornerRadius = UDim.new(1, 0), Parent = barBg })
-	local bar = K.new("Frame", { Size = UDim2.fromScale(0.05, 1), BackgroundColor3 = CYAN, BackgroundTransparency = 0, Parent = barBg })
-	K.new("UICorner", { CornerRadius = UDim.new(1, 0), Parent = bar })
 
 	local titleShown = true
 	local function hideTitle(t)
@@ -211,112 +228,67 @@ function Intro.Cover(hud)
 			tw(l, t, { TextTransparency = 1 })
 			tw(l:FindFirstChildOfClass("UIStroke"), t, { Transparency = 1 })
 		end
-		tw(titleScale, t, { Scale = 0.94 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+		tw(tip, t, { TextTransparency = 1 })
 	end
-
-	------------------------------------------------------------ animation loop
-	local calm = Settings.ReducedMotion
-	local pool, poolIndex = creaturePool(), 0
-	local current -- { vp, t, popped, id }
-	local function nextCreature()
-		if current and current.vp then current.vp:Destroy() end
-		current = nil
-		poolIndex = poolIndex % #pool + 1
-		local def = pool[poolIndex]
-		local ok, model = pcall(function() return (Builder.Build(def.id)) end)
-		if not ok or not model then return end
-		local vp = K.viewport(model, UDim2.fromScale(1, 1), false, true)
-		vp.ZIndex = 11
-		vp.Parent = stage
-		current = { vp = vp, t = 0, def = def }
-		nameplate.TextTransparency, nameStroke.Transparency, rarityLine.TextTransparency = 1, 1, 1
-	end
-	local function burstSparks()
-		for i = 1, 10 do
-			local d = circle(art, 0.012, i % 2 == 0 and CYAN or T.CinematicGold, 0, 9)
-			K.new("UIAspectRatioConstraint", { AspectRatio = 1, Parent = d })
-			d.Position = portal.Position
-			local a = i / 10 * math.pi * 2
-			tw(d, 0.6, { Position = portal.Position + UDim2.fromScale(math.cos(a) * 0.16, math.sin(a) * 0.22), BackgroundTransparency = 1 })
-			task.delay(0.65, function() d:Destroy() end)
+	local function dropWords(gap)
+		for i, l in ipairs(words) do
+			task.delay((i - 1) * gap, function()
+				l.Position = UDim2.fromOffset(0, calm and 0 or -80)
+				tw(l, 0.45, { TextTransparency = 0, Position = UDim2.fromOffset(0, 0) }, Enum.EasingStyle.Bounce)
+				tw(l:FindFirstChildOfClass("UIStroke"), 0.3, { Transparency = 0.1 })
+				pcall(Sounds.Play, "Land", 1 + i * 0.12)
+			end)
 		end
 	end
+	dropWords(0.22)
+	task.delay(1.1, function()
+		tw(tip, 0.5, { TextTransparency = 0.15 })
+	end)
+	-- rotate tips while loading
+	task.spawn(function()
+		while gui.Parent and ui and ui.waiting do
+			task.wait(3.2)
+			if not (gui.Parent and ui and ui.waiting) then break end
+			tw(tip, 0.25, { TextTransparency = 1 })
+			task.wait(0.27)
+			tip.Text = TIPS[math.random(1, #TIPS)]
+			tw(tip, 0.25, { TextTransparency = 0.15 })
+		end
+	end)
+
 	local elapsed = 0
 	local anim = RunService.RenderStepped:Connect(function(dt)
 		elapsed += dt
-		if not calm then
-			swirl.Rotation = (swirl.Rotation + dt * 70) % 360
-			for _, r in ipairs(rings) do r.g.Rotation = (r.g.Rotation + dt * r.speed) % 360 end
-			halo.Size = UDim2.fromScale(1.55 + math.sin(elapsed * 2.2) * 0.06, 1.55 + math.sin(elapsed * 2.2) * 0.06)
-			halo2.BackgroundTransparency = 0.78 + math.sin(elapsed * 3.1) * 0.06
-			for _, s in ipairs(sparks) do
-				s.a += dt * s.w
-				local r = s.r + math.sin(elapsed * 3 + s.a) * 0.03
-				s.f.Position = UDim2.fromScale(0.5 + math.cos(s.a) * r, 0.5 + math.sin(s.a) * r)
-			end
+		for _, s in ipairs(stars) do
+			s.f.BackgroundTransparency = 0.25 + 0.5 * (0.5 + 0.5 * math.sin(elapsed * s.w + s.p))
 		end
-		local c = current
-		if not c then
-			if elapsed > 0.5 and ui and ui.waiting then nextCreature() end
-			return
+		if calm then return end
+		swirl.Rotation = (swirl.Rotation + dt * 120) % 360
+		ringG.Rotation = (ringG.Rotation + dt * 200) % 360
+		local charge = math.clamp(bar.Size.X.Scale, 0, 1)
+		orb.Position = UDim2.new(0.5, math.sin(elapsed * 40) * 2 * charge, 0.86, -18 - math.abs(math.sin(elapsed * 2.4)) * 10)
+		aura.BackgroundTransparency = 0.75 - charge * 0.3 + math.sin(elapsed * 6) * 0.05
+		aura.Size = UDim2.fromScale(1.6 + charge * 0.5, 1.6 + charge * 0.5)
+		padGlow.BackgroundTransparency = 0.5 - charge * 0.4
+		for _, s in ipairs(sparks) do
+			s.a += dt * (1.5 + charge * 4)
+			s.f.Position = UDim2.fromScale(0.5 + math.cos(s.a) * s.r, 0.5 + math.sin(s.a) * s.r)
 		end
-		c.t += dt
-		if c.t < 0.5 then
-			-- silhouette gathering in the portal
-			local q = c.t / 0.5
-			stageScale.Scale = 0.35 + 0.35 * smooth(q)
-			stage.Position = UDim2.fromScale(0.5 + (calm and 0 or math.sin(c.t * 60) * 0.006 * q), 0.52)
-		elseif not c.popped then
-			c.popped = true
-			tw(c.vp, 0.18, { ImageColor3 = Color3.new(1, 1, 1), ImageTransparency = 0 })
-			stageScale.Scale = 0.8
-			tw(stageScale, 0.45, { Scale = 1 }, Enum.EasingStyle.Back)
-			tw(stage, 0.45, { Position = UDim2.fromScale(0.5, 0.36) }, Enum.EasingStyle.Back)
-			local rarity = Config.Rarities[c.def.rarity]
-			nameplate.Text = string.upper(c.def.name)
-			rarityLine.Text = Reveal.Track(c.def.rarity)
-			rarityLine.TextColor3 = rarity and rarity.color or T.CinematicGold
-			tw(nameplate, 0.25, { TextTransparency = 0 })
-			tw(nameStroke, 0.25, { Transparency = 0.2 })
-			tw(rarityLine, 0.25, { TextTransparency = 0 })
-			if not calm then burstSparks() end
-		elseif c.t > 1.75 and not c.leaving then
-			c.leaving = true
-			tw(c.vp, 0.25, { ImageTransparency = 1 })
-			tw(stageScale, 0.25, { Scale = 0.6 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-			tw(nameplate, 0.2, { TextTransparency = 1 })
-			tw(nameStroke, 0.2, { Transparency = 1 })
-			tw(rarityLine, 0.2, { TextTransparency = 1 })
-		elseif c.t > 2.05 then
-			nextCreature()
-		end
+		power.Text = charge >= 0.999 and "MAX!" or ("POWER " .. math.floor(charge * 100) .. "%")
+		power.TextColor3 = charge >= 0.999 and Color3.fromRGB(255, 120, 120) or Color3.new(1, 1, 1)
 	end)
-
-	-- the portal opens and the title slams in straight away
-	tw(portalScale, 0.7, { Scale = 1 }, Enum.EasingStyle.Back)
-	task.delay(0.15, function()
-		titleScale.Scale = calm and 1 or 1.7
-		for _, l in ipairs({ line1, line2 }) do
-			tw(l, 0.25, { TextTransparency = 0 })
-			tw(l:FindFirstChildOfClass("UIStroke"), 0.25, { Transparency = 0.25 })
-		end
-		tw(titleScale, 0.45, { Scale = 1 }, Enum.EasingStyle.Back)
-		tw(shine, 1.2, { Offset = Vector2.new(1, 0) }, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
-		Sounds.Play("Rare", 0.9)
-	end)
-
 	local function cleanup()
 		if anim then anim:Disconnect(); anim = nil end
-		if current and current.vp then current.vp:Destroy() end
-		current = nil
 	end
-	-- portal swallows the screen: the hand-off into the world
+	-- the throw: the orb winds back, then launches off the top of the screen
 	local function zoom(t)
-		if current and current.vp then tw(current.vp, t * 0.6, { ImageTransparency = 1 }) end
-		tw(nameplate, 0.15, { TextTransparency = 1 })
-		tw(nameStroke, 0.15, { Transparency = 1 })
-		tw(rarityLine, 0.15, { TextTransparency = 1 })
-		tw(portalScale, t, { Scale = 9 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+		if calm then return end
+		tw(orbScale, t * 0.3, { Scale = 0.8 }, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+		task.delay(t * 0.3, function()
+			tw(orb, t * 0.7, { Position = UDim2.new(0.5, 0, -0.3, 0) }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+			tw(orbScale, t * 0.7, { Scale = 1.6 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+			pcall(Sounds.Play, "Throw", 1)
+		end)
 	end
 	local function fadeArt(t)
 		cleanup()
@@ -324,41 +296,21 @@ function Intro.Cover(hud)
 			if d:IsA("Frame") then tw(d, t, { BackgroundTransparency = 1 }) end
 			if d:IsA("UIStroke") then tw(d, t, { Transparency = 1 }) end
 		end
+		tw(barBg, t, { BackgroundTransparency = 1 })
 	end
-	gui.Destroying:Connect(cleanup)
-
-	-- tap the portal while the world loads: a creature bursts out every time
-	local tap = K.new("TextButton", { Text = "", BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromScale(1.15, 1.15), ZIndex = 15, Parent = portal })
-	tap.Activated:Connect(function()
-		if not ui or not ui.waiting then return end
-		summoned += 1
-		tapHint.Text = "SUMMONED: " .. summoned .. (summoned >= 10 and "  - PORTAL MASTER!" or "")
-		tapHint.TextColor3 = summoned >= 10 and Color3.fromRGB(255, 120, 200) or T.CinematicGold
-		portalScale.Scale = 0.9
-		tw(portalScale, 0.35, { Scale = 1 }, Enum.EasingStyle.Back)
-		if not calm then burstSparks() end
-		pcall(Sounds.Play, "Spawn", 1 + math.min(summoned, 12) * 0.04)
-		nextCreature()
-	end)
-
-	-- the title slams back in during the creature show
 	local function showTitle()
 		titleShown = true
-		titleScale.Scale = calm and 1 or 1.8
-		for _, l in ipairs({ line1, line2 }) do
-			tw(l, 0.2, { TextTransparency = 0 })
-			tw(l:FindFirstChildOfClass("UIStroke"), 0.2, { Transparency = 0.25 })
+		for _, l in ipairs(words) do
+			l.TextTransparency = 1
 		end
-		shine.Offset = Vector2.new(-1, 0)
-		tw(titleScale, 0.4, { Scale = 1 }, Enum.EasingStyle.Back)
-		tw(shine, 1, { Offset = Vector2.new(1, 0) }, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
-		pcall(Sounds.Play, "Rare", 1.05)
+		dropWords(0.12)
+		titleScale.Scale = 1
 	end
+	gui.Destroying:Connect(cleanup)
 	ui = { gui = gui, black = black, skip = skip, loading = loading, hideTitle = hideTitle, waiting = true, blur = blur,
-		bar = bar, barBg = barBg, zoom = zoom, fadeArt = fadeArt, showTitle = showTitle, tapHint = tapHint }
+		bar = bar, barBg = barBg, zoom = zoom, fadeArt = fadeArt, showTitle = showTitle }
 
-	-- keyboard / gamepad skip; mouse and touch are for the portal and the Skip button
+	-- keyboard / gamepad skip; mouse and touch use the Skip button
 	skipConn = UserInputService.InputBegan:Connect(function(input)
 		local key = input.KeyCode
 		if key == Enum.KeyCode.Space or key == Enum.KeyCode.Escape or key == Enum.KeyCode.Return or key == Enum.KeyCode.ButtonB then

@@ -28,7 +28,8 @@ T.ShowcaseMin = 0.8        -- readable full-silhouette hold between entrance and
 T.LandBounce = 0.5         -- local orb bounce before the gate opens
 T.GateOpen = 0.45
 T.GateClose = 0.35
-T.Card = { enter = 0.16, hold = 1.2, travel = 0.16, gap = 0.15 }
+-- the caught-creature showcase card (CaughtPresentation): pops in, holds, then flies to your pets
+T.Card = { enter = 0.35, hold = 2.3, travel = 0.4, gap = 0.15 }
 T.CardFallback = 3.0       -- if the capture visual never reports, show the card anyway
 T.CameraTimeout = 14       -- hard cap on any follow-camera claim
 -- THROW CUTSCENE: time between PortalThrown and the ball leaving the hand (you raise the portal,
