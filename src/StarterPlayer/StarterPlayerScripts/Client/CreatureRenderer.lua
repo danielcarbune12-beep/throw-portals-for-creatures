@@ -26,6 +26,8 @@ local Sounds = require(script.Parent.Sounds)
 local Settings = require(script.Parent.ClientSettings)
 local Budget = require(script.Parent.CreatureBudget)
 local Plaque = require(script.Parent.Plaque)
+local PetGear = require(Shared.PetGear) -- swords/armour on pets + their health bars
+local PetCombat = require(Shared.PetCombat)
 local TweenService = game:GetService("TweenService")
 
 local Renderer = {}
@@ -218,9 +220,12 @@ local function onFx(kind, anim)
 	pcall(Effects.Motif, kind, pos, rig.root.CFrame.LookVector, rig.pal.a, math.clamp(rig.size, 0.8, 2))
 end
 
-local function spawnEntry(creatureId, cf, kind, popTime, size, material)
+local function spawnEntry(creatureId, cf, kind, popTime, size, material, gear)
 	local model, rig = Builder.Build(creatureId, Variants.Scale(size))
 	Variants.Apply(model, material) -- Gold / Emerald / Ruby / Diamond look
+	if gear then
+		pcall(PetGear.Apply, model, rig, gear) -- after the variant tint, so gear keeps its own colours
+	end
 	model:PivotTo(cf)
 	model.Parent = folder
 	local anim = Animator.new(rig, cf)
@@ -347,6 +352,35 @@ local function pickRoam(e)
 	return nil
 end
 
+-- "wp|ar|hp|atk" strings replicated by the server (GameServer.updateAttributes), aligned with the
+-- BaseCreatures / Equipped lists
+local function readGear(plr, attr)
+	local out = {}
+	local ok, res = pcall(HttpService.JSONDecode, HttpService, plr:GetAttribute(attr) or "[]")
+	if ok and type(res) == "table" then
+		for i, s in ipairs(res) do
+			out[i] = PetCombat.Decode(s)
+		end
+	end
+	return out
+end
+
+local function gearKey(g)
+	return g and ((g.wp or "") .. "/" .. (g.ar or "")) or "/"
+end
+
+-- health bar (+ attack) above a pet in the world; pets heal fully outside battle
+local function petHealth(entry, gear, offsetY)
+	if not gear or not gear.hp or not entry.model.PrimaryPart then
+		return
+	end
+	if entry.health then
+		PetGear.SetHealth(entry.health, gear.hp, gear.hp, gear.atk)
+	else
+		entry.health = PetGear.HealthBar(entry.model.PrimaryPart, offsetY, gear.hp, gear.hp, gear.atk)
+	end
+end
+
 local function refreshBase(plr)
 	local idx = plr:GetAttribute("BaseIndex")
 	local raw = plr:GetAttribute("BaseCreatures")
@@ -366,6 +400,7 @@ local function refreshBase(plr)
 			levels = res
 		end
 	end
+	local gearList = readGear(plr, "BaseGear")
 	local base = idx and idx > 0 and baseModel(idx)
 	local existing = basePets[plr.UserId] or {}
 	if not base then
@@ -378,7 +413,7 @@ local function refreshBase(plr)
 	-- multiset diff: keep creatures that are still placed, add new ones, remove the rest
 	local pool = {}
 	for _, e in ipairs(existing) do
-		local k = e.key or e.id
+		local k = e.poolKey or e.key or e.id
 		pool[k] = pool[k] or {}
 		table.insert(pool[k], e)
 	end
@@ -386,11 +421,14 @@ local function refreshBase(plr)
 	for i, key in ipairs(list) do
 		-- entries are "CreatureId" or "CreatureId|Size|Material" (Big/Huge/Titan, Gold/Emerald/Ruby/Diamond)
 		local cid, vsize, vmat = Variants.Parse(key)
-		local cand = pool[key] and table.remove(pool[key])
+		local gear = gearList[i]
+		local poolKey = key .. "#" .. gearKey(gear) -- new sword/armour = rebuilt model wearing it
+		local cand = pool[poolKey] and table.remove(pool[poolKey])
 		if not cand and CreatureData.ById[cid] then
 			local cf = slotCF(base, i)
-			cand = spawnEntry(cid, cf, "base", 0.7, vsize, vmat)
+			cand = spawnEntry(cid, cf, "base", 0.7, vsize, vmat, gear)
 			cand.key = key
+			cand.poolKey = poolKey
 			local def = CreatureData.ById[cid]
 			local rc = Variants.Color(vsize, vmat) or Config.Rarities[def.rarity].color
 			tag(
@@ -443,6 +481,9 @@ local function refreshBase(plr)
 					.. "/s</font>"
 			end
 		end
+		if cand and tdef then
+			petHealth(cand, gear, heightFor(tdef, vsize) + 1.5)
+		end
 		table.insert(result, cand)
 	end
 	for _, arr in pairs(pool) do
@@ -488,29 +529,37 @@ end
 local function refreshEquipped(plr)
 	local ok, keys = pcall(function() return HttpService:JSONDecode(plr:GetAttribute("Equipped") or "[]") end)
 	keys = ok and keys or {}
+	local gearList = readGear(plr, "EquippedGear")
 	local existing = equippedPets[plr.UserId] or {}
 	while #existing > #keys do
 		destroyEntry(table.remove(existing))
 	end
 	for i, key in ipairs(keys) do
 		local e = existing[i]
-		if e and e.key ~= key then
+		local gear = gearList[i]
+		local poolKey = key .. "#" .. gearKey(gear)
+		if e and (e.poolKey or e.key) ~= poolKey then
 			destroyEntry(e)
 			e = nil
 		end
+		local cid, vsize, vmat = Variants.Parse(key)
 		if not e then
-			local cid, vsize, vmat = Variants.Parse(key)
 			if CreatureData.ById[cid] then
 				local hrp = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
 				local cf = hrp and (hrp.CFrame * CFrame.new(0, -2.5, 3 + i * 2.6)) or CFrame.new()
-				e = spawnEntry(cid, cf, "carry", 0.45, vsize, vmat)
+				e = spawnEntry(cid, cf, "carry", 0.45, vsize, vmat, gear)
 				e.key = key
+				e.poolKey = poolKey
 				existing[i] = e
 			end
 		end
 		if e then
 			e.follow = plr
 			e.followIndex = i
+			local def = CreatureData.ById[cid]
+			if def then
+				petHealth(e, gear, heightFor(def, vsize) + 0.6)
+			end
 		end
 	end
 	equippedPets[plr.UserId] = existing
@@ -1162,6 +1211,13 @@ local function watchPlayer(plr)
 	plr:GetAttributeChangedSignal("Equipped"):Connect(function()
 		refreshEquipped(plr)
 	end)
+	-- a new sword/armour or Power upgrade changes only the gear lists
+	plr:GetAttributeChangedSignal("EquippedGear"):Connect(function()
+		refreshEquipped(plr)
+	end)
+	plr:GetAttributeChangedSignal("BaseGear"):Connect(function()
+		refreshBase(plr)
+	end)
 	plr.CharacterAdded:Connect(function()
 		task.wait(1)
 		refreshEquipped(plr)
@@ -1201,9 +1257,12 @@ function Renderer.Start()
 end
 
 -- Builds a static (non-animated) creature for UI ViewportFrames, in its bind pose.
-function Renderer.BuildPreview(creatureId, material)
+function Renderer.BuildPreview(creatureId, material, gear)
 	local model, rig = Builder.Build(creatureId)
 	Variants.Apply(model, material)
+	if gear then
+		pcall(PetGear.Apply, model, rig, gear)
+	end
 	for _, e in ipairs(rig.emitters) do
 		e.Enabled = false
 	end

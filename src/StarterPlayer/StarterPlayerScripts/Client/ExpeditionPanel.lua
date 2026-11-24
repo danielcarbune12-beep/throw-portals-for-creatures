@@ -15,6 +15,7 @@ local Scene = require(script.Parent.ExpeditionScene)
 local Battle = require(RS.Shared.ExpeditionBattle)
 local Fight = require(script.Parent.ExpeditionFight)
 local Mini = require(script.Parent.ExpeditionMiniMap)
+local Arena = require(script.Parent.ExpeditionArena) -- full-screen top-down battle scene
 local Renderer = require(script.Parent.CreatureRenderer)
 local HUD = require(script.Parent.HUD)
 local State = require(script.Parent.ClientState)
@@ -28,7 +29,7 @@ local routeDirection = 1
 local manualSelection, routeInitialized = false, false
 local activeHint
 local lastView, serverClock, localClock = nil, 0, 0
-local page, notice, planning, activeBox, portraits, petLabel, reward, bonus, send, claim
+local page, notice, planning, activeBox, portraits, petLabel, reward, bonus, send, claim, watch
 local routeTitle, sceneFrame, stats, relicLink
 local activeTitle, activeTime, activeReward, activePortrait, progressFill
 local tracker, trackerText, trackerFill
@@ -283,7 +284,19 @@ local function request(name, arg)
 		State.Request("Sync")
 		if name == "StartExpedition" then
 			HUD.Close()
-			HUD.Notify("Pet dispatched. Your timer is on the HUD.", "success")
+			HUD.Notify("Pet dispatched. Watch the battle!", "success")
+			-- go straight into the battle scene once the new expedition arrives from the server
+			task.spawn(function()
+				local t0 = os.clock()
+				while os.clock() - t0 < 4 do
+					local a = activeTrip()
+					if a then
+						Arena.Open(a)
+						return
+					end
+					task.wait(0.1)
+				end
+			end)
 		else
 			routeInitialized, manualSelection = false, false
 			HUD.Notify(err or "Expedition finds claimed.", "success")
@@ -729,6 +742,24 @@ function Panel.Init()
 			request("ClaimExpedition", a.id)
 		end
 	end)
+	-- re-enter the battle scene at any time while the pet is away (or before claiming)
+	watch = K.button(
+		"Watch battle",
+		T.Jade,
+		nil,
+		UDim2.new(0.68, -8, 0, 40),
+		{ Name = "WatchBattle", Position = UDim2.new(0.32, 0, 1, -96), Parent = activeBox }
+	)
+	K.bind(watch, function()
+		local a = activeTrip()
+		if a then
+			HUD.Close()
+			Arena.Open(a)
+		end
+	end)
+	Arena.HideHud = function(hidden)
+		HUD.Gui.Enabled = not hidden
+	end
 	activeHint = K.text(activeBox, "", 0, 148, -8, 38, 14, T.Muted)
 	local hint = activeHint
 	hint.Name = "ScoutCommitment"
@@ -825,7 +856,15 @@ function Panel.Init()
 	tiny.ClipsDescendants = true
 	trackerFill = K.new("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = T.Gold, Parent = tiny })
 	K.bind(tracker, Panel.Open)
-	miniMap = Mini.Create(HUD.Root.Gameplay, Panel.Open)
+	-- tapping the mini-map takes you into the battle scene
+	miniMap = Mini.Create(HUD.Root.Gameplay, function()
+		local a = activeTrip()
+		if a then
+			Arena.Open(a)
+		else
+			Panel.Open()
+		end
+	end)
 	selectedHero = K.new("Frame", { Name = "SelectedScout", BackgroundTransparency = 1, ClipsDescendants = true, Parent = right })
 	petMeta = K.text(right, "", 0, 0, -4, 22, 13, T.Muted)
 	relicHint = K.text(right, "", 0, 0, -4, 20, 13, T.Muted)
@@ -892,6 +931,8 @@ function Panel.Init()
 		activeTitle.Size = UDim2.new(0.68, -8, 0, 30)
 		claim.Position = UDim2.new(0.32, 0, 1, -48)
 		claim.Size = UDim2.new(0.68, -8, 0, 44)
+		watch.Position = UDim2.new(0.32, 0, 1, -96)
+		watch.Size = UDim2.new(0.68, -8, 0, 40)
 		hint.Position = UDim2.new(0.32, 0, 0, 148)
 		hint.Size = UDim2.new(0.68, -8, 0, 38)
 		track.Size = UDim2.new(0.68, -8, 0, 8)
@@ -1019,6 +1060,8 @@ function Panel.Init()
 			hint.Size = UDim2.new(0.5, -8, 0, 38)
 			claim.Position = UDim2.new(0.5, 0, 1, -48)
 			claim.Size = UDim2.new(0.5, -8, 0, 48)
+			watch.Position = UDim2.new(0.5, 0, 1, -102)
+			watch.Size = UDim2.new(0.5, -8, 0, 46)
 		end
 	end
 	State.Changed:Connect(function()

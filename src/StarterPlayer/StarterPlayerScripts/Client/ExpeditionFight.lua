@@ -253,7 +253,7 @@ function Fight.Update(ctx, state, now, dt, settings)
 		local defeated = state.cleared >= i
 		if defeated then
 			if not rec.down then
-				rec.down = true
+				rec.down, rec.flash = true, 0 -- a knockout blow must not leave its hit flash behind
 				tint(rec, Color3.fromRGB(90, 90, 96), 0.55)
 				fade(rec, 0.35)
 			end
@@ -344,7 +344,8 @@ function Fight.Update(ctx, state, now, dt, settings)
 		elseif state.kind == "loot" then
 			dist = 20
 		end
-		local wantPos = focus + V(-0.55, 0.55, -0.63).Unit * dist
+		-- ctx.camDir / ctx.camZoom let the full-screen battle scene use a steeper, top-down view
+		local wantPos = focus + (ctx.camDir or V(-0.55, 0.55, -0.63)).Unit * dist * (ctx.camZoom or 1)
 		local k = ctx.camPos and (1 - math.exp(-2.5 * math.max(0, dt or 1 / 60))) or 1
 		ctx.camPos = ctx.camPos and ctx.camPos:Lerp(wantPos, k) or wantPos
 		ctx.camFocus = ctx.camFocus and ctx.camFocus:Lerp(focus, k) or focus

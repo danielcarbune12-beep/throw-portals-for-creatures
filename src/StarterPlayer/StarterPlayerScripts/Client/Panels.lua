@@ -10,6 +10,8 @@ local Format = require(RS.Shared.Format)
 local Odds = require(RS.Shared.Odds)
 local Variants = require(RS.Shared.Variants)
 local Farm = require(RS.Shared.FarmConfig)
+local PetCombat = require(RS.Shared.PetCombat)
+local PetGear = require(RS.Shared.PetGear)
 local K = require(script.Parent.UIKit)
 local T = K.Theme
 local HUD = require(script.Parent.HUD)
@@ -71,10 +73,10 @@ local function empty(parent, title, hint)
 	return f
 end
 local previewCache = {}
-local function petView(id, size, silhouette, material, pedestal)
-	local cacheKey = material and (id .. "|" .. material) or id
+local function petView(id, size, silhouette, material, pedestal, gear)
+	local cacheKey = (material and (id .. "|" .. material) or id) .. ((gear and (gear.wp or gear.ar)) and ("#" .. (gear.wp or "") .. "/" .. (gear.ar or "")) or "")
 	if not previewCache[cacheKey] then
-		previewCache[cacheKey] = (Renderer.BuildPreview(id, material))
+		previewCache[cacheKey] = (Renderer.BuildPreview(id, material, gear))
 	end
 	local model = previewCache[cacheKey]:Clone()
 	if pedestal then
@@ -501,7 +503,9 @@ local function renderCreatureDetail()
 			)
 		or "empty"
 	if entry then
-		key ..= ":" .. tostring(entry.l or 1) .. ":" .. tostring(entry.e or 0) .. ":" .. table.concat(
+		key ..= ":" .. tostring(entry.l or 1) .. ":" .. tostring(entry.e or 0) .. ":" .. tostring(entry.pw or 0) .. ":" .. tostring(
+			entry.wp
+		) .. ":" .. tostring(entry.ar) .. ":" .. table.concat(
 			d.EquippedPets or {},
 			","
 		) .. ":" .. #d.Creatures
@@ -531,7 +535,7 @@ local function renderCreatureDetail()
 	hero:FindFirstChildOfClass("UIStroke").Transparency = 1
 	hero.LayoutOrder = 1
 	Craft.Specimen(hero)
-	petView(entry.c, UDim2.fromScale(1, 1), nil, entry.v, true).Parent = hero
+	petView(entry.c, UDim2.fromScale(1, 1), nil, entry.v, true, entry).Parent = hero
 	local petHeading = heading(invDetail, Variants.Prefix(entry.s, entry.v) .. def.name, 2)
 	petHeading.Name = "PetNameHeading"
 	K.label(
@@ -707,6 +711,73 @@ local function renderCreatureDetail()
 		T.Muted,
 		{ TextSize = 13, LayoutOrder = 8, TextXAlignment = Enum.TextXAlignment.Left, Parent = invDetail }
 	)
+	-- battle: health bar, attack, Power upgrades and the armory (Shared/PetCombat owns the numbers)
+	do
+		local hp, atk = PetCombat.Stats(entry)
+		local pw = entry.pw or 0
+		heading(invDetail, "Battle", 9).Name = "PetBattleHeading"
+		local bar = K.new("Frame", {
+			Name = "PetHealthBar", Size = UDim2.new(1, -12, 0, 22), BackgroundColor3 = Color3.fromRGB(34, 28, 40),
+			LayoutOrder = 10, Parent = invDetail,
+		})
+		K.corner(8).Parent = bar
+		local fill = K.new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(96, 214, 110), Parent = bar })
+		K.corner(8).Parent = fill
+		K.new("TextLabel", {
+			BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Text = "HP " .. PetGear.Short(hp) .. " / " .. PetGear.Short(hp),
+			Font = T.Bold, TextSize = 14, TextColor3 = Color3.new(1, 1, 1), TextStrokeTransparency = 0.4, ZIndex = 3, Parent = bar,
+		})
+		local sword, armour = PetCombat.Weapon(entry), PetCombat.Armor(entry)
+		K.label(
+			string.format(
+				"ATK %s  ·  Power Lv %d/%d  ·  Rating %s\nSword: %s  ·  Armour: %s",
+				PetGear.Short(atk), pw, PetCombat.MaxPower, PetGear.Short(PetCombat.Rating(hp, atk)),
+				sword and sword.name or "none", armour and armour.name or "none"
+			),
+			UDim2.new(1, -12, 0, 40),
+			T.Text,
+			{ Name = "PetBattleStats", TextSize = 14, LayoutOrder = 11, TextXAlignment = Enum.TextXAlignment.Left, Parent = invDetail }
+		)
+
+		local function buyButton(name, order, text, cost, enabled, onClick)
+			local b = K.button(text, enabled and T.Brass or T.Raised, nil, UDim2.new(1, -12, 0, 42), { Name = name, LayoutOrder = order, Parent = invDetail })
+			K.setEnabled(b, enabled)
+			K.bind(b, function()
+				if not enabled then return end
+				clearArm()
+				if onClick() then
+					detailKey = nil
+					renderCreatureDetail()
+				end
+			end)
+			return b
+		end
+		local maxed = pw >= PetCombat.MaxPower
+		local pcost = PetCombat.PowerCost(entry)
+		buyButton(
+			"UpgradePetPower", 12,
+			maxed and "Power maxed" or string.format("Upgrade Power (+15%% HP & ATK) · %s", Format.Money(pcost)),
+			pcost, not maxed,
+			function() return request("PetPower", entry.u, "Power upgraded!") end
+		)
+		for i, kind in ipairs({ "weapon", "armor" }) do
+			local nextItem = PetCombat.NextGear(kind, entry)
+			local label = kind == "weapon" and "ATK" or "HP"
+			buyButton(
+				kind == "weapon" and "BuyPetSword" or "BuyPetArmour", 12 + i,
+				nextItem and string.format("Buy %s (x%.1f %s) · %s", nextItem.name, nextItem.mult, label, Format.Money(nextItem.cost))
+					or (kind == "weapon" and "Best sword equipped" or "Best armour equipped"),
+				nextItem and nextItem.cost or 0, nextItem ~= nil,
+				function() return request("BuyGear", entry.u .. "|" .. kind .. "|" .. nextItem.id, nextItem.name .. " equipped!") end
+			)
+		end
+		K.label(
+			"Stronger pets win expedition battles faster. Gear stays on this pet and shows on it in your garden.",
+			UDim2.new(1, -12, 0, 36),
+			T.Muted,
+			{ TextSize = 12, LayoutOrder = 15, TextXAlignment = Enum.TextXAlignment.Left, Parent = invDetail }
+		)
+	end
 	inv.layout()
 end
 inv.refresh = function()
@@ -777,7 +848,7 @@ inv.refresh = function()
 					{ Name = "Creature_" .. entry.u, LayoutOrder = i, Parent = invGrid }
 				)
 				Craft.Leaf(b)
-				petView(entry.c, UDim2.new(1, -8, 0, 108), nil, entry.v).Parent = b
+				petView(entry.c, UDim2.new(1, -8, 0, 108), nil, entry.v, nil, entry).Parent = b
 				local nameLabel = K.text(
 					b,
 					Variants.Prefix(entry.s, entry.v) .. def.name,

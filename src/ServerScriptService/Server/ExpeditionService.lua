@@ -5,6 +5,7 @@ local Http = game:GetService("HttpService")
 local Rules = require(RS.Shared.ExpeditionConfig)
 local Creatures = require(RS.Shared.CreatureData)
 local Planner = require(RS.Shared.ExpeditionPlanner)
+local PetCombat = require(RS.Shared.PetCombat)
 local okBattle, Battle = pcall(require, RS.Shared.ExpeditionBattle)
 if not okBattle then
 	warn("[Expedition] battle summaries disabled: " .. tostring(Battle))
@@ -27,6 +28,10 @@ end
 
 local function validUid(n)
 	return integer(n) and n > 0 and n <= 2 ^ 53 - 1
+end
+
+local function statValue(n)
+	return integer(n) and n > 0 and n <= 1e12 and n or nil
 end
 
 local function getPet(data, uid)
@@ -127,6 +132,11 @@ local function cleanActive(data, active)
 		coins = active.coins,
 		matched = active.matched == true,
 		wasPlaced = active.wasPlaced == true,
+		-- battle snapshot taken at departure (PetCombat); gear bought later applies to the next trip
+		hp = statValue(active.hp),
+		atk = statValue(active.atk),
+		wp = type(active.wp) == "string" and #active.wp <= 16 and active.wp or nil,
+		ar = type(active.ar) == "string" and #active.ar <= 16 and active.ar or nil,
 	}
 end
 
@@ -238,6 +248,7 @@ function Service.Start(player, data, base, routeId, petUid, now)
 	local resolved = routeView(route, data)
 	local quote = Planner.Quote(pet, resolved)
 	local duration = resolved.duration
+	local hp, atk = PetCombat.Stats(pet)
 	local startedAt = unix(now)
 	data.ActiveExpedition = {
 		id = Http:GenerateGUID(false),
@@ -251,6 +262,10 @@ function Service.Start(player, data, base, routeId, petUid, now)
 		coins = quote.coins,
 		matched = quote.matched,
 		wasPlaced = type(data.Placed) == "table" and table.find(data.Placed, petUid) ~= nil,
+		hp = hp,
+		atk = atk,
+		wp = pet.wp,
+		ar = pet.ar,
 	}
 	return true, creature.name .. " departed for " .. route.name .. "."
 end

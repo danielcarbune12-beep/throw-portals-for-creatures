@@ -14,6 +14,7 @@ local Odds = require(Shared.Odds)
 local Variants = require(Shared.Variants)
 local variantRng = Random.new()
 local Timeline = require(Shared.PresentationTimeline)
+local PetCombat = require(Shared.PetCombat)
 local DataService = require(script.Parent.DataService)
 local WorldBuilder = require(script.Parent.WorldBuilder)
 local BaseBuilder = require(script.Parent.BaseBuilder)
@@ -157,25 +158,31 @@ local function freeSpace(player, data)
 end
 
 local function updateAttributes(player, data)
-	local ids, levels = {}, {}
+	local ids, levels, gear = {}, {}, {}
 	for _, uid in ipairs(data.Placed) do
 		local c = findCreature(data, uid)
 		if c and not Expeditions.IsAway(data, uid) then
 			table.insert(ids, Variants.Key(c.c, c.s, c.v))
 			table.insert(levels, c.l or 1)
+			table.insert(gear, PetCombat.Encode(c))
 		end
 	end
+	-- gear + battle stats ("wp|ar|hp|atk"), aligned with BaseCreatures / Equipped, so every
+	-- client can dress the pets and draw their health bars. Set before the lists they align with.
+	player:SetAttribute("BaseGear", HttpService:JSONEncode(gear))
 	player:SetAttribute("BaseCreatures", HttpService:JSONEncode(ids))
 	-- pet levels (from feeding), aligned with BaseCreatures, for the name tags
 	player:SetAttribute("BaseLevels", HttpService:JSONEncode(levels))
 	equippedBuffs(data)
-	local eq = {}
+	local eq, eqGear = {}, {}
 	for _, uid in ipairs(data.EquippedPets) do
 		local c = findCreature(data, uid)
 		if c then
 			table.insert(eq, Variants.Key(c.c, c.s, c.v))
+			table.insert(eqGear, PetCombat.Encode(c))
 		end
 	end
+	player:SetAttribute("EquippedGear", HttpService:JSONEncode(eqGear))
 	player:SetAttribute("Equipped", HttpService:JSONEncode(eq))
 	local ls = player:FindFirstChild("leaderstats")
 	if ls then
@@ -861,6 +868,54 @@ function Actions.Train()
 end
 function Actions.UpgradeEquipment()
 	return false, "Equipment lifting has been replaced by pet expeditions."
+end
+
+---------------------------------------------------------------- pet battle power and armory
+-- Power: +15% health and attack per level, paid in coins (Shared/PetCombat owns the numbers).
+function Actions.PetPower(player, data, st, uid)
+	local c = type(uid) == "number" and findCreature(data, uid)
+	if not c then
+		return false, "Choose a pet you own."
+	end
+	local pw = math.clamp(tonumber(c.pw) or 0, 0, PetCombat.MaxPower)
+	if pw >= PetCombat.MaxPower then
+		return false, "Max power!"
+	end
+	local cost = PetCombat.PowerCost(c)
+	if data.Money < cost then
+		return false, "Not enough money"
+	end
+	data.Money -= cost
+	c.pw = pw + 1
+	return true, "Power upgraded to Lv " .. c.pw .. "!"
+end
+
+-- arg "uid|weapon|Iron" or "uid|armor|Gold": buys a better sword/armour and puts it on that pet.
+function Actions.BuyGear(player, data, st, arg)
+	if type(arg) ~= "string" or #arg > 64 then
+		return false, "Bad request"
+	end
+	local uidText, kind, id = string.match(arg, "^(%d+)|(%a+)|(%a+)$")
+	local c = uidText and findCreature(data, tonumber(uidText))
+	if not c then
+		return false, "Choose a pet you own."
+	end
+	local list, byId = PetCombat.Catalog(kind)
+	local item = byId and byId[id]
+	if not item then
+		return false, "Unknown item"
+	end
+	local field = kind == "weapon" and "wp" or "ar"
+	local current = byId[c[field]]
+	if current and current.tier >= item.tier then
+		return false, "This pet already has better gear."
+	end
+	if data.Money < item.cost then
+		return false, "Not enough money"
+	end
+	data.Money -= item.cost
+	c[field] = item.id
+	return true, item.name .. " equipped!"
 end
 function Actions.StartExpedition(player, data, st, arg)
 	if type(arg) ~= "string" or #arg > 256 then

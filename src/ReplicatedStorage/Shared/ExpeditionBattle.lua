@@ -3,6 +3,7 @@
 -- anything extra. Purely presentational: payouts stay in ExpeditionPlanner/ExpeditionService.
 local Config = require(script.Parent.Config)
 local Creatures = require(script.Parent.CreatureData)
+local PetCombat = require(script.Parent.PetCombat)
 local Battle = {}
 
 -- Route through the biome vignette (x, z), shared with ExpeditionScene and the mini-map.
@@ -113,17 +114,27 @@ function Battle.Plan(active)
 		return lo + (hi - lo) * rand()
 	end
 
-	-- A stronger pet (rarity, home biome) wins in fewer hits; a weak pet in a late biome has to retreat.
-	local power = 1 + 0.4 * (order - 1) + ((def and def.world == world) and 0.4 or 0)
-	local ratio = math.clamp(power / (0.7 + 0.3 * tier), 0.5, 3.5)
+	-- The pet fights with its real stats (PetCombat: rarity, variant, feeding, Power, sword, armour),
+	-- snapshotted when it departed. Biome monsters have their own strength that grows each world,
+	-- bounded relative to the pet so a weak pet still has a (hard) fight and a strong one crushes it.
+	local hp0, atk0 = tonumber(active.hp), tonumber(active.atk)
+	if not (hp0 and atk0 and hp0 > 0 and atk0 > 0) then
+		hp0, atk0 = PetCombat.Stats({ c = active.creature, s = active.s, v = active.v, wp = active.wp, ar = active.ar })
+	end
+	local home = def and def.world == world
 	local pet = {
 		name = def and def.name or "Your pet",
-		maxHp = 100,
-		hp = 100,
-		atk = 10 + 9 * ratio,
+		maxHp = math.max(1, math.floor(hp0)),
+		hp = math.max(1, math.floor(hp0)),
+		atk = math.max(1, atk0 * (home and 1.2 or 1)),
 		crit = math.min(0.4, 0.12 + 0.03 * order),
 		dodge = math.min(0.35, 0.08 + 0.025 * order),
 	}
+	local wb = 2.1 ^ (tier - 1)
+	local minionHp, minionAtk = 50 * wb, 7 * wb
+	local function bound(v, lo, hi)
+		return math.max(1, math.floor(math.clamp(v, lo, math.max(lo, hi))))
+	end
 
 	local count = 4 + math.min(2, math.floor((tier - 1) / 3))
 	local encounters = {}
@@ -132,16 +143,17 @@ function Battle.Plan(active)
 		if i > 1 and rand() < 0.45 then
 			pick = theme.minions[math.floor(rand() * #theme.minions) + 1]
 		end
-		local hp = math.floor(38 + 6 * i + roll(0, 10))
 		table.insert(encounters, {
 			name = pick[1], kind = pick[2], boss = false,
 			p = 0.1 + 0.72 * (i - 0.5) / count + roll(-0.015, 0.015),
-			maxHp = hp, atk = math.min(24, (7 + i) / ratio),
+			maxHp = bound(minionHp * (0.85 + 0.06 * i + roll(0, 0.1)), pet.atk * 2, pet.atk * 9),
+			atk = bound(minionAtk * (0.9 + 0.05 * i), pet.maxHp * 0.06, pet.maxHp * 0.34),
 		})
 	end
 	table.insert(encounters, {
 		name = theme.boss[1], kind = theme.boss[2], boss = true, p = 0.9,
-		maxHp = math.floor(110 + 8 * tier), atk = math.min(26, 12 / ratio),
+		maxHp = bound(minionHp * 4.5, pet.atk * 6, pet.atk * 16),
+		atk = bound(minionAtk * 1.8, pet.maxHp * 0.1, pet.maxHp * 0.45),
 	})
 
 	-- Simulate every fight as a list of beats.
