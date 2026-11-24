@@ -28812,87 +28812,118 @@ local player = Players.LocalPlayer
 local page, status, footer, ready, busy
 local side, supplies = "Buy", false
 local prompts, rows = {}, {}
+local pending, visit = nil, 0
 local render
 
 local function duration(seconds)
-	if seconds < 60 then
-		return math.ceil(seconds) .. "s"
+	seconds = math.max(0, math.ceil(seconds))
+	local hours = math.floor(seconds / 3600)
+	local minutes = math.floor(seconds % 3600 / 60)
+	local remainder = seconds % 60
+	local parts = {}
+	if hours > 0 then
+		table.insert(parts, hours .. "h")
 	end
-	if seconds < 3600 then
-		return math.ceil(seconds / 60) .. " min"
+	if minutes > 0 then
+		table.insert(parts, minutes .. "m")
 	end
-	return string.format("%.0f hr", seconds / 3600)
+	if remainder > 0 or #parts == 0 then
+		table.insert(parts, remainder .. "s")
+	end
+	return table.concat(parts, " ")
 end
 
 local function trade(request)
 	if busy or not State.Loaded then
 		return
 	end
-	busy = true
+	local ticket = visit
+	busy, pending = true, request
 	render()
 	local ok, message = State.Request("FarmMarket", Http:JSONEncode(request))
-	busy = false
-	HUD.SetPanelMessage(
-		"FarmMarket",
-		message or (ok and "Updated." or "Please try again."),
-		ok and T.Success or T.Danger
-	)
-	render()
+	busy, pending = false, nil
+	if ticket == visit and HUD.IsOpen("FarmMarket") then
+		HUD.SetPanelMessage(
+			"FarmMarket",
+			message or (ok and "Updated." or "Please try again."),
+			ok and T.Success or T.Danger
+		)
+		render()
+	end
 end
 
-local function row(height, order)
-	local r = K.new("Frame", {
-		Name = "MarketRow",
-		Size = UDim2.new(1, -8, 0, height),
-		BackgroundTransparency = 1,
-		LayoutOrder = order,
-		Parent = page.content,
-	})
-	table.insert(rows, r)
+-- Keyed rows survive wallet, selection and stock updates. Focus/scroll stay native.
+local function row(key, height, order)
+	local r = rows[key]
+	if not r or not r.frame.Parent then
+		local frame = K.new("Frame", { Name = key, BackgroundTransparency = 1, Parent = page.content })
+		r = { frame = frame }
+		r.title = K.text(frame, "", 0, 0, -8, 28, 19, T.Text, true)
+		r.detail = K.text(frame, "", 0, 34, -8, 36, 14, T.Muted)
+		rows[key] = r
+	end
+	r.used = true
+	r.frame.Size, r.frame.LayoutOrder = UDim2.new(1, -8, 0, height), order
 	return r
+end
+
+local function setButton(button, text, enabled, color)
+	K.setButton(button, text, color or T.Gold)
+	K.setEnabled(button, enabled)
 end
 
 render = function()
 	if not ready then
 		return
 	end
-	local canvas = page.content.CanvasPosition
 	for _, r in rows do
-		r:Destroy()
+		r.used = false
 	end
-	table.clear(rows)
 	local view = State.Data.FarmMarket
 	page.title.Text = side == "Sell" and "Crop buyer" or (supplies and "Farm supplies" or "Seed merchant")
+	local available = State.Loaded and not busy
 	if not view then
-		local r = row(50, 1)
-		K.text(r, "Loading your garden...", 0, 0, -8, 40, 16, T.Muted)
+		row("Loading", 50, 1).title.Text = "Loading your garden..."
 	elseif side == "Sell" then
 		if #view.produce == 0 then
-			local r = row(90, 1)
-			K.text(r, "Your crop bag is empty", 0, 0, -8, 30, 21, T.Text, true)
-			K.text(r, "Harvest a ripe crop in your garden, then bring it here.", 0, 34, -8, 48, 16, T.Muted)
+			local r = row("EmptyHarvest", 90, 1)
+			r.title.Text = "Your crop bag is empty"
+			r.detail.Text = "Harvest a ripe crop in your garden, then bring it here."
 		end
 		for i, item in view.produce do
-			local r = row(70, i)
-			K.text(r, item.name, 0, 0, -8, 28, 18, T.Text, true)
-			K.text(r, item.count .. " crops  ·  " .. Format.Money(item.value), 0, 32, -8, 24, 15, T.Muted)
+			local r = row("Produce_" .. (item.key or item.name), 74, i)
+			r.title.Text = item.name
+			r.detail.Text = item.count .. " crops  ·  " .. Format.Money(item.value)
 		end
 	elseif supplies then
 		for i, item in view.upgrades do
-			local r = row(102, i)
-			K.text(r, item.name, 0, 0, -8, 28, 19, T.Text, true)
+			local r = row("Supply_" .. item.id, 104, i)
+			r.data, r.title.Text = item, item.name
 			local locked = item.level and view.level < item.level
-			local text = item.owned and "Owned"
-				or (locked and ("Farmer Lv " .. item.level) or ("Buy · " .. Format.Money(item.price or 0)))
-			local b =
-				K.button(text, T.Gold, nil, UDim2.new(1, -8, 0, 42), { Position = UDim2.fromOffset(0, 40), Parent = r })
-			K.setEnabled(
-				b,
-				not busy and not item.owned and not locked and State.Data.Money >= (item.price or math.huge)
+			r.detail.Text = item.owned and "Already part of your garden"
+				or (locked and ("Farmer Lv " .. item.level) or "")
+			r.detail.Position, r.detail.Size = UDim2.fromOffset(0, 30), UDim2.new(1, -8, 0, 22)
+			if not r.buy then
+				r.buy = K.button(
+					"",
+					T.Gold,
+					nil,
+					UDim2.new(1, -8, 0, 44),
+					{ Position = UDim2.fromOffset(0, 56), Parent = r.frame }
+				)
+				K.bind(r.buy, function()
+					trade({ op = "Upgrade", supply = r.data.id })
+				end)
+			end
+			local text = item.owned and "Owned" or (locked and "Locked" or ("Buy · " .. Format.Money(item.price or 0)))
+			if busy and pending.op == "Upgrade" and pending.supply == item.id then
+				text = "Buying..."
+			end
+			setButton(
+				r.buy,
+				text,
+				available and not item.owned and not locked and State.Data.Money >= (item.price or math.huge)
 			)
-			K.bind(b, function()
-				trade({ op = "Upgrade", supply = item.id })
-			end)
 		end
 	else
 		local nextLockedShown = false
@@ -28903,49 +28934,77 @@ render = function()
 			if not seed.unlocked then
 				nextLockedShown = true
 			end
-			local r = row(126, i)
-			K.text(r, seed.name, 0, 0, -108, 28, 19, T.Text, true)
-			K.text(r, "Grows in " .. duration(seed.grow) .. "  ·  Owned " .. seed.stock, 0, 34, -8, 26, 14, T.Muted)
-			local use = K.button(
-				seed.selected and "Selected" or "Use seed",
-				T.Raised,
-				nil,
-				UDim2.fromOffset(96, 32),
-				{ Position = UDim2.new(1, -104, 0, 0), Parent = r }
-			)
-			use:SetAttribute("Selected", seed.selected)
-			K.setEnabled(use, not busy and seed.stock > 0 and not seed.selected)
-			K.bind(use, function()
-				trade({ op = "Select", crop = seed.id })
-			end)
-			for _, quantity in { 1, 5 } do
-				local price = seed.price * quantity
-				local b = K.button(
-					seed.unlocked and ("Buy " .. quantity .. " · " .. Format.Money(price))
-						or ("Farmer Lv " .. seed.level),
-					T.Gold,
+			local r = row("Seed_" .. seed.id, seed.unlocked and 142 or 82, i)
+			r.data, r.title.Text = seed, seed.name
+			r.title.Size = UDim2.new(1, seed.unlocked and -112 or -8, 0, seed.unlocked and 44 or 28)
+			r.title.TextColor3 = seed.unlocked and T.Text or T.Muted
+			r.detail.Position = UDim2.fromOffset(0, seed.unlocked and 50 or 34)
+			r.detail.Size = UDim2.new(1, -8, 0, seed.unlocked and 28 or 40)
+			r.detail.Text = seed.unlocked and ("Owned " .. seed.stock .. "  ·  Grows in " .. duration(seed.grow))
+				or ("Farmer Lv " .. seed.level .. "  ·  Grows in " .. duration(seed.grow))
+			if not r.use then
+				r.use = K.button(
+					"",
+					T.Raised,
 					nil,
-					UDim2.new(0.5, -8, 0, 42),
-					{ Position = UDim2.new(quantity == 1 and 0 or 0.5, 0, 0, 70), Parent = r }
+					UDim2.fromOffset(100, 44),
+					{ Position = UDim2.new(1, -108, 0, 0), Parent = r.frame }
 				)
-				K.setEnabled(b, not busy and seed.unlocked and State.Data.Money >= price)
-				K.bind(b, function()
-					trade({ op = "Buy", crop = seed.id, quantity = quantity })
+				K.bind(r.use, function()
+					trade({ op = "Select", crop = r.data.id })
 				end)
+				r.purchases = {}
+				for _, quantity in { 1, 5 } do
+					local button = K.button(
+						"",
+						T.Gold,
+						nil,
+						UDim2.new(0.5, -8, 0, 44),
+						{ Position = UDim2.new(quantity == 1 and 0 or 0.5, 0, 0, 86), Parent = r.frame }
+					)
+					r.purchases[quantity] = button
+					K.bind(button, function()
+						trade({ op = "Buy", crop = r.data.id, quantity = quantity })
+					end)
+				end
+			end
+			r.use.Visible = seed.unlocked
+			r.use:SetAttribute("Selected", seed.selected and seed.stock > 0)
+			setButton(
+				r.use,
+				seed.stock == 0 and "No seeds" or (seed.selected and "Selected" or "Use seed"),
+				available and seed.unlocked and seed.stock > 0 and not seed.selected,
+				T.Raised
+			)
+			for quantity, button in r.purchases do
+				local price = seed.price * quantity
+				button.Visible = seed.unlocked
+				local text = "Buy " .. quantity .. " · " .. Format.Money(price)
+				if busy and pending.op == "Buy" and pending.crop == seed.id and pending.quantity == quantity then
+					text = "Buying..."
+				end
+				setButton(button, text, available and seed.unlocked and State.Data.Money >= price)
 			end
 		end
 	end
-	footer.Label.Text = side == "Sell"
+	for key, r in rows do
+		if not r.used then
+			r.frame:Destroy()
+			rows[key] = nil
+		end
+	end
+	local text = side == "Sell"
 			and (busy and "Selling..." or ("Sell all · " .. Format.Money(view and view.total or 0)))
 		or (supplies and "Back to seeds" or "Farm supplies")
-	K.setEnabled(footer, not busy and view ~= nil and (side ~= "Sell" or view.count > 0))
-	page.content.CanvasPosition = canvas
+	setButton(footer, text, available and view ~= nil and (side ~= "Sell" or view.count > 0))
 end
 
 function Panel.Open(kind)
 	if not ready or busy then
 		return
 	end
+	visit += 1
+	local ticket = visit
 	side, supplies = kind == "Sell" and "Sell" or "Buy", false
 	if HUD.IsOpen("FarmMarket") then
 		render()
@@ -28956,7 +29015,7 @@ function Panel.Open(kind)
 	page.inlineMessage("")
 	task.spawn(function()
 		local ok, message = State.Request("Sync")
-		if not ok and HUD.IsOpen("FarmMarket") then
+		if not ok and ticket == visit and HUD.IsOpen("FarmMarket") then
 			HUD.SetPanelMessage("FarmMarket", message or "Could not load garden.", T.Danger)
 		end
 	end)
@@ -29003,10 +29062,9 @@ function Panel.Init()
 		status.Size = UDim2.new(1, -40, 0, tight and 32 or 36)
 		status.TextSize = tight and 13 or 14
 	end
-	page.refresh = function(full)
-		if full ~= false then
-			render()
-		end
+	page.refresh = render
+	page.onClose = function()
+		visit += 1
 	end
 	ready = true
 	task.spawn(function()

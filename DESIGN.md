@@ -27,6 +27,8 @@ Small utility symbols remain native geometry.
 
 Farming trade has two physical entrances beside the Great Hall: jade BUY for seeds and optional supplies, oxblood SELL for harvested crops. It adds no HUD icon. The seed menu shows owned quantities, explicit one/five purchases, growth time and the next locked crop. Advanced supplies sit behind one secondary action. Selling has a visible crop list and one total. Manual planting consumes prepaid stock; manual harvesting leaves the bed empty. Existing Harvest Spirit automation is retained.
 
+Market rows and controls stay in place during stock, wallet and selection changes. Selection and purchasing use at least 44px targets. Locked seeds show one unlock explanation. Growth time retains useful hour/minute/second precision, and stale loading errors cannot overwrite a later visit.
+
 Expeditions use an expanded desktop map/scout composition. Eight native biome
 vignettes have distinct landmarks, terrain and marked routes. The active map
 marker follows authoritative timer progress through Departure, Exploration and
