@@ -7,7 +7,7 @@ local bundle = fs.readFile(process.args[1])
 local manifest = serde.decode("json", fs.readFile(process.args[2]))
 local function fixture(options)
 	options = options or {}
-	local f = { writes = 0, creates = 0, failed = false }
+	local f = { writes = 0, creates = 0, settingWrites = 0, failed = false }
 	local Node = {}
 	function Node:FindFirstChild(name)
 		return self._children[name]
@@ -29,7 +29,15 @@ local function fixture(options)
 					return Node[key] or self._values[key]
 				end,
 				__newindex = function(self, key, value)
-					if key == "Source" then
+					if key == "Decoration" or key == "PrioritizeLightingQuality" then
+						if f.record and options.failProperty == key and not f.failed then
+							f.failed = true
+							error("Injected setting write failure")
+						end
+						if f.record then
+							f.settingWrites += 1
+						end
+					elseif key == "Source" then
 						if f.record and options.failName == self.Name and not f.failed then
 							f.failed = true
 							error("Injected source write failure")
@@ -61,6 +69,8 @@ local function fixture(options)
 	local server, shared = newNode("Folder", "Server"), newNode("Folder", "Shared")
 	server.Parent, shared.Parent = serverService, replicated
 	local folders = { Client = client, Server = server, Shared = shared }
+	local terrain, lighting = newNode("Terrain", "Terrain"), newNode("Lighting", "Lighting")
+	terrain.Decoration, lighting.PrioritizeLightingQuality = true, true
 	for _, plan in manifest.plans do
 		if not plan.allowCreate then
 			local node = newNode(plan.className, plan.name)
@@ -89,7 +99,7 @@ local function fixture(options)
 		shared._values.ClassName = "Model"
 	end
 	local function snapshot()
-		local out = {}
+		local out = { grass = terrain.Decoration, lightingPriority = lighting.PrioritizeLightingQuality }
 		for scope, folder in folders do
 			for name, node in folder._children do
 				out[scope .. "/" .. name] = node.ClassName .. "\0" .. node.Source
@@ -104,6 +114,9 @@ local function fixture(options)
 		game = {
 			PlaceId = options.wrongPlace and 123 or 129975585465401,
 			GetService = function(_, name)
+				if name == "Lighting" then
+					return lighting
+				end
 				if name == "ServerScriptService" then
 					return serverService
 				end
@@ -127,6 +140,7 @@ local function fixture(options)
 			end,
 		},
 		workspace = {
+			Terrain = terrain,
 			GetAttribute = function()
 				return options.testMarker or nil
 			end,
@@ -142,6 +156,7 @@ local function fixture(options)
 			f.warned = true
 		end,
 	}, { __index = _G })
+	f.terrain, f.lighting = terrain, lighting
 	f.record = true
 	return f
 end
@@ -162,8 +177,8 @@ local audit = fixture()
 local dry = bundle:gsub("local APPLY = true", "local APPLY = false", 1)
 local result = luau.load(dry, { environment = audit.env })()
 H.check(
-	result.status == "audited" and audit.writes == 0 and audit.creates == 0,
-	"read-only audit never mutates native sources"
+	result.status == "audited" and audit.writes == 0 and audit.creates == 0 and audit.settingWrites == 0,
+	"read-only audit never mutates native sources or scenery settings"
 )
 for _, options in
 	{
@@ -189,6 +204,10 @@ end
 local success = fixture({ testMarker = true })
 result = luau.load(bundle, { environment = success.env })()
 H.check(result.status == "synced" and result.files == #manifest.plans, "valid context applies the complete plan")
+H.check(
+	not success.terrain.Decoration and not success.lighting.PrioritizeLightingQuality,
+	"apply authors grass off and lighting performance priority"
+)
 local exact = true
 for _, plan in manifest.plans do
 	local node = success.folders[plan.scope or "Client"]:FindFirstChild(plan.name)
@@ -200,13 +219,13 @@ H.check(
 	"unrelated native/brother code is preserved"
 )
 H.check(success.warned, "remaining test markers are reported without being removed automatically")
-success.writes, success.creates = 0, 0
+success.writes, success.creates, success.settingWrites = 0, 0, 0
 result = luau.load(bundle, { environment = success.env })()
 H.check(
-	result.changed == 0 and success.writes == 0 and success.creates == 0,
-	"reapplying the same release does not rewrite or duplicate scripts"
+	result.changed == 0 and success.writes == 0 and success.creates == 0 and success.settingWrites == 0,
+	"reapplying the same release does not rewrite scripts or scenery settings"
 )
-for _, name in { "Intro", "CreatureBudget", "FarmService", "FarmMarketRules" } do
+for _, name in { "Intro", "CreatureBudget", "FarmService", "FarmMarketRules", "WorldFx", "MedievalDressing" } do
 	local f = fixture({ failName = name })
 	local ok, message = pcall(luau.load(bundle, { environment = f.env }))
 	H.check(
@@ -214,5 +233,14 @@ for _, name in { "Intro", "CreatureBudget", "FarmService", "FarmMarketRules" } d
 		"a source-write failure reports an explicit rollback"
 	)
 	H.check(same(f.before, f.snapshot()), "rollback restores original bytes and removes only newly created modules")
+end
+for _, property in { "Decoration", "PrioritizeLightingQuality" } do
+	local f = fixture({ failProperty = property })
+	local ok, message = pcall(luau.load(bundle, { environment = f.env }))
+	H.check(
+		not ok and tostring(message):find("SYNC_ROLLED_BACK", 1, true) ~= nil,
+		"setting write failure rolls back the source batch"
+	)
+	H.check(same(f.before, f.snapshot()), "setting rollback restores both original settings and all source bytes")
 end
 assert(H.summary() == 0, "Guarded Studio sync regressions")

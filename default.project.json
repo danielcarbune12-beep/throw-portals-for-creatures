@@ -2,6 +2,15 @@
   "name": "ThrowPortalsForCreatures",
   "tree": {
     "$className": "DataModel",
+    "Workspace": {
+      "Terrain": {
+        "$className": "Terrain",
+        "$properties": { "Decoration": false }
+      }
+    },
+    "Lighting": {
+      "$properties": { "PrioritizeLightingQuality": false }
+    },
     "ReplicatedStorage": {
       "Shared": { "$path": "src/ReplicatedStorage/Shared" }
     },

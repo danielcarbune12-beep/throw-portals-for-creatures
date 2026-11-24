@@ -1,5 +1,6 @@
 """Verify exact script sets, classes, source parity and test markers in generated places."""
 from pathlib import Path
+import json
 import sys
 import xml.etree.ElementTree as ET
 
@@ -81,4 +82,14 @@ for filename, test, expected_markers in cases:
     for label, values in (("MISSING", missing), ("EXTRA", extra), ("DIFFERENT", changed)):
         for value in values:
             print(f"  {label}: {value}")
+    tree = ET.parse(ROOT / filename)
+    terrain = tree.find("./Item[@class='Workspace']/Item[@class='Terrain']/Properties/bool[@name='Decoration']")
+    quality = tree.find("./Item[@class='Lighting']/Properties/bool[@name='PrioritizeLightingQuality']")
+    scenery_ok = terrain is not None and terrain.text == "false" and quality is not None and quality.text == "false"
+    failed += int(not scenery_ok)
+    print(f"  Authored grass disabled and lighting performance priority: {'PASS' if scenery_ok else 'FAIL'}")
+project = json.loads((ROOT / "default.project.json").read_text(encoding="utf-8"))["tree"]
+project_ok = project["Workspace"]["Terrain"]["$properties"]["Decoration"] is False and project["Lighting"]["$properties"]["PrioritizeLightingQuality"] is False
+failed += int(not project_ok)
+print(f"Rojo scenery settings match place builds: {'PASS' if project_ok else 'FAIL'}")
 sys.exit(1 if failed else 0)

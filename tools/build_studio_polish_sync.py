@@ -12,14 +12,16 @@ FILES = (
     "IntroReadiness.lua", "QuestPanel.client.lua", "QuestTrackerLayout.lua",
     "ClientMain.client.lua", "FarmClient.client.lua", "MenuWidgets.client.lua", "GameplayFeel.lua",
     "ForgePanel.lua", "ExpeditionPanel.lua", "ExpeditionFight.lua", "ExpeditionMiniMap.lua",
-    "UIMotion.lua", "UIKit.lua", "HUD.lua", "FarmMarketPanel.lua",
+    "UIMotion.lua", "UIKit.lua", "HUD.lua", "FarmMarketPanel.lua", "WorldFx.lua",
 )
 EXTRA = (
     ("Shared", "src/ReplicatedStorage/Shared/FarmMarketRules.lua"),
+    ("Shared", "src/ReplicatedStorage/Shared/PresentationTimeline.lua"),
     ("Server", "src/ServerScriptService/Server/FarmMarket.lua"),
     ("Server", "src/ServerScriptService/Server/FarmService.lua"),
     ("Server", "src/ServerScriptService/Server/GameServer.server.lua"),
     ("Server", "src/ServerScriptService/Server/SanctuaryHub.lua"),
+    ("Server", "src/ServerScriptService/Server/MedievalDressing.lua"),
 )
 BASELINE = "7c03f46"
 
@@ -118,6 +120,14 @@ for _, plan in ipairs(plans) do
         assert(plan.allowCreate, "EXISTING_SOURCE_MISSING: " .. plan.name)
     end
 end
+local settings = {
+    { object = workspace.Terrain, property = "Decoration", value = false },
+    { object = game:GetService("Lighting"), property = "PrioritizeLightingQuality", value = false },
+}
+for _, setting in ipairs(settings) do
+    setting.original = setting.object[setting.property]
+    assert(type(setting.original) == "boolean", "UNEXPECTED_SCENERY_SETTING: " .. setting.property)
+end
 if not APPLY then
     print("TPFC_POLISH_AUDIT_OK", revision, #plans)
     return { status = "audited", revision = revision, files = #plans }
@@ -141,9 +151,22 @@ local ok, failure = pcall(function()
     for _, plan in ipairs(plans) do
         assert(hash(folders[plan.scope]:FindFirstChild(plan.name).Source) == plan.hash, "POST_SYNC_MISMATCH: " .. plan.name)
     end
+    for _, setting in ipairs(settings) do
+        if setting.object[setting.property] ~= setting.value then
+            setting.touched = true
+            setting.object[setting.property] = setting.value
+        end
+        assert(setting.object[setting.property] == setting.value, "POST_SETTING_MISMATCH: " .. setting.property)
+    end
 end)
 if not ok then
     local failures = {}
+    for _, setting in ipairs(settings) do
+        if setting.touched then
+            local restored, reason = pcall(function() setting.object[setting.property] = setting.original end)
+            if not restored then table.insert(failures, tostring(reason)) end
+        end
+    end
     for object, source in pairs(originals) do
         local restored, reason = pcall(function() object.Source = source end)
         if not restored then table.insert(failures, tostring(reason)) end
@@ -161,7 +184,10 @@ if starter:FindFirstChild("TutorialMotionReview") or workspace:GetAttribute("San
 end
 return { status = "synced", revision = revision, files = #plans, changed = changed }
 '''
-    return header + implementation, {"revision": revisions[1], "apply": apply, "plans": plans}
+    return header + implementation, {
+        "revision": revisions[1], "apply": apply, "plans": plans,
+        "settings": {"Workspace.Terrain.Decoration": False, "Lighting.PrioritizeLightingQuality": False},
+    }
 
 
 if __name__ == "__main__":

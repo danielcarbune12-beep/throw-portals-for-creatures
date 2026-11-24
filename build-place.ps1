@@ -39,8 +39,9 @@ if ($isTestBuild) {
     $markerName = if ($Sanctuary) { "SanctuaryTest" } else { "AutoTest" }
     $marker = "<Item class=`"BoolValue`" referent=`"$(Next-Ref)`"><Properties><string name=`"Name`">$markerName</string><bool name=`"Value`">true</bool></Properties></Item>"
 }
-$xml += "<Item class=`"Workspace`" referent=`"$(Next-Ref)`"><Properties><string name=`"Name`">Workspace</string><bool name=`"StreamingEnabled`">false</bool></Properties>$marker</Item>`n"
-$xml += "<Item class=`"Lighting`" referent=`"$(Next-Ref)`"><Properties><string name=`"Name`">Lighting</string><token name=`"Technology`">4</token><token name=`"LightingStyle`">0</token><bool name=`"PrioritizeLightingQuality`">true</bool><bool name=`"GlobalShadows`">true</bool></Properties></Item>`n"
+$terrain = "<Item class=`"Terrain`" referent=`"$(Next-Ref)`"><Properties><string name=`"Name`">Terrain</string><bool name=`"Decoration`">false</bool></Properties></Item>"
+$xml += "<Item class=`"Workspace`" referent=`"$(Next-Ref)`"><Properties><string name=`"Name`">Workspace</string><bool name=`"StreamingEnabled`">false</bool></Properties>$terrain$marker</Item>`n"
+$xml += "<Item class=`"Lighting`" referent=`"$(Next-Ref)`"><Properties><string name=`"Name`">Lighting</string><token name=`"Technology`">4</token><token name=`"LightingStyle`">0</token><bool name=`"PrioritizeLightingQuality`">false</bool><bool name=`"GlobalShadows`">true</bool></Properties></Item>`n"
 $xml += Service "ReplicatedStorage" (Folder-Item "$src\ReplicatedStorage\Shared" "Shared")
 $sss = Folder-Item "$src\ServerScriptService\Server" "Server"
 if ($isTestBuild) { foreach ($f in Get-ChildItem "$root\tests\server" -File -Filter *.lua) { $sss += Script-Item $f } }
