@@ -263,7 +263,11 @@ local function request(name, arg)
 			HUD.Notify(err or "Expedition finds claimed.", "success")
 		end
 	end
-	render()
+	if HUD.IsOpen("Expeditions") then
+		render()
+	else
+		updateClock()
+	end
 end
 refreshPortraits = function()
 	if not page.frame.Visible or not planning.Visible then
@@ -506,7 +510,9 @@ render = function()
 			routeInitialized = true
 		end
 	end
-	updateSelection()
+	if not a then
+		updateSelection()
+	end
 	updateClock()
 end
 function Panel.Open()
@@ -525,6 +531,9 @@ local function attachPrompt()
 	local bases = workspace:FindFirstChild("Bases")
 	local index = player:GetAttribute("BaseIndex") or State.Data.BaseIndex
 	local base = bases and bases:FindFirstChild("Base" .. tostring(index))
+	if base and anchor and anchor:IsDescendantOf(base) and prompt and prompt.Parent == anchor then
+		return
+	end
 	local nextAnchor = base and base:FindFirstChild("ExpeditionAnchor", true)
 	if anchor == nextAnchor then
 		return
@@ -803,7 +812,13 @@ function Panel.Init()
 		local l = K.text(activeBox, text, 0, 0, -4, 38, 13, T.Muted)
 		table.insert(journeyLabels, l)
 	end
-	page.refresh = render
+	page.refresh = function(full)
+		if full ~= false or view() ~= lastView then
+			render()
+		else
+			updateClock()
+		end
+	end
 	page.layout = function()
 		local scale = HUD.Root:FindFirstChildOfClass("UIScale")
 		local root = HUD.Root.AbsoluteSize / (scale and scale.Scale or 1)
@@ -978,18 +993,19 @@ function Panel.Init()
 			claim.Size = UDim2.new(0.5, -8, 0, 48)
 		end
 	end
-	State.Changed:Connect(function(full)
+	State.Changed:Connect(function()
+		-- HUD refreshes the visible page. Hidden missions need their clock/tracker,
+		-- not the planning portraits, biome scenes or a second full render.
+		if HUD.IsOpen("Expeditions") then
+			return
+		end
 		local v = view()
 		if v ~= lastView then
 			lastView = v
 			serverClock = v and v.serverNow or os.time()
 			localClock = os.clock()
 		end
-		if HUD.IsOpen("Expeditions") or full then
-			render()
-		else
-			updateClock()
-		end
+		updateClock()
 	end)
 	local elapsed = 0
 	RunService.Heartbeat:Connect(function(dt)
@@ -1003,20 +1019,36 @@ function Panel.Init()
 			prompt.Enabled = State.Loaded and not HUD.AnyPanelOpen()
 		end
 		updateClock()
-		if HUD.IsOpen("Expeditions") then
+		if HUD.IsOpen("Expeditions") and not activeTrip() then
 			updateSelection()
 		end
 	end)
 	-- Live battle: HUD mini-map whenever a scout is out, 3D fight while the panel shows the journey map.
-	local battleFailed = false
-	RunService.RenderStepped:Connect(function(dt)
+	local battleFailedPlan
+	local function stepBattle(dt)
 		local a = ready and activeTrip()
+		local visible = HUD.Gui.Enabled and workspace:GetAttribute("TPFC_IntroPlaying") ~= true
+		if not a or not visible then
+			miniMap.root.Visible = false
+			return
+		end
+		local showingFight = HUD.IsOpen("Expeditions") and activeSceneFrame.Visible
+		local showingMini = not HUD.AnyPanelOpen() and HUD.Root.Gameplay.Visible
+		if not showingFight and not showingMini then
+			miniMap.root.Visible = false
+			return
+		end
 		local plan = a and battlePlanFor(a)
 		local scale = HUD.Root:FindFirstChildOfClass("UIScale")
 		local rootSize = HUD.Root.AbsoluteSize / (scale and scale.Scale or 1)
 		local roomy = rootSize.Y >= 420
-		miniMap.root.Visible = plan ~= nil and roomy and not HUD.IsOpen("Expeditions")
-		if not plan or battleFailed then
+		miniMap.root.Visible = plan ~= nil and roomy and showingMini
+		local liveFight = showingFight and fightCtx and fightCtx.plan == plan
+		if battleFailedPlan == plan then
+			miniMap.root.Visible = false
+			return
+		end
+		if not plan or (not miniMap.root.Visible and not liveFight) then
 			return
 		end
 		local ok, err = pcall(function()
@@ -1026,7 +1058,7 @@ function Panel.Init()
 				Mini.SetPlan(miniMap, plan, a.world)
 				Mini.Update(miniMap, state, now)
 			end
-			if fightCtx and fightCtx.plan == plan and HUD.IsOpen("Expeditions") and activeSceneFrame.Visible then
+			if liveFight then
 				Fight.Update(fightCtx, state, now, dt)
 				if fightView then
 					updateFightOverlay(fightView, plan, state)
@@ -1034,13 +1066,15 @@ function Panel.Init()
 			end
 		end)
 		if not ok then
-			battleFailed = true
+			battleFailedPlan = plan
+			miniMap.root.Visible = false
 			warn("[Expedition] battle view stopped: " .. tostring(err))
 		end
-	end)
+	end
+	RunService.RenderStepped:Connect(stepBattle)
 	ready = true
 	attachPrompt()
 	HUD.Rescale()
-	render()
+	updateClock()
 end
 return Panel
