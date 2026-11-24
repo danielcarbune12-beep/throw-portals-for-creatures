@@ -23167,7 +23167,7 @@ return L
 ]]></ProtectedString></Properties></Item>
 </Item>
 </Item>
-<Item class="StarterPlayer" referent="RBX119"><Properties><string name="Name">StarterPlayer</string></Properties>
+<Item class="StarterPlayer" referent="RBX120"><Properties><string name="Name">StarterPlayer</string></Properties>
 <Item class="StarterPlayerScripts" referent="RBX75"><Properties><string name="Name">StarterPlayerScripts</string></Properties>
 <Item class="Folder" referent="RBX76"><Properties><string name="Name">Client</string></Properties>
 <Item class="ModuleScript" referent="RBX77"><Properties><string name="Name">CaughtPresentation</string><ProtectedString name="Source"><![CDATA[-- A brief bestiary slip for discoveries and Rare+ catches. Routine catches stay quiet.
@@ -29830,9 +29830,13 @@ local Effects = require(script.Parent.Effects)
 local Sounds = require(script.Parent.Sounds)
 local T = require(script.Parent.UITheme)
 local Reveal = require(script.Parent.RevealTitle)
+local Settings = require(script.Parent.ClientSettings)
+local State = require(script.Parent.ClientState)
+local Readiness = require(script.Parent.IntroReadiness)
 
 local function tw(o, t, props, style, dir)
-	local x = TweenService:Create(o, TweenInfo.new(t, style or Enum.EasingStyle.Quart, dir or Enum.EasingDirection.Out), props)
+	local duration = Settings.ReducedMotion and math.min(t, 0.12) or t
+	local x = TweenService:Create(o, TweenInfo.new(duration, style or Enum.EasingStyle.Quart, dir or Enum.EasingDirection.Out), props)
 	x:Play()
 	return x
 end
@@ -29857,6 +29861,7 @@ local skipConn
 
 function Intro.Cover(hud)
 	if ui then return ui end
+	workspace:SetAttribute("TPFC_IntroPlaying", true)
 	if hud then hud.Enabled = false end
 	local gui = K.new("ScreenGui", { Name = "Intro", IgnoreGuiInset = true, ResetOnSpawn = false, DisplayOrder = 50, Parent = player:WaitForChild("PlayerGui") })
 	local black = K.new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(14, 8, 26), Parent = gui })
@@ -29866,14 +29871,14 @@ function Intro.Cover(hud)
 	-- blur whatever the world has rendered so far (sky, hub) behind a soft dark tint
 	local blur = game:GetService("Lighting"):FindFirstChild("TPFC_IntroBlur") or Instance.new("BlurEffect")
 	blur.Name = "TPFC_IntroBlur"
-	blur.Size = 28
+	blur.Size = (Settings.ReducedMotion or Settings.LowVFX()) and 0 or 18
 	blur.Parent = game:GetService("Lighting")
 	task.delay(0.4, function()
 		if black.Parent and ui and ui.waiting then tw(black, 1.2, { BackgroundTransparency = 0.38 }, Enum.EasingStyle.Sine) end
 	end)
 	local title = K.new("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.4), Size = UDim2.new(0.92, 0, 0, 230), BackgroundTransparency = 1, Parent = gui })
 	K.new("UISizeConstraint", { MaxSize = Vector2.new(1100, 230), Parent = title })
-	local titleScale = K.new("UIScale", { Scale = 1.12, Parent = title })
+	local titleScale = K.new("UIScale", { Scale = Settings.ReducedMotion and 1 or 1.12, Parent = title })
 	local INK = Color3.fromRGB(10, 8, 18)
 	local labels = {}
 	local function line(text, font, color, y, h, maxPx, stroke)
@@ -29952,25 +29957,36 @@ function Intro.Cover(hud)
 	return ui
 end
 
--- returns once the map exists and nothing new has replicated for a short moment (or a hard cap passes)
+-- Wait on our actual arrival state. Other players, pets and effects cannot reset this timer.
 local function waitForWorld(capSeconds)
 	local t0 = os.clock()
-	local lastAdd = os.clock()
-	local added = 0
-	local conn = workspace.DescendantAdded:Connect(function()
-		lastAdd = os.clock()
-		added += 1
-	end)
+	local readySince, lastStage
 	while os.clock() - t0 < capSeconds do
-		if ui then
-			local pct = math.clamp(math.floor(added / 520), 0, 99)
-			ui.loading.Text = Reveal.Track("Building the world") .. "   " .. pct .. "%"
-			ui.bar.Size = UDim2.fromScale(pct / 100, 1)
+		local index = player:GetAttribute("BaseIndex")
+		local bases = workspace:FindFirstChild("Bases")
+		local base = bases and index and bases:FindFirstChild("Base" .. index)
+		local map = workspace:FindFirstChild("Map")
+		local character = player.Character
+		local stage, message, progress = Readiness.Resolve({
+			loaded = game:IsLoaded(),
+			map = map and map:FindFirstChild("Start") ~= nil,
+			base = base and base:FindFirstChild("Center") ~= nil,
+			character = character and character:FindFirstChild("HumanoidRootPart") ~= nil,
+			data = State.Loaded and player:GetAttribute("Loaded") == true,
+		})
+		if ui and stage ~= lastStage then
+			ui.loading.Text = Reveal.Track(message)
+			tw(ui.bar, 0.18, { Size = UDim2.fromScale(progress, 1) })
+			lastStage = stage
 		end
-		if game:IsLoaded() and workspace:FindFirstChild("Map") and os.clock() - lastAdd > 0.9 then break end
-		task.wait(0.2)
+		if stage == "ready" then
+			readySince = readySince or os.clock()
+			if os.clock() - readySince >= 0.35 then break end
+		else
+			readySince = nil
+		end
+		task.wait(0.1)
 	end
-	conn:Disconnect()
 end
 
 function Intro.Play(hud)
@@ -30014,7 +30030,7 @@ function Intro.Play(hud)
 	local gui, black, skip, hideTitle = u.gui, u.black, u.skip, u.hideTitle
 	if hud then hud.Enabled = false end
 	local finished = false
-	if not skipped then
+	if not skipped and not Settings.ReducedMotion then
 		workspace:SetAttribute("TPFC_IntroPlaying", true)
 		Effects.Letterbox(true)
 		camera.CameraType = Enum.CameraType.Scriptable
@@ -30028,7 +30044,7 @@ function Intro.Play(hud)
 		local start = os.clock()
 		local segs = #pts - 1
 		local function at(list, j) return list[math.clamp(j, 1, #list)] end
-		while not skipped do
+		while not skipped and not Settings.ReducedMotion do
 			local k = (os.clock() - start) / DURATION
 			if k >= 1 then finished = true break end
 			local e = smooth(k) * segs
@@ -30052,14 +30068,33 @@ function Intro.Play(hud)
 	tw(skip, 0.3, { TextTransparency = 1 })
 	tw(black, 0.4, { BackgroundTransparency = 1 })
 	if finished then Effects.Flash(Color3.new(1, 1, 1), 0.6, 0.35) end
-	Sounds.Play("Whoosh", 1.2)
+	if finished then Sounds.Play("Whoosh", 1.2) end
 	task.delay(0.6, function() gui:Destroy() end)
 	ui = nil
 end
 
 return Intro
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX98"><Properties><string name="Name">KnightGuide</string><ProtectedString name="Source"><![CDATA[-- A short saved guide, with a real knight portrait and ground arrows on known hub paths.
+<Item class="ModuleScript" referent="RBX98"><Properties><string name="Name">IntroReadiness</string><ProtectedString name="Source"><![CDATA[-- Loading stages describe actual readiness, rather than a percentage of arbitrary instance counts.
+local Readiness = {}
+function Readiness.Resolve(state)
+	if not state.loaded or not state.map then
+		return "world", "Building the realm", 0.15
+	end
+	if not state.base then
+		return "base", "Preparing your courtyard", 0.45
+	end
+	if not state.character then
+		return "character", "Preparing your arrival", 0.7
+	end
+	if not state.data then
+		return "data", "Loading your companions", 0.85
+	end
+	return "ready", "Ready", 1
+end
+return Readiness
+]]></ProtectedString></Properties></Item>
+<Item class="ModuleScript" referent="RBX99"><Properties><string name="Name">KnightGuide</string><ProtectedString name="Source"><![CDATA[-- A short saved guide, with a real knight portrait and ground arrows on known hub paths.
 local RS = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Rules = require(RS.Shared.ForgeRules)
@@ -30497,7 +30532,7 @@ function Guide.Init()
 end
 return Guide
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX99"><Properties><string name="Name">LabelDeclutter</string><ProtectedString name="Source"><![CDATA[-- LabelDeclutter: keeps floating world labels (BillboardGuis) from piling on top of each other.
+<Item class="LocalScript" referent="RBX100"><Properties><string name="Name">LabelDeclutter</string><ProtectedString name="Source"><![CDATA[-- LabelDeclutter: keeps floating world labels (BillboardGuis) from piling on top of each other.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > LabelDeclutter (LocalScript)
 --
 -- Most labels are drawn at a fixed pixel size, so a label 30 studs away is as big on screen as one
@@ -30685,7 +30720,7 @@ RunService.Heartbeat:Connect(function(dt)
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX100"><Properties><string name="Name">MenuWidgets</string><ProtectedString name="Source"><![CDATA[-- Gameplay widgets yield to the active menu, preserving their previous enabled state.
+<Item class="LocalScript" referent="RBX101"><Properties><string name="Name">MenuWidgets</string><ProtectedString name="Source"><![CDATA[-- Gameplay widgets yield to the active menu, preserving their previous enabled state.
 local player = game:GetService("Players").LocalPlayer
 local gui = player:WaitForChild("PlayerGui")
 local names = { MomentumUI = true, QuestPanel = true }
@@ -30710,7 +30745,7 @@ player:GetAttributeChangedSignal("TPFC_MenuOpen"):Connect(update)
 gui.ChildAdded:Connect(update)
 update()
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX101"><Properties><string name="Name">MerchantDisplay</string><ProtectedString name="Source"><![CDATA[-- A small, actual sanctuary shop display for the menu. No image or asset dependency.
+<Item class="ModuleScript" referent="RBX102"><Properties><string name="Name">MerchantDisplay</string><ProtectedString name="Source"><![CDATA[-- A small, actual sanctuary shop display for the menu. No image or asset dependency.
 local D = {}
 local C, V, CF = Color3.fromRGB, Vector3.new, CFrame.new
 local wood, stone, brass, slate = C(88, 62, 40), C(224, 221, 206), C(178, 142, 74), C(39, 65, 69)
@@ -30821,7 +30856,7 @@ function D.Emblem(kind)
 end
 return D
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX102"><Properties><string name="Name">MomentumUI</string><ProtectedString name="Source"><![CDATA[-- MomentumUI: shows the perfect-throw streak and the server-wide Rift Storm.
+<Item class="LocalScript" referent="RBX103"><Properties><string name="Name">MomentumUI</string><ProtectedString name="Source"><![CDATA[-- MomentumUI: shows the perfect-throw streak and the server-wide Rift Storm.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > MomentumUI (LocalScript)
 --
 --   * Streak badge (bottom centre): appears after a perfect throw, "PERFECT STREAK x3 · +15% luck",
@@ -30965,7 +31000,7 @@ RunService.Heartbeat:Connect(function(dt)
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX103"><Properties><string name="Name">MovementFov</string><ProtectedString name="Source"><![CDATA[-- Reversible sprint lens offset. Cinematics release it before saving their lens.
+<Item class="ModuleScript" referent="RBX104"><Properties><string name="Name">MovementFov</string><ProtectedString name="Source"><![CDATA[-- Reversible sprint lens offset. Cinematics release it before saving their lens.
 local Fov = {}
 local owner, offset, output
 local function close(a, b)
@@ -31001,7 +31036,7 @@ function Fov.Update(camera, target, dt)
 end
 return Fov
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX104"><Properties><string name="Name">Panels</string><ProtectedString name="Source"><![CDATA[-- Sanctuary shops, collection, index, customization and settings.
+<Item class="ModuleScript" referent="RBX105"><Properties><string name="Name">Panels</string><ProtectedString name="Source"><![CDATA[-- Sanctuary shops, collection, index, customization and settings.
 -- All spending and ownership changes use the existing authoritative server actions.
 local RS = game:GetService("ReplicatedStorage")
 local Http = game:GetService("HttpService")
@@ -32353,7 +32388,7 @@ function Panels.Init()
 end
 return Panels
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX105"><Properties><string name="Name">Plaque</string><ProtectedString name="Source"><![CDATA[-- Plaque: the carved rarity plaque from the reveal reference sheet (Actions/02_Rarity_Reveal_and_Capture):
+<Item class="ModuleScript" referent="RBX106"><Properties><string name="Name">Plaque</string><ProtectedString name="Source"><![CDATA[-- Plaque: the carved rarity plaque from the reveal reference sheet (Actions/02_Rarity_Reveal_and_Capture):
 -- a bevelled bar with pointed diamond ends, double gold trim, small gold diamond ornaments, serif caps,
 -- and gold laurels for the showcase tiers. Pixel sized, so it works in ScreenGuis and BillboardGuis.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > Plaque (ModuleScript)
@@ -32510,7 +32545,7 @@ end
 
 return P
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX106"><Properties><string name="Name">PlayerFeel</string><ProtectedString name="Source"><![CDATA[-- PlayerFeel: how the local player's character moves and feels.
+<Item class="LocalScript" referent="RBX107"><Properties><string name="Name">PlayerFeel</string><ProtectedString name="Source"><![CDATA[-- PlayerFeel: how the local player's character moves and feels.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > PlayerFeel (LocalScript)
 --
 --   * Run: hold Left Shift (PC), press L3 (gamepad) or tap the Run button (mobile, toggles).
@@ -32826,7 +32861,7 @@ task.spawn(function()
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX107"><Properties><string name="Name">QuestPanel</string><ProtectedString name="Source"><![CDATA[-- QuestPanel: compact parchment card on the right edge with today's quests, rebirth and boosts.
+<Item class="LocalScript" referent="RBX108"><Properties><string name="Name">QuestPanel</string><ProtectedString name="Source"><![CDATA[-- QuestPanel: compact parchment card on the right edge with today's quests, rebirth and boosts.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > QuestPanel (LocalScript)
 --
 -- Reads the server's Progress view from ClientState (Daily, Rebirths, RebirthCost, FriendsHere,
@@ -33111,7 +33146,7 @@ task.spawn(function()
 end)
 refresh()
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX108"><Properties><string name="Name">RevealTitle</string><ProtectedString name="Source"><![CDATA[-- RevealTitle: on-screen title for a creature reveal, styled after Actions/02_Rarity_Reveal_and_Capture.
+<Item class="ModuleScript" referent="RBX109"><Properties><string name="Name">RevealTitle</string><ProtectedString name="Source"><![CDATA[-- RevealTitle: on-screen title for a creature reveal, styled after Actions/02_Rarity_Reveal_and_Capture.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > RevealTitle (ModuleScript)
 --
 --   Common / Uncommon      nothing on screen: the carved plaque above the pet carries it (restrained tiers)
@@ -33427,7 +33462,7 @@ end
 
 return R
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX109"><Properties><string name="Name">SanctuaryUI</string><ProtectedString name="Source"><![CDATA[-- Medieval guild folios: carved oak, forged iron, vellum and a stitched binding.
+<Item class="ModuleScript" referent="RBX110"><Properties><string name="Name">SanctuaryUI</string><ProtectedString name="Source"><![CDATA[-- Medieval guild folios: carved oak, forged iron, vellum and a stitched binding.
 -- All ornament is inert. The reading surface stays light and the world stays visible.
 local T = require(script.Parent.UITheme)
 local Art = {}
@@ -33621,7 +33656,7 @@ function Art.Selected(button, selected)
 end
 return Art
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX110"><Properties><string name="Name">SceneLighting</string><ProtectedString name="Source"><![CDATA[-- The only runtime owner of scene light, atmosphere, clouds and grading.
+<Item class="ModuleScript" referent="RBX111"><Properties><string name="Name">SceneLighting</string><ProtectedString name="Source"><![CDATA[-- The only runtime owner of scene light, atmosphere, clouds and grading.
 local Lighting = game:GetService("Lighting")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
@@ -33707,7 +33742,7 @@ function Scene.Start()
 end
 return Scene
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX111"><Properties><string name="Name">SkyforgeUI</string><ProtectedString name="Source"><![CDATA[-- Light sanctuary surfaces and large standalone navigation artwork.
+<Item class="ModuleScript" referent="RBX112"><Properties><string name="Name">SkyforgeUI</string><ProtectedString name="Source"><![CDATA[-- Light sanctuary surfaces and large standalone navigation artwork.
 local T = require(script.Parent.UITheme)
 local S = {}
 local pendingImages = {}
@@ -33904,7 +33939,7 @@ function S.Card(frame, icon)
 end
 return S
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX112"><Properties><string name="Name">Sounds</string><ProtectedString name="Source"><![CDATA[-- Restrained event audio. Built-in assets keep the game independent of uploaded audio.
+<Item class="ModuleScript" referent="RBX113"><Properties><string name="Name">Sounds</string><ProtectedString name="Source"><![CDATA[-- Restrained event audio. Built-in assets keep the game independent of uploaded audio.
 local SoundService = game:GetService("SoundService")
 local TweenService = game:GetService("TweenService")
 local Sounds = {}
@@ -34023,7 +34058,7 @@ function Sounds.Get(name)
 end
 return Sounds
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX113"><Properties><string name="Name">ThrowCinematic</string><ProtectedString name="Source"><![CDATA[-- ThrowCinematic: the throw cutscene (owner only). Full screen, no letterbox.
+<Item class="ModuleScript" referent="RBX114"><Properties><string name="Name">ThrowCinematic</string><ProtectedString name="Source"><![CDATA[-- ThrowCinematic: the throw cutscene (owner only). Full screen, no letterbox.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ThrowCinematic (ModuleScript)
 --
 -- A short film in up to four camera shots, with HARD CUTS between them (w = wind-up seconds sent
@@ -34905,7 +34940,7 @@ end
 
 return Cine
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX114"><Properties><string name="Name">ThrowController</string><ProtectedString name="Source"><![CDATA[-- ThrowController: charge meter input, held-portal + arm wind-up, the portal flight arc,
+<Item class="ModuleScript" referent="RBX115"><Properties><string name="Name">ThrowController</string><ProtectedString name="Source"><![CDATA[-- ThrowController: charge meter input, held-portal + arm wind-up, the portal flight arc,
 -- landing bounce, portal gate opening and creature reveal choreography (for ALL players' throws).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ThrowController (ModuleScript)
 
@@ -35916,7 +35951,7 @@ end)
 
 return TC
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX115"><Properties><string name="Name">UIIcons</string><ProtectedString name="Source"><![CDATA[-- Original cutout art with immediately visible native geometry while images load.
+<Item class="ModuleScript" referent="RBX116"><Properties><string name="Name">UIIcons</string><ProtectedString name="Source"><![CDATA[-- Original cutout art with immediately visible native geometry while images load.
 local T = require(script.Parent.UITheme)
 local Sky = require(script.Parent.SkyforgeUI)
 local Icons = {}
@@ -36072,7 +36107,7 @@ function Icons.Draw(name, parent, size, color, position)
 end
 return Icons
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX116"><Properties><string name="Name">UIKit</string><ProtectedString name="Source"><![CDATA[-- Native sanctuary components. No uploaded icon/font dependency.
+<Item class="ModuleScript" referent="RBX117"><Properties><string name="Name">UIKit</string><ProtectedString name="Source"><![CDATA[-- Native sanctuary components. No uploaded icon/font dependency.
 local TweenService = game:GetService("TweenService")
 local Sounds = require(script.Parent.Sounds)
 local Settings = require(script.Parent.ClientSettings)
@@ -36466,7 +36501,7 @@ end
 
 return K
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX117"><Properties><string name="Name">UITheme</string><ProtectedString name="Source"><![CDATA[-- Sanctuary UI tokens, shared by the HUD, icons and every shop.
+<Item class="ModuleScript" referent="RBX118"><Properties><string name="Name">UITheme</string><ProtectedString name="Source"><![CDATA[-- Sanctuary UI tokens, shared by the HUD, icons and every shop.
 -- Fonts: Builder Sans for controls and data, Merriweather for sanctuary headings;
 -- resolved with a fallback so an older client without these enums still renders.
 local function font(name, fallback)
@@ -36533,7 +36568,7 @@ function T.Rarity(name, config)
 end
 return T
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX118"><Properties><string name="Name">WorldFx</string><ProtectedString name="Source"><![CDATA[-- WorldFx: ONE shared, staggered scheduler for environment motion on tagged map parts
+<Item class="ModuleScript" referent="RBX119"><Properties><string name="Name">WorldFx</string><ProtectedString name="Source"><![CDATA[-- WorldFx: ONE shared, staggered scheduler for environment motion on tagged map parts
 -- (no per-prop RenderStepped connections, no camera-following particles).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > WorldFx (ModuleScript)
 --

@@ -19,9 +19,13 @@ local Effects = require(script.Parent.Effects)
 local Sounds = require(script.Parent.Sounds)
 local T = require(script.Parent.UITheme)
 local Reveal = require(script.Parent.RevealTitle)
+local Settings = require(script.Parent.ClientSettings)
+local State = require(script.Parent.ClientState)
+local Readiness = require(script.Parent.IntroReadiness)
 
 local function tw(o, t, props, style, dir)
-	local x = TweenService:Create(o, TweenInfo.new(t, style or Enum.EasingStyle.Quart, dir or Enum.EasingDirection.Out), props)
+	local duration = Settings.ReducedMotion and math.min(t, 0.12) or t
+	local x = TweenService:Create(o, TweenInfo.new(duration, style or Enum.EasingStyle.Quart, dir or Enum.EasingDirection.Out), props)
 	x:Play()
 	return x
 end
@@ -46,6 +50,7 @@ local skipConn
 
 function Intro.Cover(hud)
 	if ui then return ui end
+	workspace:SetAttribute("TPFC_IntroPlaying", true)
 	if hud then hud.Enabled = false end
 	local gui = K.new("ScreenGui", { Name = "Intro", IgnoreGuiInset = true, ResetOnSpawn = false, DisplayOrder = 50, Parent = player:WaitForChild("PlayerGui") })
 	local black = K.new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(14, 8, 26), Parent = gui })
@@ -55,14 +60,14 @@ function Intro.Cover(hud)
 	-- blur whatever the world has rendered so far (sky, hub) behind a soft dark tint
 	local blur = game:GetService("Lighting"):FindFirstChild("TPFC_IntroBlur") or Instance.new("BlurEffect")
 	blur.Name = "TPFC_IntroBlur"
-	blur.Size = 28
+	blur.Size = (Settings.ReducedMotion or Settings.LowVFX()) and 0 or 18
 	blur.Parent = game:GetService("Lighting")
 	task.delay(0.4, function()
 		if black.Parent and ui and ui.waiting then tw(black, 1.2, { BackgroundTransparency = 0.38 }, Enum.EasingStyle.Sine) end
 	end)
 	local title = K.new("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.4), Size = UDim2.new(0.92, 0, 0, 230), BackgroundTransparency = 1, Parent = gui })
 	K.new("UISizeConstraint", { MaxSize = Vector2.new(1100, 230), Parent = title })
-	local titleScale = K.new("UIScale", { Scale = 1.12, Parent = title })
+	local titleScale = K.new("UIScale", { Scale = Settings.ReducedMotion and 1 or 1.12, Parent = title })
 	local INK = Color3.fromRGB(10, 8, 18)
 	local labels = {}
 	local function line(text, font, color, y, h, maxPx, stroke)
@@ -141,25 +146,36 @@ function Intro.Cover(hud)
 	return ui
 end
 
--- returns once the map exists and nothing new has replicated for a short moment (or a hard cap passes)
+-- Wait on our actual arrival state. Other players, pets and effects cannot reset this timer.
 local function waitForWorld(capSeconds)
 	local t0 = os.clock()
-	local lastAdd = os.clock()
-	local added = 0
-	local conn = workspace.DescendantAdded:Connect(function()
-		lastAdd = os.clock()
-		added += 1
-	end)
+	local readySince, lastStage
 	while os.clock() - t0 < capSeconds do
-		if ui then
-			local pct = math.clamp(math.floor(added / 520), 0, 99)
-			ui.loading.Text = Reveal.Track("Building the world") .. "   " .. pct .. "%"
-			ui.bar.Size = UDim2.fromScale(pct / 100, 1)
+		local index = player:GetAttribute("BaseIndex")
+		local bases = workspace:FindFirstChild("Bases")
+		local base = bases and index and bases:FindFirstChild("Base" .. index)
+		local map = workspace:FindFirstChild("Map")
+		local character = player.Character
+		local stage, message, progress = Readiness.Resolve({
+			loaded = game:IsLoaded(),
+			map = map and map:FindFirstChild("Start") ~= nil,
+			base = base and base:FindFirstChild("Center") ~= nil,
+			character = character and character:FindFirstChild("HumanoidRootPart") ~= nil,
+			data = State.Loaded and player:GetAttribute("Loaded") == true,
+		})
+		if ui and stage ~= lastStage then
+			ui.loading.Text = Reveal.Track(message)
+			tw(ui.bar, 0.18, { Size = UDim2.fromScale(progress, 1) })
+			lastStage = stage
 		end
-		if game:IsLoaded() and workspace:FindFirstChild("Map") and os.clock() - lastAdd > 0.9 then break end
-		task.wait(0.2)
+		if stage == "ready" then
+			readySince = readySince or os.clock()
+			if os.clock() - readySince >= 0.35 then break end
+		else
+			readySince = nil
+		end
+		task.wait(0.1)
 	end
-	conn:Disconnect()
 end
 
 function Intro.Play(hud)
@@ -203,7 +219,7 @@ function Intro.Play(hud)
 	local gui, black, skip, hideTitle = u.gui, u.black, u.skip, u.hideTitle
 	if hud then hud.Enabled = false end
 	local finished = false
-	if not skipped then
+	if not skipped and not Settings.ReducedMotion then
 		workspace:SetAttribute("TPFC_IntroPlaying", true)
 		Effects.Letterbox(true)
 		camera.CameraType = Enum.CameraType.Scriptable
@@ -217,7 +233,7 @@ function Intro.Play(hud)
 		local start = os.clock()
 		local segs = #pts - 1
 		local function at(list, j) return list[math.clamp(j, 1, #list)] end
-		while not skipped do
+		while not skipped and not Settings.ReducedMotion do
 			local k = (os.clock() - start) / DURATION
 			if k >= 1 then finished = true break end
 			local e = smooth(k) * segs
@@ -241,7 +257,7 @@ function Intro.Play(hud)
 	tw(skip, 0.3, { TextTransparency = 1 })
 	tw(black, 0.4, { BackgroundTransparency = 1 })
 	if finished then Effects.Flash(Color3.new(1, 1, 1), 0.6, 0.35) end
-	Sounds.Play("Whoosh", 1.2)
+	if finished then Sounds.Play("Whoosh", 1.2) end
 	task.delay(0.6, function() gui:Destroy() end)
 	ui = nil
 end
