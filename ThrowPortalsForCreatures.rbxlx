@@ -3160,6 +3160,34 @@ function Battle.At(plan, elapsed)
 	return finish(hps)
 end
 
+-- The battle scene replays the plan on its own clock: each fight beat at a readable pace, short
+-- interludes between waves. Shared so the server knows how long a full watch takes.
+Battle.ArenaBeat = 0.8
+local ARENA_LEN = { depart = 2.2, walk = 1.1, loot = 3.0, ["return"] = 1.6, retreat = 2.4 }
+function Battle.ArenaTimeline(plan)
+	local out, t = {}, 0
+	for _, s in ipairs(plan.segments) do
+		local len
+		if s.kind == "fight" then
+			len = 0
+			for _, b in ipairs(s.beats) do
+				len += (b.len or 1) * Battle.ArenaBeat
+			end
+		else
+			len = ARENA_LEN[s.kind] or 1
+		end
+		table.insert(out, { a0 = t, a1 = t + len, seg = s })
+		t += len
+	end
+	return out, t
+end
+-- the fastest a full watch can finish (the scene's top speed is x4)
+Battle.ArenaMaxSpeed = 4
+function Battle.ArenaMinSeconds(plan)
+	local _, total = Battle.ArenaTimeline(plan)
+	return total / Battle.ArenaMaxSpeed
+end
+
 function Battle.Summary(active)
 	local ok, plan = pcall(Battle.Plan, active)
 	return ok and plan.summary or nil
@@ -15054,6 +15082,8 @@ local function cleanActive(data, active)
 		ar = gearId("armor", active.ar),
 		team = #team > 0 and team or nil,
 		level = integer(active.level) and math.clamp(active.level, 1, Battle.MaxLevel) or 1,
+		-- the owner watched the whole battle scene: the trip is over and can be claimed now
+		watched = active.watched == true,
 	}
 end
 
@@ -15268,7 +15298,7 @@ function Service.Claim(player, data, base, expeditionId, now)
 	if not active or type(expeditionId) ~= "string" or active.id ~= expeditionId then
 		return false, "This expedition has already been claimed or is no longer active."
 	end
-	if unix(now) < active.endsAt then
+	if unix(now) < active.endsAt and not active.watched then
 		return false, "Your team is still exploring."
 	end
 	-- The same deterministic battle the client animated decides the outcome.
@@ -15317,6 +15347,37 @@ function Service.Claim(player, data, base, expeditionId, now)
 end
 
 -- Put a looted sword/armour from the bag on a pet; whatever it wore goes back into the bag.
+-- Watching the battle scene to the end finishes the expedition (the scene plays the whole battle,
+-- sped up to x4 at most). The server only accepts it after the scene could really have finished.
+function Service.BeginWatch(data, expeditionId, clock)
+	Service.Ensure(data)
+	local active = data.ActiveExpedition
+	if not active or active.id ~= expeditionId then
+		return nil
+	end
+	return { id = expeditionId, t = clock }
+end
+function Service.FinishWatch(data, watch, expeditionId, clock)
+	Service.Ensure(data)
+	local active = data.ActiveExpedition
+	if not active or type(expeditionId) ~= "string" or active.id ~= expeditionId then
+		return false, "This expedition is no longer active."
+	end
+	if active.watched then
+		return true, "Battle finished. Claim your rewards!"
+	end
+	if not watch or watch.id ~= expeditionId then
+		return false, "Watch the battle to finish it early."
+	end
+	local ok, plan = pcall(Battle.Plan, active)
+	local need = ok and Battle.ArenaMinSeconds(plan) * 0.9 or 10
+	if clock - watch.t < need then
+		return false, "The battle isn't over yet."
+	end
+	active.watched = true
+	return true, "Battle finished. Claim your rewards at the table!"
+end
+
 function Service.EquipFromBag(data, uid, kind, id)
 	Service.Ensure(data)
 	local pet = validUid(uid) and getPet(data, uid)
@@ -18760,6 +18821,20 @@ function Actions.StartExpedition(player, data, st, arg)
 		end
 	end
 	return started, message
+end
+-- the battle scene opened / reached its end: watching the whole battle finishes the trip
+function Actions.WatchExpedition(player, data, st, id)
+	if type(id) ~= "string" or #id > 80 then
+		return false, "Bad request"
+	end
+	st.watch = Expeditions.BeginWatch(data, id, os.clock())
+	return true, nil, "partial"
+end
+function Actions.FinishExpedition(player, data, st, id)
+	if type(id) ~= "string" or #id > 80 then
+		return false, "Bad request"
+	end
+	return Expeditions.FinishWatch(data, st.watch, id, os.clock())
 end
 -- arg "uid|weapon|Iron": equip a looted sword/armour from your bag (the old one goes back in)
 function Actions.EquipGear(player, data, st, arg)
@@ -24353,56 +24428,68 @@ return L
 ]]></ProtectedString></Properties></Item>
 </Item>
 </Item>
-<Item class="StarterPlayer" referent="RBX130"><Properties><string name="Name">StarterPlayer</string></Properties>
+<Item class="StarterPlayer" referent="RBX131"><Properties><string name="Name">StarterPlayer</string></Properties>
 <Item class="StarterPlayerScripts" referent="RBX80"><Properties><string name="Name">StarterPlayerScripts</string></Properties>
 <Item class="Folder" referent="RBX81"><Properties><string name="Name">Client</string></Properties>
-<Item class="ModuleScript" referent="RBX82"><Properties><string name="Name">ArenaScene</string><ProtectedString name="Source"><![CDATA[-- ArenaScene: turns the compact biome vignette (ExpeditionScene) into a full battle map for the
--- top-down battle scene: a wide arena ringed by cliffs, a stone-edged road lit by torches, an
--- entry portal, a boss arena with glowing runes, pillars and banners, lots of biome scenery,
--- drifting weather particles and a colour grade per world. Built in the scene's own coordinates
--- (the route from Shared/ExpeditionBattle); the caller moves it into place.
+<Item class="ModuleScript" referent="RBX82"><Properties><string name="Name">BattleStage</string><ProtectedString name="Source"><![CDATA[-- BattleStage: the floating sky-island arena the battle scene plays on. A round island of the biome
+-- hangs in the sky with rocky roots underneath, a rune circle in the middle, the team's portal on
+-- one side and the monsters' portal on the other, themed scenery around the rim, smaller islands
+-- drifting in the distance, weather particles and a colour grade. Built at `origin` in the world
+-- by the client that watches the battle (nobody else sees it).
 local RS = game:GetService("ReplicatedStorage")
 local Config = require(RS.Shared.Config)
-local Battle = require(RS.Shared.ExpeditionBattle)
 local okPortal, Portal = pcall(require, RS.Shared.PortalBuilder)
-local Arena = {}
+local Stage = {}
 local V, C, ANG = Vector3.new, Color3.fromRGB, CFrame.Angles
+local PI = math.pi
 
 local LOOK = {
-	Forest = { glow = C(255, 196, 110), weather = "leaf", tint = C(235, 255, 225), sat = 0.15, accent = C(70, 150, 80), stone = C(110, 114, 104) },
-	Volcano = { glow = C(255, 120, 40), weather = "ember", tint = C(255, 225, 205), sat = 0.2, accent = C(220, 70, 30), stone = C(70, 58, 56) },
-	Frozen = { glow = C(150, 210, 255), weather = "snow", tint = C(225, 240, 255), sat = 0, accent = C(120, 190, 240), stone = C(170, 190, 205) },
-	Crystal = { glow = C(190, 140, 255), weather = "sparkle", tint = C(240, 230, 255), sat = 0.2, accent = C(140, 100, 230), stone = C(90, 84, 120) },
-	Candy = { glow = C(255, 150, 210), weather = "confetti", tint = C(255, 238, 248), sat = 0.25, accent = C(240, 110, 170), stone = C(230, 200, 220) },
-	Space = { glow = C(140, 220, 255), weather = "star", tint = C(220, 225, 255), sat = 0.1, accent = C(110, 120, 230), stone = C(70, 74, 96) },
-	Shadow = { glow = C(170, 90, 255), weather = "mote", tint = C(225, 210, 245), sat = -0.05, accent = C(130, 60, 200), stone = C(52, 46, 66) },
-	Heaven = { glow = C(255, 230, 150), weather = "gold", tint = C(255, 250, 235), sat = 0.1, accent = C(240, 196, 80), stone = C(236, 230, 214) },
+	Forest = { top = Enum.Material.Grass, rock = C(112, 98, 84), glow = C(255, 214, 120), accent = C(80, 170, 90), weather = "leaf",
+		tint = C(240, 255, 232), portal = "Forest" },
+	Volcano = { top = Enum.Material.Basalt, rock = C(62, 52, 52), glow = C(255, 120, 40), accent = C(230, 80, 30), weather = "ember",
+		tint = C(255, 228, 210), portal = "Lava" },
+	Frozen = { top = Enum.Material.Snow, rock = C(150, 172, 190), glow = C(160, 220, 255), accent = C(120, 190, 240), weather = "snow",
+		tint = C(228, 242, 255), portal = "Ice" },
+	Crystal = { top = Enum.Material.Slate, rock = C(84, 76, 116), glow = C(200, 150, 255), accent = C(140, 100, 230), weather = "sparkle",
+		tint = C(242, 232, 255), portal = "Galaxy" },
+	Candy = { top = Enum.Material.SmoothPlastic, rock = C(200, 150, 120), glow = C(255, 160, 215), accent = C(240, 110, 170), weather = "confetti",
+		tint = C(255, 240, 250), portal = "Rainbow" },
+	Space = { top = Enum.Material.Slate, rock = C(70, 72, 92), glow = C(150, 225, 255), accent = C(110, 120, 230), weather = "star",
+		tint = C(222, 228, 255), portal = "Galaxy" },
+	Shadow = { top = Enum.Material.Slate, rock = C(46, 40, 60), glow = C(180, 100, 255), accent = C(130, 60, 200), weather = "mote",
+		tint = C(226, 212, 246), portal = "Dark" },
+	Heaven = { top = Enum.Material.Marble, rock = C(230, 224, 210), glow = C(255, 232, 150), accent = C(240, 196, 80), weather = "gold",
+		tint = C(255, 250, 236), portal = "Divine" },
 }
-Arena.Look = LOOK
+Stage.Look = LOOK
 
 local SPARK = "rbxasset://textures/particles/sparkles_main.dds"
 local SMOKE = "rbxasset://textures/particles/smoke_main.dds"
 local FIRE = "rbxasset://textures/particles/fire_main.dds"
 
-local function rng(seed)
-	local s = seed
-	return function(a, b)
-		s = (s * 48271) % 2147483647
-		local r = s / 2147483647
-		return a and (a + (b - a) * r) or r
-	end
-end
+-- key places on the island, relative to origin: the team faces +X, monsters face -X
+Stage.TeamSlots = { V(-5, 0, 0), V(-7.2, 0, 2.8), V(-7.2, 0, -2.8) }
+Stage.TeamPortal = V(-13, 0, 0)
+Stage.MonsterSpot = V(5, 0, 0)
+Stage.BossSpot = V(6, 0, 0)
+Stage.MonsterPortal = V(13, 0, 0)
+Stage.Ground = 0.5 -- island surface height
 
-function Arena.Decorate(model, worldId)
+function Stage.Build(worldId, origin)
 	local def = Config.Worlds[worldId] or Config.Worlds.Forest
 	local look = LOOK[worldId] or LOOK.Forest
 	local ground = def.groundColor
-	local stone = look.stone
-	local rand = rng(#worldId * 7919 + 17)
-
-	local function part(name, size, cf, color, material, shape, class)
-		local p = Instance.new(class or "Part")
-		p.Name, p.Size, p.CFrame, p.Color = name, size, cf, color
+	local model = Instance.new("Model")
+	model.Name = "BattleStage"
+	local seed = #worldId * 7919 + 13
+	local function rand(a, b)
+		seed = (seed * 48271) % 2147483647
+		local r = seed / 2147483647
+		return a and (a + (b - a) * r) or r
+	end
+	local function part(name, size, cf, color, material, shape)
+		local p = Instance.new("Part")
+		p.Name, p.Size, p.CFrame, p.Color = name, size, CFrame.new(origin) * cf, color
 		p.Anchored, p.CanCollide, p.CanQuery, p.CanTouch = true, false, false, false
 		p.Material = material or Enum.Material.SmoothPlastic
 		p.TopSurface, p.BottomSurface = Enum.SurfaceType.Smooth, Enum.SurfaceType.Smooth
@@ -24410,213 +24497,213 @@ function Arena.Decorate(model, worldId)
 		p.Parent = model
 		return p
 	end
+	local function wedge(name, size, cf, color, material)
+		local p = Instance.new("WedgePart")
+		p.Name, p.Size, p.CFrame, p.Color = name, size, CFrame.new(origin) * cf, color
+		p.Anchored, p.CanCollide, p.CanQuery, p.CanTouch = true, false, false, false
+		p.Material = material or Enum.Material.SmoothPlastic
+		p.Parent = model
+		return p
+	end
 	local function light(p, color, range, brightness)
 		local l = Instance.new("PointLight")
-		l.Color, l.Range, l.Brightness, l.Shadows = color, range or 10, brightness or 1.5, false
+		l.Color, l.Range, l.Brightness, l.Shadows = color, range or 12, brightness or 1.5, false
 		l.Parent = p
-		return l
 	end
+	local flat = ANG(0, 0, PI / 2) -- cylinders lying flat (axis up)
 
-	-- wide ground and a ring of cliffs closing the arena in
-	part("ArenaGround", V(96, 1, 76), CFrame.new(0, -0.45, 0), ground:Lerp(C(0, 0, 0), 0.12), Enum.Material.Grass)
-	part("ArenaGroundInner", V(40, 0.4, 28), CFrame.new(0, -0.05, 0), ground:Lerp(stone, 0.18))
-	for i = 0, 27 do
-		local a = i / 28 * math.pi * 2
-		local r = 40 + rand(-3, 3)
-		local h = rand(9, 20)
-		local w = rand(9, 14)
-		local cliff = part("Cliff", V(w, h, rand(7, 11)), CFrame.new(math.cos(a) * r, h / 2 - 0.5, math.sin(a) * r * 0.8) * ANG(0, -a + rand(-0.3, 0.3), rand(-0.08, 0.08)),
-			stone:Lerp(C(0, 0, 0), rand(0, 0.25)), Enum.Material.Slate)
-		if rand() < 0.6 then
-			part("CliffCap", V(w * 0.9, 0.6, cliff.Size.Z * 0.9), cliff.CFrame * CFrame.new(0, h / 2 + 0.25, 0), ground, Enum.Material.Grass)
+	-- the island: layered disc, a rim, and rocky roots hanging into the sky
+	part("IslandTop", V(1.2, 44, 44), CFrame.new(0, -0.1, 0) * flat, ground, look.top, Enum.PartType.Cylinder)
+	part("IslandEdge", V(2.4, 46, 46), CFrame.new(0, -1.5, 0) * flat, ground:Lerp(look.rock, 0.5), Enum.Material.Slate, Enum.PartType.Cylinder)
+	part("IslandBody", V(5, 40, 40), CFrame.new(0, -5, 0) * flat, look.rock, Enum.Material.Slate, Enum.PartType.Cylinder)
+	for i = 1, 14 do
+		local a = rand(0, PI * 2)
+		local r = rand(4, 16)
+		local h = rand(6, 16)
+		local w = rand(4, 9)
+		local root = wedge("IslandRoot", V(w, h, w), CFrame.new(math.cos(a) * r, -7.5 - h / 2, math.sin(a) * r) * ANG(PI, rand(0, PI * 2), 0),
+			look.rock:Lerp(C(0, 0, 0), rand(0, 0.3)), Enum.Material.Slate)
+		if rand() < 0.3 then
+			local gem = part("RootGem", V(0.8, 1.6, 0.8), root.CFrame * CFrame.new(0, -h * 0.2, w * 0.3), look.glow, Enum.Material.Neon)
+			light(gem, look.glow, 10, 1)
 		end
 	end
 
-	-- stone-edged road with torches
-	local path = Battle.Path
-	for li = 1, #path - 1 do
-		local a, b = V(path[li][1], 0, path[li][2]), V(path[li + 1][1], 0, path[li + 1][2])
-		local dir = (b - a).Unit
-		local sideV = V(-dir.Z, 0, dir.X)
-		local len = (b - a).Magnitude
-		part("Road", V(2.6, 0.12, len + 1.2), CFrame.lookAt((a + b) / 2 + V(0, 0.42, 0), b + V(0, 0.42, 0)), stone:Lerp(C(150, 140, 120), 0.35), Enum.Material.Cobblestone)
-		local steps = math.floor(len / 1.3)
-		for s = 0, steps do
-			local at = a + dir * (s * 1.3)
-			for _, sx in { -1, 1 } do
-				part("RoadEdge", V(0.5, 0.35, 0.9), CFrame.lookAt(at + sideV * sx * 1.6 + V(0, 0.5, 0), at + sideV * sx * 1.6 + dir + V(0, 0.5, 0)) * ANG(0, rand(-0.2, 0.2), 0),
-					stone:Lerp(C(0, 0, 0), rand(0, 0.2)), Enum.Material.Slate)
+	-- arena floor: a stone ring with glowing runes where the fights happen
+	part("ArenaRing", V(0.3, 26, 26), CFrame.new(0, 0.55, 0) * flat, look.rock:Lerp(C(255, 255, 255), 0.35), Enum.Material.Cobblestone, Enum.PartType.Cylinder)
+	part("ArenaCenter", V(0.34, 20, 20), CFrame.new(0, 0.56, 0) * flat, ground:Lerp(look.rock, 0.3), look.top, Enum.PartType.Cylinder)
+	for i = 0, 23 do
+		local a = i / 24 * PI * 2
+		local rune = part("Rune", V(1, 0.08, 0.3), CFrame.new(math.cos(a) * 11.6, 0.75, math.sin(a) * 11.6) * ANG(0, -a, 0), look.glow, Enum.Material.Neon)
+		rune.Transparency = 0.15
+	end
+	local ring = part("RuneRing", V(0.06, 16, 16), CFrame.new(0, 0.74, 0) * flat, look.glow, Enum.Material.Neon, Enum.PartType.Cylinder)
+	ring.Transparency = 0.8
+	light(ring, look.glow, 20, 1)
+
+	-- the two portals: the team arrives on the left, monsters come out on the right
+	local portals = {}
+	for side, spot in { team = Stage.TeamPortal, monster = Stage.MonsterPortal } do
+		part("PortalBase", V(0.6, 8, 8), CFrame.new(spot + V(0, 0.6, 0)) * flat, look.rock, Enum.Material.Slate, Enum.PartType.Cylinder)
+		if okPortal and Portal and Portal.BuildGate then
+			local id = side == "team" and "Basic" or (Config.Portals[look.portal] and look.portal or "Basic")
+			local ok, gate, refs = pcall(Portal.BuildGate, id, 3.4)
+			if ok and gate then
+				local at = origin + spot + V(0, 3.4 + 1, 0)
+				local facing = side == "team" and V(1, 0, 0) or V(-1, 0, 0)
+				gate:PivotTo(CFrame.lookAt(at, at + facing))
+				for _, d in ipairs(gate:GetDescendants()) do
+					if d:IsA("BasePart") then d.Anchored = true end
+				end
+				gate.Parent = model
+				portals[side] = { model = gate, refs = refs, at = at }
 			end
 		end
-		local torches = math.max(1, math.floor(len / 4.5))
-		for tI = 1, torches do
-			local at = a + dir * (len * tI / (torches + 1))
-			local sx = (tI + li) % 2 == 0 and 1 or -1
-			local foot = at + sideV * sx * 2.4
-			part("TorchPost", V(0.3, 2.6, 0.3), CFrame.new(foot + V(0, 1.7, 0)), C(80, 58, 40), Enum.Material.Wood)
-			local bowl = part("TorchBowl", V(0.7, 0.3, 0.7), CFrame.new(foot + V(0, 3.05, 0)), C(60, 56, 60), Enum.Material.Metal)
-			local flame = part("TorchFlame", V(0.35, 0.5, 0.35), CFrame.new(foot + V(0, 3.4, 0)), look.glow, Enum.Material.Neon)
-			flame.Transparency = 0.2
-			local fire = Instance.new("Fire")
-			fire.Size, fire.Heat = 2.2, 6
-			fire.Color, fire.SecondaryColor = look.glow, look.glow:Lerp(C(255, 255, 255), 0.4)
-			fire.Parent = bowl
-			light(flame, look.glow, 12, 1.8)
-		end
 	end
 
-	-- entry portal the team steps out of
-	local sx, sz, dx, dz = Battle.PathPoint(0)
-	if okPortal and Portal and Portal.BuildGate then
-		local ok, gate = pcall(Portal.BuildGate, "Basic", 3.2)
-		if ok and gate then
-			local at = V(sx, 0.4 + 3.2 + 0.4, sz) - V(dx, 0, dz).Unit * 1.2
-			gate:PivotTo(CFrame.lookAt(at, at + V(dx, 0, dz)))
-			for _, d in ipairs(gate:GetDescendants()) do
-				if d:IsA("BasePart") then d.Anchored = true end
-			end
-			gate.Parent = model
-		end
-	end
-
-	-- boss arena: round platform, rune circle, pillars with banners and a back arch
-	local boss = Battle.PathPoint(0.9)
-	local bx, bz = Battle.PathPoint(0.9)
-	local bossAt = V(bx, 0, bz)
-	part("BossPlatform", V(0.6, 11, 11), CFrame.new(bossAt + V(0, 0.5, 0)) * ANG(0, 0, math.pi / 2), stone:Lerp(C(255, 255, 255), 0.15), Enum.Material.Marble, Enum.PartType.Cylinder)
-	part("BossPlatformRim", V(0.4, 11.8, 11.8), CFrame.new(bossAt + V(0, 0.3, 0)) * ANG(0, 0, math.pi / 2), stone:Lerp(C(0, 0, 0), 0.3), Enum.Material.Slate, Enum.PartType.Cylinder)
-	for i = 0, 15 do
-		local a = i / 16 * math.pi * 2
-		local rune = part("Rune", V(0.7, 0.08, 0.25), CFrame.new(bossAt + V(math.cos(a) * 4.4, 0.83, math.sin(a) * 4.4)) * ANG(0, -a, 0), look.glow, Enum.Material.Neon)
-		rune.Transparency = 0.1
-	end
-	local ring = part("RuneRing", V(0.1, 7.2, 7.2), CFrame.new(bossAt + V(0, 0.82, 0)) * ANG(0, 0, math.pi / 2), look.glow, Enum.Material.Neon, Enum.PartType.Cylinder)
-	ring.Transparency = 0.75
-	light(ring, look.glow, 16, 1.2)
-	for i = 0, 3 do
-		local a = math.pi / 4 + i * math.pi / 2
-		local at = bossAt + V(math.cos(a) * 6.2, 0, math.sin(a) * 6.2)
-		part("BossPillar", V(1.2, 7, 1.2), CFrame.new(at + V(0, 4, 0)), stone:Lerp(C(255, 255, 255), 0.25), Enum.Material.Marble)
-		part("BossPillarCap", V(1.7, 0.5, 1.7), CFrame.new(at + V(0, 7.6, 0)), C(220, 180, 80), Enum.Material.Metal)
-		local banner = part("Banner", V(0.08, 3.4, 1.3), CFrame.lookAt(at + V(0, 5, 0), bossAt + V(0, 5, 0)) * CFrame.new(0, 0, -0.7), look.accent, Enum.Material.Fabric)
-		part("BannerTrim", V(0.1, 0.25, 1.35), banner.CFrame * CFrame.new(0, -1.6, 0), C(240, 200, 90), Enum.Material.Metal)
-		local brazier = part("Brazier", V(0.9, 0.4, 0.9), CFrame.new(at + V(0, 8.05, 0)), C(60, 56, 60), Enum.Material.Metal)
-		local f = Instance.new("Fire")
-		f.Size, f.Heat, f.Color, f.SecondaryColor = 3, 8, look.glow, C(255, 240, 200)
-		f.Parent = brazier
-		light(brazier, look.glow, 14, 1.6)
-	end
-
-	-- scenery around the arena, themed per biome
-	local function clear(x, z)
-		-- keep props off the road and the play space
-		return math.abs(x) > 15 or math.abs(z) > 11
-	end
-	for i = 1, 46 do
-		local x, z = rand(-36, 36), rand(-29, 29)
-		if clear(x, z) then
-			local s = rand(0.8, 1.6)
+	-- rim scenery themed per biome (kept clear of the fight in the middle)
+	for i = 1, 26 do
+		local a = rand(0, PI * 2)
+		local r = rand(14.5, 20.5)
+		local x, z = math.cos(a) * r, math.sin(a) * r
+		-- keep the side facing the camera (-Z) open so nothing hides the fight
+		if (math.abs(z) > 4 or math.abs(x) < 10) and (z > -6 or math.abs(x) > 17) then
+			local s = rand(0.8, 1.5)
+			local base = CFrame.new(x, 0.5, z)
 			if worldId == "Forest" then
-				part("Trunk", V(0.8, 4 * s, 0.8), CFrame.new(x, 2 * s, z), C(96, 70, 48), Enum.Material.Wood)
+				part("Trunk", V(0.9, 4 * s, 0.9), base * CFrame.new(0, 2 * s, 0), C(96, 70, 48), Enum.Material.Wood)
 				for lv = 0, 2 do
-					local w = (3.6 - lv * 0.9) * s
-					part("Leaves", V(w, 1.4 * s, w), CFrame.new(x, (3.6 + lv * 1.1) * s, z) * ANG(0, lv * 0.5, 0), C(60 + lv * 12, 130 + lv * 10, 60), Enum.Material.Grass)
+					local w = (3.8 - lv * 1) * s
+					part("Leaves", V(w, 1.5 * s, w), base * CFrame.new(0, (3.8 + lv * 1.2) * s, 0) * ANG(0, lv * 0.6, 0), C(64 + lv * 14, 136 + lv * 12, 62), Enum.Material.Grass)
 				end
 			elseif worldId == "Volcano" then
-				local rock = part("Basalt", V(2 * s, 3 * s, 2 * s), CFrame.new(x, 1.4 * s, z) * ANG(0, rand(0, 3), rand(-0.2, 0.2)), C(60, 52, 54), Enum.Material.Basalt)
-				if rand() < 0.4 then
-					local lava = part("LavaPool", V(0.2, 4 * s, 4 * s), CFrame.new(x + 2.5, 0.16, z) * ANG(0, 0, math.pi / 2), C(255, 110, 30), Enum.Material.Neon, Enum.PartType.Cylinder)
-					light(lava, C(255, 120, 40), 14, 2)
-				end
-				if rand() < 0.3 then
-					local e = Instance.new("ParticleEmitter")
-					e.Texture, e.Rate, e.Lifetime, e.Speed = SMOKE, 3, NumberRange.new(3, 5), NumberRange.new(2, 3)
-					e.Color = ColorSequence.new(C(70, 60, 60))
-					e.Size = NumberSequence.new(1.5, 4)
-					e.Transparency = NumberSequence.new(0.4, 1)
-					e.Parent = rock
+				wedge("Spire", V(2 * s, 5 * s, 2 * s), base * CFrame.new(0, 2.5 * s, 0) * ANG(0, rand(0, 3), 0), C(56, 48, 50), Enum.Material.Basalt)
+				if rand() < 0.5 then
+					local lava = part("Lava", V(0.2, 3 * s, 3 * s), base * CFrame.new(1.5, 0.12, 0) * flat, C(255, 110, 30), Enum.Material.Neon, Enum.PartType.Cylinder)
+					light(lava, C(255, 120, 40), 12, 2)
 				end
 			elseif worldId == "Frozen" then
-				part("IceSpike", V(1.4 * s, 5 * s, 1.4 * s), CFrame.new(x, 2.3 * s, z) * ANG(rand(-0.15, 0.15), rand(0, 3), rand(-0.15, 0.15)), C(170, 220, 245), Enum.Material.Ice)
-				part("Snowdrift", V(3.5 * s, 0.8, 2.5 * s), CFrame.new(x + 1, 0.1, z), C(245, 250, 255), Enum.Material.Snow)
+				part("IceSpike", V(1.3 * s, 5 * s, 1.3 * s), base * CFrame.new(0, 2.4 * s, 0) * ANG(rand(-0.2, 0.2), rand(0, 3), rand(-0.2, 0.2)), C(176, 224, 248), Enum.Material.Ice)
+				part("SnowPile", V(3 * s, 0.9, 2.4 * s), base * CFrame.new(0.8, 0, 0), C(248, 252, 255), Enum.Material.Snow)
 			elseif worldId == "Crystal" then
-				local col = rand() < 0.5 and C(150, 110, 240) or C(100, 220, 235)
+				local col = rand() < 0.5 and C(160, 120, 250) or C(110, 225, 240)
 				for c = 1, 3 do
-					local cr = part("Crystal", V(0.9 * s, (2 + c) * s, 0.9 * s), CFrame.new(x + c * 0.6 - 1, (1 + c * 0.5) * s, z) * ANG(rand(-0.3, 0.3), rand(0, 3), rand(-0.3, 0.3)), col, Enum.Material.Neon)
-					cr.Transparency = 0.15
-					if c == 2 then light(cr, col, 10, 1.4) end
+					local cr = part("Crystal", V(0.9 * s, (2 + c) * s, 0.9 * s), base * CFrame.new(c * 0.6 - 1.2, (1 + c * 0.5) * s, 0) * ANG(rand(-0.35, 0.35), rand(0, 3), rand(-0.35, 0.35)), col, Enum.Material.Neon)
+					cr.Transparency = 0.12
+					if c == 2 then light(cr, col, 10, 1.2) end
 				end
 			elseif worldId == "Candy" then
 				for band = 0, 4 do
-					part("CandyCane", V(0.8 * s, 0.9 * s, 0.8 * s), CFrame.new(x, (0.45 + band * 0.9) * s, z), band % 2 == 0 and C(240, 80, 110) or C(255, 250, 250))
+					part("Cane", V(0.8 * s, 0.9 * s, 0.8 * s), base * CFrame.new(0, (0.45 + band * 0.9) * s, 0), band % 2 == 0 and C(240, 80, 110) or C(255, 250, 250))
 				end
-				part("Gumdrop", V(2 * s, 1.4 * s, 2 * s), CFrame.new(x + 2, 0.7 * s, z + 1), C(130, 220, 170), Enum.Material.Glass, Enum.PartType.Ball).Transparency = 0.2
+				local gum = part("Gumdrop", V(2 * s, 1.4 * s, 2 * s), base * CFrame.new(1.8, 0.7 * s, 0.8), rand() < 0.5 and C(130, 220, 170) or C(255, 170, 90), Enum.Material.Glass, Enum.PartType.Ball)
+				gum.Transparency = 0.15
 			elseif worldId == "Space" then
-				local moon = part("MoonRock", V(2.4 * s, 1.6 * s, 2.4 * s), CFrame.new(x, 0.6 * s, z) * ANG(0, rand(0, 3), 0), C(120, 124, 140), Enum.Material.Slate, Enum.PartType.Ball)
-				if rand() < 0.35 then
-					local beacon = part("Beacon", V(0.4, 0.4, 0.4), moon.CFrame * CFrame.new(0, 1.2 * s, 0), C(140, 230, 255), Enum.Material.Neon, Enum.PartType.Ball)
-					light(beacon, C(140, 230, 255), 10, 1.5)
+				part("MoonRock", V(2.4 * s, 1.6 * s, 2.4 * s), base * CFrame.new(0, 0.6 * s, 0), C(120, 124, 140), Enum.Material.Slate, Enum.PartType.Ball)
+				if rand() < 0.4 then
+					local b = part("Beacon", V(0.5, 0.5, 0.5), base * CFrame.new(0, 1.8 * s, 0), C(150, 230, 255), Enum.Material.Neon, Enum.PartType.Ball)
+					light(b, C(150, 230, 255), 10, 1.5)
 				end
 			elseif worldId == "Shadow" then
-				part("DeadTree", V(0.6, 5 * s, 0.6), CFrame.new(x, 2.5 * s, z) * ANG(0, 0, rand(-0.2, 0.2)), C(60, 54, 70), Enum.Material.Wood)
-				part("Branch", V(0.35, 2.2 * s, 0.35), CFrame.new(x + 0.6, 3.8 * s, z) * ANG(0, rand(0, 3), -0.8), C(60, 54, 70), Enum.Material.Wood)
-				if rand() < 0.4 then
-					local orb = part("SoulOrb", V(0.6, 0.6, 0.6), CFrame.new(x + 1, 1.5, z + 1), C(180, 100, 255), Enum.Material.Neon, Enum.PartType.Ball)
+				part("DeadTree", V(0.6, 5 * s, 0.6), base * CFrame.new(0, 2.5 * s, 0) * ANG(0, 0, rand(-0.2, 0.2)), C(58, 52, 70), Enum.Material.Wood)
+				part("Branch", V(0.35, 2.2 * s, 0.35), base * CFrame.new(0.6, 3.8 * s, 0) * ANG(0, rand(0, 3), -0.8), C(58, 52, 70), Enum.Material.Wood)
+				if rand() < 0.5 then
+					local orb = part("SoulOrb", V(0.6, 0.6, 0.6), base * CFrame.new(1, 1.5, 1), C(180, 100, 255), Enum.Material.Neon, Enum.PartType.Ball)
 					light(orb, C(170, 90, 255), 10, 1.4)
 				end
 			else -- Heaven
-				part("Column", V(1.2, 5 * s, 1.2), CFrame.new(x, 2.5 * s, z), C(240, 236, 224), Enum.Material.Marble)
-				part("Cloud", V(4 * s, 1.4 * s, 3 * s), CFrame.new(x + 1.5, 0.4, z + 1), C(255, 255, 255), Enum.Material.SmoothPlastic, Enum.PartType.Ball).Transparency = 0.15
+				part("Column", V(1.2, 5 * s, 1.2), base * CFrame.new(0, 2.5 * s, 0), C(244, 240, 228), Enum.Material.Marble)
+				part("ColumnCap", V(1.8, 0.4, 1.8), base * CFrame.new(0, 5 * s + 0.2, 0), C(240, 200, 90), Enum.Material.Metal)
 			end
 		end
 	end
+	-- torches around the arena ring
+	for i = 0, 7 do
+		local a = (i + 0.5) / 8 * PI * 2
+		local at = CFrame.new(math.cos(a) * 13.4, 0.5, math.sin(a) * 13.4)
+		if math.abs(math.sin(a)) > 0.3 then
+			part("TorchPost", V(0.35, 3, 0.35), at * CFrame.new(0, 1.5, 0), C(80, 58, 40), Enum.Material.Wood)
+			local bowl = part("TorchBowl", V(0.8, 0.35, 0.8), at * CFrame.new(0, 3.1, 0), C(60, 56, 60), Enum.Material.Metal)
+			local fire = Instance.new("Fire")
+			fire.Size, fire.Heat, fire.Color, fire.SecondaryColor = 2.4, 6, look.glow, look.glow:Lerp(C(255, 255, 255), 0.4)
+			fire.Parent = bowl
+			light(bowl, look.glow, 14, 1.8)
+		end
+	end
 
-	-- drifting weather over the whole arena
-	local sky = part("Weather", V(70, 1, 56), CFrame.new(0, 22, 0), C(255, 255, 255))
+	-- smaller islands drifting in the distance
+	local islets = {}
+	for i = 1, 9 do
+		local a = rand(0, PI * 2)
+		local r = rand(48, 90)
+		local y = rand(-25, 18)
+		local w = rand(6, 14)
+		local top = part("Islet", V(1, w, w), CFrame.new(math.cos(a) * r, y, math.sin(a) * r) * flat, ground, look.top, Enum.PartType.Cylinder)
+		local under = wedge("IsletRoot", V(w * 0.8, w * 0.9, w * 0.8), CFrame.new(math.cos(a) * r, y - w * 0.45, math.sin(a) * r) * ANG(PI, rand(0, 3), 0), look.rock, Enum.Material.Slate)
+		local deco = part("IsletDeco", V(1, w * 0.4, 1), CFrame.new(math.cos(a) * r, y + w * 0.2, math.sin(a) * r), look.accent, Enum.Material.SmoothPlastic)
+		table.insert(islets, { parts = { top, under, deco }, base = { top.CFrame, under.CFrame, deco.CFrame }, phase = rand(0, 6) })
+	end
+
+	-- weather over the island
+	local sky = part("Weather", V(50, 1, 50), CFrame.new(0, 24, 0), C(255, 255, 255))
 	sky.Transparency = 1
 	local e = Instance.new("ParticleEmitter")
 	e.Texture = look.weather == "ember" and FIRE or (look.weather == "snow" and SMOKE or SPARK)
-	e.Rate = 40
+	e.Rate = 34
 	e.Lifetime = NumberRange.new(5, 8)
-	e.EmissionDirection = (look.weather == "ember" or look.weather == "mote" or look.weather == "gold") and Enum.NormalId.Top or Enum.NormalId.Bottom
+	e.EmissionDirection = Enum.NormalId.Bottom
 	e.Speed = NumberRange.new(2, 4)
-	e.SpreadAngle = Vector2.new(20, 20)
+	e.SpreadAngle = Vector2.new(25, 25)
 	e.Color = ColorSequence.new(look.glow, look.glow:Lerp(C(255, 255, 255), 0.5))
 	e.LightEmission = (look.weather == "snow" or look.weather == "leaf") and 0 or 0.8
-	e.Size = NumberSequence.new(look.weather == "snow" and 0.4 or 0.3)
+	e.Size = NumberSequence.new(look.weather == "snow" and 0.45 or 0.3)
 	e.Transparency = NumberSequence.new(0.2, 1)
 	e.Rotation = NumberRange.new(0, 360)
 	e.RotSpeed = NumberRange.new(-60, 60)
 	if look.weather == "leaf" then
 		e.Color = ColorSequence.new(C(120, 180, 80), C(220, 180, 70))
-		e.Size = NumberSequence.new(0.35)
-	elseif look.weather == "ember" then
-		sky.CFrame = CFrame.new(0, -1, 0)
-	elseif look.weather == "mote" or look.weather == "gold" then
-		sky.CFrame = CFrame.new(0, 0, 0)
+	elseif look.weather == "ember" or look.weather == "mote" or look.weather == "gold" then
+		sky.CFrame = CFrame.new(origin + V(0, 0.2, 0))
+		e.EmissionDirection = Enum.NormalId.Top
 	end
 	e.Parent = sky
-	return look
+
+	return {
+		model = model, look = look, portals = portals,
+		-- gentle motion for the background islets and the portals' swirl
+		animate = function(t)
+			for _, isl in ipairs(islets) do
+				local dy = math.sin(t * 0.6 + isl.phase) * 0.8
+				for j, p in ipairs(isl.parts) do
+					p.CFrame = isl.base[j] + V(0, dy, 0)
+				end
+			end
+			if Portal and Portal.Spin then
+				for _, pr in pairs(portals) do
+					pcall(Portal.Spin, pr.refs, t)
+				end
+			end
+			ring.Transparency = 0.75 + math.sin(t * 2) * 0.08
+		end,
+	}
 end
 
--- colour grade + bloom on the camera while the battle scene is open
-function Arena.Grade(camera, worldId)
+function Stage.Grade(camera, worldId)
 	local look = LOOK[worldId] or LOOK.Forest
 	local cc = Instance.new("ColorCorrectionEffect")
-	cc.Name = "ArenaGrade"
+	cc.Name = "StageGrade"
 	cc.TintColor = look.tint
-	cc.Saturation = look.sat
+	cc.Saturation = 0.12
 	cc.Contrast = 0.08
-	cc.Brightness = 0.02
 	cc.Parent = camera
 	local bloom = Instance.new("BloomEffect")
-	bloom.Name = "ArenaBloom"
+	bloom.Name = "StageBloom"
 	bloom.Intensity, bloom.Size, bloom.Threshold = 0.6, 28, 0.92
 	bloom.Parent = camera
 	return { cc, bloom }
 end
 
-return Arena
+return Stage
 ]]></ProtectedString></Properties></Item>
 <Item class="ModuleScript" referent="RBX83"><Properties><string name="Name">CaughtPresentation</string><ProtectedString name="Source"><![CDATA[-- A brief bestiary slip for discoveries and Rare+ catches. Routine catches stay quiet.
 local RS = game:GetService("ReplicatedStorage")
@@ -25961,6 +26048,7 @@ function Renderer.SpawnWild(throwId, creatureId, pos, ownerId, chanceText, vsize
 	pcall(Entrances.Start, e, e.entrance)
 	e.anim:SetScale(kind == "emerge" and 0.35 or 0.02)
 	e.anim:PlayAccent("enter", dur)
+	pcall(Entrances.Accent, e, e.entrance) -- the species' own signature pose (roar, howl, slam...)
 	e.throwId = throwId
 	e.owner = ownerId
 	local owner = Players:GetPlayerByUserId(ownerId)
@@ -27187,11 +27275,22 @@ local OVERRIDE = {
 }
 -- styles that drive root motion here; others fall back to the renderer's existing kinds
 local OWN = { pounce = true, swoop = true, soar = true, rebirth = true, swim = true, flutter = true, phase = true,
-	bounce = true, scuttle = true, stride = true }
+	bounce = true, scuttle = true, stride = true,
+	-- signature moves (Signatures.lua): every species has its own
+	roar = true, howl = true, charge = true, slam = true, breath = true, dive = true, leap = true, coil = true,
+	gallop = true, cartwheel = true, blink = true, burrow = true, rocket = true, buzz = true, waddle = true, sting = true }
 -- renderer kinds kept as they are when a profile already picked them on purpose
 local KEEP = { roll = true, peek = true, resolve = true }
+local okSig, Signatures = pcall(require, script.Parent.Signatures)
+if not okSig then Signatures = nil end
+
+function E.Signature(id)
+	return Signatures and Signatures.Get and Signatures.Get(id) or nil
+end
 
 function E.Style(def, prof, rig, profileKind)
+	local sig = E.Signature(def.id)
+	if sig then return sig.move end
 	if profileKind and KEEP[profileKind] then return profileKind end
 	if OVERRIDE[def.id] then return OVERRIDE[def.id] end
 	if def.rarity == "Secret" then return "resolve" end
@@ -27309,6 +27408,154 @@ function E.Move(e, en, a, k, dt)
 		a.pos = from:Lerp(to, smooth(k / 0.85))
 		a.gaitPhase += dt * 1.3
 		if k > 0.85 and not en.landed then en.landed = true; a.landSquash = 1; E.Land(e, en, a, "flourish") end
+	elseif st == "roar" then
+		-- prowls out, plants itself, rears up and ROARS (pose keys), drops back down
+		a.pos = from:Lerp(to, smooth(math.min(1, k / 0.5)))
+		a.groundY = y0
+		if k < 0.5 then a.gaitPhase += dt * 2.2 end
+		if k > 0.92 and not en.landed then en.landed = true; a.landSquash = 1; E.Land(e, en, a, "flourish") end
+	elseif st == "howl" then
+		-- lopes out, sits down and howls at the sky
+		a.pos = from:Lerp(to, easeOut(math.min(1, k / 0.5)))
+		a.groundY = y0
+		if k < 0.5 then a.gaitPhase += dt * 3 end
+		if k > 0.92 and not en.landed then en.landed = true; E.Land(e, en, a, "soft") end
+	elseif st == "charge" then
+		-- scrapes the ground at the portal mouth, stampedes out and skids to a stop
+		local over = to + dir * 1.6 * s
+		if k < 0.22 then
+			a.pos = from + side * math.sin(k * 90) * 0.05 * s
+		elseif k < 0.75 then
+			local q = (k - 0.22) / 0.53
+			a.pos = from:Lerp(over, q ^ 1.3)
+			a.gaitPhase += dt * 5
+			if math.floor(q * 10) ~= en.lastDust then en.lastDust = math.floor(q * 10); E.Dust(en, a.pos, 3) end
+		else
+			if not en.landed then en.landed = true; a.landSquash = 1; E.Land(e, en, a, "skid") end
+			a.pos = over:Lerp(to, smooth((k - 0.75) / 0.25))
+		end
+		a.groundY = y0
+	elseif st == "slam" then
+		-- one huge leap out of the portal and a ground-shaking landing
+		local q = math.min(1, k / 0.66)
+		a.pos = from:Lerp(to, smooth(q))
+		a.groundY = y0 + 4 * q * (1 - q) * (reduced and 2.5 or 6) * s
+		if q >= 1 and not en.landed then en.landed = true; a.landSquash = 1 end
+	elseif st == "breath" then
+		-- sweeps out on its wings, settles and breathes its element (special at the pose key)
+		local q = math.min(1, k / 0.7)
+		a.pos = from:Lerp(to, easeOut(q)) + side * math.sin(q * PI) * (1 - q) * 1.8 * s
+		a.groundY = y0 + (math.sin(q * PI) * (reduced and 2 or 5) * (1 - 0.4 * q) + (k > 0.7 and (1 - smooth((k - 0.7) / 0.3)) * 0.3 or 0)) * s
+		if k > 0.95 and not en.landed then en.landed = true; E.Land(e, en, a, "soft") end
+	elseif st == "dive" then
+		-- shoots straight up out of the portal, hangs for a heartbeat, then dive-bombs into place
+		local top = (reduced and 4 or 9) * s
+		if k < 0.35 then
+			a.pos, a.groundY = from, y0 + easeOut(k / 0.35) * top
+		elseif k < 0.45 then
+			a.pos, a.groundY = from, y0 + top
+		elseif k < 0.8 then
+			local q = (k - 0.45) / 0.35
+			a.pos = from:Lerp(to, q * q)
+			a.groundY = y0 + top * (1 - q * q)
+		else
+			if not en.landed then en.landed = true; E.Land(e, en, a, "soft") end
+			a.pos = to
+			a.groundY = y0 + math.sin((k - 0.8) / 0.2 * PI) * 0.6 * s
+		end
+	elseif st == "leap" then
+		-- a big arcing leap out of the portal, landing in a splash
+		local q = math.min(1, k / 0.9)
+		a.pos = from:Lerp(to, q)
+		a.groundY = y0 + 4 * q * (1 - q) * (reduced and 2.5 or 6) * s
+		a.gaitPhase += dt * 2
+		if q >= 1 and not en.landed then en.landed = true; a.landSquash = 1 end
+	elseif st == "coil" then
+		-- slithers out low, then rears up and strikes (pose keys)
+		local q = math.min(1, k / 0.6)
+		a.pos = from:Lerp(to, smooth(q)) + side * math.sin(q * PI * 3) * (1 - q) * 1.4 * s
+		a.groundY = y0
+		a.gaitPhase += dt * 2.4
+	elseif st == "gallop" then
+		-- bounding gallop, then rears up on its hind legs
+		local q = math.min(1, k / 0.75)
+		a.pos = from:Lerp(to, smooth(q))
+		a.groundY = y0 + (q < 1 and math.abs(math.sin(q * PI * 6)) * 0.7 * s or 0)
+		if q < 1 then a.gaitPhase += dt * 3.5 end
+		if q >= 1 and not en.landed then en.landed = true; E.Dust(en, a.pos, 6) end
+	elseif st == "cartwheel" then
+		-- springs out tumbling head over heels and lands in a ta-da pose
+		local q = math.min(1, k / 0.75)
+		a.pos = from:Lerp(to, q)
+		a.groundY = y0 + 4 * q * (1 - q) * (reduced and 1.5 or 4) * s
+		a.rootRoll = reduced and 0 or (q < 1 and q * PI * 4 or 0)
+		if q >= 1 and not en.landed then en.landed = true; a.landSquash = 1; a.rootRoll = 0; E.Land(e, en, a, "soft") end
+	elseif st == "blink" then
+		-- teleports out in jumps: portal mouth, one side, the other side, then in place
+		local spots = { from, from:Lerp(to, 0.4) + side * 2.2 * s, from:Lerp(to, 0.75) - side * 2.2 * s, to }
+		local idx = math.min(4, math.floor(k / 0.25) + 1)
+		if idx ~= en.lastSpot then
+			en.lastSpot = idx
+			if idx > 1 then E.Special(e, en, { pos = spots[idx - 1] }, "blink") end
+		end
+		a.pos, a.groundY = spots[idx], y0 + (idx < 4 and 0.6 * s or 0)
+		local f = (k % 0.25) / 0.25
+		E.SetVisibility(e, en, idx == 4 and smooth(f * 3) or (f < 0.15 and 0.2 or (f > 0.85 and 0.3 or 1)))
+	elseif st == "burrow" then
+		-- vanishes into the portal and pops up out of the ground where it will stand
+		a.pos = to
+		if k < 0.5 then
+			E.SetVisibility(e, en, 0)
+			a.groundY = y0 - 2.5 * s
+			if math.floor(k * 12) ~= en.lastDust then en.lastDust = math.floor(k * 12); E.Dust(en, to, 2) end
+		else
+			E.SetVisibility(e, en, 1)
+			a.groundY = y0 - (1 - easeOut(math.min(1, (k - 0.5) / 0.25))) * 2.5 * s
+			if k > 0.75 and not en.landed then en.landed = true; a.landSquash = 1 end
+		end
+	elseif st == "rocket" then
+		-- crouches, blasts off in a fiery arc and lands with a flip
+		if k < 0.2 then
+			a.pos, a.groundY = from + side * math.sin(k * 120) * 0.04 * s, y0
+		else
+			local q = math.min(1, (k - 0.2) / 0.6)
+			a.pos = from:Lerp(to, q)
+			a.groundY = y0 + 4 * q * (1 - q) * (reduced and 3 or 7) * s
+			a.rootRoll = (not reduced and q > 0.7 and q < 1) and (q - 0.7) / 0.3 * PI * 2 or 0
+			if q < 1 and math.floor(q * 14) ~= en.lastFire then
+				en.lastFire = math.floor(q * 14)
+				Effects.Burst(Vector3.new(a.pos.X, a.groundY, a.pos.Z), ColorSequence.new(PAL.fire[1], PAL.fire[2]), 4, 6, 0.7)
+			end
+			if q >= 1 and not en.landed then en.landed = true; a.landSquash = 1; a.rootRoll = 0; E.Land(e, en, a, "quake") end
+		end
+	elseif st == "buzz" then
+		-- zips out in fast figure-eights and buzzes down into place
+		a.pos = from:Lerp(to, smooth(k)) + side * math.sin(k * PI * 6) * (1 - k) * 1.6 * s
+		local hover = (2.5 + math.sin(k * PI * 10) * 0.5) * s
+		a.groundY = y0 + hover * (k > 0.85 and (1 - (k - 0.85) / 0.15) or 1)
+		if k > 0.97 and not en.landed then en.landed = true; E.Land(e, en, a, "soft") end
+	elseif st == "waddle" then
+		-- flops onto its belly and slides out, then pops up flapping
+		local over = to + dir * 0.6 * s
+		if k < 0.15 then
+			a.pos = from
+		elseif k < 0.75 then
+			local q = (k - 0.15) / 0.6
+			a.pos = from:Lerp(over, q)
+			if math.floor(q * 8) ~= en.lastDust then en.lastDust = math.floor(q * 8); E.Dust(en, a.pos, 2) end
+		else
+			a.pos = over:Lerp(to, smooth((k - 0.75) / 0.25))
+		end
+		a.groundY = y0 + (k > 0.75 and math.sin((k - 0.75) / 0.25 * PI) * 0.8 * s or 0)
+	elseif st == "sting" then
+		-- skitters out side to side and snaps its tail (pose keys)
+		local q = math.min(1, k / 0.6)
+		a.pos = from:Lerp(to, smooth(q)) + side * math.sin(q * PI * 8) * (1 - q) * 0.4 * s
+		a.groundY = y0
+		a.gaitPhase += dt * 4
+	end
+	if k >= 0.999 then
+		a.pos, a.groundY = to, y0
 	end
 	return true
 end
@@ -27337,6 +27584,93 @@ end
 local function motif(kind, pos, fwd, col, size)
 	if not kind then return end
 	pcall(Effects.Motif, kind, pos, fwd, col, size)
+end
+
+---------------------------------------------------------------- signature specials
+-- The moment a species' move peaks (the roar, the howl, the slam, the fire breath...): its effect,
+-- its own motif and its call popping up over its head.
+function E.Special(e, en, a, name)
+	local s = math.clamp(e.rig.size, 0.6, 2.5)
+	local el = (en.sig and en.sig.element) or en.element
+	local pal = PAL[el] or PAL.space
+	local low = Settings.LowVFX()
+	local fwd = (en.to - en.from).Unit
+	local at = a.pos or en.to
+	local ground = Vector3.new(at.X, en.y0 + 0.1, at.Z)
+	local head = ground + Vector3.new(0, 1.6 * s, 0)
+	local size = math.clamp(s, 0.8, 2)
+	if name == "roar" or name == "rear" then
+		Effects.Shockwave(ground, pal[2], 9 + en.order * 1.5, 0.6)
+		motif("ringRipple", head, fwd, pal[1], size * 1.3)
+		if en.mine then Effects.Shake(0.35 + en.order * 0.05, 0.35) end
+	elseif name == "howl" then
+		motif("eclipseDisk", head + Vector3.new(0, 4 * s, 0), fwd, pal[1], size)
+		motif("ringRipple", head, fwd, pal[2], size)
+	elseif name == "charge" then
+		E.Dust(en, ground, 10)
+		motif("groundSmoke", ground, fwd, pal[2], size)
+	elseif name == "slam" then
+		Effects.Shockwave(ground, pal[2], 12 + en.order * 2, 0.7)
+		motif("groundSmoke", ground, fwd, pal[2], size * 1.4)
+		E.Dust(en, ground, 14)
+		if en.mine then Effects.Shake(0.5 + en.order * 0.06, 0.4) end
+	elseif name == "breath" then
+		-- a cone of the creature's element pouring forward
+		local cone = ColorSequence.new(pal[1], pal[2])
+		for i = 1, low and 3 or 7 do
+			Effects.Burst(head + fwd * (i * 1.1 * s), cone, low and 4 or 8, 6 + i, 0.5 + 0.14 * i)
+		end
+	elseif name == "dive" or name == "screech" then
+		motif("cometTrail", head, fwd, pal[1], size)
+	elseif name == "splash" then
+		Effects.Shockwave(ground, PAL.ice[2], 7 + en.order, 0.5)
+		motif("bubble", head, fwd, PAL.ice[1], size * 1.2)
+	elseif name == "hiss" or name == "sting" or name == "click" then
+		motif("starburst", head, fwd, pal[1], size)
+	elseif name == "tada" or name == "pop" then
+		Effects.Burst(head, ColorSequence.new(PAL.candy[1], PAL.candy[2]), low and 8 or 18, 10, 0.6)
+		motif("starburst", head, fwd, pal[1], size)
+	elseif name == "blink" then
+		Effects.Burst(head, ColorSequence.new(pal[1], pal[2]), low and 6 or 14, 10, 0.6)
+		motif("rift", head, fwd, pal[2], size)
+	elseif name == "burrow" then
+		E.Dust(en, ground, 12)
+		motif("groundSmoke", ground, fwd, pal[2], size)
+	elseif name == "rocket" then
+		Effects.Shockwave(ground, PAL.fire[2], 6 + en.order, 0.4)
+		Effects.Burst(ground, ColorSequence.new(PAL.fire[1], PAL.fire[2]), low and 8 or 20, 12, 0.8)
+	elseif name == "slide" then
+		E.Dust(en, ground, 8)
+	elseif name == "boo" then
+		motif("shadowMotes", head, fwd, pal[1], size)
+	elseif name == "shine" then
+		Effects.LightBeam(ground, pal[1], 16, 0.8)
+	elseif name == "rebirth" then
+		Effects.Burst(head, ColorSequence.new(pal[1], pal[2]), low and 10 or 24, 12, 0.9)
+	else -- sparkle / buzz / pounce
+		motif("glint", head, fwd, pal[1], size)
+	end
+	local sig = en.sig
+	if sig then
+		if sig.motif and name ~= "blink" then motif(sig.motif, head + Vector3.new(0, 0.6 * s, 0), fwd, pal[2], size) end
+		if sig.call and not en.called and pcall(function() return Effects.FloatingText end) and Effects.FloatingText then
+			en.called = true
+			pcall(Effects.FloatingText, head + Vector3.new(0, 1.8 * s, 0), sig.call, pal[1], math.clamp(0.8 + en.order * 0.08, 0.8, 1.5))
+		end
+	end
+end
+
+-- swap the animator's generic entrance pose for the species' own keyframes, fitted after the charge-up
+function E.Accent(e, en)
+	local sig = en.sig
+	local life = e.anim and e.anim.life
+	if not sig or not life or not sig.keys then return end
+	local h = en.hold or 0
+	local keys = {}
+	for _, kf in ipairs(sig.keys) do
+		table.insert(keys, { h + kf[1] * (1 - h), kf[2] })
+	end
+	life.spec = { keys = keys }
 end
 
 -- the element burst as the creature comes out of the portal
@@ -27520,6 +27854,11 @@ function E.Fx(e, en, a, k, dt)
 		if not en.orig then en.restoreT = nil end
 	end
 	if (en.hold or 0) > 0 and not en.broke then return end
+	-- the species' signature moment (roar, howl, slam, breath...) fires once when its move peaks
+	if en.sig and not en.sigFired and k >= (en.sig.at or 0.7) then
+		en.sigFired = true
+		pcall(E.Special, e, en, a, en.sig.special)
+	end
 	if k >= 0.95 then return end
 	local low = Settings.LowVFX()
 	if low and en.order < 3 then return end
@@ -27570,7 +27909,12 @@ end
 
 function E.Finish(e, en)
 	restore(en, 1) -- never leave a creature glowing, whatever happened mid-entrance
-	if en.style == "phase" then E.SetVisibility(e, en, 1) end
+	if en.style == "phase" or en.style == "blink" or en.style == "burrow" then E.SetVisibility(e, en, 1) end
+	if e.anim then e.anim.rootRoll = 0 end
+	if en.sig and not en.sigFired then
+		en.sigFired = true
+		pcall(E.Special, e, en, { pos = en.to }, en.sig.special)
+	end
 	if en.style == "stomp" or en.style == "descend" then
 		local pal = PAL[en.element] or PAL.space
 		Effects.Shockwave(Vector3.new(en.to.X, en.y0 + 0.1, en.to.Z), pal[2], 8 + en.order, 0.6)
@@ -27582,6 +27926,7 @@ end
 function E.Prepare(e, en, def, ownerId)
 	en.element = E.Element(def)
 	en.order = Config.Rarities[def.rarity].order
+	en.sig = E.Signature(def.id)
 	local me = Players.LocalPlayer
 	en.mine = me ~= nil and ownerId == me.UserId
 	en.hold = E.HoldFrac(en)
@@ -27824,15 +28169,15 @@ function E.Mount(hub, HUD)
 end
 return E
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX94"><Properties><string name="Name">ExpeditionArena</string><ProtectedString name="Source"><![CDATA[-- ExpeditionArena: the battle scene. You "enter" the expedition and watch it from above: a full battle
--- map built in the 3D world (ArenaScene: cliffs, torch-lit road, entry portal, boss arena, scenery,
--- weather, colour grade), your team of up to 3 animated pets wearing their swords and armour, every
--- monster and the boss, HP bars, damage numbers, banners, and a victory (with loot) or defeat screen.
+<Item class="ModuleScript" referent="RBX94"><Properties><string name="Name">ExpeditionArena</string><ProtectedString name="Source"><![CDATA[-- ExpeditionArena: the battle scene. You enter the expedition and watch your team fight on a floating
+-- sky-island arena (BattleStage): the team walks out of its portal, every monster steps out of the
+-- monster portal in waves ("WAVE 2/6"), each pet attacks with its own move (slam, spin, sword slash,
+-- charge, bite), monsters hit back, the boss arrives with a quake, and the battle ends with a treasure
+-- chest bursting with loot - or a defeat and a retreat through the portal.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ExpeditionArena (ModuleScript)
 --
--- It replays the same deterministic battle the expedition timer runs (Shared/ExpeditionBattle), so the
--- outcome always matches the mini-map and the claim. Walking is fast-forwarded and every fight plays at
--- a readable pace, so the whole battle fits in about a minute whenever you watch it.
+-- It replays the same deterministic battle the expedition runs (Shared/ExpeditionBattle). Watching it
+-- to the end (at any speed) finishes the expedition, so it can be claimed straight away.
 local RS = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
@@ -27846,53 +28191,24 @@ local Variants = require(RS.Shared.Variants)
 local Format = require(RS.Shared.Format)
 local K = require(script.Parent.UIKit)
 local T = K.Theme
-local Scene = require(script.Parent.ExpeditionScene)
-local ArenaScene = require(script.Parent.ArenaScene)
+local Stage = require(script.Parent.BattleStage)
 local Fight = require(script.Parent.ExpeditionFight)
+local Effects = require(script.Parent.Effects)
 local Settings = require(script.Parent.ClientSettings)
 local Sounds = require(script.Parent.Sounds)
+local State = require(script.Parent.ClientState)
 local Arena = {}
 
 local player = Players.LocalPlayer
-local ORIGIN = Vector3.new(-6000, 800, -6000) -- far from the real map; only this client builds it
+local ORIGIN = Vector3.new(-6000, 900, -6000) -- far from the real map; only this client builds it
+local V = Vector3.new
+local PI = math.pi
 local open -- the running scene
 Arena.HideHud = nil -- set by the panel: function(hidden)
+Arena.OnFinished = nil -- set by the panel: called after the battle was watched to the end
 
--- arena seconds per plan segment: walks fast-forwarded, fights at a watchable beat
-local MIN_BEAT, WALK_MAX, DEPART, LOOT, BACK = 0.8, 1.6, 1.6, 2.4, 2.4
-local function arenaTimeline(plan)
-	local out, t = {}, 0
-	for _, s in ipairs(plan.segments) do
-		local len
-		if s.kind == "fight" then
-			local beats = 0
-			for _, b in ipairs(s.beats) do beats += b.len or 1 end
-			len = beats * math.max(MIN_BEAT, s.beat or MIN_BEAT)
-		elseif s.kind == "walk" then
-			len = math.min(WALK_MAX, math.max(0.5, s.len))
-		elseif s.kind == "depart" then
-			len = DEPART
-		elseif s.kind == "loot" then
-			len = LOOT
-		else
-			len = BACK
-		end
-		table.insert(out, { a0 = t, a1 = t + len, seg = s })
-		t += len
-	end
-	return out, t
-end
-
-local function planTime(map, total, at)
-	if at >= total then return math.huge end
-	for _, m in ipairs(map) do
-		if at < m.a1 then
-			local f = (at - m.a0) / math.max(1e-6, m.a1 - m.a0)
-			return m.seg.t0 + f * m.seg.len
-		end
-	end
-	return math.huge
-end
+local function smooth(k) k = math.clamp(k, 0, 1); return k * k * (3 - 2 * k) end
+local function easeOut(k) k = math.clamp(k, 0, 1); return 1 - (1 - k) ^ 3 end
 
 local function label(parent, props)
 	local l = K.new("TextLabel", {
@@ -27910,14 +28226,13 @@ local function hpBar(parent, color, w, h)
 	local fill = K.new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = color, Parent = back })
 	K.corner(h // 2).Parent = fill
 	local text = label(back, { Size = UDim2.fromScale(1, 1), TextSize = math.max(11, h - 6), ZIndex = 3 })
-	return { back = back, fill = fill, text = text }
+	return { back = back, fill = fill, text = text, color = color }
 end
 
 local function setBar(bar, cur, max, text)
 	local f = max > 0 and math.clamp(cur / max, 0, 1) or 0
 	bar.fill.Size = UDim2.fromScale(f, 1)
-	bar.fill.BackgroundColor3 = bar.color and (f > 0.5 and bar.color or (f > 0.25 and Color3.fromRGB(240, 196, 70) or Color3.fromRGB(235, 80, 70)))
-		or bar.fill.BackgroundColor3
+	bar.fill.BackgroundColor3 = f > 0.5 and bar.color or (f > 0.25 and Color3.fromRGB(240, 196, 70) or Color3.fromRGB(235, 80, 70))
 	bar.text.Text = text or (PetGear.Short(cur) .. " / " .. PetGear.Short(max))
 end
 
@@ -27942,7 +28257,7 @@ function Arena.Close()
 	if Arena.HideHud then pcall(Arena.HideHud, false) end
 end
 
--- an animated team member: the CreatureAnimator moves legs, wings and tail while the battle drives it
+-- an animated team member: the CreatureAnimator moves legs, wings and tail while the scene drives it
 local function buildPet(member, folder, at)
 	local model, rig = Builder.Build(member.c, Variants.Scale(member.s))
 	Variants.Apply(model, member.v)
@@ -27951,25 +28266,60 @@ local function buildPet(member, folder, at)
 	model.Parent = folder
 	local anim = Animator.new(rig, CFrame.new(at))
 	local ext = PetGear.Extents(rig)
-	local k = math.clamp(math.min(2.5 / math.max(ext.Y, 0.1), 3.4 / math.max(ext.X, ext.Z, 0.1)), 0.2, 3)
+	local k = math.clamp(math.min(2.6 / math.max(ext.Y, 0.1), 3.6 / math.max(ext.X, ext.Z, 0.1)), 0.2, 3)
 	anim:SetScale(k)
-	local entry = { model = model, height = ext.Y * k }
-	entry.drive = function(info)
-		local g = info.ground
-		if info.walking then
-			local flat = Vector3.new(g.X - anim.pos.X, 0, g.Z - anim.pos.Z)
-			anim:MoveTo(Vector3.new(g.X, anim.pos.Y, g.Z), math.max(4, flat.Magnitude / math.max(info.dt, 1 / 120) * 1.1))
-		else
-			anim.moveTarget = nil
-			anim.pos = Vector3.new(g.X, anim.pos.Y, g.Z)
-			local yaw = math.atan2(-info.fwd.X, -info.fwd.Z) + (info.yaw or 0)
-			anim.yaw, anim.targetYaw = yaw, yaw
-		end
-		anim.groundY = g.Y + (info.lift or 0)
-		anim.rootRoll = info.roll or 0
-		anim:Step(info.dt)
+	local sword = PetCombat.WeaponById[member.wp]
+	return { model = model, anim = anim, height = ext.Y * k, sword = sword }
+end
+
+-- place a pet: walking lets the animator stride; otherwise it is set exactly (attacks, knock-backs)
+local function drive(p, pos, facing, dt, walking, lift, roll, spin)
+	local anim = p.anim
+	if walking then
+		local flat = V(pos.X - anim.pos.X, 0, pos.Z - anim.pos.Z)
+		anim:MoveTo(V(pos.X, anim.pos.Y, pos.Z), math.max(5, flat.Magnitude / math.max(dt, 1 / 120) * 1.1))
+	else
+		anim.moveTarget = nil
+		anim.pos = V(pos.X, anim.pos.Y, pos.Z)
+		local yaw = math.atan2(-facing.X, -facing.Z) + (spin or 0)
+		anim.yaw, anim.targetYaw = yaw, yaw
 	end
-	return entry, anim
+	anim.groundY = pos.Y + (lift or 0)
+	anim.rootRoll = roll or 0
+	anim:Step(dt)
+end
+
+local function tintMonster(rec, color, amount)
+	for p, o in pairs(rec.parts) do
+		p.Color = amount > 0 and o.color:Lerp(color, amount) or o.color
+	end
+end
+local function fadeMonster(rec, tr)
+	for p, o in pairs(rec.parts) do
+		p.Transparency = math.max(o.tr, tr)
+	end
+end
+
+-- treasure chest that opens at the end of a won battle
+local function buildChest(folder)
+	local m = Instance.new("Model")
+	m.Name = "LootChest"
+	local function part(size, cf, color, mat)
+		local p = Instance.new("Part")
+		p.Size, p.CFrame, p.Color = size, cf, color
+		p.Anchored, p.CanCollide, p.CanQuery, p.CanTouch = true, false, false, false
+		p.Material = mat or Enum.Material.Wood
+		p.Parent = m
+		return p
+	end
+	local base = part(V(2.4, 1.3, 1.6), CFrame.new(0, 0.65, 0), Color3.fromRGB(130, 82, 46))
+	part(V(2.5, 0.2, 1.7), CFrame.new(0, 0.1, 0), Color3.fromRGB(240, 196, 70), Enum.Material.Metal)
+	part(V(2.5, 0.2, 1.7), CFrame.new(0, 1.2, 0), Color3.fromRGB(240, 196, 70), Enum.Material.Metal)
+	local lid = part(V(2.4, 0.6, 1.6), CFrame.new(0, 1.6, 0), Color3.fromRGB(150, 96, 54))
+	local glow = part(V(2, 0.2, 1.2), CFrame.new(0, 1.25, 0), Color3.fromRGB(255, 230, 140), Enum.Material.Neon)
+	m.PrimaryPart = base
+	m.Parent = folder
+	return { model = m, base = base, lid = lid, glow = glow, lidRest = CFrame.new(0, 1.6, 0) }
 end
 
 -- active = the expedition record (Expeditions.active from the server view)
@@ -27981,52 +28331,74 @@ function Arena.Open(active)
 		warn("[Arena] battle plan failed: " .. tostring(plan))
 		return
 	end
-	local map, total = arenaTimeline(plan)
-	local o = { plan = plan, t = 0, speed = 1, anims = {} }
+	local map, total = Battle.ArenaTimeline(plan)
+	local o = { plan = plan, t = 0, speed = 1, anims = {}, fxDone = {} }
 	open = o
 	if Arena.HideHud then pcall(Arena.HideHud, true) end
+	task.spawn(function()
+		pcall(State.Request, "WatchExpedition", active.id)
+	end)
 	local cam = workspace.CurrentCamera
 	o.camType, o.fov = cam.CameraType, cam.FieldOfView
 
-	-- the battle map, built in the world (real lighting, fire, particles)
 	local folder = Instance.new("Folder")
 	folder.Name = "BattleArena"
 	o.folder = folder
-	local scene = Scene.Build(plan.world)
-	local okDecor, err = pcall(ArenaScene.Decorate, scene, plan.world)
-	if not okDecor then warn("[Arena] decor: " .. tostring(err)) end
-	for _, d in ipairs(scene:GetDescendants()) do
-		if d:IsA("BasePart") then
-			d.CFrame += ORIGIN
-			d.Anchored = true
-		end
-	end
-	scene.Parent = folder
+	local stage = Stage.Build(plan.world, ORIGIN)
+	stage.model.Parent = folder
 	folder.Parent = workspace
+	local G = ORIGIN + V(0, Stage.Ground + 0.25, 0)
 
+	-- team
 	local team = {}
-	local sx, sz = Battle.PathPoint(0)
 	for i, member in ipairs(plan.team) do
-		local okPet, entry, anim = pcall(buildPet, member, folder, ORIGIN + Vector3.new(sx, 0.42, sz))
+		local okPet, p = pcall(buildPet, member, folder, G + Stage.TeamPortal)
 		if okPet then
-			team[i] = entry
-			table.insert(o.anims, anim)
+			team[i] = p
+			table.insert(o.anims, p.anim)
 		else
-			warn("[Arena] pet: " .. tostring(entry))
+			warn("[Arena] pet: " .. tostring(p))
 		end
 	end
-	local okFight, ctx = pcall(Fight.Attach, scene, plan, team, cam, ORIGIN)
-	if not okFight then
-		warn("[Arena] could not build the battle: " .. tostring(ctx))
-		Arena.Close()
-		return
+	-- monsters (parked out of sight until their wave)
+	local holder = Instance.new("Folder")
+	holder.Name = "Monsters"
+	holder.Parent = folder
+	local HIDE = CFrame.new(G + V(0, -200, 0))
+	local monsters = {}
+	for i, enc in ipairs(plan.encounters) do
+		local okM, rec = pcall(Fight.BuildMonster, holder, enc, plan.theme, i, Vector3.zero)
+		if okM then
+			rec.model:PivotTo(HIDE)
+			monsters[i] = rec
+		end
 	end
+	local chest = buildChest(folder)
+	chest.model:PivotTo(HIDE)
+	local loot = {}
+	for _, drop in ipairs(plan.loot or {}) do
+		local _, byId = PetCombat.Catalog(drop.kind)
+		local item = byId and byId[drop.id]
+		if item then
+			local p = Instance.new("Part")
+			p.Size = V(0.7, 0.7, 0.7)
+			p.Color, p.Material = item.color, Enum.Material.Neon
+			p.Anchored, p.CanCollide, p.CanQuery, p.CanTouch = true, false, false, false
+			p.CFrame = HIDE
+			p.Parent = folder
+			table.insert(loot, { part = p, item = item })
+		end
+	end
+	local slash = Instance.new("Part")
+	slash.Size = V(0.12, 0.4, 3)
+	slash.Material = Enum.Material.Neon
+	slash.Anchored, slash.CanCollide, slash.CanQuery, slash.CanTouch = true, false, false, false
+	slash.CFrame = HIDE
+	slash.Parent = folder
+
 	cam.CameraType = Enum.CameraType.Scriptable
-	cam.FieldOfView = 48
-	ctx.camDir = Vector3.new(-0.3, 0.88, -0.38) -- looking down on the fight from above
-	ctx.camZoom = 1.0
-	o.ctx = ctx
-	o.grade = ArenaScene.Grade(cam, plan.world)
+	cam.FieldOfView = 50
+	o.grade = Stage.Grade(cam, plan.world)
 
 	------------------------------------------------------------ overlay
 	local gui = K.new("ScreenGui", { Name = "BattleArena", IgnoreGuiInset = true, ResetOnSpawn = false, DisplayOrder = 45,
@@ -28042,11 +28414,9 @@ function Arena.Open(active)
 	K.bind(leave, Arena.Close)
 	local speedBtn = K.button("Speed x1", T.Raised, nil, UDim2.fromOffset(110, 36), { AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -118, 0.5, 0), Parent = top })
 	K.bind(speedBtn, function()
-		o.speed = o.speed == 1 and 2 or (o.speed == 2 and 4 or 1)
+		o.speed = o.speed == 1 and 2 or (o.speed == 2 and Battle.ArenaMaxSpeed or 1)
 		K.setButton(speedBtn, "Speed x" .. o.speed)
 	end)
-
-	-- your team (bottom left) and the current enemy (top centre)
 	local cards = {}
 	for i, member in ipairs(plan.team) do
 		local card = K.new("Frame", { BackgroundColor3 = Color3.fromRGB(16, 12, 24), BackgroundTransparency = 0.2,
@@ -28056,7 +28426,6 @@ function Arena.Open(active)
 		label(card, { Text = member.name .. (sword and ("  ·  " .. sword.name) or ""), TextSize = 15, Position = UDim2.fromOffset(10, 4),
 			Size = UDim2.new(1, -20, 0, 18), TextXAlignment = Enum.TextXAlignment.Left })
 		local bar = hpBar(card, Color3.fromRGB(96, 214, 110), 260, 18)
-		bar.color = Color3.fromRGB(96, 214, 110)
 		bar.back.Position = UDim2.fromOffset(10, 24)
 		label(card, { Text = "ATK " .. PetGear.Short(member.atk), TextSize = 12, TextColor3 = Color3.fromRGB(255, 214, 140),
 			Position = UDim2.fromOffset(10, 43), Size = UDim2.new(1, -20, 0, 12), TextXAlignment = Enum.TextXAlignment.Left })
@@ -28067,14 +28436,12 @@ function Arena.Open(active)
 	local enemyName = label(enemy, { Text = "", TextSize = 20, Size = UDim2.new(1, 0, 0, 24) })
 	local enemyBar = hpBar(enemy, Color3.fromRGB(235, 80, 70), 440, 20)
 	enemyBar.back.Position = UDim2.fromOffset(0, 28)
-
-	local log = label(gui, { Text = "", TextSize = 20, AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -24),
-		Size = UDim2.new(0.5, 0, 0, 28) })
+	local log = label(gui, { Text = "", TextSize = 20, AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -24), Size = UDim2.new(0.5, 0, 0, 28) })
 	local popup = label(gui, { Text = "", TextSize = 34, AnchorPoint = Vector2.new(0.5, 1), Size = UDim2.fromOffset(220, 40), Visible = false, ZIndex = 6 })
-	local banner = label(gui, { Text = "", TextSize = 60, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.34),
+	local banner = label(gui, { Text = "", TextSize = 60, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.32),
 		Size = UDim2.new(1, 0, 0, 74), TextTransparency = 1, TextStrokeTransparency = 1, ZIndex = 8 })
 	local bannerSub = label(gui, { Text = "", TextSize = 24, TextColor3 = T.CinematicGold, AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.42), Size = UDim2.new(1, 0, 0, 30), TextTransparency = 1, TextStrokeTransparency = 1, ZIndex = 8 })
+		Position = UDim2.fromScale(0.5, 0.4), Size = UDim2.new(1, 0, 0, 30), TextTransparency = 1, TextStrokeTransparency = 1, ZIndex = 8 })
 	local flash = K.new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(255, 60, 50), BackgroundTransparency = 1, ZIndex = 7, Parent = gui })
 	local bannerT, bannerLife = 99, 1.6
 	local function showBanner(text, sub, color, life)
@@ -28083,9 +28450,16 @@ function Arena.Open(active)
 		bannerT, bannerLife = 0, life or 1.6
 	end
 
-	local function resultScreen(victory)
+	local function finish(victory)
+		task.spawn(function()
+			local okReq = pcall(State.Request, "FinishExpedition", active.id)
+			if okReq then
+				pcall(State.Request, "Sync")
+			end
+			if Arena.OnFinished then pcall(Arena.OnFinished) end
+		end)
 		local s = plan.summary
-		local panel = K.new("Frame", { AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(460, 210),
+		local panel = K.new("Frame", { AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.fromScale(0.5, 0.48), Size = UDim2.fromOffset(470, 220),
 			BackgroundColor3 = Color3.fromRGB(18, 14, 28), BackgroundTransparency = 0.1, ZIndex = 9, Parent = gui })
 		K.corner(14).Parent = panel
 		K.new("UIStroke", { Color = victory and T.CinematicGold or Color3.fromRGB(235, 80, 70), Thickness = 2, Parent = panel })
@@ -28093,18 +28467,15 @@ function Arena.Open(active)
 		if victory then
 			table.insert(lines, string.format("%d monsters defeated, including the %s", s.defeated, s.boss))
 			table.insert(lines, "Rewards: " .. Format.Money(active.coins) .. " coins")
-			for _, drop in ipairs(plan.loot) do
-				local _, byId = PetCombat.Catalog(drop.kind)
-				local item = byId and byId[drop.id]
-				if item then table.insert(lines, "+ " .. item.name) end
-			end
+			for _, l in ipairs(loot) do table.insert(lines, "+ " .. l.item.name) end
 			if plan.level < Battle.MaxLevel then table.insert(lines, "Level " .. (plan.level + 1) .. " unlocks when you claim!") end
 		else
-			table.insert(lines, "Your team was knocked out by the " .. (plan.encounters[plan.lostAt or 1] and plan.encounters[plan.lostAt or 1].name or "monsters"))
+			local foe = plan.encounters[plan.lostAt or 1]
+			table.insert(lines, "Your team was knocked out by the " .. (foe and foe.name or "monsters"))
 			table.insert(lines, "You still bring back " .. Format.Money(math.floor(active.coins * 0.25)) .. " coins")
 			table.insert(lines, "Upgrade Power, buy swords & armour, or send a bigger team!")
 		end
-		table.insert(lines, "Claim at the expedition table when the timer ends.")
+		table.insert(lines, "The expedition is over - claim it at the expedition table.")
 		label(panel, { Text = table.concat(lines, "\n"), TextSize = 16, Position = UDim2.fromOffset(16, 12), Size = UDim2.new(1, -32, 1, -70),
 			TextWrapped = true, TextYAlignment = Enum.TextYAlignment.Top, ZIndex = 10 })
 		local back = K.button("Back to the game", victory and T.Gold or T.Raised, nil, UDim2.new(1, -32, 0, 44),
@@ -28112,102 +28483,307 @@ function Arena.Open(active)
 		K.bind(back, Arena.Close)
 	end
 
-	local seenBoss, lastCleared, finished, lostShown = false, 0, false, false
-	local lastKo = {}
+	------------------------------------------------------------ choreography
+	local FWD, BACK = V(1, 0, 0), V(-1, 0, 0)
 	local calm = Settings.ReducedMotion
-	o.conn = RunService.RenderStepped:Connect(function(dt)
+	local finished, lastWave, lastKo, lastCleared, seenBoss = false, 0, {}, 0, false
+	local camPos, camFocus
+	local function spotFor(i)
+		local enc = plan.encounters[i]
+		return G + ((enc and enc.boss) and Stage.BossSpot or Stage.MonsterSpot)
+	end
+	local function slot(i)
+		return G + (Stage.TeamSlots[i] or Stage.TeamSlots[1])
+	end
+
+	o.conn = RunService.RenderStepped:Connect(function(rdt)
 		if open ~= o then return end
-		o.t += dt * o.speed
-		local pt = planTime(map, total, o.t)
-		local state = Battle.At(plan, math.min(pt, plan.duration - 1e-3))
+		local dt = rdt * o.speed
+		o.t += dt
 		local now = os.clock()
-		local okUpdate, uerr = pcall(Fight.Update, ctx, state, now, dt * o.speed, Settings)
-		if not okUpdate and not o.warned then
-			o.warned = true
-			warn("[Arena] update: " .. tostring(uerr))
+		pcall(stage.animate, now)
+		-- where are we on the scene's clock?
+		local m, f = map[#map], 1
+		for _, mm in ipairs(map) do
+			if o.t < mm.a1 then
+				m, f = mm, (o.t - mm.a0) / math.max(1e-6, mm.a1 - mm.a0)
+				break
+			end
+		end
+		local seg = m.seg
+		local state = Battle.At(plan, math.min(seg.t0 + f * seg.len, plan.duration - 1e-3))
+		local kind = seg.kind
+		local beat, phase = state.beat, state.phase or 0
+		local curEnc = kind == "fight" and seg.enc or (kind == "walk" and seg.next) or nil
+		local focus = G + V(0, 1.2, 0)
+
+		-- monsters: arriving, fighting, falling, gone
+		for i, rec in pairs(monsters) do
+			local spot = spotFor(i)
+			local face = CFrame.lookAt(spot, spot + BACK)
+			local defeated = state.cleared >= i
+			if kind == "walk" and seg.next == i then
+				-- steps out of the monster portal
+				local from = G + Stage.MonsterPortal
+				local p = from:Lerp(spot, smooth(f / 0.8))
+				local hover = rec.flying and 0.4 or 0
+				rec.model:PivotTo(CFrame.lookAt(p, p + BACK) * CFrame.new(0, hover + math.abs(math.sin(f * 14)) * 0.15, 0))
+				tintMonster(rec, Color3.new(1, 1, 1), 0)
+				fadeMonster(rec, f < 0.15 and 1 - f / 0.15 or 0)
+			elseif kind == "fight" and seg.enc == i then
+				local o2 = CFrame.new(0, rec.flying and 0.4 + math.sin(now * 3) * 0.15 or 0, 0)
+				local flashAmt = 0
+				if beat and beat.who == "mon" then
+					local target = beat.target and slot(beat.target) or slot(1)
+					local lungeTo = (target - spot) * V(1, 0, 1)
+					local reach = math.max(0, lungeTo.Magnitude - 2.2)
+					local sw = math.sin(PI * math.clamp(phase, 0, 1))
+					if beat.special then
+						o2 = o2 * CFrame.new(0, sw * 3.2, -sw * 1.2)
+					else
+						o2 = CFrame.new(0, sw * 0.4, 0) * CFrame.new(face:VectorToObjectSpace(lungeTo.Unit) * reach * sw)
+					end
+				elseif beat and beat.who == "pet" and phase >= 0.45 and phase < 0.8 then
+					flashAmt = 1 - (phase - 0.45) / 0.35
+					o2 = o2 * CFrame.new(0, 0, 0.5 * math.sin(PI * phase)) * CFrame.Angles(0, math.sin(now * 45) * 0.12, 0)
+					if beat.monHp <= 0 then
+						local fall = math.clamp((phase - 0.45) / 0.5, 0, 1)
+						o2 = CFrame.new(0, 0.45 * rec.scale * fall, 0.35 * rec.scale * fall) * CFrame.Angles(1.45 * fall, 0, 0)
+					end
+				end
+				if calm then o2 = CFrame.new() end
+				rec.model:PivotTo(face * o2)
+				tintMonster(rec, Color3.new(1, 1, 1), Settings.ReducedFlashes and 0 or flashAmt * 0.7)
+				fadeMonster(rec, 0)
+				focus = (spot + slot(1)) / 2 + V(0, 1.2, 0)
+				for _, w in ipairs(rec.wings) do
+					local flap = calm and 0 or math.sin(now * 14 + i) * 0.6
+					w.part.CFrame = face * o2 * w.cf * CFrame.Angles(0, 0, w.side * flap)
+				end
+			elseif defeated and not rec.gone then
+				-- knocked down, then fades into sparkles before the next wave
+				rec.goneT = (rec.goneT or 0) + dt
+				rec.model:PivotTo(face * CFrame.new(0, 0.45 * rec.scale, 0.35 * rec.scale) * CFrame.Angles(1.45, 0, 0))
+				tintMonster(rec, Color3.fromRGB(90, 90, 96), 0.5)
+				fadeMonster(rec, math.clamp(rec.goneT / 0.8, 0, 1))
+				if rec.goneT > 0.8 then
+					rec.gone = true
+					rec.model:PivotTo(HIDE)
+					pcall(Effects.Burst, spot + V(0, 1, 0), ColorSequence.new(stage.look.glow), 14, 8, 0.7)
+				end
+			elseif not defeated then
+				rec.model:PivotTo(HIDE)
+			end
 		end
 
-		counter.Text = "Monsters " .. state.cleared .. " / " .. #plan.encounters
-		for i, c in ipairs(cards) do
-			local m = state.team and state.team[i]
-			if m then
-				setBar(c.bar, m.hp, m.maxHp, m.ko and "KNOCKED OUT" or ("HP " .. PetGear.Short(m.hp) .. " / " .. PetGear.Short(m.maxHp)))
-				c.card.BackgroundColor3 = m.ko and Color3.fromRGB(60, 20, 24) or Color3.fromRGB(16, 12, 24)
-				if m.ko and not lastKo[i] then
-					showBanner("KNOCKED OUT!", plan.team[i].name, Color3.fromRGB(255, 110, 90), 1.1)
+		-- the team
+		local spotNow = curEnc and spotFor(curEnc) or (G + Stage.MonsterSpot)
+		for i, p in pairs(team) do
+			local home = slot(i)
+			local member = state.team and state.team[i]
+			local ko = member and member.ko
+			if kind == "depart" then
+				drive(p, (G + Stage.TeamPortal):Lerp(home, smooth(f / 0.85)), FWD, dt, f < 0.85, 0, 0, 0)
+			elseif kind == "retreat" then
+				drive(p, home:Lerp(G + Stage.TeamPortal, smooth(f / 0.8)), BACK, dt, not ko, 0, ko and PI / 2 or 0, 0)
+			elseif ko and kind ~= "loot" and kind ~= "return" then
+				drive(p, home, FWD, dt, false, -0.2, PI / 2, 0)
+			elseif kind == "loot" or kind == "return" then
+				-- celebrate: hops and spins around the chest
+				local hop = calm and 0 or math.abs(math.sin(now * 6 + i)) * 0.9
+				drive(p, home, FWD, dt, false, hop, 0, kind == "loot" and (calm and 0 or now * 4 + i) or 0)
+			elseif kind == "fight" and beat and beat.who == "pet" and beat.i == i then
+				-- this pet's attack, each move with its own motion
+				local strike = spotNow + BACK * ((plan.encounters[curEnc] and plan.encounters[curEnc].boss) and 2.8 or 2.1)
+				local move = beat.move or "dash"
+				local out
+				if phase < 0.45 then out = smooth(phase / 0.45)
+				elseif phase < 0.6 then out = 1
+				else out = 1 - smooth((phase - 0.6) / 0.4) end
+				local pos = home:Lerp(strike, out)
+				local lift, spin = 0, 0
+				if move == "slam" then
+					local q = math.clamp(phase / 0.45, 0, 1)
+					lift = phase < 0.45 and 4 * q * (1 - q) * 4 or 0
+				elseif move == "spin" then
+					spin = phase * PI * 4
+					lift = math.sin(PI * phase) * 0.5
+				elseif move == "slash" then
+					lift = math.sin(PI * phase) * 0.3
+					if phase > 0.3 and phase < 0.62 and p.sword then
+						local a = (phase - 0.3) / 0.32 * 2.6 - 1.3
+						local at = pos + V(0, p.height * 0.6, 0)
+						slash.Color = p.sword.color
+						slash.Transparency = 0.1 + 0.8 * math.abs(a) / 1.3
+						slash.CFrame = CFrame.lookAt(at, at + FWD) * CFrame.Angles(0, a, 0.4) * CFrame.new(0, 0, -1.4)
+					end
+				elseif move == "bite" then
+					lift = math.sin(PI * phase) * 0.4
+				else -- dash
+					lift = math.sin(PI * phase) * 0.15
 				end
-				lastKo[i] = m.ko
+				if calm then lift, spin = 0, 0 end
+				drive(p, pos, FWD, dt, false, lift, 0, spin)
+				focus = (pos + spotNow) / 2 + V(0, 1.2, 0)
+			elseif kind == "fight" and beat and beat.who == "mon" and (beat.special or beat.target == i) then
+				local sw = math.sin(PI * math.clamp(phase, 0, 1))
+				local pos = home
+				if beat.dodged then
+					pos = home + V(0, 0, (i % 2 == 0 and 1 or -1) * 1.4 * sw)
+				elseif phase >= 0.45 then
+					pos = home + BACK * 0.9 * sw
+				end
+				local roll = (beat.ko and phase > 0.6) and (PI / 2 * math.clamp((phase - 0.6) / 0.3, 0, 1)) or 0
+				drive(p, pos, FWD, dt, false, beat.special and sw * 0.5 or 0, roll, 0)
+			else
+				-- ready stance between turns
+				drive(p, home, FWD, dt, false, calm and 0 or math.abs(math.sin(now * 5 + i * 2)) * 0.12, 0, 0)
 			end
 		end
-		local enc = state.enc and plan.encounters[state.enc]
-		enemy.Visible = enc ~= nil
-		if enc then
-			enemyName.Text = (enc.boss and "BOSS  " or "") .. enc.name
-			enemyName.TextColor3 = enc.boss and Color3.fromRGB(255, 120, 90) or Color3.new(1, 1, 1)
-			setBar(enemyBar, state.monHp, state.monMax)
-			if enc.boss and not seenBoss then
-				seenBoss = true
-				showBanner("BOSS FIGHT!", enc.name, Color3.fromRGB(255, 90, 70), 2)
-				flash.BackgroundTransparency = 0.55
-				pcall(Sounds.Play, "Rare", 0.8)
+		if not (kind == "fight" and beat and beat.move == "slash" and phase > 0.3 and phase < 0.62) then
+			slash.CFrame = HIDE
+		end
+
+		-- impact effects, once per beat
+		if kind == "fight" and beat and phase >= 0.45 and not o.fxDone[beat] then
+			o.fxDone[beat] = true
+			local rec = monsters[curEnc]
+			if beat.who == "pet" and rec then
+				local at = spotNow + V(0, rec.top * 0.55, 0)
+				local col = beat.crit and Color3.fromRGB(255, 200, 70) or Color3.new(1, 1, 1)
+				pcall(Effects.Burst, at, ColorSequence.new(col), beat.crit and 22 or 10, beat.crit and 16 or 10, beat.crit and 1 or 0.7)
+				if beat.move == "slam" then
+					pcall(Effects.Shockwave, spotNow, stage.look.glow, 9, 0.5)
+				end
+				if beat.crit and not calm then pcall(Effects.Shake, 0.35, 0.2) end
+				pcall(Sounds.Play, "Land", beat.crit and 1.2 or 1)
+			elseif beat.who == "mon" then
+				if beat.special then
+					pcall(Effects.Shockwave, spotNow, plan.theme.accent, 16, 0.7)
+					pcall(Effects.Burst, spotNow + V(0, 1, 0), ColorSequence.new(plan.theme.accent), 24, 14, 1)
+					if not calm then pcall(Effects.Shake, 0.6, 0.35) end
+					flash.BackgroundTransparency = 0.7
+				elseif not beat.dodged then
+					local target = beat.target and slot(beat.target) or slot(1)
+					pcall(Effects.Burst, target + V(0, 1.2, 0), ColorSequence.new(Color3.fromRGB(255, 110, 90)), 10, 10, 0.7)
+				end
 			end
+		end
+
+		-- waves, boss arrival, knock-outs
+		if kind == "walk" and seg.next and seg.next ~= lastWave then
+			lastWave = seg.next
+			local enc = plan.encounters[seg.next]
+			if enc.boss then
+				seenBoss = true
+				showBanner("BOSS!", enc.name, Color3.fromRGB(255, 90, 70), 2)
+				flash.BackgroundTransparency = 0.55
+				if not calm then pcall(Effects.Shake, 0.7, 0.6) end
+				pcall(Sounds.Play, "Rare", 0.8)
+			else
+				showBanner("WAVE " .. seg.next .. " / " .. #plan.encounters, enc.name, Color3.new(1, 1, 1), 1.2)
+			end
+		end
+		if kind == "walk" and seg.next then
+			focus = (G + Stage.MonsterPortal):Lerp(spotFor(seg.next), smooth(f / 0.8)) + V(0, 1.4, 0)
 		end
 		if state.cleared > lastCleared then
 			lastCleared = state.cleared
 			local beaten = plan.encounters[state.cleared]
 			if beaten and not beaten.boss then
-				showBanner("DEFEATED!", beaten.name, Color3.fromRGB(140, 255, 150), 1.1)
+				showBanner("DEFEATED!", beaten.name, Color3.fromRGB(140, 255, 150), 1)
 			end
 		end
-		if state.kind == "retreat" and not lostShown then
-			lostShown = true
-			showBanner("DEFEAT", "The team retreats...", Color3.fromRGB(235, 80, 70), 2.2)
+		counter.Text = "Monsters " .. state.cleared .. " / " .. #plan.encounters
+		for i, c in ipairs(cards) do
+			local mm = state.team and state.team[i]
+			if mm then
+				setBar(c.bar, mm.hp, mm.maxHp, mm.ko and "KNOCKED OUT" or ("HP " .. PetGear.Short(mm.hp) .. " / " .. PetGear.Short(mm.maxHp)))
+				c.card.BackgroundColor3 = mm.ko and Color3.fromRGB(60, 20, 24) or Color3.fromRGB(16, 12, 24)
+				if mm.ko and not lastKo[i] and kind == "fight" then
+					showBanner("KNOCKED OUT!", plan.team[i].name, Color3.fromRGB(255, 110, 90), 1.1)
+				end
+				lastKo[i] = mm.ko
+			end
+		end
+		local enc = kind == "fight" and plan.encounters[seg.enc] or nil
+		enemy.Visible = enc ~= nil
+		if enc then
+			enemyName.Text = (enc.boss and "BOSS  " or "") .. enc.name
+			enemyName.TextColor3 = enc.boss and Color3.fromRGB(255, 120, 90) or Color3.new(1, 1, 1)
+			setBar(enemyBar, state.monHp or 0, state.monMax or 1)
 		end
 		log.Text = state.text or ""
 
-		-- damage numbers over whoever got hit, a camera jolt on big blows
-		local beat, phase = state.beat, state.phase or 0
-		local petHead, monHead = Fight.Anchors(ctx)
-		local show = beat and (beat.who == "pet" or beat.who == "mon") and phase >= 0.45
+		-- treasure chest at the end of a win
+		if kind == "loot" then
+			local s = easeOut(f / 0.25)
+			chest.model:PivotTo(CFrame.new(G + V(0, -1.2 * (1 - s), 0)) * CFrame.Angles(0, PI / 2, 0))
+			local open01 = smooth((f - 0.3) / 0.25)
+			chest.lid.CFrame = chest.model:GetPivot() * CFrame.new(0, 1.3, 0.8) * CFrame.Angles(-1.6 * open01, 0, 0) * CFrame.new(0, 0.3, -0.8)
+			chest.glow.Transparency = 1 - open01 * 0.9
+			for j, l in ipairs(loot) do
+				local q = math.clamp((f - 0.4 - j * 0.08) / 0.4, 0, 1)
+				local a = j / math.max(1, #loot) * PI * 2
+				l.part.CFrame = CFrame.new(G + V(math.cos(a) * 2.4 * q, 1.6 + 3.5 * math.sin(PI * q * 0.9), math.sin(a) * 2.4 * q)) * CFrame.Angles(now * 3, now * 2, 0)
+			end
+			if f > 0.3 and not o.chestFx then
+				o.chestFx = true
+				pcall(Effects.Burst, G + V(0, 2, 0), ColorSequence.new(Color3.fromRGB(255, 220, 120)), 30, 14, 1)
+				showBanner("VICTORY!", "Treasure found!", T.CinematicGold, 2.4)
+				pcall(Sounds.Play, "Rare", 1)
+			end
+			focus = G + V(0, 1.6, 0)
+		end
+		if kind == "retreat" and not o.lostShown then
+			o.lostShown = true
+			showBanner("DEFEAT", "The team retreats...", Color3.fromRGB(235, 80, 70), 2.2)
+		end
+
+		-- damage numbers
+		local show = kind == "fight" and beat and (beat.who == "pet" or beat.who == "mon") and phase >= 0.45
 		popup.Visible = false
 		if show then
-			local target = beat.who == "pet" and monHead or petHead
-			if target then
-				local sp, onScreen = cam:WorldToViewportPoint(target)
-				if onScreen then
-					popup.Visible = true
-					popup.Position = UDim2.fromOffset(sp.X, sp.Y - (phase - 0.45) * 70)
-					popup.Text = beat.dodged and "MISS" or ((beat.crit and "CRIT " or "") .. "-" .. PetGear.Short(beat.dmg))
-					popup.TextColor3 = beat.dodged and Color3.fromRGB(200, 220, 255)
-						or (beat.who == "pet" and (beat.crit and Color3.fromRGB(255, 200, 60) or Color3.new(1, 1, 1)) or Color3.fromRGB(255, 90, 80))
-					popup.TextTransparency = math.clamp((phase - 0.75) * 4, 0, 1)
-				end
-			end
-			if not calm and phase < 0.62 and (beat.special or beat.crit or beat.move == "slam") then
-				local a = 0.012 * (beat.special and 1.6 or 1)
-				cam.CFrame *= CFrame.Angles(math.noise(now * 30, 1) * a, math.noise(1, now * 30) * a, 0)
+			local rec = monsters[curEnc]
+			local target = beat.who == "pet" and (spotNow + V(0, (rec and rec.top or 2) + 0.8, 0))
+				or ((beat.target and slot(beat.target) or slot(1)) + V(0, 2.8, 0))
+			local sp, onScreen = cam:WorldToViewportPoint(target)
+			if onScreen then
+				popup.Visible = true
+				popup.Position = UDim2.fromOffset(sp.X, sp.Y - (phase - 0.45) * 70)
+				popup.Text = beat.dodged and "MISS" or ((beat.crit and "CRIT " or "") .. "-" .. PetGear.Short(beat.dmg))
+				popup.TextColor3 = beat.dodged and Color3.fromRGB(200, 220, 255)
+					or (beat.who == "pet" and (beat.crit and Color3.fromRGB(255, 200, 60) or Color3.new(1, 1, 1)) or Color3.fromRGB(255, 90, 80))
+				popup.TextTransparency = math.clamp((phase - 0.75) * 4, 0, 1)
 			end
 		end
 
-		-- banners and the boss flash
-		bannerT += dt
+		-- camera: a 3/4 view of the arena that leans toward the action
+		local want = focus + V(-3, 15, -22)
+		if kind == "walk" and seg.next and plan.encounters[seg.next].boss then
+			want = focus + V(-1, 9, -14) -- close-up on the boss stepping out
+		end
+		local kk = camPos and (1 - math.exp(-3 * rdt)) or 1
+		camPos = camPos and camPos:Lerp(want, kk) or want
+		camFocus = camFocus and camFocus:Lerp(focus, kk) or focus
+		cam.CFrame = CFrame.lookAt(camPos, camFocus)
+
+		-- banners and flash
+		bannerT += rdt
 		local bk = bannerT / bannerLife
 		local alpha = bk < 0.15 and 1 - bk / 0.15 or (bk > 0.75 and math.clamp((bk - 0.75) / 0.25, 0, 1) or 0)
 		banner.TextTransparency, banner.TextStrokeTransparency = alpha, math.max(alpha, 0.2)
 		bannerSub.TextTransparency, bannerSub.TextStrokeTransparency = alpha, math.max(alpha, 0.3)
 		banner.Size = UDim2.new(1, 0, 0, 74 * (bk < 0.15 and (1.6 - bk / 0.15 * 0.6) or 1))
-		flash.BackgroundTransparency = math.min(1, flash.BackgroundTransparency + dt * 1.5)
+		flash.BackgroundTransparency = math.min(1, flash.BackgroundTransparency + rdt * 1.5)
 
-		if pt == math.huge and not finished then
+		if o.t >= total and not finished then
 			finished = true
 			enemy.Visible = false
-			if plan.victory then
-				showBanner("VICTORY!", "Level " .. plan.level .. " cleared", T.CinematicGold, 1e9)
-				pcall(Sounds.Play, "Rare", 1)
-			else
+			if not plan.victory then
 				showBanner("DEFEAT", "Level " .. plan.level .. " was too strong this time", Color3.fromRGB(235, 80, 70), 1e9)
 			end
-			resultScreen(plan.victory)
+			finish(plan.victory)
 		end
 	end)
 end
@@ -28317,7 +28893,7 @@ end
 
 local PetCombat = require(RS.Shared.PetCombat)
 
-local function buildMonster(parent, enc, theme, index, origin)
+function Fight.BuildMonster(parent, enc, theme, index, origin)
 	local m = Instance.new("Model")
 	m.Name = "Monster" .. index
 	local top = (Kinds[enc.kind] or Kinds.imp)(m, theme)
@@ -28375,7 +28951,7 @@ function Fight.Attach(scene, plan, petModels, camera, origin)
 	holder.Name = "BattleMonsters"
 	holder.Parent = scene
 	for i, enc in plan.encounters do
-		ctx.monsters[i] = buildMonster(holder, enc, plan.theme, i, origin)
+		ctx.monsters[i] = Fight.BuildMonster(holder, enc, plan.theme, i, origin)
 	end
 	local list = typeof(petModels) == "Instance" and { petModels } or (petModels or {})
 	for i, petModel in ipairs(list) do
@@ -29464,7 +30040,7 @@ updateClock = function()
 		end
 		return
 	end
-	local left = math.max(0, a.endsAt - clockNow())
+	local left = a.watched and 0 or math.max(0, a.endsAt - clockNow()) -- watched to the end = finished
 	local pct = math.clamp(1 - left / math.max(1, a.endsAt - a.startedAt), 0, 1)
 	Scene.SetProgress(activeSceneModel, pct)
 	local stage = left <= 0 and 3 or (pct < 0.15 and 1 or (pct < 0.75 and 2 or 3))
@@ -29777,6 +30353,14 @@ function Panel.Init()
 			Arena.Open(a)
 		end
 	end)
+	Arena.OnFinished = function()
+		-- watched to the end: the trip is over, show the claim straight away
+		if HUD.IsOpen("Expeditions") then
+			render()
+		else
+			updateClock()
+		end
+	end
 	Arena.HideHud = function(hidden)
 		HUD.Gui.Enabled = not hidden
 	end
@@ -30148,7 +30732,7 @@ function Panel.Init()
 			return
 		end
 		local ok, err = pcall(function()
-			local state = Battle.At(plan, math.max(0, clockNow() - a.startedAt))
+			local state = Battle.At(plan, a.watched and plan.duration or math.max(0, clockNow() - a.startedAt))
 			local now = os.clock()
 			if miniMap.root.Visible then
 				Mini.SetPlan(miniMap, plan, a.world)
@@ -36760,7 +37344,188 @@ function Scene.Start()
 end
 return Scene
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX121"><Properties><string name="Name">SkyforgeUI</string><ProtectedString name="Source"><![CDATA[-- Light sanctuary surfaces and large standalone navigation artwork.
+<Item class="ModuleScript" referent="RBX121"><Properties><string name="Name">Signatures</string><ProtectedString name="Source"><![CDATA[-- Signatures: every creature's own portal entrance. A MOVE is the kind of action (a lion rears up
+-- and roars, a wolf sits and howls, a dragon lands and breathes fire, a golem leaps and slams the
+-- ground, a fish arcs out with a splash, a penguin belly-slides...). Each species then adds its own
+-- call (the word that pops up: "ROAR!", "AWOO!", "NOOT!"), its own effect motif and its own little
+-- pose flourish, so no two creatures come out of the portal the same way.
+-- Used by Entrances (root motion + effects) and the creature's animator (pose keyframes).
+local S = {}
+
+-- Pose keys use the animator channels (see SpeciesProfiles). Times are 0..1 of the entrance AFTER
+-- the portal charge-up. `at` = when the special effect and the call fire.
+S.Moves = {
+	roar = { at = 0.66, special = "roar",
+		keys = { { 0.5, { crouch = 0.4 } }, { 0.62, { tiltX = -0.45, legFL = 0.9, legFR = 0.9, headPitch = -0.35, mouth = 1, jaw = 1 } },
+			{ 0.82, { tiltX = -0.4, legFL = 0.8, legFR = 0.8, headPitch = -0.3, mouth = 1, jaw = 1 } }, { 0.95, { crouch = 0.2 } } } },
+	howl = { at = 0.62, special = "howl",
+		keys = { { 0.5, { crouch = 0.5 } }, { 0.6, { crouch = 0.6, headPitch = -0.85, mouth = 0.8, jaw = 0.8, earL = 0.6, earR = 0.6 } },
+			{ 0.88, { crouch = 0.55, headPitch = -0.8, mouth = 0.7 } } } },
+	charge = { at = 0.24, special = "charge",
+		keys = { { 0.1, { crouch = 0.6, headPitch = 0.3, legFR = 0.6 } }, { 0.2, { crouch = 0.6, headPitch = 0.3, legFR = -0.4 } },
+			{ 0.5, { headPitch = 0.35, lean = 0.3 } }, { 0.9, { tiltX = -0.15 } } } },
+	slam = { at = 0.66, special = "slam",
+		keys = { { 0.15, { crouch = 0.8 } }, { 0.4, { armL = -1.2, armR = -1.2, sqY = 0.1 } }, { 0.64, { armL = 0.8, armR = 0.8, crouch = 0.5 } },
+			{ 0.85, { armL = -0.9, armR = -0.9, headPitch = -0.2, mouth = 1 } } } },
+	breath = { at = 0.74, special = "breath",
+		keys = { { 0.2, { wingL = 0.5, wingR = 0.5, wingFlap = 0.6 } }, { 0.7, { headPitch = -0.2, wingL = 0.7, wingR = 0.7 } },
+			{ 0.76, { headPitch = 0.15, mouth = 1, jaw = 1, wingL = 0.8, wingR = 0.8 } }, { 0.92, { headPitch = 0.1, mouth = 1, jaw = 1 } } } },
+	dive = { at = 0.42, special = "dive",
+		keys = { { 0.2, { wingL = 0.9, wingR = 0.9, headPitch = -0.4 } }, { 0.42, { wingFold = 0.9, headPitch = 0.5 } },
+			{ 0.8, { wingFold = 0.9 } }, { 0.88, { wingL = 1, wingR = 1, wingFlap = 0.8 } } } },
+	leap = { at = 0.9, special = "splash",
+		keys = { { 0.15, { tiltX = -0.6, tailCurl = 0.6 } }, { 0.5, { tiltX = 0, tailWag = 1 } }, { 0.85, { tiltX = 0.6, tailCurl = -0.5 } } } },
+	coil = { at = 0.74, special = "hiss",
+		keys = { { 0.55, { chainCurl = 1.2 } }, { 0.7, { tiltX = -0.6, headPitch = -0.3, chainCurl = 0.8 } },
+			{ 0.78, { tiltX = -0.3, headPitch = 0.4, mouth = 1, jaw = 1 } }, { 0.92, { tiltX = -0.4, mouth = 0.5 } } } },
+	gallop = { at = 0.8, special = "rear",
+		keys = { { 0.3, { headPitch = 0.2 } }, { 0.78, { tiltX = -0.55, legFL = 1, legFR = 0.8, headPitch = -0.4 } },
+			{ 0.9, { tiltX = -0.5, legFL = 0.9, legFR = 1 } } } },
+	cartwheel = { at = 0.8, special = "tada",
+		keys = { { 0.2, { crouch = 0.6 } }, { 0.82, { armL = -1.4, armR = -1.4, earL = 0.6, earR = 0.6, mouth = 0.6 } }, { 0.95, { armL = -1.2, armR = -1.2 } } } },
+	blink = { at = 0.7, special = "blink", keys = { { 0.7, { glow = 1, open = 1 } }, { 0.9, { glow = 0.6 } } } },
+	burrow = { at = 0.5, special = "burrow", keys = { { 0.5, { crouch = 0.9 } }, { 0.75, { headYaw = 0.6 } }, { 0.85, { headYaw = -0.6 } } } },
+	rocket = { at = 0.2, special = "rocket", keys = { { 0.2, { crouch = 0.7 } }, { 0.3, { tiltX = -0.5 } }, { 0.85, { tiltX = 0.2 } }, { 0.95, { armL = -1, armR = -1 } } } },
+	buzz = { at = 0.5, special = "buzz", keys = { { 0.1, { wingFlap = 1 } }, { 0.9, { wingFlap = 1, headPitch = 0.2 } } } },
+	waddle = { at = 0.5, special = "slide",
+		keys = { { 0.2, { tiltX = 0.9, wingL = -0.6, wingR = -0.6 } }, { 0.75, { tiltX = 0.9, wingL = -0.6, wingR = -0.6 } },
+			{ 0.85, { wingL = 1, wingR = 1, wingFlap = 1, mouth = 0.6 } } } },
+	drift = { at = 0.55, special = "boo", keys = { { 0.3, { armL = -0.6, armR = -0.6 } }, { 0.6, { armL = -1.2, armR = -1.2, mouth = 1 } }, { 0.9, { armL = 0, armR = 0 } } } },
+	sting = { at = 0.72, special = "sting", keys = { { 0.6, { tailCurl = 1.2 } }, { 0.74, { tailCurl = -0.4, headPitch = 0.3 } }, { 0.88, { tailCurl = 0.8, armL = 0.6, armR = 0.6 } } } },
+	bounce = { at = 0.92, special = "pop", keys = { { 0.9, { earL = 1.2, earR = 1.2, sqY = -0.1 } } } },
+	flutter = { at = 0.6, special = "sparkle", keys = { { 0.6, { wingL = 1, wingR = 1 } } } },
+	stomp = { at = 0.9, special = "slam", keys = { { 0.9, { armL = -0.8, armR = -0.8, mouth = 1 } } } },
+	soar = { at = 0.88, special = "screech", keys = { { 0.3, { wingL = 1, wingR = 1 } }, { 0.88, { headPitch = -0.4, mouth = 0.8 } } } },
+	rebirth = { at = 0.05, special = "rebirth", keys = { { 0.2, { wingL = 1, wingR = 1, glow = 1 } }, { 0.9, { wingL = 1.1, wingR = 1.1, headPitch = -0.4 } } } },
+	swim = { at = 0.9, special = "splash", keys = { { 0.5, { tailWag = 1 } } } },
+	phase = { at = 0.6, special = "boo", keys = { { 0.6, { mouth = 1, glow = 1 } } } },
+	scuttle = { at = 0.9, special = "click", keys = { { 0.9, { armL = 0.6, armR = 0.6 } } } },
+	descend = { at = 0.95, special = "shine", keys = { { 0.5, { wingL = 1, wingR = 1, armL = -0.8, armR = -0.8 } } } },
+	pounce = { at = 0.8, special = "pounce", keys = { { 0.2, { crouch = 0.8 } }, { 0.85, { headPitch = -0.2, mouth = 0.6, tailWag = 1 } } } },
+}
+
+-- species: move, the call that pops up, an effect motif, and an optional extra pose flourish
+S.Species = {
+	-- Forest
+	Mossbun = { move = "bounce", call = "BOING!", motif = "leaves2", flourish = { 0.95, { earL = -0.8 } } },
+	Acornip = { move = "burrow", call = "CHITTER!", motif = "seed" },
+	Petalfly = { move = "flutter", call = "FLUTTER!", motif = "petals" },
+	Thornhog = { move = "charge", call = "SNORT!", motif = "leaves2" },
+	Elderstag = { move = "gallop", call = "BELLOW!", motif = "branchLight" },
+	Bloomwyrm = { move = "breath", call = "WHOOSH!", motif = "petals", element = "leaf" },
+	OakTitan = { move = "slam", call = "QUAKE!", motif = "leaves2" },
+	SylphQueen = { move = "flutter", call = "SHIMMER!", motif = "flowerBud" },
+	Fernling = { move = "burrow", call = "SPROUT!", motif = "flowerBud" },
+	Owlbramble = { move = "dive", call = "HOOT!", motif = "leaf" },
+	-- Volcano
+	Emberpup = { move = "pounce", call = "WOOF!", motif = "ember", flourish = { 0.9, { tailWag = 1.5 } } },
+	Magmite = { move = "bounce", call = "BLORP!", motif = "ember" },
+	Cinderchick = { move = "cartwheel", call = "PEEP!", motif = "ember" },
+	Obsidigolem = { move = "slam", call = "CRACK!", motif = "groundSmoke" },
+	PhoenixLumen = { move = "rebirth", call = "KREEE!", motif = "ashSwirl" },
+	Infernadrake = { move = "breath", call = "ROOOAR!", motif = "ashSwirl", element = "fire" },
+	MagmaKraken = { move = "leap", call = "GLUB!", motif = "bubble" },
+	SolarSerpent = { move = "coil", call = "HSSSS!", motif = "dawnDisk" },
+	Lavalamb = { move = "bounce", call = "BAAA!", motif = "ember" },
+	Scorchscorp = { move = "sting", call = "SNAP!", motif = "ember" },
+	-- Frozen
+	Frostpaw = { move = "cartwheel", call = "YIP!", motif = "snowflakes" },
+	Snowpuff = { move = "bounce", call = "POOF!", motif = "snowflakeRing" },
+	IcicleOwl = { move = "dive", call = "HOO-HOO!", motif = "frost" },
+	GlacierYeti = { move = "slam", call = "RAAAH!", motif = "snowflakeRing" },
+	AuroraFox = { move = "howl", call = "YIIIP!", motif = "auroraArc" },
+	Crystalwing = { move = "breath", call = "FREEZE!", motif = "frost", element = "ice" },
+	BlizzardBear = { move = "roar", call = "GRRRAH!", motif = "snowflakes" },
+	FrostEmpress = { move = "descend", call = "KNEEL!", motif = "snowflakeRing" },
+	Penguino = { move = "waddle", call = "NOOT NOOT!", motif = "snowflakes" },
+	Icewyrm = { move = "coil", call = "HSSS!", motif = "frost" },
+	-- Crystal
+	Gemmy = { move = "bounce", call = "TING!", motif = "glint" },
+	QuartzBeetle = { move = "scuttle", call = "CLICK!", motif = "prismArcs" },
+	GlimmerBat = { move = "dive", call = "SKREE!", motif = "glint" },
+	AmethystEel = { move = "coil", call = "ZZZAP!", motif = "prismArcs" },
+	PrismLion = { move = "roar", call = "ROAR!", motif = "prismArcs", flourish = { 0.7, { glow = 1 } } },
+	GeodeLeviathan = { move = "leap", call = "RUMBLE!", motif = "prismArcs" },
+	DiamondDrake = { move = "breath", call = "SHATTER!", motif = "glint", element = "crystal" },
+	VoidCrystalHydra = { move = "roar", call = "HISS-ROAR!", motif = "rift" },
+	Opalfox = { move = "howl", call = "YAWOO!", motif = "prismArcs" },
+	Shardgolem = { move = "slam", call = "SHATTER!", motif = "glint" },
+	-- Candy
+	Gumdrop = { move = "bounce", call = "SQUISH!", motif = "wrapper" },
+	CocoaCub = { move = "cartwheel", call = "YUM!", motif = "wrapper" },
+	Lollipup = { move = "pounce", call = "ARF!", motif = "rainbowRibbon" },
+	Marshghost = { move = "drift", call = "BOO!", motif = "cloudPuff" },
+	Sugarcorn = { move = "gallop", call = "NEIGH!", motif = "rainbowArc" },
+	QueenBee = { move = "buzz", call = "BZZZZ!", motif = "honeycomb" },
+	CottonCandyCloud = { move = "drift", call = "FLUFF!", motif = "cloudRibbon" },
+	ChocoTitan = { move = "slam", call = "CRUNCH!", motif = "wrapper" },
+	Donutpup = { move = "cartwheel", call = "WOOF!", motif = "wrapper" },
+	Jellyray = { move = "leap", call = "WOBBLE!", motif = "bubble" },
+	-- Space
+	AstroBlob = { move = "bounce", call = "BLIP!", motif = "starburst" },
+	MoonMouse = { move = "burrow", call = "SQUEAK!", motif = "constellation" },
+	CometFish = { move = "leap", call = "WHOOSH!", motif = "cometTrail" },
+	NebulaJelly = { move = "drift", call = "BLOOP!", motif = "nebulaPuff" },
+	StarWhale = { move = "leap", call = "WHOOOM!", motif = "galaxySpiral" },
+	CosmicDragon = { move = "breath", call = "COSMIC!", motif = "galaxySpiral", element = "space" },
+	NovaPhoenix = { move = "rebirth", call = "SUPERNOVA!", motif = "starburst" },
+	Singularity = { move = "blink", call = "VWOOM!", motif = "rift" },
+	Rocketpup = { move = "rocket", call = "BLAST OFF!", motif = "cometTrail" },
+	Quasarowl = { move = "dive", call = "HOOO!", motif = "constellation" },
+	-- Shadow
+	Gloomling = { move = "drift", call = "BOO!", motif = "shadowMotes" },
+	ShadeCat = { move = "blink", call = "MREOW!", motif = "shadowMotes" },
+	NightMoth = { move = "flutter", call = "FLIT!", motif = "shadowMotes" },
+	VoidWisp = { move = "blink", call = "WHISPER!", motif = "rift" },
+	UmbraWolf = { move = "howl", call = "AWOOOO!", motif = "eclipseDisk" },
+	NightmareWyvern = { move = "breath", call = "SHRIEK!", motif = "rift", element = "shadow" },
+	Wraithlord = { move = "drift", call = "BEGONE!", motif = "rift" },
+	EclipseDragon = { move = "breath", call = "ECLIPSE!", motif = "eclipseDisk", element = "shadow" },
+	Duskbat = { move = "dive", call = "SCREECH!", motif = "shadowMotes" },
+	Phantomstag = { move = "gallop", call = "WHOOO!", motif = "shadowMotes" },
+	-- Heaven
+	CloudLamb = { move = "bounce", call = "BAA!", motif = "cloudPuff" },
+	HaloChick = { move = "cartwheel", call = "CHIRP!", motif = "goldenArch" },
+	Seraphling = { move = "descend", call = "HALLELUJAH!", motif = "helix" },
+	GoldGriffin = { move = "dive", call = "SCREECH!", motif = "goldenArch" },
+	Pegasus = { move = "gallop", call = "NEIGH!", motif = "rainbowArc" },
+	ArchDrake = { move = "breath", call = "BLAZE!", motif = "goldenArch", element = "holy" },
+	SeraphLion = { move = "roar", call = "ROAAAR!", motif = "goldenArch", flourish = { 0.7, { glow = 1 } } },
+	ThroneAngel = { move = "descend", call = "BEHOLD!", motif = "goldenArch" },
+	Cherubcat = { move = "flutter", call = "MEW!", motif = "heart" },
+	Sunbird = { move = "soar", call = "CAW!", motif = "dawnDisk" },
+	-- Secret / Divine
+	Glitchling = { move = "blink", call = "ERR0R!", motif = "rift" },
+	VoidEmperor = { move = "slam", call = "KNEEL!", motif = "rift" },
+	Errorcat = { move = "blink", call = "M3OW?!", motif = "rift" },
+	NullBunny = { move = "blink", call = "NULL!", motif = "rift" },
+	TheWatcher = { move = "blink", call = "I SEE YOU", motif = "eclipseDisk" },
+	Solaris = { move = "descend", call = "RADIANCE!", motif = "dawnDisk" },
+	Aetherion = { move = "breath", call = "AETHER!", motif = "primordialRing", element = "holy" },
+	EternityOwl = { move = "dive", call = "ETERNITY!", motif = "clockRing" },
+	Genesis = { move = "roar", call = "GENESIS!", motif = "creationRing" },
+	Infinity = { move = "blink", call = "INFINITY!", motif = "galaxySpiral" },
+}
+
+function S.Get(id)
+	local sp = S.Species[id]
+	if not sp then return nil end
+	local mv = S.Moves[sp.move]
+	if not mv then return nil end
+	local keys = table.clone(mv.keys or {})
+	if sp.flourish then
+		table.insert(keys, sp.flourish)
+		table.sort(keys, function(a, b) return a[1] < b[1] end)
+	end
+	return {
+		move = sp.move, call = sp.call, motif = sp.motif, element = sp.element, special = mv.special, at = mv.at,
+		keys = keys,
+	}
+end
+
+return S
+]]></ProtectedString></Properties></Item>
+<Item class="ModuleScript" referent="RBX122"><Properties><string name="Name">SkyforgeUI</string><ProtectedString name="Source"><![CDATA[-- Light sanctuary surfaces and large standalone navigation artwork.
 local T = require(script.Parent.UITheme)
 local S = {}
 local pendingImages = {}
@@ -36957,7 +37722,7 @@ function S.Card(frame, icon)
 end
 return S
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX122"><Properties><string name="Name">Sounds</string><ProtectedString name="Source"><![CDATA[-- Restrained event audio. Built-in assets keep the game independent of uploaded audio.
+<Item class="ModuleScript" referent="RBX123"><Properties><string name="Name">Sounds</string><ProtectedString name="Source"><![CDATA[-- Restrained event audio. Built-in assets keep the game independent of uploaded audio.
 local SoundService = game:GetService("SoundService")
 local TweenService = game:GetService("TweenService")
 local Sounds = {}
@@ -37076,7 +37841,7 @@ function Sounds.Get(name)
 end
 return Sounds
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX123"><Properties><string name="Name">ThrowCinematic</string><ProtectedString name="Source"><![CDATA[-- ThrowCinematic: the throw cutscene (owner only). Full screen, no letterbox.
+<Item class="ModuleScript" referent="RBX124"><Properties><string name="Name">ThrowCinematic</string><ProtectedString name="Source"><![CDATA[-- ThrowCinematic: the throw cutscene (owner only). Full screen, no letterbox.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ThrowCinematic (ModuleScript)
 --
 -- A short film in up to four camera shots, with HARD CUTS between them (w = wind-up seconds sent
@@ -37958,7 +38723,7 @@ end
 
 return Cine
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX124"><Properties><string name="Name">ThrowController</string><ProtectedString name="Source"><![CDATA[-- ThrowController: charge meter input, held-portal + arm wind-up, the portal flight arc,
+<Item class="ModuleScript" referent="RBX125"><Properties><string name="Name">ThrowController</string><ProtectedString name="Source"><![CDATA[-- ThrowController: charge meter input, held-portal + arm wind-up, the portal flight arc,
 -- landing bounce, portal gate opening and creature reveal choreography (for ALL players' throws).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ThrowController (ModuleScript)
 
@@ -38969,7 +39734,7 @@ end)
 
 return TC
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX125"><Properties><string name="Name">UIIcons</string><ProtectedString name="Source"><![CDATA[-- Original cutout art with immediately visible native geometry while images load.
+<Item class="ModuleScript" referent="RBX126"><Properties><string name="Name">UIIcons</string><ProtectedString name="Source"><![CDATA[-- Original cutout art with immediately visible native geometry while images load.
 local T = require(script.Parent.UITheme)
 local Sky = require(script.Parent.SkyforgeUI)
 local Icons = {}
@@ -39125,7 +39890,7 @@ function Icons.Draw(name, parent, size, color, position)
 end
 return Icons
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX126"><Properties><string name="Name">UIKit</string><ProtectedString name="Source"><![CDATA[-- Native sanctuary components. No uploaded icon/font dependency.
+<Item class="ModuleScript" referent="RBX127"><Properties><string name="Name">UIKit</string><ProtectedString name="Source"><![CDATA[-- Native sanctuary components. No uploaded icon/font dependency.
 local TweenService = game:GetService("TweenService")
 local Sounds = require(script.Parent.Sounds)
 local Settings = require(script.Parent.ClientSettings)
@@ -39502,7 +40267,7 @@ end
 
 return K
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX127"><Properties><string name="Name">UIMotion</string><ProtectedString name="Source"><![CDATA[-- Short, interruptible interface motion. No render loop or delayed gameplay actions.
+<Item class="ModuleScript" referent="RBX128"><Properties><string name="Name">UIMotion</string><ProtectedString name="Source"><![CDATA[-- Short, interruptible interface motion. No render loop or delayed gameplay actions.
 local TweenService = game:GetService("TweenService")
 local Settings = require(script.Parent.ClientSettings)
 local Theme = require(script.Parent.UITheme)
@@ -39657,7 +40422,7 @@ end)
 
 return Motion
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX128"><Properties><string name="Name">UITheme</string><ProtectedString name="Source"><![CDATA[-- Sanctuary UI tokens, shared by the HUD, icons and every shop.
+<Item class="ModuleScript" referent="RBX129"><Properties><string name="Name">UITheme</string><ProtectedString name="Source"><![CDATA[-- Sanctuary UI tokens, shared by the HUD, icons and every shop.
 -- Fonts: Builder Sans for controls and data, Merriweather for sanctuary headings;
 -- resolved with a fallback so an older client without these enums still renders.
 local function font(name, fallback)
@@ -39724,7 +40489,7 @@ function T.Rarity(name, config)
 end
 return T
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX129"><Properties><string name="Name">WorldFx</string><ProtectedString name="Source"><![CDATA[-- WorldFx: ONE shared, staggered scheduler for environment motion on tagged map parts
+<Item class="ModuleScript" referent="RBX130"><Properties><string name="Name">WorldFx</string><ProtectedString name="Source"><![CDATA[-- WorldFx: ONE shared, staggered scheduler for environment motion on tagged map parts
 -- (no per-prop RenderStepped connections, no camera-following particles).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > WorldFx (ModuleScript)
 --

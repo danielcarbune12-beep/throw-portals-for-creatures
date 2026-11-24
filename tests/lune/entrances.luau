@@ -13,10 +13,11 @@ local Builder = H.require(S .. "/CreatureBuilder")
 local Profiles = H.require(S .. "/SpeciesProfiles")
 local check = H.check
 
-local calls = 0
+local calls, said = 0, {}
 local function fx() calls += 1 end
 local stubs = {
 	Effects = { Burst = fx, Shockwave = fx, Motif = fx, LightBeam = fx, Shake = fx,
+		FloatingText = function(_, text) said[text] = (said[text] or 0) + 1 end,
 		Part = function(size, cf, color) calls += 1; local p = R.Instance.new("Part"); p.Size, p.CFrame, p.Color = size, cf, color; return p end,
 		Tween = function() end },
 	Sounds = { PlayAt = fx },
@@ -28,11 +29,12 @@ local game = { GetService = function(_, name)
 end }
 local env = setmetatable({
 	game = game,
-	script = { Parent = { Effects = "Effects", ClientSettings = "ClientSettings", Sounds = "Sounds" } },
+	script = { Parent = { Effects = "Effects", ClientSettings = "ClientSettings", Sounds = "Sounds", Signatures = "Signatures" } },
 	task = { delay = function() end }, Instance = R.Instance, Enum = R.Enum,
 	require = function(x) if x == "CONFIG" then return Config end return stubs[x] end,
 	Vector3 = R.Vector3, Color3 = R.Color3, ColorSequence = R.ColorSequence, CFrame = R.CFrame,
 }, { __index = _G })
+stubs.Signatures = luau.load(fs.readFile("src/StarterPlayer/StarterPlayerScripts/Client/Signatures.lua"), { debugName = "Signatures", environment = env })()
 local E = luau.load(fs.readFile("src/StarterPlayer/StarterPlayerScripts/Client/Entrances.lua"), { debugName = "Entrances", environment = env })()
 
 -- renderer kinds that CreatureRenderer still drives itself
@@ -101,6 +103,23 @@ for _, c in ipairs(CreatureData.List) do
 	model:Destroy()
 end
 check(calls > 0, "entrance effects fired")
+-- every creature has its own signature: a known move, its own call, and the call pops up
+local calls2, moves = {}, {}
+for _, c in ipairs(CreatureData.List) do
+	local sig = E.Signature(c.id)
+	check(sig ~= nil and sig.call ~= nil and #sig.keys > 0, c.id .. " has a signature entrance")
+	if sig then
+		check(E.Owns(sig.move) or RENDERER[sig.move], c.id .. " signature move is playable (" .. tostring(sig.move) .. ")")
+		check((said[sig.call] or 0) > 0, c.id .. " shouts " .. sig.call)
+		calls2[sig.call .. sig.motif .. sig.move] = (calls2[sig.call .. sig.motif .. sig.move] or 0) + 1
+		moves[sig.move] = true
+	end
+end
+local dupes, kinds = 0, 0
+for _, n in pairs(calls2) do if n > 1 then dupes += n - 1 end end
+for _ in pairs(moves) do kinds += 1 end
+check(dupes <= 6, "signatures are (almost) all different (" .. dupes .. " repeats)")
+check(kinds >= 20, "at least 20 different moves (" .. kinds .. ")")
 local parts = {}
 for k, v in pairs(tally) do table.insert(parts, k .. "=" .. v) end
 table.sort(parts)

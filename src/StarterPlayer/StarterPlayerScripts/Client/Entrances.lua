@@ -63,11 +63,22 @@ local OVERRIDE = {
 }
 -- styles that drive root motion here; others fall back to the renderer's existing kinds
 local OWN = { pounce = true, swoop = true, soar = true, rebirth = true, swim = true, flutter = true, phase = true,
-	bounce = true, scuttle = true, stride = true }
+	bounce = true, scuttle = true, stride = true,
+	-- signature moves (Signatures.lua): every species has its own
+	roar = true, howl = true, charge = true, slam = true, breath = true, dive = true, leap = true, coil = true,
+	gallop = true, cartwheel = true, blink = true, burrow = true, rocket = true, buzz = true, waddle = true, sting = true }
 -- renderer kinds kept as they are when a profile already picked them on purpose
 local KEEP = { roll = true, peek = true, resolve = true }
+local okSig, Signatures = pcall(require, script.Parent.Signatures)
+if not okSig then Signatures = nil end
+
+function E.Signature(id)
+	return Signatures and Signatures.Get and Signatures.Get(id) or nil
+end
 
 function E.Style(def, prof, rig, profileKind)
+	local sig = E.Signature(def.id)
+	if sig then return sig.move end
 	if profileKind and KEEP[profileKind] then return profileKind end
 	if OVERRIDE[def.id] then return OVERRIDE[def.id] end
 	if def.rarity == "Secret" then return "resolve" end
@@ -185,6 +196,154 @@ function E.Move(e, en, a, k, dt)
 		a.pos = from:Lerp(to, smooth(k / 0.85))
 		a.gaitPhase += dt * 1.3
 		if k > 0.85 and not en.landed then en.landed = true; a.landSquash = 1; E.Land(e, en, a, "flourish") end
+	elseif st == "roar" then
+		-- prowls out, plants itself, rears up and ROARS (pose keys), drops back down
+		a.pos = from:Lerp(to, smooth(math.min(1, k / 0.5)))
+		a.groundY = y0
+		if k < 0.5 then a.gaitPhase += dt * 2.2 end
+		if k > 0.92 and not en.landed then en.landed = true; a.landSquash = 1; E.Land(e, en, a, "flourish") end
+	elseif st == "howl" then
+		-- lopes out, sits down and howls at the sky
+		a.pos = from:Lerp(to, easeOut(math.min(1, k / 0.5)))
+		a.groundY = y0
+		if k < 0.5 then a.gaitPhase += dt * 3 end
+		if k > 0.92 and not en.landed then en.landed = true; E.Land(e, en, a, "soft") end
+	elseif st == "charge" then
+		-- scrapes the ground at the portal mouth, stampedes out and skids to a stop
+		local over = to + dir * 1.6 * s
+		if k < 0.22 then
+			a.pos = from + side * math.sin(k * 90) * 0.05 * s
+		elseif k < 0.75 then
+			local q = (k - 0.22) / 0.53
+			a.pos = from:Lerp(over, q ^ 1.3)
+			a.gaitPhase += dt * 5
+			if math.floor(q * 10) ~= en.lastDust then en.lastDust = math.floor(q * 10); E.Dust(en, a.pos, 3) end
+		else
+			if not en.landed then en.landed = true; a.landSquash = 1; E.Land(e, en, a, "skid") end
+			a.pos = over:Lerp(to, smooth((k - 0.75) / 0.25))
+		end
+		a.groundY = y0
+	elseif st == "slam" then
+		-- one huge leap out of the portal and a ground-shaking landing
+		local q = math.min(1, k / 0.66)
+		a.pos = from:Lerp(to, smooth(q))
+		a.groundY = y0 + 4 * q * (1 - q) * (reduced and 2.5 or 6) * s
+		if q >= 1 and not en.landed then en.landed = true; a.landSquash = 1 end
+	elseif st == "breath" then
+		-- sweeps out on its wings, settles and breathes its element (special at the pose key)
+		local q = math.min(1, k / 0.7)
+		a.pos = from:Lerp(to, easeOut(q)) + side * math.sin(q * PI) * (1 - q) * 1.8 * s
+		a.groundY = y0 + (math.sin(q * PI) * (reduced and 2 or 5) * (1 - 0.4 * q) + (k > 0.7 and (1 - smooth((k - 0.7) / 0.3)) * 0.3 or 0)) * s
+		if k > 0.95 and not en.landed then en.landed = true; E.Land(e, en, a, "soft") end
+	elseif st == "dive" then
+		-- shoots straight up out of the portal, hangs for a heartbeat, then dive-bombs into place
+		local top = (reduced and 4 or 9) * s
+		if k < 0.35 then
+			a.pos, a.groundY = from, y0 + easeOut(k / 0.35) * top
+		elseif k < 0.45 then
+			a.pos, a.groundY = from, y0 + top
+		elseif k < 0.8 then
+			local q = (k - 0.45) / 0.35
+			a.pos = from:Lerp(to, q * q)
+			a.groundY = y0 + top * (1 - q * q)
+		else
+			if not en.landed then en.landed = true; E.Land(e, en, a, "soft") end
+			a.pos = to
+			a.groundY = y0 + math.sin((k - 0.8) / 0.2 * PI) * 0.6 * s
+		end
+	elseif st == "leap" then
+		-- a big arcing leap out of the portal, landing in a splash
+		local q = math.min(1, k / 0.9)
+		a.pos = from:Lerp(to, q)
+		a.groundY = y0 + 4 * q * (1 - q) * (reduced and 2.5 or 6) * s
+		a.gaitPhase += dt * 2
+		if q >= 1 and not en.landed then en.landed = true; a.landSquash = 1 end
+	elseif st == "coil" then
+		-- slithers out low, then rears up and strikes (pose keys)
+		local q = math.min(1, k / 0.6)
+		a.pos = from:Lerp(to, smooth(q)) + side * math.sin(q * PI * 3) * (1 - q) * 1.4 * s
+		a.groundY = y0
+		a.gaitPhase += dt * 2.4
+	elseif st == "gallop" then
+		-- bounding gallop, then rears up on its hind legs
+		local q = math.min(1, k / 0.75)
+		a.pos = from:Lerp(to, smooth(q))
+		a.groundY = y0 + (q < 1 and math.abs(math.sin(q * PI * 6)) * 0.7 * s or 0)
+		if q < 1 then a.gaitPhase += dt * 3.5 end
+		if q >= 1 and not en.landed then en.landed = true; E.Dust(en, a.pos, 6) end
+	elseif st == "cartwheel" then
+		-- springs out tumbling head over heels and lands in a ta-da pose
+		local q = math.min(1, k / 0.75)
+		a.pos = from:Lerp(to, q)
+		a.groundY = y0 + 4 * q * (1 - q) * (reduced and 1.5 or 4) * s
+		a.rootRoll = reduced and 0 or (q < 1 and q * PI * 4 or 0)
+		if q >= 1 and not en.landed then en.landed = true; a.landSquash = 1; a.rootRoll = 0; E.Land(e, en, a, "soft") end
+	elseif st == "blink" then
+		-- teleports out in jumps: portal mouth, one side, the other side, then in place
+		local spots = { from, from:Lerp(to, 0.4) + side * 2.2 * s, from:Lerp(to, 0.75) - side * 2.2 * s, to }
+		local idx = math.min(4, math.floor(k / 0.25) + 1)
+		if idx ~= en.lastSpot then
+			en.lastSpot = idx
+			if idx > 1 then E.Special(e, en, { pos = spots[idx - 1] }, "blink") end
+		end
+		a.pos, a.groundY = spots[idx], y0 + (idx < 4 and 0.6 * s or 0)
+		local f = (k % 0.25) / 0.25
+		E.SetVisibility(e, en, idx == 4 and smooth(f * 3) or (f < 0.15 and 0.2 or (f > 0.85 and 0.3 or 1)))
+	elseif st == "burrow" then
+		-- vanishes into the portal and pops up out of the ground where it will stand
+		a.pos = to
+		if k < 0.5 then
+			E.SetVisibility(e, en, 0)
+			a.groundY = y0 - 2.5 * s
+			if math.floor(k * 12) ~= en.lastDust then en.lastDust = math.floor(k * 12); E.Dust(en, to, 2) end
+		else
+			E.SetVisibility(e, en, 1)
+			a.groundY = y0 - (1 - easeOut(math.min(1, (k - 0.5) / 0.25))) * 2.5 * s
+			if k > 0.75 and not en.landed then en.landed = true; a.landSquash = 1 end
+		end
+	elseif st == "rocket" then
+		-- crouches, blasts off in a fiery arc and lands with a flip
+		if k < 0.2 then
+			a.pos, a.groundY = from + side * math.sin(k * 120) * 0.04 * s, y0
+		else
+			local q = math.min(1, (k - 0.2) / 0.6)
+			a.pos = from:Lerp(to, q)
+			a.groundY = y0 + 4 * q * (1 - q) * (reduced and 3 or 7) * s
+			a.rootRoll = (not reduced and q > 0.7 and q < 1) and (q - 0.7) / 0.3 * PI * 2 or 0
+			if q < 1 and math.floor(q * 14) ~= en.lastFire then
+				en.lastFire = math.floor(q * 14)
+				Effects.Burst(Vector3.new(a.pos.X, a.groundY, a.pos.Z), ColorSequence.new(PAL.fire[1], PAL.fire[2]), 4, 6, 0.7)
+			end
+			if q >= 1 and not en.landed then en.landed = true; a.landSquash = 1; a.rootRoll = 0; E.Land(e, en, a, "quake") end
+		end
+	elseif st == "buzz" then
+		-- zips out in fast figure-eights and buzzes down into place
+		a.pos = from:Lerp(to, smooth(k)) + side * math.sin(k * PI * 6) * (1 - k) * 1.6 * s
+		local hover = (2.5 + math.sin(k * PI * 10) * 0.5) * s
+		a.groundY = y0 + hover * (k > 0.85 and (1 - (k - 0.85) / 0.15) or 1)
+		if k > 0.97 and not en.landed then en.landed = true; E.Land(e, en, a, "soft") end
+	elseif st == "waddle" then
+		-- flops onto its belly and slides out, then pops up flapping
+		local over = to + dir * 0.6 * s
+		if k < 0.15 then
+			a.pos = from
+		elseif k < 0.75 then
+			local q = (k - 0.15) / 0.6
+			a.pos = from:Lerp(over, q)
+			if math.floor(q * 8) ~= en.lastDust then en.lastDust = math.floor(q * 8); E.Dust(en, a.pos, 2) end
+		else
+			a.pos = over:Lerp(to, smooth((k - 0.75) / 0.25))
+		end
+		a.groundY = y0 + (k > 0.75 and math.sin((k - 0.75) / 0.25 * PI) * 0.8 * s or 0)
+	elseif st == "sting" then
+		-- skitters out side to side and snaps its tail (pose keys)
+		local q = math.min(1, k / 0.6)
+		a.pos = from:Lerp(to, smooth(q)) + side * math.sin(q * PI * 8) * (1 - q) * 0.4 * s
+		a.groundY = y0
+		a.gaitPhase += dt * 4
+	end
+	if k >= 0.999 then
+		a.pos, a.groundY = to, y0
 	end
 	return true
 end
@@ -213,6 +372,93 @@ end
 local function motif(kind, pos, fwd, col, size)
 	if not kind then return end
 	pcall(Effects.Motif, kind, pos, fwd, col, size)
+end
+
+---------------------------------------------------------------- signature specials
+-- The moment a species' move peaks (the roar, the howl, the slam, the fire breath...): its effect,
+-- its own motif and its call popping up over its head.
+function E.Special(e, en, a, name)
+	local s = math.clamp(e.rig.size, 0.6, 2.5)
+	local el = (en.sig and en.sig.element) or en.element
+	local pal = PAL[el] or PAL.space
+	local low = Settings.LowVFX()
+	local fwd = (en.to - en.from).Unit
+	local at = a.pos or en.to
+	local ground = Vector3.new(at.X, en.y0 + 0.1, at.Z)
+	local head = ground + Vector3.new(0, 1.6 * s, 0)
+	local size = math.clamp(s, 0.8, 2)
+	if name == "roar" or name == "rear" then
+		Effects.Shockwave(ground, pal[2], 9 + en.order * 1.5, 0.6)
+		motif("ringRipple", head, fwd, pal[1], size * 1.3)
+		if en.mine then Effects.Shake(0.35 + en.order * 0.05, 0.35) end
+	elseif name == "howl" then
+		motif("eclipseDisk", head + Vector3.new(0, 4 * s, 0), fwd, pal[1], size)
+		motif("ringRipple", head, fwd, pal[2], size)
+	elseif name == "charge" then
+		E.Dust(en, ground, 10)
+		motif("groundSmoke", ground, fwd, pal[2], size)
+	elseif name == "slam" then
+		Effects.Shockwave(ground, pal[2], 12 + en.order * 2, 0.7)
+		motif("groundSmoke", ground, fwd, pal[2], size * 1.4)
+		E.Dust(en, ground, 14)
+		if en.mine then Effects.Shake(0.5 + en.order * 0.06, 0.4) end
+	elseif name == "breath" then
+		-- a cone of the creature's element pouring forward
+		local cone = ColorSequence.new(pal[1], pal[2])
+		for i = 1, low and 3 or 7 do
+			Effects.Burst(head + fwd * (i * 1.1 * s), cone, low and 4 or 8, 6 + i, 0.5 + 0.14 * i)
+		end
+	elseif name == "dive" or name == "screech" then
+		motif("cometTrail", head, fwd, pal[1], size)
+	elseif name == "splash" then
+		Effects.Shockwave(ground, PAL.ice[2], 7 + en.order, 0.5)
+		motif("bubble", head, fwd, PAL.ice[1], size * 1.2)
+	elseif name == "hiss" or name == "sting" or name == "click" then
+		motif("starburst", head, fwd, pal[1], size)
+	elseif name == "tada" or name == "pop" then
+		Effects.Burst(head, ColorSequence.new(PAL.candy[1], PAL.candy[2]), low and 8 or 18, 10, 0.6)
+		motif("starburst", head, fwd, pal[1], size)
+	elseif name == "blink" then
+		Effects.Burst(head, ColorSequence.new(pal[1], pal[2]), low and 6 or 14, 10, 0.6)
+		motif("rift", head, fwd, pal[2], size)
+	elseif name == "burrow" then
+		E.Dust(en, ground, 12)
+		motif("groundSmoke", ground, fwd, pal[2], size)
+	elseif name == "rocket" then
+		Effects.Shockwave(ground, PAL.fire[2], 6 + en.order, 0.4)
+		Effects.Burst(ground, ColorSequence.new(PAL.fire[1], PAL.fire[2]), low and 8 or 20, 12, 0.8)
+	elseif name == "slide" then
+		E.Dust(en, ground, 8)
+	elseif name == "boo" then
+		motif("shadowMotes", head, fwd, pal[1], size)
+	elseif name == "shine" then
+		Effects.LightBeam(ground, pal[1], 16, 0.8)
+	elseif name == "rebirth" then
+		Effects.Burst(head, ColorSequence.new(pal[1], pal[2]), low and 10 or 24, 12, 0.9)
+	else -- sparkle / buzz / pounce
+		motif("glint", head, fwd, pal[1], size)
+	end
+	local sig = en.sig
+	if sig then
+		if sig.motif and name ~= "blink" then motif(sig.motif, head + Vector3.new(0, 0.6 * s, 0), fwd, pal[2], size) end
+		if sig.call and not en.called and pcall(function() return Effects.FloatingText end) and Effects.FloatingText then
+			en.called = true
+			pcall(Effects.FloatingText, head + Vector3.new(0, 1.8 * s, 0), sig.call, pal[1], math.clamp(0.8 + en.order * 0.08, 0.8, 1.5))
+		end
+	end
+end
+
+-- swap the animator's generic entrance pose for the species' own keyframes, fitted after the charge-up
+function E.Accent(e, en)
+	local sig = en.sig
+	local life = e.anim and e.anim.life
+	if not sig or not life or not sig.keys then return end
+	local h = en.hold or 0
+	local keys = {}
+	for _, kf in ipairs(sig.keys) do
+		table.insert(keys, { h + kf[1] * (1 - h), kf[2] })
+	end
+	life.spec = { keys = keys }
 end
 
 -- the element burst as the creature comes out of the portal
@@ -396,6 +642,11 @@ function E.Fx(e, en, a, k, dt)
 		if not en.orig then en.restoreT = nil end
 	end
 	if (en.hold or 0) > 0 and not en.broke then return end
+	-- the species' signature moment (roar, howl, slam, breath...) fires once when its move peaks
+	if en.sig and not en.sigFired and k >= (en.sig.at or 0.7) then
+		en.sigFired = true
+		pcall(E.Special, e, en, a, en.sig.special)
+	end
 	if k >= 0.95 then return end
 	local low = Settings.LowVFX()
 	if low and en.order < 3 then return end
@@ -446,7 +697,12 @@ end
 
 function E.Finish(e, en)
 	restore(en, 1) -- never leave a creature glowing, whatever happened mid-entrance
-	if en.style == "phase" then E.SetVisibility(e, en, 1) end
+	if en.style == "phase" or en.style == "blink" or en.style == "burrow" then E.SetVisibility(e, en, 1) end
+	if e.anim then e.anim.rootRoll = 0 end
+	if en.sig and not en.sigFired then
+		en.sigFired = true
+		pcall(E.Special, e, en, { pos = en.to }, en.sig.special)
+	end
 	if en.style == "stomp" or en.style == "descend" then
 		local pal = PAL[en.element] or PAL.space
 		Effects.Shockwave(Vector3.new(en.to.X, en.y0 + 0.1, en.to.Z), pal[2], 8 + en.order, 0.6)
@@ -458,6 +714,7 @@ end
 function E.Prepare(e, en, def, ownerId)
 	en.element = E.Element(def)
 	en.order = Config.Rarities[def.rarity].order
+	en.sig = E.Signature(def.id)
 	local me = Players.LocalPlayer
 	en.mine = me ~= nil and ownerId == me.UserId
 	en.hold = E.HoldFrac(en)

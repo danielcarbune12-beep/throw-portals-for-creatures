@@ -547,7 +547,7 @@ updateClock = function()
 		end
 		return
 	end
-	local left = math.max(0, a.endsAt - clockNow())
+	local left = a.watched and 0 or math.max(0, a.endsAt - clockNow()) -- watched to the end = finished
 	local pct = math.clamp(1 - left / math.max(1, a.endsAt - a.startedAt), 0, 1)
 	Scene.SetProgress(activeSceneModel, pct)
 	local stage = left <= 0 and 3 or (pct < 0.15 and 1 or (pct < 0.75 and 2 or 3))
@@ -860,6 +860,14 @@ function Panel.Init()
 			Arena.Open(a)
 		end
 	end)
+	Arena.OnFinished = function()
+		-- watched to the end: the trip is over, show the claim straight away
+		if HUD.IsOpen("Expeditions") then
+			render()
+		else
+			updateClock()
+		end
+	end
 	Arena.HideHud = function(hidden)
 		HUD.Gui.Enabled = not hidden
 	end
@@ -1231,7 +1239,7 @@ function Panel.Init()
 			return
 		end
 		local ok, err = pcall(function()
-			local state = Battle.At(plan, math.max(0, clockNow() - a.startedAt))
+			local state = Battle.At(plan, a.watched and plan.duration or math.max(0, clockNow() - a.startedAt))
 			local now = os.clock()
 			if miniMap.root.Visible then
 				Mini.SetPlan(miniMap, plan, a.world)

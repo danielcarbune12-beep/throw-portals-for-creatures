@@ -465,6 +465,34 @@ function Battle.At(plan, elapsed)
 	return finish(hps)
 end
 
+-- The battle scene replays the plan on its own clock: each fight beat at a readable pace, short
+-- interludes between waves. Shared so the server knows how long a full watch takes.
+Battle.ArenaBeat = 0.8
+local ARENA_LEN = { depart = 2.2, walk = 1.1, loot = 3.0, ["return"] = 1.6, retreat = 2.4 }
+function Battle.ArenaTimeline(plan)
+	local out, t = {}, 0
+	for _, s in ipairs(plan.segments) do
+		local len
+		if s.kind == "fight" then
+			len = 0
+			for _, b in ipairs(s.beats) do
+				len += (b.len or 1) * Battle.ArenaBeat
+			end
+		else
+			len = ARENA_LEN[s.kind] or 1
+		end
+		table.insert(out, { a0 = t, a1 = t + len, seg = s })
+		t += len
+	end
+	return out, t
+end
+-- the fastest a full watch can finish (the scene's top speed is x4)
+Battle.ArenaMaxSpeed = 4
+function Battle.ArenaMinSeconds(plan)
+	local _, total = Battle.ArenaTimeline(plan)
+	return total / Battle.ArenaMaxSpeed
+end
+
 function Battle.Summary(active)
 	local ok, plan = pcall(Battle.Plan, active)
 	return ok and plan.summary or nil

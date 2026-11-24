@@ -92,6 +92,21 @@ for seed = 1, 10 do
 end
 check(firstWins >= 8, "a single Common usually wins Forest level 1 (" .. firstWins .. "/10)")
 
+-- the battle scene's own clock: covers every segment in order, and a full watch at top speed takes
+-- a quarter of the scene (the server's minimum before a watched trip counts as finished)
+do
+	local p = Battle.Plan(trip("Crystal", trio, 2, "arena"))
+	local map, total = Battle.ArenaTimeline(p)
+	check(#map == #p.segments, "every segment is in the scene")
+	local last = 0
+	for i, m in map do
+		check(m.a0 == last and m.a1 > m.a0 and m.seg == p.segments[i], "scene segment " .. i .. " follows the last")
+		last = m.a1
+	end
+	check(math.abs(last - total) < 1e-9 and total > 10 and total < 400, "scene length is sensible (" .. total .. "s)")
+	check(math.abs(Battle.ArenaMinSeconds(p) - total / Battle.ArenaMaxSpeed) < 1e-9, "minimum watch time is the x4 length")
+end
+
 -- payouts: more pets and higher levels pay more
 local route = { world = "Forest", coins = 120, duration = 90, incomeCoinsPerSecond = 0.8, matchMultiplier = 1.25 }
 local one = Planner.QuoteTeam({ trio[1] }, route, 1)

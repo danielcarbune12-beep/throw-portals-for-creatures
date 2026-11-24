@@ -950,6 +950,20 @@ function Actions.StartExpedition(player, data, st, arg)
 	end
 	return started, message
 end
+-- the battle scene opened / reached its end: watching the whole battle finishes the trip
+function Actions.WatchExpedition(player, data, st, id)
+	if type(id) ~= "string" or #id > 80 then
+		return false, "Bad request"
+	end
+	st.watch = Expeditions.BeginWatch(data, id, os.clock())
+	return true, nil, "partial"
+end
+function Actions.FinishExpedition(player, data, st, id)
+	if type(id) ~= "string" or #id > 80 then
+		return false, "Bad request"
+	end
+	return Expeditions.FinishWatch(data, st.watch, id, os.clock())
+end
 -- arg "uid|weapon|Iron": equip a looted sword/armour from your bag (the old one goes back in)
 function Actions.EquipGear(player, data, st, arg)
 	if type(arg) ~= "string" or #arg > 64 then

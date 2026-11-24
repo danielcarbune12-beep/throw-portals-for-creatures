@@ -810,6 +810,7 @@ function Renderer.SpawnWild(throwId, creatureId, pos, ownerId, chanceText, vsize
 	pcall(Entrances.Start, e, e.entrance)
 	e.anim:SetScale(kind == "emerge" and 0.35 or 0.02)
 	e.anim:PlayAccent("enter", dur)
+	pcall(Entrances.Accent, e, e.entrance) -- the species' own signature pose (roar, howl, slam...)
 	e.throwId = throwId
 	e.owner = ownerId
 	local owner = Players:GetPlayerByUserId(ownerId)

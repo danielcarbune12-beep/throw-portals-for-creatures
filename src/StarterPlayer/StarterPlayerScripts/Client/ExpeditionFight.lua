@@ -101,7 +101,7 @@ end
 
 local PetCombat = require(RS.Shared.PetCombat)
 
-local function buildMonster(parent, enc, theme, index, origin)
+function Fight.BuildMonster(parent, enc, theme, index, origin)
 	local m = Instance.new("Model")
 	m.Name = "Monster" .. index
 	local top = (Kinds[enc.kind] or Kinds.imp)(m, theme)
@@ -159,7 +159,7 @@ function Fight.Attach(scene, plan, petModels, camera, origin)
 	holder.Name = "BattleMonsters"
 	holder.Parent = scene
 	for i, enc in plan.encounters do
-		ctx.monsters[i] = buildMonster(holder, enc, plan.theme, i, origin)
+		ctx.monsters[i] = Fight.BuildMonster(holder, enc, plan.theme, i, origin)
 	end
 	local list = typeof(petModels) == "Instance" and { petModels } or (petModels or {})
 	for i, petModel in ipairs(list) do

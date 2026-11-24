@@ -172,6 +172,8 @@ local function cleanActive(data, active)
 		ar = gearId("armor", active.ar),
 		team = #team > 0 and team or nil,
 		level = integer(active.level) and math.clamp(active.level, 1, Battle.MaxLevel) or 1,
+		-- the owner watched the whole battle scene: the trip is over and can be claimed now
+		watched = active.watched == true,
 	}
 end
 
@@ -386,7 +388,7 @@ function Service.Claim(player, data, base, expeditionId, now)
 	if not active or type(expeditionId) ~= "string" or active.id ~= expeditionId then
 		return false, "This expedition has already been claimed or is no longer active."
 	end
-	if unix(now) < active.endsAt then
+	if unix(now) < active.endsAt and not active.watched then
 		return false, "Your team is still exploring."
 	end
 	-- The same deterministic battle the client animated decides the outcome.
@@ -435,6 +437,37 @@ function Service.Claim(player, data, base, expeditionId, now)
 end
 
 -- Put a looted sword/armour from the bag on a pet; whatever it wore goes back into the bag.
+-- Watching the battle scene to the end finishes the expedition (the scene plays the whole battle,
+-- sped up to x4 at most). The server only accepts it after the scene could really have finished.
+function Service.BeginWatch(data, expeditionId, clock)
+	Service.Ensure(data)
+	local active = data.ActiveExpedition
+	if not active or active.id ~= expeditionId then
+		return nil
+	end
+	return { id = expeditionId, t = clock }
+end
+function Service.FinishWatch(data, watch, expeditionId, clock)
+	Service.Ensure(data)
+	local active = data.ActiveExpedition
+	if not active or type(expeditionId) ~= "string" or active.id ~= expeditionId then
+		return false, "This expedition is no longer active."
+	end
+	if active.watched then
+		return true, "Battle finished. Claim your rewards!"
+	end
+	if not watch or watch.id ~= expeditionId then
+		return false, "Watch the battle to finish it early."
+	end
+	local ok, plan = pcall(Battle.Plan, active)
+	local need = ok and Battle.ArenaMinSeconds(plan) * 0.9 or 10
+	if clock - watch.t < need then
+		return false, "The battle isn't over yet."
+	end
+	active.watched = true
+	return true, "Battle finished. Claim your rewards at the table!"
+end
+
 function Service.EquipFromBag(data, uid, kind, id)
 	Service.Ensure(data)
 	local pet = validUid(uid) and getPet(data, uid)
