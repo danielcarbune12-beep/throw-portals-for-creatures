@@ -37,6 +37,10 @@ earnings awaiting collection from banked money and income per second.
 
 Enabled, hover, selected, disabled and busy buttons share one vocabulary. UI opens over 180 ms with a small positional change; no elastic bounce. Reduced Motion removes positional/scale animation. Purchases are guarded against duplicate activation; selling confirms the specific selected creature and resets when selection changes. Search and scroll are retained during data updates.
 
+Interface motion uses one interruptible TweenService owner. Controls compress to 97.5% over 70 ms and release over 140 ms; focus edges settle over 120 ms without growing the navigation artwork. Mouse, touch and controller presses share the same response. Menus remain interactive during their 180 ms entrance; switching, closing and resizing cancel the old motion. Reduced Motion settles active motion immediately.
+
+Expedition biome/scout previews move only 4–6 pixels on a new selection, rather than replaying on income updates. Forge output remains in the detail view after the server receipt arrives, with one short entrance per successful receipt. Failure shows its consumption outcome without a celebration or a fabricated output pet. These additions require native visual review before visual sign-off.
+
 Floating toast notifications and the notification stack are removed. Routine
 success/info messages and launch reminders stay silent during gameplay. Errors
 appear only inside an open panel: a reserved footer for ordinary panels, or the

@@ -5,8 +5,9 @@ local Settings = require(script.Parent.ClientSettings)
 local T = require(script.Parent.UITheme)
 local Craft = require(script.Parent.SanctuaryUI)
 local Icons = require(script.Parent.UIIcons)
+local Motion = require(script.Parent.UIMotion)
 local Builder = require(game:GetService("ReplicatedStorage").Shared.CreatureBuilder)
-local K = { Font = T.Font, Dark = T.Ink, Panel = T.Panel, Theme = T, Icon = Icons.Draw }
+local K = { Font = T.Font, Dark = T.Ink, Panel = T.Panel, Theme = T, Icon = Icons.Draw, Motion = Motion }
 function K.new(class, props, children)
 	local o = Instance.new(class)
 	if o:IsA("GuiObject") then
@@ -129,36 +130,7 @@ function K.button(text, c1, _c2, size, props)
 	for k, v in pairs(props or {}) do
 		b[k] = v
 	end
-	local function focus(on)
-		local st = b:FindFirstChildOfClass("UIStroke")
-		local highlighted = on or b:GetAttribute("Selected")
-		st.Color = highlighted and T.Gold or T.Border
-		st.Thickness = highlighted and 2 or 1
-		st.Transparency = b:GetAttribute("GatefoldLeaf") and (highlighted and 0 or 1) or 0
-	end
-	b.MouseEnter:Connect(function()
-		if b:GetAttribute("Enabled") then
-			focus(true)
-		end
-	end)
-	b.MouseLeave:Connect(function()
-		focus(false)
-		K.tween(scale, 0.1, { Scale = 1 })
-	end)
-	b.SelectionGained:Connect(function()
-		focus(true)
-	end)
-	b.SelectionLost:Connect(function()
-		focus(false)
-	end)
-	b.MouseButton1Down:Connect(function()
-		if b:GetAttribute("Enabled") then
-			K.tween(scale, 0.08, { Scale = 0.98 })
-		end
-	end)
-	b.MouseButton1Up:Connect(function()
-		K.tween(scale, 0.12, { Scale = 1 })
-	end)
+	Motion.Button(b, scale, b:FindFirstChildOfClass("UIStroke"))
 	b.Activated:Connect(function()
 		if b:GetAttribute("Enabled") then
 			Sounds.Play("Click")

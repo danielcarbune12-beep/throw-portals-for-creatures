@@ -24,6 +24,7 @@ local Panel = {}
 local player = Players.LocalPlayer
 local ready, busy = false, false
 local selectedUid, routeIndex = nil, 1
+local routeDirection = 1
 local manualSelection, routeInitialized = false, false
 local activeHint
 local lastView, serverClock, localClock = nil, 0, 0
@@ -372,6 +373,7 @@ updateSelection = function()
 			vp.Name = "BiomePreview"
 			vp.Parent = sceneFrame
 			vp.CurrentCamera.CFrame = CFrame.lookAt(Vector3.new(-25, 21, -29), Vector3.new(0, 1, 0))
+			K.Motion.Enter(vp, UDim2.new(), UDim2.fromOffset(routeDirection * 6, 0))
 		end
 	end
 	local count = 0
@@ -401,7 +403,8 @@ updateSelection = function()
 		if selectedHeroKey ~= key then
 			selectedHeroKey = key
 			clear(selectedHero)
-			portrait(selectedHero, p, UDim2.fromScale(1, 1))
+			local vp = portrait(selectedHero, p, UDim2.fromScale(1, 1))
+			K.Motion.Enter(vp, UDim2.new(), UDim2.fromOffset(0, 4))
 		end
 	else
 		petMeta.Text = "Catch a pet in the Launch Hall"
@@ -478,7 +481,8 @@ render = function()
 		if activeKey ~= a.id then
 			activeKey = a.id
 			clear(activePortrait)
-			portrait(activePortrait, { c = a.creature, v = a.v }, UDim2.fromScale(1, 1))
+			local scout = portrait(activePortrait, { c = a.creature, v = a.v }, UDim2.fromScale(1, 1))
+			K.Motion.Enter(scout, UDim2.new(), UDim2.fromOffset(0, 4))
 			clear(activeSceneFrame)
 			activeSceneModel = Scene.Build(a.world)
 			-- The scout itself fights on the map: parent it before the viewport bakes/anchors welds.
@@ -493,6 +497,7 @@ render = function()
 			vp.Name = "ActiveBiomePreview"
 			vp.Parent = activeSceneFrame
 			vp.CurrentCamera.CFrame = CFrame.lookAt(Vector3.new(-25, 21, -29), Vector3.new(0, 1, 0))
+			K.Motion.Enter(vp, UDim2.new(), UDim2.fromOffset(0, 6))
 			fightCtx, fightView = nil, nil
 			local plan = battlePlanFor(a)
 			if plan then
@@ -588,7 +593,7 @@ function Panel.Init()
 	)
 	sceneFrame = K.new(
 		"Frame",
-		{ Name = "BiomeScene", Size = UDim2.new(0.3, -12, 1, -34), BackgroundTransparency = 1, Parent = planning }
+		{ Name = "BiomeScene", Size = UDim2.new(0.3, -12, 1, -34), BackgroundTransparency = 1, ClipsDescendants = true, Parent = planning }
 	)
 	relicLink = K.button(
 		"Relics 0 / 8",
@@ -622,6 +627,7 @@ function Panel.Init()
 				return
 			end
 			routeIndex = ((routeIndex - 1 + def[1]) % #routes) + 1
+			routeDirection = def[1]
 			message("")
 			updateSelection()
 		end)
@@ -674,7 +680,7 @@ function Panel.Init()
 	)
 	activePortrait = K.new(
 		"Frame",
-		{ Name = "AwayPet", Size = UDim2.new(0.28, 0, 1, -20), BackgroundTransparency = 1, Parent = activeBox }
+		{ Name = "AwayPet", Size = UDim2.new(0.28, 0, 1, -20), BackgroundTransparency = 1, ClipsDescendants = true, Parent = activeBox }
 	)
 	activeTitle = K.text(activeBox, "", 0, 0, -8, 30, 22, T.Text, true)
 	activeTitle.Position = UDim2.fromScale(0.32, 0)
@@ -799,13 +805,13 @@ function Panel.Init()
 	trackerFill = K.new("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = T.Gold, Parent = tiny })
 	K.bind(tracker, Panel.Open)
 	miniMap = Mini.Create(HUD.Root.Gameplay, Panel.Open)
-	selectedHero = K.new("Frame", { Name = "SelectedScout", BackgroundTransparency = 1, Parent = right })
+	selectedHero = K.new("Frame", { Name = "SelectedScout", BackgroundTransparency = 1, ClipsDescendants = true, Parent = right })
 	petMeta = K.text(right, "", 0, 0, -4, 22, 13, T.Muted)
 	relicHint = K.text(right, "", 0, 0, -4, 20, 13, T.Muted)
 	routeCaption = K.text(planning, "", 0, 0, -4, 38, 14, T.Muted)
 	rewardCaption = K.text(right, "Recovered coins", 0, 0, -4, 20, 13, T.Muted)
 	scoutCaption = K.text(right, "Choose your scout", 0, 0, -4, 22, 15, T.Text, true)
-	activeSceneFrame = K.new("Frame", { Name = "JourneyMap", BackgroundTransparency = 1, Parent = activeBox })
+	activeSceneFrame = K.new("Frame", { Name = "JourneyMap", BackgroundTransparency = 1, ClipsDescendants = true, Parent = activeBox })
 	activeMapCaption = K.text(activeBox, "Your scout battles the biome's monsters on the way to the relic.", 0, 0, -4, 30, 14, T.Muted)
 	journeyCaption = K.text(activeBox, "Departing", 0, 0, -4, 24, 16, T.Success, true)
 	journeyLabels = {}

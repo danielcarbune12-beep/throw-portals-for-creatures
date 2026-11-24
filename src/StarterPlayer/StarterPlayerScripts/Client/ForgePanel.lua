@@ -15,6 +15,24 @@ local ready, target, selectedKey, selected, groups = false, "Gold", nil, {}, {}
 local armed, busy, pendingId, detailMode, previewKey = false, false, nil, false, nil
 local panel, catalogue, detail, copies, copiesLayout, previewHost, nameLabel, hint, action, back, gold, ruby
 local groupButtons, copyButtons, prompts = {}, {}, {}
+local result, awaitingResultId, lastAnimatedResult
+
+local function readResult()
+	local receipt = State.Data.LastForge
+	if awaitingResultId and receipt and receipt.id == awaitingResultId then
+		result, awaitingResultId = receipt, nil
+		selectedKey, selected, detailMode = nil, {}, true
+	end
+	return result
+end
+
+local function forgeResponse(id, ok, message)
+	local receipt = State.Data.LastForge
+	if receipt and receipt.id == id then
+		return true, receipt.message, receipt.succeeded
+	end
+	return ok, message, nil
+end
 
 local function isAway(uid)
 	local active = State.Data.Expeditions and State.Data.Expeditions.active
@@ -80,6 +98,12 @@ local function updateSelection()
 		)
 	K.setEnabled(action, not busy and group ~= nil and chance ~= nil)
 	back.Label.Text = armed and "Cancel" or "Matching pets"
+	if result then
+		hint.Text = result.message
+		hint.TextColor3 = result.succeeded and T.Success or T.Danger
+		action.Label.Text = "Choose matching pets"
+		K.setEnabled(action, not busy)
+	end
 end
 
 local render
@@ -88,6 +112,7 @@ local function choose(group)
 		return
 	end
 	selectedKey, selected, detailMode = group.key, {}, true
+	result, awaitingResultId = nil, nil
 	for i = 1, math.min(5, #group.pets) do
 		selected[group.pets[i].u] = true
 	end
@@ -100,6 +125,7 @@ render = function()
 		return
 	end
 	local data = State.Data
+	readResult()
 	local byKey, eligible = {}, {}
 	groups = {}
 	for _, pet in ipairs(data.Creatures) do
@@ -169,7 +195,7 @@ render = function()
 		table.insert(groupButtons, empty)
 	end
 	local group = selectedGroup()
-	if not group then
+	if not group and not result then
 		selectedKey, selected, detailMode = nil, {}, false
 	end
 	gold:SetAttribute("Selected", target == "Gold")
@@ -181,10 +207,31 @@ render = function()
 	nameLabel.Text = group and (Variants.Prefix(group.pet.s, target) .. Data.ById[group.pet.c].name)
 		or "Choose a matching species"
 	local key = group and group.key .. ":" .. target or ""
+	if result then
+		local species = Data.ById[result.species]
+		nameLabel.Text = result.succeeded and (result.target .. " " .. (species and species.name or "pet"))
+			or "Forge unsuccessful"
+		key = "receipt:" .. result.id
+	end
 	if key ~= previewKey then
 		previewKey = key
 		previewHost:ClearAllChildren()
-		if group then
+		if result and result.succeeded and Data.ById[result.species] then
+			local vp = K.viewport(
+				Renderer.BuildPreview(result.species, result.target),
+				UDim2.fromScale(1, 1),
+				false,
+				false,
+				true
+			)
+			vp.Name, vp.Parent = "ForgedPet", previewHost
+			if HUD.IsOpen("Forge") and lastAnimatedResult ~= result.id then
+				lastAnimatedResult = result.id
+				K.Motion.Enter(vp, UDim2.new(), UDim2.fromOffset(0, 6))
+			end
+		elseif result then
+			K.label("Forge cooled", UDim2.fromScale(1, 1), T.Muted, { TextSize = 14, Parent = previewHost })
+		elseif group then
 			K.viewport(Renderer.BuildPreview(group.pet.c, target), UDim2.fromScale(1, 1), false, false, true).Parent =
 				previewHost
 		end
@@ -227,6 +274,7 @@ function Panel.Open(nextTarget)
 		return
 	end
 	target = Rules.Input[nextTarget] ~= nil and nextTarget or "Gold"
+	result, awaitingResultId = nil, nil
 	selectedKey, selected, detailMode = nil, {}, false
 	resetConfirmation()
 	HUD.Open("Forge")
@@ -263,6 +311,7 @@ function Panel.Init()
 				return
 			end
 			target = item[2]
+			result, awaitingResultId = nil, nil
 			selectedKey, selected, detailMode = nil, {}, false
 			resetConfirmation()
 			render()
@@ -291,12 +340,14 @@ function Panel.Init()
 			return
 		end
 		resetConfirmation()
+		result, awaitingResultId = nil, nil
 		detailMode = false
 		render()
 	end)
 	nameLabel = K.text(detail, "", 0, 0, 0, 28, 21, T.Text, true)
 	nameLabel.FontFace = T.TitleFace
-	previewHost = K.new("Frame", { Name = "OutputPreview", BackgroundTransparency = 1, Parent = detail })
+	previewHost =
+		K.new("Frame", { Name = "OutputPreview", BackgroundTransparency = 1, ClipsDescendants = true, Parent = detail })
 	copies = K.new("ScrollingFrame", {
 		Name = "SelectedCopies",
 		BackgroundTransparency = 1,
@@ -316,6 +367,13 @@ function Panel.Init()
 		{ Name = "ConfirmForge", AnchorPoint = Vector2.new(0, 1), Position = UDim2.fromScale(0, 1), Parent = detail }
 	)
 	K.bind(action, function()
+		if result and not busy then
+			result, awaitingResultId = nil, nil
+			selectedKey, selected, detailMode = nil, {}, false
+			resetConfirmation()
+			render()
+			return
+		end
 		if busy or not Rules.Chances[#selection()] then
 			return
 		end
@@ -328,16 +386,19 @@ function Panel.Init()
 		busy = true
 		updateSelection()
 		local ok, message = State.Request("Forge", Http:JSONEncode(request))
+		local succeeded
+		ok, message, succeeded = forgeResponse(request.id, ok, message)
 		busy = false
 		-- Retain the id on network failure: retrying can recover a committed result.
 		if ok then
+			awaitingResultId = request.id
 			resetConfirmation()
 			selected = {}
 		end
 		HUD.SetPanelMessage(
 			"Forge",
 			message or "Could not forge. Try again.",
-			ok and (State.Data.LastForge and State.Data.LastForge.succeeded and T.Success or T.Danger) or T.Danger
+			not ok and T.Danger or (succeeded == nil and T.Muted or (succeeded and T.Success or T.Danger))
 		)
 		render()
 	end)
@@ -391,19 +452,20 @@ function Panel.Init()
 			end
 		end
 		hint.Position = compact and UDim2.fromOffset(0, 68) or UDim2.new(0, 0, 1, -105)
-		hint.Size = UDim2.new(1, 0, 0, compact and 18 or 56)
+		hint.Size = UDim2.new(1, 0, 0, compact and 36 or 56)
 		hint.TextSize = compact and 11 or 14
 		action.Size = UDim2.new(1, 0, 0, compact and 40 or 44)
 	end
 	-- HUD already routes state updates to the open panel. Money-only updates do not
 	-- change recipes; rebuilding both lists also resets their scroll/focus unnecessarily.
 	panel.refresh = function(full)
-		if full ~= false then
+		if full ~= false or awaitingResultId then
 			render()
 		end
 	end
 	panel.onClose = function()
 		resetConfirmation()
+		result, awaitingResultId = nil, nil
 	end
 	ready = true
 	local function attach()

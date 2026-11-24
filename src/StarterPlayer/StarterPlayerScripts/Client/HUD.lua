@@ -13,7 +13,6 @@ local T = K.Theme
 local Sky = require(script.Parent.SkyforgeUI)
 local Craft = require(script.Parent.SanctuaryUI)
 local State = require(script.Parent.ClientState)
-local Settings = require(script.Parent.ClientSettings)
 local Effects = require(script.Parent.Effects)
 local HUD = { Panels = {}, SideButtons = {}, InZone = false, TrainHeld = false, AutoTrain = false }
 local player = Players.LocalPlayer
@@ -33,7 +32,9 @@ local capacityWarning = K.button("Pets full · Manage pets or visit the forge", 
 	Name = "PetCapacityWarning", AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 12), Visible = false, Parent = world,
 })
 capacityWarning.Label.TextSize = 14
-K.bind(capacityWarning, function() HUD.Open("Creatures") end)
+K.bind(capacityWarning, function()
+	HUD.Open("Creatures")
+end)
 local top = K.new("Frame", { Name = "Resources", BackgroundTransparency = 1, Parent = world })
 local stats = {}
 local function stat(key, icon, caption, accent)
@@ -341,6 +342,7 @@ function HUD.Open(name)
 		HUD.TC.StopFollow(true)
 	end
 	if openPanel then
+		K.Motion.Cancel(openPanel.frame)
 		openPanel.frame.Visible = false
 		if openPanel.onClose then
 			openPanel.onClose()
@@ -378,8 +380,7 @@ function HUD.Open(name)
 	end)
 
 	local target = p.targetPosition or UDim2.fromScale(0.5, 0.5)
-	p.frame.Position = target + UDim2.fromOffset(0, Settings.ReducedMotion and 0 or 8)
-	K.tween(p.frame, 0.18, { Position = target })
+	K.Motion.Enter(p.frame, target, UDim2.fromOffset(0, p.contextual and 12 or 8))
 	if Input.GamepadEnabled then
 		GuiService.SelectedObject = p.close
 	end
@@ -399,6 +400,7 @@ function HUD.Close()
 		HUD.TC.InputBlocked = false
 	end
 	HUD.SetPanelMessage(old.name, "")
+	K.Motion.Cancel(old.frame)
 	old.frame.Visible = false
 	dim.Visible = false
 	world.Visible = true
@@ -493,6 +495,7 @@ local function rescale()
 	launch.Position = Input.TouchEnabled and UDim2.new(0.5, -launch.Size.X.Offset / 2, 1, -110)
 		or UDim2.new(1, -370, 1, -182)
 	for _, p in pairs(HUD.Panels) do
+		K.Motion.Cancel(p.frame)
 		p.frame.Size = UDim2.fromOffset(math.min(1060, width - 24), math.min(680, height - 24))
 		p.compact = p.frame.Size.X.Offset < 760 or p.frame.Size.Y.Offset < 460
 		p.title.TextSize = p.compact and 22 or 26
@@ -500,6 +503,7 @@ local function rescale()
 		if p.layout then
 			p.layout()
 		end
+		p.frame.Position = p.targetPosition or UDim2.fromScale(0.5, 0.5)
 	end
 end
 HUD.Rescale = rescale

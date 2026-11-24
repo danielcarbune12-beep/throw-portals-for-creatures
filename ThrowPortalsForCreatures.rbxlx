@@ -23167,7 +23167,7 @@ return L
 ]]></ProtectedString></Properties></Item>
 </Item>
 </Item>
-<Item class="StarterPlayer" referent="RBX121"><Properties><string name="Name">StarterPlayer</string></Properties>
+<Item class="StarterPlayer" referent="RBX122"><Properties><string name="Name">StarterPlayer</string></Properties>
 <Item class="StarterPlayerScripts" referent="RBX75"><Properties><string name="Name">StarterPlayerScripts</string></Properties>
 <Item class="Folder" referent="RBX76"><Properties><string name="Name">Client</string></Properties>
 <Item class="ModuleScript" referent="RBX77"><Properties><string name="Name">CaughtPresentation</string><ProtectedString name="Source"><![CDATA[-- A brief bestiary slip for discoveries and Rare+ catches. Routine catches stay quiet.
@@ -26935,6 +26935,7 @@ local Panel = {}
 local player = Players.LocalPlayer
 local ready, busy = false, false
 local selectedUid, routeIndex = nil, 1
+local routeDirection = 1
 local manualSelection, routeInitialized = false, false
 local activeHint
 local lastView, serverClock, localClock = nil, 0, 0
@@ -27283,6 +27284,7 @@ updateSelection = function()
 			vp.Name = "BiomePreview"
 			vp.Parent = sceneFrame
 			vp.CurrentCamera.CFrame = CFrame.lookAt(Vector3.new(-25, 21, -29), Vector3.new(0, 1, 0))
+			K.Motion.Enter(vp, UDim2.new(), UDim2.fromOffset(routeDirection * 6, 0))
 		end
 	end
 	local count = 0
@@ -27312,7 +27314,8 @@ updateSelection = function()
 		if selectedHeroKey ~= key then
 			selectedHeroKey = key
 			clear(selectedHero)
-			portrait(selectedHero, p, UDim2.fromScale(1, 1))
+			local vp = portrait(selectedHero, p, UDim2.fromScale(1, 1))
+			K.Motion.Enter(vp, UDim2.new(), UDim2.fromOffset(0, 4))
 		end
 	else
 		petMeta.Text = "Catch a pet in the Launch Hall"
@@ -27389,7 +27392,8 @@ render = function()
 		if activeKey ~= a.id then
 			activeKey = a.id
 			clear(activePortrait)
-			portrait(activePortrait, { c = a.creature, v = a.v }, UDim2.fromScale(1, 1))
+			local scout = portrait(activePortrait, { c = a.creature, v = a.v }, UDim2.fromScale(1, 1))
+			K.Motion.Enter(scout, UDim2.new(), UDim2.fromOffset(0, 4))
 			clear(activeSceneFrame)
 			activeSceneModel = Scene.Build(a.world)
 			-- The scout itself fights on the map: parent it before the viewport bakes/anchors welds.
@@ -27404,6 +27408,7 @@ render = function()
 			vp.Name = "ActiveBiomePreview"
 			vp.Parent = activeSceneFrame
 			vp.CurrentCamera.CFrame = CFrame.lookAt(Vector3.new(-25, 21, -29), Vector3.new(0, 1, 0))
+			K.Motion.Enter(vp, UDim2.new(), UDim2.fromOffset(0, 6))
 			fightCtx, fightView = nil, nil
 			local plan = battlePlanFor(a)
 			if plan then
@@ -27499,7 +27504,7 @@ function Panel.Init()
 	)
 	sceneFrame = K.new(
 		"Frame",
-		{ Name = "BiomeScene", Size = UDim2.new(0.3, -12, 1, -34), BackgroundTransparency = 1, Parent = planning }
+		{ Name = "BiomeScene", Size = UDim2.new(0.3, -12, 1, -34), BackgroundTransparency = 1, ClipsDescendants = true, Parent = planning }
 	)
 	relicLink = K.button(
 		"Relics 0 / 8",
@@ -27533,6 +27538,7 @@ function Panel.Init()
 				return
 			end
 			routeIndex = ((routeIndex - 1 + def[1]) % #routes) + 1
+			routeDirection = def[1]
 			message("")
 			updateSelection()
 		end)
@@ -27585,7 +27591,7 @@ function Panel.Init()
 	)
 	activePortrait = K.new(
 		"Frame",
-		{ Name = "AwayPet", Size = UDim2.new(0.28, 0, 1, -20), BackgroundTransparency = 1, Parent = activeBox }
+		{ Name = "AwayPet", Size = UDim2.new(0.28, 0, 1, -20), BackgroundTransparency = 1, ClipsDescendants = true, Parent = activeBox }
 	)
 	activeTitle = K.text(activeBox, "", 0, 0, -8, 30, 22, T.Text, true)
 	activeTitle.Position = UDim2.fromScale(0.32, 0)
@@ -27710,13 +27716,13 @@ function Panel.Init()
 	trackerFill = K.new("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = T.Gold, Parent = tiny })
 	K.bind(tracker, Panel.Open)
 	miniMap = Mini.Create(HUD.Root.Gameplay, Panel.Open)
-	selectedHero = K.new("Frame", { Name = "SelectedScout", BackgroundTransparency = 1, Parent = right })
+	selectedHero = K.new("Frame", { Name = "SelectedScout", BackgroundTransparency = 1, ClipsDescendants = true, Parent = right })
 	petMeta = K.text(right, "", 0, 0, -4, 22, 13, T.Muted)
 	relicHint = K.text(right, "", 0, 0, -4, 20, 13, T.Muted)
 	routeCaption = K.text(planning, "", 0, 0, -4, 38, 14, T.Muted)
 	rewardCaption = K.text(right, "Recovered coins", 0, 0, -4, 20, 13, T.Muted)
 	scoutCaption = K.text(right, "Choose your scout", 0, 0, -4, 22, 15, T.Text, true)
-	activeSceneFrame = K.new("Frame", { Name = "JourneyMap", BackgroundTransparency = 1, Parent = activeBox })
+	activeSceneFrame = K.new("Frame", { Name = "JourneyMap", BackgroundTransparency = 1, ClipsDescendants = true, Parent = activeBox })
 	activeMapCaption = K.text(activeBox, "Your scout battles the biome's monsters on the way to the relic.", 0, 0, -4, 30, 14, T.Muted)
 	journeyCaption = K.text(activeBox, "Departing", 0, 0, -4, 24, 16, T.Success, true)
 	journeyLabels = {}
@@ -28669,6 +28675,24 @@ local ready, target, selectedKey, selected, groups = false, "Gold", nil, {}, {}
 local armed, busy, pendingId, detailMode, previewKey = false, false, nil, false, nil
 local panel, catalogue, detail, copies, copiesLayout, previewHost, nameLabel, hint, action, back, gold, ruby
 local groupButtons, copyButtons, prompts = {}, {}, {}
+local result, awaitingResultId, lastAnimatedResult
+
+local function readResult()
+	local receipt = State.Data.LastForge
+	if awaitingResultId and receipt and receipt.id == awaitingResultId then
+		result, awaitingResultId = receipt, nil
+		selectedKey, selected, detailMode = nil, {}, true
+	end
+	return result
+end
+
+local function forgeResponse(id, ok, message)
+	local receipt = State.Data.LastForge
+	if receipt and receipt.id == id then
+		return true, receipt.message, receipt.succeeded
+	end
+	return ok, message, nil
+end
 
 local function isAway(uid)
 	local active = State.Data.Expeditions and State.Data.Expeditions.active
@@ -28734,6 +28758,12 @@ local function updateSelection()
 		)
 	K.setEnabled(action, not busy and group ~= nil and chance ~= nil)
 	back.Label.Text = armed and "Cancel" or "Matching pets"
+	if result then
+		hint.Text = result.message
+		hint.TextColor3 = result.succeeded and T.Success or T.Danger
+		action.Label.Text = "Choose matching pets"
+		K.setEnabled(action, not busy)
+	end
 end
 
 local render
@@ -28742,6 +28772,7 @@ local function choose(group)
 		return
 	end
 	selectedKey, selected, detailMode = group.key, {}, true
+	result, awaitingResultId = nil, nil
 	for i = 1, math.min(5, #group.pets) do
 		selected[group.pets[i].u] = true
 	end
@@ -28754,6 +28785,7 @@ render = function()
 		return
 	end
 	local data = State.Data
+	readResult()
 	local byKey, eligible = {}, {}
 	groups = {}
 	for _, pet in ipairs(data.Creatures) do
@@ -28823,7 +28855,7 @@ render = function()
 		table.insert(groupButtons, empty)
 	end
 	local group = selectedGroup()
-	if not group then
+	if not group and not result then
 		selectedKey, selected, detailMode = nil, {}, false
 	end
 	gold:SetAttribute("Selected", target == "Gold")
@@ -28835,10 +28867,31 @@ render = function()
 	nameLabel.Text = group and (Variants.Prefix(group.pet.s, target) .. Data.ById[group.pet.c].name)
 		or "Choose a matching species"
 	local key = group and group.key .. ":" .. target or ""
+	if result then
+		local species = Data.ById[result.species]
+		nameLabel.Text = result.succeeded and (result.target .. " " .. (species and species.name or "pet"))
+			or "Forge unsuccessful"
+		key = "receipt:" .. result.id
+	end
 	if key ~= previewKey then
 		previewKey = key
 		previewHost:ClearAllChildren()
-		if group then
+		if result and result.succeeded and Data.ById[result.species] then
+			local vp = K.viewport(
+				Renderer.BuildPreview(result.species, result.target),
+				UDim2.fromScale(1, 1),
+				false,
+				false,
+				true
+			)
+			vp.Name, vp.Parent = "ForgedPet", previewHost
+			if HUD.IsOpen("Forge") and lastAnimatedResult ~= result.id then
+				lastAnimatedResult = result.id
+				K.Motion.Enter(vp, UDim2.new(), UDim2.fromOffset(0, 6))
+			end
+		elseif result then
+			K.label("Forge cooled", UDim2.fromScale(1, 1), T.Muted, { TextSize = 14, Parent = previewHost })
+		elseif group then
 			K.viewport(Renderer.BuildPreview(group.pet.c, target), UDim2.fromScale(1, 1), false, false, true).Parent =
 				previewHost
 		end
@@ -28881,6 +28934,7 @@ function Panel.Open(nextTarget)
 		return
 	end
 	target = Rules.Input[nextTarget] ~= nil and nextTarget or "Gold"
+	result, awaitingResultId = nil, nil
 	selectedKey, selected, detailMode = nil, {}, false
 	resetConfirmation()
 	HUD.Open("Forge")
@@ -28917,6 +28971,7 @@ function Panel.Init()
 				return
 			end
 			target = item[2]
+			result, awaitingResultId = nil, nil
 			selectedKey, selected, detailMode = nil, {}, false
 			resetConfirmation()
 			render()
@@ -28945,12 +29000,14 @@ function Panel.Init()
 			return
 		end
 		resetConfirmation()
+		result, awaitingResultId = nil, nil
 		detailMode = false
 		render()
 	end)
 	nameLabel = K.text(detail, "", 0, 0, 0, 28, 21, T.Text, true)
 	nameLabel.FontFace = T.TitleFace
-	previewHost = K.new("Frame", { Name = "OutputPreview", BackgroundTransparency = 1, Parent = detail })
+	previewHost =
+		K.new("Frame", { Name = "OutputPreview", BackgroundTransparency = 1, ClipsDescendants = true, Parent = detail })
 	copies = K.new("ScrollingFrame", {
 		Name = "SelectedCopies",
 		BackgroundTransparency = 1,
@@ -28970,6 +29027,13 @@ function Panel.Init()
 		{ Name = "ConfirmForge", AnchorPoint = Vector2.new(0, 1), Position = UDim2.fromScale(0, 1), Parent = detail }
 	)
 	K.bind(action, function()
+		if result and not busy then
+			result, awaitingResultId = nil, nil
+			selectedKey, selected, detailMode = nil, {}, false
+			resetConfirmation()
+			render()
+			return
+		end
 		if busy or not Rules.Chances[#selection()] then
 			return
 		end
@@ -28982,16 +29046,19 @@ function Panel.Init()
 		busy = true
 		updateSelection()
 		local ok, message = State.Request("Forge", Http:JSONEncode(request))
+		local succeeded
+		ok, message, succeeded = forgeResponse(request.id, ok, message)
 		busy = false
 		-- Retain the id on network failure: retrying can recover a committed result.
 		if ok then
+			awaitingResultId = request.id
 			resetConfirmation()
 			selected = {}
 		end
 		HUD.SetPanelMessage(
 			"Forge",
 			message or "Could not forge. Try again.",
-			ok and (State.Data.LastForge and State.Data.LastForge.succeeded and T.Success or T.Danger) or T.Danger
+			not ok and T.Danger or (succeeded == nil and T.Muted or (succeeded and T.Success or T.Danger))
 		)
 		render()
 	end)
@@ -29045,19 +29112,20 @@ function Panel.Init()
 			end
 		end
 		hint.Position = compact and UDim2.fromOffset(0, 68) or UDim2.new(0, 0, 1, -105)
-		hint.Size = UDim2.new(1, 0, 0, compact and 18 or 56)
+		hint.Size = UDim2.new(1, 0, 0, compact and 36 or 56)
 		hint.TextSize = compact and 11 or 14
 		action.Size = UDim2.new(1, 0, 0, compact and 40 or 44)
 	end
 	-- HUD already routes state updates to the open panel. Money-only updates do not
 	-- change recipes; rebuilding both lists also resets their scroll/focus unnecessarily.
 	panel.refresh = function(full)
-		if full ~= false then
+		if full ~= false or awaitingResultId then
 			render()
 		end
 	end
 	panel.onClose = function()
 		resetConfirmation()
+		result, awaitingResultId = nil, nil
 	end
 	ready = true
 	local function attach()
@@ -29330,7 +29398,6 @@ local T = K.Theme
 local Sky = require(script.Parent.SkyforgeUI)
 local Craft = require(script.Parent.SanctuaryUI)
 local State = require(script.Parent.ClientState)
-local Settings = require(script.Parent.ClientSettings)
 local Effects = require(script.Parent.Effects)
 local HUD = { Panels = {}, SideButtons = {}, InZone = false, TrainHeld = false, AutoTrain = false }
 local player = Players.LocalPlayer
@@ -29350,7 +29417,9 @@ local capacityWarning = K.button("Pets full · Manage pets or visit the forge", 
 	Name = "PetCapacityWarning", AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 12), Visible = false, Parent = world,
 })
 capacityWarning.Label.TextSize = 14
-K.bind(capacityWarning, function() HUD.Open("Creatures") end)
+K.bind(capacityWarning, function()
+	HUD.Open("Creatures")
+end)
 local top = K.new("Frame", { Name = "Resources", BackgroundTransparency = 1, Parent = world })
 local stats = {}
 local function stat(key, icon, caption, accent)
@@ -29658,6 +29727,7 @@ function HUD.Open(name)
 		HUD.TC.StopFollow(true)
 	end
 	if openPanel then
+		K.Motion.Cancel(openPanel.frame)
 		openPanel.frame.Visible = false
 		if openPanel.onClose then
 			openPanel.onClose()
@@ -29695,8 +29765,7 @@ function HUD.Open(name)
 	end)
 
 	local target = p.targetPosition or UDim2.fromScale(0.5, 0.5)
-	p.frame.Position = target + UDim2.fromOffset(0, Settings.ReducedMotion and 0 or 8)
-	K.tween(p.frame, 0.18, { Position = target })
+	K.Motion.Enter(p.frame, target, UDim2.fromOffset(0, p.contextual and 12 or 8))
 	if Input.GamepadEnabled then
 		GuiService.SelectedObject = p.close
 	end
@@ -29716,6 +29785,7 @@ function HUD.Close()
 		HUD.TC.InputBlocked = false
 	end
 	HUD.SetPanelMessage(old.name, "")
+	K.Motion.Cancel(old.frame)
 	old.frame.Visible = false
 	dim.Visible = false
 	world.Visible = true
@@ -29810,6 +29880,7 @@ local function rescale()
 	launch.Position = Input.TouchEnabled and UDim2.new(0.5, -launch.Size.X.Offset / 2, 1, -110)
 		or UDim2.new(1, -370, 1, -182)
 	for _, p in pairs(HUD.Panels) do
+		K.Motion.Cancel(p.frame)
 		p.frame.Size = UDim2.fromOffset(math.min(1060, width - 24), math.min(680, height - 24))
 		p.compact = p.frame.Size.X.Offset < 760 or p.frame.Size.Y.Offset < 460
 		p.title.TextSize = p.compact and 22 or 26
@@ -29817,6 +29888,7 @@ local function rescale()
 		if p.layout then
 			p.layout()
 		end
+		p.frame.Position = p.targetPosition or UDim2.fromScale(0.5, 0.5)
 	end
 end
 HUD.Rescale = rescale
@@ -36266,8 +36338,9 @@ local Settings = require(script.Parent.ClientSettings)
 local T = require(script.Parent.UITheme)
 local Craft = require(script.Parent.SanctuaryUI)
 local Icons = require(script.Parent.UIIcons)
+local Motion = require(script.Parent.UIMotion)
 local Builder = require(game:GetService("ReplicatedStorage").Shared.CreatureBuilder)
-local K = { Font = T.Font, Dark = T.Ink, Panel = T.Panel, Theme = T, Icon = Icons.Draw }
+local K = { Font = T.Font, Dark = T.Ink, Panel = T.Panel, Theme = T, Icon = Icons.Draw, Motion = Motion }
 function K.new(class, props, children)
 	local o = Instance.new(class)
 	if o:IsA("GuiObject") then
@@ -36390,36 +36463,7 @@ function K.button(text, c1, _c2, size, props)
 	for k, v in pairs(props or {}) do
 		b[k] = v
 	end
-	local function focus(on)
-		local st = b:FindFirstChildOfClass("UIStroke")
-		local highlighted = on or b:GetAttribute("Selected")
-		st.Color = highlighted and T.Gold or T.Border
-		st.Thickness = highlighted and 2 or 1
-		st.Transparency = b:GetAttribute("GatefoldLeaf") and (highlighted and 0 or 1) or 0
-	end
-	b.MouseEnter:Connect(function()
-		if b:GetAttribute("Enabled") then
-			focus(true)
-		end
-	end)
-	b.MouseLeave:Connect(function()
-		focus(false)
-		K.tween(scale, 0.1, { Scale = 1 })
-	end)
-	b.SelectionGained:Connect(function()
-		focus(true)
-	end)
-	b.SelectionLost:Connect(function()
-		focus(false)
-	end)
-	b.MouseButton1Down:Connect(function()
-		if b:GetAttribute("Enabled") then
-			K.tween(scale, 0.08, { Scale = 0.98 })
-		end
-	end)
-	b.MouseButton1Up:Connect(function()
-		K.tween(scale, 0.12, { Scale = 1 })
-	end)
+	Motion.Button(b, scale, b:FindFirstChildOfClass("UIStroke"))
 	b.Activated:Connect(function()
 		if b:GetAttribute("Enabled") then
 			Sounds.Play("Click")
@@ -36653,7 +36697,162 @@ end
 
 return K
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX119"><Properties><string name="Name">UITheme</string><ProtectedString name="Source"><![CDATA[-- Sanctuary UI tokens, shared by the HUD, icons and every shop.
+<Item class="ModuleScript" referent="RBX119"><Properties><string name="Name">UIMotion</string><ProtectedString name="Source"><![CDATA[-- Short, interruptible interface motion. No render loop or delayed gameplay actions.
+local TweenService = game:GetService("TweenService")
+local Settings = require(script.Parent.ClientSettings)
+local Theme = require(script.Parent.UITheme)
+local Motion = {}
+local active = setmetatable({}, { __mode = "k" })
+local buttons = setmetatable({}, { __mode = "k" })
+
+function Motion.Cancel(object)
+	local record = active[object]
+	if record then
+		active[object] = nil
+		record.connection:Disconnect()
+		record.tween:Cancel()
+	end
+end
+
+function Motion.To(object, duration, goal)
+	Motion.Cancel(object)
+	if Settings.ReducedMotion then
+		for key, value in goal do
+			object[key] = value
+		end
+		return
+	end
+	local tween = TweenService:Create(
+		object,
+		TweenInfo.new(math.min(duration, 0.25), Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+		goal
+	)
+	local record = { tween = tween, goal = goal }
+	active[object] = record
+	record.connection = tween.Completed:Connect(function()
+		if active[object] == record then
+			active[object] = nil
+		end
+		record.connection:Disconnect()
+	end)
+	tween:Play()
+	return tween
+end
+
+function Motion.Enter(object, target, offset)
+	Motion.Cancel(object)
+	object.Position = Settings.ReducedMotion and target or target + offset
+	Motion.To(object, 0.18, { Position = target })
+end
+
+function Motion.Button(button, scale, stroke)
+	local hovering, focused, pressed = false, false, false
+	local inputConnection
+	local connections = {}
+	local function releaseInput()
+		if inputConnection then
+			inputConnection:Disconnect()
+			inputConnection = nil
+		end
+		pressed = false
+	end
+	local function refresh()
+		local enabled = button:GetAttribute("Enabled") and not button:GetAttribute("Busy")
+		local highlighted = enabled and (hovering or focused) or button:GetAttribute("Selected") == true
+		Motion.To(
+			scale,
+			pressed and enabled and 0.07 or 0.14,
+			{ Scale = pressed and enabled and not Settings.ReducedMotion and 0.975 or 1 }
+		)
+		Motion.To(stroke, 0.12, {
+			Color = highlighted and Theme.Gold or Theme.Border,
+			Thickness = highlighted and 2 or 1,
+			Transparency = button:GetAttribute("GatefoldLeaf") and (highlighted and 0 or 1) or 0,
+		})
+	end
+	local function connect(signal, fn)
+		table.insert(connections, signal:Connect(fn))
+	end
+	connect(button.MouseEnter, function()
+		hovering = true
+		refresh()
+	end)
+	connect(button.MouseLeave, function()
+		hovering = false
+		releaseInput()
+		refresh()
+	end)
+	connect(button.SelectionGained, function()
+		focused = true
+		refresh()
+	end)
+	connect(button.SelectionLost, function()
+		focused = false
+		releaseInput()
+		refresh()
+	end)
+	connect(button.InputBegan, function(input)
+		local activation = input.UserInputType == Enum.UserInputType.MouseButton1
+			or input.UserInputType == Enum.UserInputType.Touch
+			or input.KeyCode == Enum.KeyCode.ButtonA
+			or input.KeyCode == Enum.KeyCode.Return
+			or input.KeyCode == Enum.KeyCode.Space
+		if not activation or not button:GetAttribute("Enabled") or button:GetAttribute("Busy") then
+			return
+		end
+		releaseInput()
+		pressed = true
+		inputConnection = input.Changed:Connect(function()
+			if
+				input.UserInputState == Enum.UserInputState.End
+				or input.UserInputState == Enum.UserInputState.Cancel
+			then
+				releaseInput()
+				refresh()
+			end
+		end)
+		refresh()
+	end)
+	for _, attribute in { "Enabled", "Busy", "Selected", "GatefoldLeaf" } do
+		connect(button:GetAttributeChangedSignal(attribute), function()
+			if not button:GetAttribute("Enabled") or button:GetAttribute("Busy") then
+				releaseInput()
+			end
+			refresh()
+		end)
+	end
+	buttons[button] = refresh
+	connect(button.Destroying, function()
+		buttons[button] = nil
+		releaseInput()
+		Motion.Cancel(scale)
+		Motion.Cancel(stroke)
+		for _, connection in connections do
+			connection:Disconnect()
+		end
+	end)
+end
+
+Settings.Changed.Event:Connect(function(key)
+	if key ~= "ReducedMotion" then
+		return
+	end
+	if Settings.ReducedMotion then
+		for object, record in active do
+			Motion.Cancel(object)
+			for property, value in record.goal do
+				object[property] = value
+			end
+		end
+	end
+	for _, refresh in buttons do
+		refresh()
+	end
+end)
+
+return Motion
+]]></ProtectedString></Properties></Item>
+<Item class="ModuleScript" referent="RBX120"><Properties><string name="Name">UITheme</string><ProtectedString name="Source"><![CDATA[-- Sanctuary UI tokens, shared by the HUD, icons and every shop.
 -- Fonts: Builder Sans for controls and data, Merriweather for sanctuary headings;
 -- resolved with a fallback so an older client without these enums still renders.
 local function font(name, fallback)
@@ -36720,7 +36919,7 @@ function T.Rarity(name, config)
 end
 return T
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX120"><Properties><string name="Name">WorldFx</string><ProtectedString name="Source"><![CDATA[-- WorldFx: ONE shared, staggered scheduler for environment motion on tagged map parts
+<Item class="ModuleScript" referent="RBX121"><Properties><string name="Name">WorldFx</string><ProtectedString name="Source"><![CDATA[-- WorldFx: ONE shared, staggered scheduler for environment motion on tagged map parts
 -- (no per-prop RenderStepped connections, no camera-following particles).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > WorldFx (ModuleScript)
 --

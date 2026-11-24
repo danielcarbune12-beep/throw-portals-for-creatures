@@ -12,6 +12,7 @@ FILES = (
     "IntroReadiness.lua", "QuestPanel.client.lua", "QuestTrackerLayout.lua",
     "ClientMain.client.lua", "FarmClient.client.lua", "MenuWidgets.client.lua", "GameplayFeel.lua",
     "ForgePanel.lua", "ExpeditionPanel.lua", "ExpeditionFight.lua", "ExpeditionMiniMap.lua",
+    "UIMotion.lua", "UIKit.lua", "HUD.lua",
 )
 BASELINE = "7c03f46"
 
