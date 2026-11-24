@@ -13,6 +13,7 @@ local Config = require(ReplicatedStorage.Shared.Config)
 local Format = require(ReplicatedStorage.Shared.Format)
 local State = require(script.Parent.ClientState)
 local T = require(script.Parent.UITheme)
+local Layout = require(script.Parent.QuestTrackerLayout)
 
 local player = Players.LocalPlayer
 local C = Config.Progression
@@ -23,13 +24,18 @@ gui.ResetOnSpawn = false
 gui.DisplayOrder = 8
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = player:WaitForChild("PlayerGui")
+local bounds = Instance.new("Frame")
+bounds.Name = "SafeBounds"
+bounds.Size = UDim2.fromScale(1, 1)
+bounds.BackgroundTransparency = 1
+bounds.Visible = false
+bounds.Parent = gui
 
 local card = Instance.new("Frame")
 card.Name = "Card"
 card.AnchorPoint = Vector2.new(1, 0)
 card.Position = UDim2.new(1, -12, 0, 120)
 card.Size = UDim2.fromOffset(232, 40)
-card.AutomaticSize = Enum.AutomaticSize.Y
 card.BackgroundColor3 = T.Raised
 card.BackgroundTransparency = 0.06
 card.BorderSizePixel = 0
@@ -75,10 +81,17 @@ header.TextColor3 = T.Gold
 header.LayoutOrder = 0
 header.Parent = card
 
-local body = Instance.new("Frame")
+local body = Instance.new("ScrollingFrame")
+body.Name = "QuestBody"
 body.BackgroundTransparency = 1
-body.Size = UDim2.new(1, 0, 0, 0)
-body.AutomaticSize = Enum.AutomaticSize.Y
+body.BorderSizePixel = 0
+body.Size = UDim2.fromScale(1, 0)
+body.CanvasSize = UDim2.new()
+body.AutomaticCanvasSize = Enum.AutomaticSize.Y
+body.ScrollingDirection = Enum.ScrollingDirection.Y
+body.ScrollBarThickness = 3
+body.ScrollBarImageColor3 = T.Gold
+body.VerticalScrollBarInset = Enum.ScrollBarInset.ScrollBar
 body.LayoutOrder = 1
 body.Parent = card
 local bodyList = Instance.new("UIListLayout")
@@ -88,6 +101,7 @@ bodyList.Parent = body
 
 -- Keep one small edge tab available while the entire tracker is hidden.
 local collapsed = player:GetAttribute("TPFC_QuestsCollapsed") == true
+local refresh
 local toggle = Instance.new("TextButton")
 toggle.Name = "QuestToggle"
 toggle.AnchorPoint = Vector2.new(1, 0)
@@ -118,18 +132,36 @@ for _, side in { -1, 1 } do
 	arm.Rotation = -side * 45
 	arm.Parent = arrow
 end
+local layoutKey
+local function applyLayout()
+	local size = bounds.AbsoluteSize
+	local metrics = Layout.Resolve(size.X, size.Y, bodyList.AbsoluteContentSize.Y)
+	local key = table.concat({ metrics.width, metrics.top, metrics.height, tostring(collapsed) }, ":")
+	if key == layoutKey then
+		return
+	end
+	layoutKey = key
+	card.Position = UDim2.new(1, -12, 0, metrics.top)
+	card.Size = UDim2.fromOffset(metrics.width, metrics.height)
+	header.Size = UDim2.new(1, -metrics.headerInset, 0, 24)
+	body.Size = UDim2.new(1, 0, 0, metrics.bodyHeight)
+	toggle.Position = UDim2.new(1, collapsed and metrics.collapsedTabRight or metrics.expandedTabRight, 0, metrics.top)
+end
 local function applyCollapsed()
 	local available = State.Data.Progress ~= nil
 	card.Visible = available and not collapsed
 	toggle.Visible = available
-	toggle.Position = UDim2.new(1, collapsed and -12 or -248, 0, 120)
 	toggle:SetAttribute("Action", collapsed and "Show daily quests" or "Hide daily quests")
 	arrow.Rotation = collapsed and 180 or 0
+	applyLayout()
 end
 local function toggleQuests()
 	collapsed = not collapsed
 	player:SetAttribute("TPFC_QuestsCollapsed", collapsed)
 	applyCollapsed()
+	if not collapsed and refresh then
+		refresh()
+	end
 end
 toggle.Activated:Connect(toggleQuests)
 header.Activated:Connect(toggleQuests)
@@ -144,7 +176,7 @@ for i = 1, 3 do
 	r.Parent = body
 	local t = label("", 16, SANS, T.Text, 1, r)
 	local barBg = Instance.new("Frame")
-	barBg.Position = UDim2.new(0, 0, 0, 21)
+	barBg.Position = UDim2.fromOffset(0, 21)
 	barBg.Size = UDim2.new(1, 0, 0, 6)
 	barBg.BackgroundColor3 = T.Inset
 	barBg.BorderSizePixel = 0
@@ -190,18 +222,25 @@ local rebirthBtn = button("Rebirth", 20, T.Jade)
 local armed = false
 rebirthBtn.MouseButton1Click:Connect(function()
 	local prog = State.Data.Progress
-	if not prog or (State.Data.Money or 0) < (prog.RebirthCost or math.huge) then return end
+	if not prog or (State.Data.Money or 0) < (prog.RebirthCost or math.huge) then
+		return
+	end
 	if not armed then
 		armed = true
 		rebirthBtn.Text = "Confirm: reset money and throw power"
 		task.delay(4, function()
 			armed = false
+			if refresh then
+				refresh()
+			end
 		end)
 		return
 	end
 	armed = false
 	local ok, msg = State.Request("Rebirth")
-	pcall(function() require(script.Parent.HUD).Notify(msg or (ok and "Rebirth!" or "Can't rebirth"), ok and "success" or "error") end)
+	pcall(function()
+		require(script.Parent.HUD).Notify(msg or (ok and "Rebirth!" or "Can't rebirth"), ok and "success" or "error")
+	end)
 end)
 
 -- boosts: only the ones whose ids are configured
@@ -227,11 +266,11 @@ for i, b in ipairs(BOOSTS) do
 	end
 end
 
-local function refresh()
+refresh = function()
 	local d = State.Data
 	local prog = d.Progress
 	applyCollapsed()
-	if not prog then
+	if not prog or collapsed or not gui.Enabled then
 		return
 	end
 	local quests = prog.Daily and prog.Daily.quests or {}
@@ -241,10 +280,17 @@ local function refresh()
 		r.frame.Visible = q ~= nil
 		if q then
 			local def = C.QuestById[q.id]
-			r.text.Text = (q.done and "✓ " or "") .. string.format(def and def.text or q.id, q.goal) .. "  " .. q.progress .. "/" .. q.goal
+			r.text.Text = (q.done and "✓ " or "")
+				.. string.format(def and def.text or q.id, q.goal)
+				.. "  "
+				.. q.progress
+				.. "/"
+				.. q.goal
 			r.text.TextColor3 = q.done and T.Success or T.Text
 			r.bar.Size = UDim2.fromScale(math.clamp(q.progress / q.goal, 0, 1), 1)
-			if q.done then doneCount += 1 end
+			if q.done then
+				doneCount += 1
+			end
 		end
 	end
 	header.Text = "Daily quests  " .. doneCount .. "/" .. #quests
@@ -254,7 +300,13 @@ local function refresh()
 		table.insert(parts, "Rebirth " .. prog.Rebirths)
 	end
 	if (prog.FriendsHere or 0) > 0 then
-		table.insert(parts, math.min(C.Friends.max, prog.FriendsHere) .. " friend(s) +" .. math.floor(math.min(C.Friends.max, prog.FriendsHere) * C.Friends.luckPer * 100) .. "% luck")
+		table.insert(
+			parts,
+			math.min(C.Friends.max, prog.FriendsHere)
+				.. " friend(s) +"
+				.. math.floor(math.min(C.Friends.max, prog.FriendsHere) * C.Friends.luckPer * 100)
+				.. "% luck"
+		)
 	end
 	if (prog.PotionUntil or 0) > os.time() then
 		local left = prog.PotionUntil - os.time()
@@ -264,7 +316,11 @@ local function refresh()
 	local cost = prog.RebirthCost or 0
 	local can = (d.Money or 0) >= cost
 	if not armed then
-		rebirthBtn.Text = can and ("Rebirth now · income ×" .. string.format("%.2f", 1 + ((prog.Rebirths or 0) + 1) * C.Rebirth.incomePer))
+		rebirthBtn.Text = can
+				and ("Rebirth now · income ×" .. string.format(
+					"%.2f",
+					1 + ((prog.Rebirths or 0) + 1) * C.Rebirth.incomePer
+				))
 			or ("Rebirth at " .. Format.Money(cost))
 	end
 	rebirthBtn.BackgroundColor3 = can and T.Jade or T.Border
@@ -275,10 +331,23 @@ local function refresh()
 end
 
 State.Changed:Connect(refresh)
-task.spawn(function()
-	while true do
-		task.wait(1)
+bounds:GetPropertyChangedSignal("AbsoluteSize"):Connect(applyLayout)
+bodyList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(applyLayout)
+gui:GetPropertyChangedSignal("Enabled"):Connect(function()
+	if gui.Enabled then
 		refresh()
+	end
+end)
+task.spawn(function()
+	while gui.Parent do
+		task.wait(1)
+		if not gui.Parent then
+			return
+		end
+		local prog = State.Data.Progress
+		if gui.Enabled and not collapsed and prog and (prog.PotionUntil or 0) > os.time() then
+			refresh()
+		end
 	end
 end)
 refresh()
