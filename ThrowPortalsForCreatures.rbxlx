@@ -4768,11 +4768,11 @@ local Config = require(script.Parent.Config)
 
 local T = {}
 
--- Discoveries come from the saved bestiary, not a timer or session-only flag.
--- Rare and above earn a reveal on every catch; lower tiers earn it once per species.
-function T.ShouldPresent(rarity: string, discovery: boolean): boolean
-	local tier = Config.Rarities[rarity]
-	return (tier ~= nil and tier.order >= 3) or discovery == true
+-- The owner wants every throw to be special: every catch gets the throw cutscene, the portal
+-- reveal and its card, whatever the rarity and whether or not the species is already known.
+-- (`discovery` still decides "NEW SPECIES" vs "ADDED TO PETS" on the card.)
+function T.ShouldPresent(rarity: string, _discovery: boolean): boolean
+	return Config.Rarities[rarity] ~= nil
 end
 
 -- species entrance must END inside this window (seconds after PortalOpened)
@@ -23443,13 +23443,14 @@ local Client = script.Parent
 local State = require(Client.ClientState)
 local Effects = require(Client.Effects)
 local Sounds = require(Client.Sounds)
-local Renderer = require(Client.CreatureRenderer)
-local TC = require(Client.ThrowController)
 local HUD = require(Client.HUD)
--- cover the screen immediately (black + title) so nothing half-loaded shows; the fly-over starts once the map has replicated
+-- cover the screen first (portal + title), before the heavy renderer/throw modules load, so the
+-- intro starts the instant you join; the arrival flight starts once your courtyard is ready
 pcall(function()
 	require(Client.Intro).Cover(HUD.Gui)
 end)
+local Renderer = require(Client.CreatureRenderer)
+local TC = require(Client.ThrowController)
 local Feel = require(Client.GameplayFeel)
 local Panels = require(Client.Panels)
 
@@ -30373,22 +30374,22 @@ end)
 task.defer(rescale)
 return HUD
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX100"><Properties><string name="Name">Intro</string><ProtectedString name="Source"><![CDATA[-- Intro: cinematic fly-over when you join. The camera sweeps down the whole lane (every zone),
--- past the Portal Launch Hall, and lands at your base while the title animates in.
--- Click / tap / any key to skip.
+<Item class="ModuleScript" referent="RBX100"><Properties><string name="Name">Intro</string><ProtectedString name="Source"><![CDATA[-- Intro: the portal arrival you see when you join.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > Intro (ModuleScript)
 --
--- Two stages so it never lags or starts late:
---   Intro.Cover(hud)  runs the moment the client starts: black screen + title, HUD hidden.
---                     The player never sees half-loaded gameplay behind it.
---   Intro.Play(hud)   waits (behind the cover) until the server-built map has finished replicating,
---                     then fades the cover and flies the camera, so the flight isn't fighting
---                     thousands of parts still streaming in.
+--   Intro.Cover(hud)  runs the moment the client starts, entirely in 2D so it never waits on the map:
+--                     a living portal swirls in the middle of the screen and creatures from the game
+--                     burst out of it one after another (black silhouette -> pop into colour, name and
+--                     rarity), while the title slams in and the real loading stages tick along below.
+--   Intro.Play(hud)   once your courtyard, character and save are ready: the portal swallows the
+--                     screen, the camera flies out through a real portal gate in the sky, spirals down
+--                     and lands behind you with a shockwave. About four seconds; click/tap/key skips.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
+local RS = game:GetService("ReplicatedStorage")
 local K = require(script.Parent.UIKit)
 local Effects = require(script.Parent.Effects)
 local Sounds = require(script.Parent.Sounds)
@@ -30397,6 +30398,11 @@ local Reveal = require(script.Parent.RevealTitle)
 local Settings = require(script.Parent.ClientSettings)
 local State = require(script.Parent.ClientState)
 local Readiness = require(script.Parent.IntroReadiness)
+local Config = require(RS.Shared.Config)
+local CreatureData = require(RS.Shared.CreatureData)
+local Builder = require(RS.Shared.CreatureBuilder)
+local okPortal, Portal = pcall(require, RS.Shared.PortalBuilder)
+if not okPortal then Portal = nil end
 
 local function tw(o, t, props, style, dir)
 	local duration = Settings.ReducedMotion and math.min(t, 0.12) or t
@@ -30423,26 +30429,118 @@ local ui -- built by Intro.Cover
 local skipped = false
 local skipConn
 
+local VIOLET, CYAN, MAGENTA = Color3.fromRGB(150, 90, 255), Color3.fromRGB(90, 230, 255), Color3.fromRGB(255, 90, 210)
+
+local function circle(parent, scale, color, transparency, z)
+	local f = K.new("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromScale(scale, scale),
+		BackgroundColor3 = color or Color3.new(1, 1, 1), BackgroundTransparency = transparency or 0, ZIndex = z or 2, Parent = parent,
+	})
+	K.new("UICorner", { CornerRadius = UDim.new(0.5, 0), Parent = f })
+	return f
+end
+
+-- a ring whose stroke carries a rotating arc gradient, so it reads as swirling energy
+local function arcRing(parent, scale, thickness, c1, c2, z)
+	local f = circle(parent, scale, nil, 1, z)
+	local s = K.new("UIStroke", { Thickness = thickness, Color = Color3.new(1, 1, 1), Parent = f })
+	local g = K.new("UIGradient", {
+		Color = ColorSequence.new(c1, c2),
+		Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.35, 0.15), NumberSequenceKeypoint.new(0.5, 1),
+			NumberSequenceKeypoint.new(0.85, 0.25), NumberSequenceKeypoint.new(1, 0),
+		}),
+		Parent = s,
+	})
+	return f, g, s
+end
+
+-- creatures shown bursting out of the loading portal: hand-built Rare+ first, shuffled
+local function creaturePool()
+	local pool = {}
+	for _, c in ipairs(CreatureData.List) do
+		local r = Config.Rarities[c.rarity]
+		if r and r.order >= 3 then table.insert(pool, c) end
+	end
+	if #pool == 0 then pool = table.clone(CreatureData.List) end
+	local rng = Random.new(os.clock() * 1000)
+	for i = #pool, 2, -1 do
+		local j = rng:NextInteger(1, i)
+		pool[i], pool[j] = pool[j], pool[i]
+	end
+	return pool
+end
+
 function Intro.Cover(hud)
 	if ui then return ui end
 	workspace:SetAttribute("TPFC_IntroPlaying", true)
 	if hud then hud.Enabled = false end
 	local gui = K.new("ScreenGui", { Name = "Intro", IgnoreGuiInset = true, ResetOnSpawn = false, DisplayOrder = 50, Parent = player:WaitForChild("PlayerGui") })
-	local black = K.new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(14, 8, 26), Parent = gui })
-	K.new("UIGradient", { Rotation = 90, Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.5, 0.25), NumberSequenceKeypoint.new(1, 0),
-	}), Parent = black })
-	-- blur whatever the world has rendered so far (sky, hub) behind a soft dark tint
+	local black = K.new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(12, 7, 26), Parent = gui })
+	K.new("UIGradient", { Rotation = 90, Color = ColorSequence.new(Color3.fromRGB(40, 20, 80), Color3.fromRGB(8, 5, 18)), Parent = black })
 	local blur = game:GetService("Lighting"):FindFirstChild("TPFC_IntroBlur") or Instance.new("BlurEffect")
 	blur.Name = "TPFC_IntroBlur"
 	blur.Size = (Settings.ReducedMotion or Settings.LowVFX()) and 0 or 18
 	blur.Parent = game:GetService("Lighting")
-	task.delay(0.4, function()
-		if black.Parent and ui and ui.waiting then tw(black, 1.2, { BackgroundTransparency = 0.38 }, Enum.EasingStyle.Sine) end
-	end)
-	local title = K.new("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.4), Size = UDim2.new(0.92, 0, 0, 230), BackgroundTransparency = 1, Parent = gui })
-	K.new("UISizeConstraint", { MaxSize = Vector2.new(1100, 230), Parent = title })
-	local titleScale = K.new("UIScale", { Scale = Settings.ReducedMotion and 1 or 1.12, Parent = title })
+
+	------------------------------------------------------------ the living portal
+	local art = K.new("Frame", { Name = "PortalArt", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Parent = gui })
+	local portal = K.new("Frame", {
+		Name = "Portal", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.6),
+		Size = UDim2.fromScale(0.36, 0.36), BackgroundTransparency = 1, Parent = art,
+	})
+	K.new("UIAspectRatioConstraint", { AspectRatio = 1, Parent = portal })
+	K.new("UISizeConstraint", { MaxSize = Vector2.new(330, 330), Parent = portal })
+	local portalScale = K.new("UIScale", { Scale = 0.05, Parent = portal })
+	local halo = circle(portal, 1.55, VIOLET, 0.82, 1)
+	local halo2 = circle(portal, 1.25, MAGENTA, 0.8, 1)
+	local core = circle(portal, 0.98, Color3.new(1, 1, 1), 0, 2)
+	local swirl = K.new("UIGradient", {
+		Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, VIOLET), ColorSequenceKeypoint.new(0.3, CYAN), ColorSequenceKeypoint.new(0.55, MAGENTA),
+			ColorSequenceKeypoint.new(0.8, Color3.fromRGB(70, 40, 160)), ColorSequenceKeypoint.new(1, VIOLET),
+		}),
+		Parent = core,
+	})
+	local depth = circle(portal, 0.66, Color3.fromRGB(16, 8, 40), 0.15, 3)
+	K.new("UIGradient", { Transparency = NumberSequence.new(0.6, 0), Rotation = 90, Parent = depth })
+	local rings = {}
+	for i, spec in ipairs({ { 0.98, 7, CYAN, VIOLET, 140 }, { 0.84, 4, MAGENTA, CYAN, -210 }, { 0.62, 3, Color3.new(1, 1, 1), VIOLET, 300 } }) do
+		local _, g = arcRing(portal, spec[1], spec[2], spec[3], spec[4], 4 + i)
+		table.insert(rings, { g = g, speed = spec[5] })
+	end
+	local frameRing = circle(portal, 1.08, nil, 1, 8)
+	K.new("UIStroke", { Thickness = 5, Color = T.CinematicGold, Parent = frameRing })
+	local sparks = {}
+	for i = 1, 16 do
+		local d = circle(portal, 0.03 + (i % 3) * 0.012, i % 2 == 0 and CYAN or T.CinematicGold, 0, 9)
+		table.insert(sparks, { f = d, a = i / 16 * math.pi * 2, r = 0.56 + (i % 4) * 0.05, w = 0.6 + (i % 5) * 0.25 })
+	end
+
+	------------------------------------------------------------ creatures bursting out
+	local stage = K.new("Frame", {
+		Name = "Emerging", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromScale(1.25, 1.25), BackgroundTransparency = 1, ZIndex = 10, Parent = portal,
+	})
+	local stageScale = K.new("UIScale", { Scale = 0.4, Parent = stage })
+	local nameplate = K.new("TextLabel", {
+		AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 1, 14), Size = UDim2.new(1.6, 0, 0, 30),
+		BackgroundTransparency = 1, Text = "", TextScaled = true, Font = fnt("MontserratBlack", Enum.Font.GothamBlack),
+		TextColor3 = Color3.new(1, 1, 1), TextTransparency = 1, ZIndex = 12, Parent = portal,
+	})
+	K.new("UITextSizeConstraint", { MaxTextSize = 28, Parent = nameplate })
+	local nameStroke = K.new("UIStroke", { Thickness = 2, Color = Color3.fromRGB(10, 8, 18), Transparency = 1, Parent = nameplate })
+	local rarityLine = K.new("TextLabel", {
+		AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 1, 44), Size = UDim2.new(1.2, 0, 0, 16),
+		BackgroundTransparency = 1, Text = "", TextScaled = true, Font = fnt("MontserratBold", Enum.Font.GothamBold),
+		TextColor3 = T.CinematicGold, TextTransparency = 1, ZIndex = 12, Parent = portal,
+	})
+	K.new("UITextSizeConstraint", { MaxTextSize = 15, Parent = rarityLine })
+
+	------------------------------------------------------------ title
+	local title = K.new("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.2), Size = UDim2.new(0.92, 0, 0, 190), BackgroundTransparency = 1, Parent = gui })
+	K.new("UISizeConstraint", { MaxSize = Vector2.new(1100, 190), Parent = title })
+	local titleScale = K.new("UIScale", { Scale = 1, Parent = title })
 	local INK = Color3.fromRGB(10, 8, 18)
 	local labels = {}
 	local function line(text, font, color, y, h, maxPx, stroke)
@@ -30453,33 +30551,23 @@ function Intro.Cover(hud)
 		table.insert(labels, l)
 		return l
 	end
-	local eyebrow = line(Reveal.Track("Welcome to"), fnt("MontserratBold", Enum.Font.GothamBold), T.CinematicGold, 0.08, 16, 16, 1.2)
-	local line1 = line("THROW PORTALS", fnt("MontserratBlack", Enum.Font.GothamBlack), Color3.new(1, 1, 1), 0.42, 104, 104, 3.5)
-	local line2 = line(Reveal.Track("For creatures"), fnt("MontserratBold", Enum.Font.GothamBold), T.CinematicGold, 0.72, 26, 26, 1.5)
-	local sub = line(Reveal.Track("Throw   ·   catch   ·   collect"), fnt("MontserratMedium", Enum.Font.GothamMedium), T.Muted, 0.95, 14, 14, 1)
+	local line1 = line("THROW PORTALS", fnt("MontserratBlack", Enum.Font.GothamBlack), Color3.new(1, 1, 1), 0.38, 96, 96, 4)
+	local line2 = line(Reveal.Track("For creatures"), fnt("MontserratBold", Enum.Font.GothamBold), T.CinematicGold, 0.74, 28, 28, 1.6)
 	local shine = K.new("UIGradient", { Rotation = 12, Offset = Vector2.new(-1, 0), Parent = line1,
 		Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.new(1, 1, 1)), ColorSequenceKeypoint.new(0.42, Color3.new(1, 1, 1)),
-			ColorSequenceKeypoint.new(0.5, T.CinematicGold), ColorSequenceKeypoint.new(0.58, Color3.new(1, 1, 1)), ColorSequenceKeypoint.new(1, Color3.new(1, 1, 1)) }) })
-	local ruleBars = {}
-	for side = -1, 1, 2 do
-		local r = K.new("Frame", { AnchorPoint = Vector2.new(side < 0 and 1 or 0, 0.5), Position = UDim2.new(0.5, side * 110, 0.08, 0), Size = UDim2.new(0, 0, 0, 1),
-			BackgroundColor3 = T.CinematicGold, Parent = title })
-		K.new("UIGradient", { Transparency = NumberSequence.new(side < 0 and 1 or 0, side < 0 and 0 or 1), Parent = r })
-		table.insert(ruleBars, r)
-	end
+			ColorSequenceKeypoint.new(0.5, CYAN), ColorSequenceKeypoint.new(0.58, Color3.new(1, 1, 1)), ColorSequenceKeypoint.new(1, Color3.new(1, 1, 1)) }) })
 	local skip = K.new("TextLabel", { Text = Reveal.Track("Click to skip"), Font = fnt("MontserratMedium", Enum.Font.GothamMedium), TextSize = 12,
 		TextColor3 = T.Muted, TextTransparency = 0.35, BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, 1),
 		Position = UDim2.new(1, -28, 1, -26), Size = UDim2.fromOffset(220, 16), TextXAlignment = Enum.TextXAlignment.Right, Parent = gui })
-	local loading = K.new("TextLabel", { Text = Reveal.Track("Building the world"), Font = fnt("MontserratBold", Enum.Font.GothamBold), TextSize = 13,
-		TextColor3 = T.Gold, TextTransparency = 1, BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 1, -74), Size = UDim2.fromOffset(420, 18), Parent = gui })
-	local barBg = K.new("Frame", { AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -60), Size = UDim2.fromOffset(280, 2),
-		BackgroundColor3 = Color3.new(1, 1, 1), BackgroundTransparency = 1, Parent = gui })
-	local bar = K.new("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = T.Gold, BackgroundTransparency = 1, Parent = barBg })
-	local function showLine(l, t)
-		tw(l, t, { TextTransparency = 0 })
-		tw(l:FindFirstChildOfClass("UIStroke"), t, { Transparency = 0.3 })
-	end
+	local loading = K.new("TextLabel", { Text = Reveal.Track("Opening the portal"), Font = fnt("MontserratBold", Enum.Font.GothamBold), TextSize = 13,
+		TextColor3 = T.CinematicGold, TextTransparency = 0.1, BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -40), Size = UDim2.fromOffset(420, 18), Parent = gui })
+	local barBg = K.new("Frame", { AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -28), Size = UDim2.fromOffset(280, 3),
+		BackgroundColor3 = Color3.new(1, 1, 1), BackgroundTransparency = 0.85, Parent = gui })
+	K.new("UICorner", { CornerRadius = UDim.new(1, 0), Parent = barBg })
+	local bar = K.new("Frame", { Size = UDim2.fromScale(0.05, 1), BackgroundColor3 = CYAN, BackgroundTransparency = 0, Parent = barBg })
+	K.new("UICorner", { CornerRadius = UDim.new(1, 0), Parent = bar })
+
 	local titleShown = true
 	local function hideTitle(t)
 		if not titleShown then return end
@@ -30488,31 +30576,124 @@ function Intro.Cover(hud)
 			tw(l, t, { TextTransparency = 1 })
 			tw(l:FindFirstChildOfClass("UIStroke"), t, { Transparency = 1 })
 		end
-		for _, r in ipairs(ruleBars) do tw(r, t, { BackgroundTransparency = 1 }) end
-		tw(titleScale, t, { Scale = 0.96 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+		tw(titleScale, t, { Scale = 0.94 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 	end
-	ui = { gui = gui, black = black, skip = skip, loading = loading, hideTitle = hideTitle, waiting = true, blur = blur, bar = bar, barBg = barBg }
 
-	-- the title animates in on black straight away, while the world loads
-	task.delay(0.2, function()
-		showLine(line1, 0.9)
-		tw(titleScale, 1.6, { Scale = 1 }, Enum.EasingStyle.Quint)
-		tw(shine, 1.4, { Offset = Vector2.new(1, 0) }, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
-		Sounds.Play("Rare", 0.9)
-	end)
-	task.delay(0.6, function()
-		showLine(eyebrow, 0.6)
-		for _, r in ipairs(ruleBars) do tw(r, 0.9, { Size = UDim2.new(0.18, 0, 0, 1) }, Enum.EasingStyle.Quint) end
-	end)
-	task.delay(0.9, function() showLine(line2, 0.7) end)
-	task.delay(1.4, function() showLine(sub, 0.7) end)
-	task.delay(2.6, function()
-		if ui and ui.waiting then
-			tw(loading, 0.6, { TextTransparency = 0.1 })
-			tw(barBg, 0.6, { BackgroundTransparency = 0.85 })
-			tw(bar, 0.6, { BackgroundTransparency = 0 })
+	------------------------------------------------------------ animation loop
+	local calm = Settings.ReducedMotion
+	local pool, poolIndex = creaturePool(), 0
+	local current -- { vp, t, popped, id }
+	local function nextCreature()
+		if current and current.vp then current.vp:Destroy() end
+		current = nil
+		poolIndex = poolIndex % #pool + 1
+		local def = pool[poolIndex]
+		local ok, model = pcall(function() return (Builder.Build(def.id)) end)
+		if not ok or not model then return end
+		local vp = K.viewport(model, UDim2.fromScale(1, 1), false, true)
+		vp.ZIndex = 11
+		vp.Parent = stage
+		current = { vp = vp, t = 0, def = def }
+		nameplate.TextTransparency, nameStroke.Transparency, rarityLine.TextTransparency = 1, 1, 1
+	end
+	local function burstSparks()
+		for i = 1, 10 do
+			local d = circle(art, 0.012, i % 2 == 0 and CYAN or T.CinematicGold, 0, 9)
+			K.new("UIAspectRatioConstraint", { AspectRatio = 1, Parent = d })
+			d.Position = portal.Position
+			local a = i / 10 * math.pi * 2
+			tw(d, 0.6, { Position = portal.Position + UDim2.fromScale(math.cos(a) * 0.16, math.sin(a) * 0.22), BackgroundTransparency = 1 })
+			task.delay(0.65, function() d:Destroy() end)
+		end
+	end
+	local elapsed = 0
+	local anim = RunService.RenderStepped:Connect(function(dt)
+		elapsed += dt
+		if not calm then
+			swirl.Rotation = (swirl.Rotation + dt * 70) % 360
+			for _, r in ipairs(rings) do r.g.Rotation = (r.g.Rotation + dt * r.speed) % 360 end
+			halo.Size = UDim2.fromScale(1.55 + math.sin(elapsed * 2.2) * 0.06, 1.55 + math.sin(elapsed * 2.2) * 0.06)
+			halo2.BackgroundTransparency = 0.78 + math.sin(elapsed * 3.1) * 0.06
+			for _, s in ipairs(sparks) do
+				s.a += dt * s.w
+				local r = s.r + math.sin(elapsed * 3 + s.a) * 0.03
+				s.f.Position = UDim2.fromScale(0.5 + math.cos(s.a) * r, 0.5 + math.sin(s.a) * r)
+			end
+		end
+		local c = current
+		if not c then
+			if elapsed > 0.5 and ui and ui.waiting then nextCreature() end
+			return
+		end
+		c.t += dt
+		if c.t < 0.5 then
+			-- silhouette gathering in the portal
+			local q = c.t / 0.5
+			stageScale.Scale = 0.35 + 0.35 * smooth(q)
+			stage.Position = UDim2.fromScale(0.5 + (calm and 0 or math.sin(c.t * 60) * 0.006 * q), 0.52)
+		elseif not c.popped then
+			c.popped = true
+			tw(c.vp, 0.18, { ImageColor3 = Color3.new(1, 1, 1), ImageTransparency = 0 })
+			stageScale.Scale = 0.8
+			tw(stageScale, 0.45, { Scale = 1 }, Enum.EasingStyle.Back)
+			tw(stage, 0.45, { Position = UDim2.fromScale(0.5, 0.36) }, Enum.EasingStyle.Back)
+			local rarity = Config.Rarities[c.def.rarity]
+			nameplate.Text = string.upper(c.def.name)
+			rarityLine.Text = Reveal.Track(c.def.rarity)
+			rarityLine.TextColor3 = rarity and rarity.color or T.CinematicGold
+			tw(nameplate, 0.25, { TextTransparency = 0 })
+			tw(nameStroke, 0.25, { Transparency = 0.2 })
+			tw(rarityLine, 0.25, { TextTransparency = 0 })
+			if not calm then burstSparks() end
+		elseif c.t > 1.75 and not c.leaving then
+			c.leaving = true
+			tw(c.vp, 0.25, { ImageTransparency = 1 })
+			tw(stageScale, 0.25, { Scale = 0.6 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+			tw(nameplate, 0.2, { TextTransparency = 1 })
+			tw(nameStroke, 0.2, { Transparency = 1 })
+			tw(rarityLine, 0.2, { TextTransparency = 1 })
+		elseif c.t > 2.05 then
+			nextCreature()
 		end
 	end)
+
+	-- the portal opens and the title slams in straight away
+	tw(portalScale, 0.7, { Scale = 1 }, Enum.EasingStyle.Back)
+	task.delay(0.15, function()
+		titleScale.Scale = calm and 1 or 1.7
+		for _, l in ipairs({ line1, line2 }) do
+			tw(l, 0.25, { TextTransparency = 0 })
+			tw(l:FindFirstChildOfClass("UIStroke"), 0.25, { Transparency = 0.25 })
+		end
+		tw(titleScale, 0.45, { Scale = 1 }, Enum.EasingStyle.Back)
+		tw(shine, 1.2, { Offset = Vector2.new(1, 0) }, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
+		Sounds.Play("Rare", 0.9)
+	end)
+
+	local function cleanup()
+		if anim then anim:Disconnect(); anim = nil end
+		if current and current.vp then current.vp:Destroy() end
+		current = nil
+	end
+	-- portal swallows the screen: the hand-off into the world
+	local function zoom(t)
+		if current and current.vp then tw(current.vp, t * 0.6, { ImageTransparency = 1 }) end
+		tw(nameplate, 0.15, { TextTransparency = 1 })
+		tw(nameStroke, 0.15, { Transparency = 1 })
+		tw(rarityLine, 0.15, { TextTransparency = 1 })
+		tw(portalScale, t, { Scale = 9 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+	end
+	local function fadeArt(t)
+		cleanup()
+		for _, d in ipairs(art:GetDescendants()) do
+			if d:IsA("Frame") then tw(d, t, { BackgroundTransparency = 1 }) end
+			if d:IsA("UIStroke") then tw(d, t, { Transparency = 1 }) end
+		end
+	end
+	gui.Destroying:Connect(cleanup)
+	ui = { gui = gui, black = black, skip = skip, loading = loading, hideTitle = hideTitle, waiting = true, blur = blur,
+		bar = bar, barBg = barBg, zoom = zoom, fadeArt = fadeArt }
+
 	skipConn = UserInputService.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.Keyboard then
 			skipped = true
@@ -30545,13 +30726,27 @@ local function waitForWorld(capSeconds)
 		end
 		if stage == "ready" then
 			readySince = readySince or os.clock()
-			if os.clock() - readySince >= 0.35 then break end
+			if os.clock() - readySince >= 0.2 then break end
 		else
 			readySince = nil
 		end
 		task.wait(0.1)
 	end
 end
+
+-- a real portal gate hanging in the sky that the camera flies out of
+local function skyGate(at, dir)
+	if not Portal or not Portal.BuildGate then return nil end
+	local id = (State.Data and Config.Portals[State.Data.EquippedPortal]) and State.Data.EquippedPortal or "Basic"
+	local ok, gate, refs = pcall(Portal.BuildGate, id, 9)
+	if not ok or not gate then return nil end
+	gate:PivotTo(CFrame.lookAt(at, at + dir))
+	gate:ScaleTo(0.6)
+	gate.Parent = Effects.Folder or workspace
+	return { model = gate, refs = refs, cf = CFrame.lookAt(at, at + dir), id = id }
+end
+
+local DURATION = 4.2
 
 function Intro.Play(hud)
 	local u = Intro.Cover(hud)
@@ -30571,42 +30766,51 @@ function Intro.Play(hud)
 	tw(u.loading, 0.3, { TextTransparency = 1 })
 	tw(u.bar, 0.3, { BackgroundTransparency = 1 })
 	tw(u.barBg, 0.3, { BackgroundTransparency = 1 })
-	tw(u.blur, 1.2, { Size = 0 })
-	task.delay(1.3, function() if u.blur.Parent then u.blur:Destroy() end end)
+	tw(u.blur, 0.8, { Size = 0 })
+	task.delay(0.9, function() if u.blur.Parent then u.blur:Destroy() end end)
 
-	-- camera path: positions + where it looks
-	local pts, looks = {}, {}
-	local function key(pos, look) table.insert(pts, pos); table.insert(looks, look) end
-	key(Vector3.new(0, 150, 3050), Vector3.new(0, 20, 2500))   -- high above Heaven
-	key(Vector3.new(50, 100, 2050), Vector3.new(0, 10, 1500))  -- Shadow / Space
-	key(Vector3.new(-40, 65, 1150), Vector3.new(0, 5, 700))    -- Candy / Crystal
-	key(Vector3.new(30, 40, 380), Vector3.new(0, 5, 60))       -- Frozen / Volcano
-	key(Vector3.new(0, 22, 45), Vector3.new(0, 10, -30))       -- the Launch Hall's open front
-	if base and base:FindFirstChild("Center") then
-		local c = base.Center.CFrame
-		key((c * CFrame.new(0, 26, -55)).Position, c.Position + Vector3.new(0, 4, 0)) -- swing over to your base
-	end
+	-- camera path: out of the sky gate, spiralling down onto you
 	local hrp = char:FindFirstChild("HumanoidRootPart")
-	if hrp then
-		key(hrp.Position - hrp.CFrame.LookVector * 14 + Vector3.new(0, 7, 0), hrp.Position + Vector3.new(0, 2, 0))
-	end
+	local target = hrp and hrp.Position
+		or (base and base:FindFirstChild("Center") and base.Center.Position)
+		or Vector3.new(0, 5, 0)
+	local look = hrp and hrp.CFrame.LookVector or Vector3.new(0, 0, -1)
+	look = Vector3.new(look.X, 0, look.Z)
+	look = look.Magnitude > 0.01 and look.Unit or Vector3.new(0, 0, -1)
+	local side = Vector3.new(-look.Z, 0, look.X)
+	local focus = target + Vector3.new(0, 2, 0)
+	local pts, looks = {}, {}
+	local function key(pos, at) table.insert(pts, pos); table.insert(looks, at) end
+	key(target - look * 95 + Vector3.new(0, 85, 0), focus + Vector3.new(0, 25, 0))
+	key(target - look * 62 + side * 30 + Vector3.new(0, 52, 0), focus + Vector3.new(0, 8, 0))
+	key(target - look * 34 - side * 16 + Vector3.new(0, 26, 0), focus)
+	key(target - look * 14 + Vector3.new(0, 7, 0), focus)
 
 	local gui, black, skip, hideTitle = u.gui, u.black, u.skip, u.hideTitle
 	if hud then hud.Enabled = false end
 	local finished = false
+	local gate
 	if not skipped and not Settings.ReducedMotion then
 		workspace:SetAttribute("TPFC_IntroPlaying", true)
+		-- the loading portal grows until it fills the screen
+		if u.zoom then u.zoom(0.5) end
+		hideTitle(0.35)
+		local zoomStart = os.clock()
+		while os.clock() - zoomStart < 0.5 and not skipped and not Settings.ReducedMotion do
+			RunService.RenderStepped:Wait()
+		end
 		Effects.Letterbox(true)
 		camera.CameraType = Enum.CameraType.Scriptable
 		camera.CFrame = CFrame.lookAt(pts[1], looks[1])
-		-- let the first frames of the fly-over render before revealing it
+		local dir = (pts[2] - pts[1]).Unit
+		gate = skyGate(pts[1] + dir * 10, dir)
 		RunService.RenderStepped:Wait()
-		RunService.RenderStepped:Wait()
-		tw(black, 1.2, { BackgroundTransparency = 1 }, Enum.EasingStyle.Sine)
+		tw(black, 0.35, { BackgroundTransparency = 1 }, Enum.EasingStyle.Sine)
+		if u.fadeArt then u.fadeArt(0.35) end
 
-		local DURATION = 9
 		local start = os.clock()
 		local segs = #pts - 1
+		local burst = false
 		local function at(list, j) return list[math.clamp(j, 1, #list)] end
 		while not skipped and not Settings.ReducedMotion do
 			local k = (os.clock() - start) / DURATION
@@ -30615,12 +30819,30 @@ function Intro.Play(hud)
 			local i = math.min(math.floor(e) + 1, segs)
 			local f = e - (i - 1)
 			local pos = catmull(at(pts, i - 1), at(pts, i), at(pts, i + 1), at(pts, i + 2), f)
-			local look = catmull(at(looks, i - 1), at(looks, i), at(looks, i + 1), at(looks, i + 2), f)
-			camera.CFrame = CFrame.lookAt(pos, look)
-			if k > 0.45 then hideTitle(0.7) end
+			local aim = catmull(at(looks, i - 1), at(looks, i), at(looks, i + 1), at(looks, i + 2), f)
+			-- spiral roll that unwinds as you come in to land
+			local roll = (1 - smooth(math.min(1, k / 0.7))) * 0.9 * math.pi
+			camera.CFrame = CFrame.lookAt(pos, aim) * CFrame.Angles(0, 0, roll)
+			if gate then
+				if Portal.Spin then pcall(Portal.Spin, gate.refs, os.clock() - start) end
+				if k > 0.08 and not burst then
+					burst = true
+					local seq = Portal.ColorSeq and Portal.ColorSeq(gate.id) or ColorSequence.new(CYAN, VIOLET)
+					if Effects.Burst then Effects.Burst(gate.cf.Position, seq, 40, 22, 1.4) end
+				end
+				local shrink = math.clamp((k - 0.22) / 0.2, 0, 1)
+				if shrink >= 1 then
+					gate.model:Destroy()
+					gate = nil
+				else
+					gate.model:ScaleTo(math.max(0.05, (1 - shrink) * 1))
+					gate.model:PivotTo(gate.cf)
+				end
+			end
 			RunService.RenderStepped:Wait()
 		end
 	end
+	if gate then gate.model:Destroy() end
 	if skipConn then skipConn:Disconnect() end
 	workspace:SetAttribute("TPFC_IntroPlaying", nil)
 
@@ -30631,8 +30853,14 @@ function Intro.Play(hud)
 	hideTitle(0.3)
 	tw(skip, 0.3, { TextTransparency = 1 })
 	tw(black, 0.4, { BackgroundTransparency = 1 })
-	if finished then Effects.Flash(Color3.new(1, 1, 1), 0.6, 0.35) end
-	if finished then Sounds.Play("Whoosh", 1.2) end
+	if u.fadeArt then u.fadeArt(0.3) end
+	if finished then
+		Effects.Flash(Color3.new(1, 1, 1), 0.5, 0.3)
+		Sounds.Play("Whoosh", 1.2)
+		local feet = target - Vector3.new(0, 2.6, 0)
+		if Effects.Shockwave then Effects.Shockwave(feet, CYAN, 14, 0.7) end
+		if Effects.Burst then Effects.Burst(feet + Vector3.new(0, 1, 0), ColorSequence.new(CYAN, VIOLET), 30, 16, 1) end
+	end
 	task.delay(0.6, function() gui:Destroy() end)
 	ui = nil
 end

@@ -145,10 +145,10 @@ local ok, err = pcall(function()
 		task.wait(0.3)
 	end
 	Settings.ReducedMotion = false
-	-- A saved bestiary seeded by a previous session must skip its first catch this session.
+	-- Owner decision: every throw keeps its reveal, including lower-tier repeats.
 	check(
-		not Timeline.ShouldPresent("Common", false) and not Timeline.ShouldPresent("Uncommon", false),
-		"existing profiles skip lower-tier repeats"
+		Timeline.ShouldPresent("Common", false) and Timeline.ShouldPresent("Uncommon", false),
+		"lower-tier repeats keep their reveal"
 	)
 	check(Timeline.ShouldPresent("Rare", false), "Rare repeat still earns reveal")
 	H.Open("Creatures")

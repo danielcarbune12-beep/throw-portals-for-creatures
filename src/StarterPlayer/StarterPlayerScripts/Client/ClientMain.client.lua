@@ -15,13 +15,14 @@ local Client = script.Parent
 local State = require(Client.ClientState)
 local Effects = require(Client.Effects)
 local Sounds = require(Client.Sounds)
-local Renderer = require(Client.CreatureRenderer)
-local TC = require(Client.ThrowController)
 local HUD = require(Client.HUD)
--- cover the screen immediately (black + title) so nothing half-loaded shows; the fly-over starts once the map has replicated
+-- cover the screen first (portal + title), before the heavy renderer/throw modules load, so the
+-- intro starts the instant you join; the arrival flight starts once your courtyard is ready
 pcall(function()
 	require(Client.Intro).Cover(HUD.Gui)
 end)
+local Renderer = require(Client.CreatureRenderer)
+local TC = require(Client.ThrowController)
 local Feel = require(Client.GameplayFeel)
 local Panels = require(Client.Panels)
 

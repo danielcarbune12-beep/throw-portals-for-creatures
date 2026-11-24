@@ -226,7 +226,7 @@ H.check(
 )
 H.check(interrupted.flash == 0 and interrupted.whoosh == 0, "interrupted flyover does not play its landing effects")
 local normal = scenario()
-H.check(normal.scriptable == 1 and normal.time >= 9, "normal arrival retains the cinematic")
+H.check(normal.scriptable == 1 and normal.time >= 4.5 and normal.time < 6.5, "normal arrival plays the short portal flight")
 H.check(normal.flash == 1 and normal.whoosh == 1, "completed cinematic plays landing feedback once")
 H.check(
 	normal.cameraType == H.roblox.Enum.CameraType.Custom and normal.hud and normal.playing == nil,

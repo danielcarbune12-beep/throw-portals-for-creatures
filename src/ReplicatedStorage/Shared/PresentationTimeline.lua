@@ -12,11 +12,11 @@ local Config = require(script.Parent.Config)
 
 local T = {}
 
--- Discoveries come from the saved bestiary, not a timer or session-only flag.
--- Rare and above earn a reveal on every catch; lower tiers earn it once per species.
-function T.ShouldPresent(rarity: string, discovery: boolean): boolean
-	local tier = Config.Rarities[rarity]
-	return (tier ~= nil and tier.order >= 3) or discovery == true
+-- The owner wants every throw to be special: every catch gets the throw cutscene, the portal
+-- reveal and its card, whatever the rarity and whether or not the species is already known.
+-- (`discovery` still decides "NEW SPECIES" vs "ADDED TO PETS" on the card.)
+function T.ShouldPresent(rarity: string, _discovery: boolean): boolean
+	return Config.Rarities[rarity] ~= nil
 end
 
 -- species entrance must END inside this window (seconds after PortalOpened)
