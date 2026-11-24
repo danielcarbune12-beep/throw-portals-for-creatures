@@ -9,21 +9,23 @@
 --   TPFC_Pulse  {Period, Base, Peak}       transparency pulse (vents, runes, crystal cores, lava)
 --   TPFC_Glint  {Period}                   0.15 s brighten, 0.5 s fade on one face, never in sync
 --   TPFC_ChargeChannel {Index}             Launch Hall floor channels, energised while charging
--- Only parts within RANGE of the camera are updated, at ~20 Hz; far scenery stays static.
+-- Only the nearest budgeted scenery is updated, at ~20 Hz; far scenery stays static.
 
 local CollectionService = game:GetService("CollectionService")
 local RunService = game:GetService("RunService")
 local Settings = require(script.Parent.ClientSettings)
 
 local WorldFx = {}
-local camera = workspace.CurrentCamera
-local RANGE = 650
+local RANGE = 180
+local MAX_COSMETICS, MAX_CHANNELS = 64, 32
+local EMITTER_RANGE, MAX_EMITTER_RATE, TOTAL_EMITTER_RATE = 140, 24, 72
 local TAGS = { "TPFC_Sway", "TPFC_Bob", "TPFC_Spin", "TPFC_Pulse", "TPFC_Glint", "TPFC_ChargeChannel", "TPFC_Rotor" }
 local items = {} -- part -> { kind, base, baseTr, phase, ... }
 local pendingModels = {} -- tagged models whose replicated pivot/geometry is still arriving
 local started, membershipDirty = false, true
 local activeItems = {}
 local ticks = 0
+local serial = 0
 WorldFx.TC = nil -- ThrowController (for charge channels), set by ClientMain
 
 local function add(kind, p)
@@ -46,6 +48,7 @@ local function add(kind, p)
 	local seed = (base.X * 12.9898 + base.Z * 78.233) % 1
 	local rotor = kind == "TPFC_Rotor" and p:FindFirstChild("PortalRotor") or nil
 	membershipDirty = true
+	serial += 1
 	items[p] = {
 		part = p,
 		position = base.Position,
@@ -56,6 +59,7 @@ local function add(kind, p)
 		phase = seed * 100,
 		model = model,
 		rotor = rotor,
+		order = serial,
 	}
 end
 
@@ -80,7 +84,16 @@ function WorldFx.Diagnostics()
 	for _ in items do
 		count += 1
 	end
-	return { registered = count, active = #activeItems, ticks = ticks, low = lowQuality() }
+	return {
+		registered = count,
+		active = #activeItems,
+		ticks = ticks,
+		low = lowQuality(),
+		range = RANGE,
+		cosmeticLimit = MAX_COSMETICS,
+		channelLimit = MAX_CHANNELS,
+		emitterRateLimit = TOTAL_EMITTER_RATE,
+	}
 end
 function WorldFx.Start()
 	if started then
@@ -95,6 +108,9 @@ function WorldFx.Start()
 			add(t, p)
 		end)
 		CollectionService:GetInstanceRemovedSignal(t):Connect(function(p)
+			if items[p] and p.Parent then
+				rest(p, items[p])
+			end
 			items[p] = nil
 			pendingModels[p] = nil
 			membershipDirty = true
@@ -102,8 +118,14 @@ function WorldFx.Start()
 	end
 	local emitters = {}
 	local function addEmitter(pe)
-		if pe:IsA("ParticleEmitter") then
-			emitters[pe] = pe:GetAttribute("BaseRate") or pe.Rate
+		if pe:IsA("ParticleEmitter") and not emitters[pe] then
+			serial += 1
+			emitters[pe] = { rate = pe:GetAttribute("BaseRate") or pe.Rate, order = serial }
+			-- Replicated emitters wait for the local camera budget before emitting.
+			if pe.Rate > 0 then
+				pe.Rate = 0
+				pe:Clear()
+			end
 		end
 	end
 	for _, pe in CollectionService:GetTagged("TPFC_EnvironmentEmitter") do
@@ -111,15 +133,39 @@ function WorldFx.Start()
 	end
 	CollectionService:GetInstanceAddedSignal("TPFC_EnvironmentEmitter"):Connect(addEmitter)
 	CollectionService:GetInstanceRemovedSignal("TPFC_EnvironmentEmitter"):Connect(function(pe)
+		if emitters[pe] and pe.Parent then
+			pe.Rate = 0
+			pe:Clear()
+		end
 		emitters[pe] = nil
 	end)
 	local envAccumulator, regionAccumulator = 1, 1
+	local candidates, emitterCandidates = {}, {}
 	local lastRegionPosition
-	local lastLow
+	local lastLow, lastCalm, suspended
+	local function silenceEmitters()
+		for pe in emitters do
+			if pe.Parent and pe.Rate > 0 then
+				pe.Rate = 0
+				pe:Clear()
+			end
+		end
+	end
+	local function nearer(a, b)
+		return a.distance < b.distance or (a.distance == b.distance and a.order < b.order)
+	end
 	local acc = 0
 	RunService.Heartbeat:Connect(function(dt)
-		if workspace:GetAttribute("TPFC_IntroPlaying") then
-			return -- the intro fly-over owns the frame budget
+		local camera = workspace.CurrentCamera
+		if workspace:GetAttribute("TPFC_IntroPlaying") or not camera then
+			if not suspended then
+				silenceEmitters()
+				suspended = true
+			end
+			return -- the intro fly-over owns the frame budget; missing cameras stay quiet
+		end
+		if suspended then
+			suspended, membershipDirty, envAccumulator = false, true, 1
 		end
 		acc += dt
 		if acc < 0.05 then
@@ -136,14 +182,11 @@ function WorldFx.Start()
 			end
 		end
 		local t = os.clock()
-		camera = workspace.CurrentCamera or camera
-		if not camera then
-			return
-		end
 		local cam = camera.CFrame.Position
 		local low = lowQuality()
-		if low ~= lastLow then
-			envAccumulator, lastLow = 1, low
+		local calm = low or Settings.ReducedMotion
+		if low ~= lastLow or calm ~= lastCalm then
+			envAccumulator, membershipDirty, lastLow, lastCalm = 1, true, low, calm
 		end
 		regionAccumulator += elapsed
 		if
@@ -153,11 +196,40 @@ function WorldFx.Start()
 			or (cam - lastRegionPosition).Magnitude > 32
 		then
 			membershipDirty, regionAccumulator, lastRegionPosition = false, 0, cam
-			table.clear(activeItems)
+			table.clear(candidates)
 			for p, it in items do
 				if not p.Parent then
 					items[p] = nil
-				elseif (it.position - cam).Magnitude <= RANGE then
+				else
+					local delta = it.position - cam
+					it.distance = delta:Dot(delta)
+					it.selected = false
+					if it.distance <= RANGE * RANGE and (not calm or it.kind == "TPFC_ChargeChannel") then
+						table.insert(candidates, it)
+					end
+				end
+			end
+			table.sort(candidates, nearer)
+			local cosmetics, channels = 0, 0
+			for _, it in candidates do
+				if it.kind == "TPFC_ChargeChannel" then
+					it.selected = channels < MAX_CHANNELS
+					channels += it.selected and 1 or 0
+				else
+					it.selected = cosmetics < MAX_COSMETICS
+					cosmetics += it.selected and 1 or 0
+				end
+			end
+			-- Return only previously moving objects to rest when leaving the budget.
+			for _, it in activeItems do
+				if it.part.Parent and not it.selected and not it.sleeping then
+					rest(it.part, it)
+					it.sleeping = true
+				end
+			end
+			table.clear(activeItems)
+			for _, it in candidates do
+				if it.selected then
 					table.insert(activeItems, it)
 				end
 			end
@@ -165,7 +237,8 @@ function WorldFx.Start()
 		envAccumulator += elapsed
 		if envAccumulator > 0.5 then
 			envAccumulator = 0
-			for pe, rate in emitters do
+			table.clear(emitterCandidates)
+			for pe, record in emitters do
 				if not pe.Parent then
 					emitters[pe] = nil
 					continue
@@ -173,10 +246,28 @@ function WorldFx.Start()
 				local parent = pe.Parent
 				local pos = parent:IsA("BasePart") and parent.Position
 					or (parent:IsA("Attachment") and parent.WorldPosition)
-				if low and pe.Rate > 0 then
-					pe:Clear()
+				local delta = pos and (pos - cam)
+				local distance = delta and delta:Dot(delta)
+				record.allowed = 0
+				if not low and distance and distance <= EMITTER_RANGE * EMITTER_RANGE then
+					record.distance = distance
+					table.insert(emitterCandidates, record)
 				end
-				pe.Rate = (low or not pos or (pos - cam).Magnitude > 220) and 0 or rate
+			end
+			table.sort(emitterCandidates, nearer)
+			local remaining = TOTAL_EMITTER_RATE
+			for _, record in emitterCandidates do
+				record.allowed = math.min(math.max(0, record.rate), MAX_EMITTER_RATE, remaining)
+				remaining -= record.allowed
+			end
+			for pe, record in emitters do
+				if pe.Rate ~= record.allowed then
+					local stopped = pe.Rate > 0 and record.allowed == 0
+					pe.Rate = record.allowed
+					if stopped then
+						pe:Clear()
+					end
+				end
 			end
 		end
 		local motionK = Settings.ReducedMotion and 0.4 or 1
