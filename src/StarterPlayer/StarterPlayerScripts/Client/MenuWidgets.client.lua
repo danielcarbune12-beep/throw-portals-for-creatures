@@ -1,10 +1,10 @@
--- Gameplay widgets yield to the active menu, preserving their previous enabled state.
+-- Gameplay widgets yield to menus and the loading intro, preserving their enabled state.
 local player = game:GetService("Players").LocalPlayer
 local gui = player:WaitForChild("PlayerGui")
 local names = { MomentumUI = true, QuestPanel = true }
 local previous = setmetatable({}, { __mode = "k" })
 local function update()
-	local open = player:GetAttribute("TPFC_MenuOpen") == true
+	local open = player:GetAttribute("TPFC_MenuOpen") == true or workspace:GetAttribute("TPFC_IntroPlaying") == true
 	for _, screen in gui:GetChildren() do
 		if screen:IsA("ScreenGui") and names[screen.Name] then
 			if open then
@@ -20,5 +20,6 @@ local function update()
 	end
 end
 player:GetAttributeChangedSignal("TPFC_MenuOpen"):Connect(update)
+workspace:GetAttributeChangedSignal("TPFC_IntroPlaying"):Connect(update)
 gui.ChildAdded:Connect(update)
 update()

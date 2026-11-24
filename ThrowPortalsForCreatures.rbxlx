@@ -23311,7 +23311,9 @@ local Renderer = require(Client.CreatureRenderer)
 local TC = require(Client.ThrowController)
 local HUD = require(Client.HUD)
 -- cover the screen immediately (black + title) so nothing half-loaded shows; the fly-over starts once the map has replicated
-pcall(function() require(Client.Intro).Cover(HUD.Gui) end)
+pcall(function()
+	require(Client.Intro).Cover(HUD.Gui)
+end)
 local Feel = require(Client.GameplayFeel)
 local Panels = require(Client.Panels)
 
@@ -23330,7 +23332,6 @@ Panels.Init()
 HUD.TC = TC
 TC.OnThrowResult = HUD.ThrowFeedback
 HUD.Refresh()
-Feel.Start(TC, HUD)
 require(Client.ExpeditionPanel).Init()
 require(Client.ForgePanel).Init()
 require(Client.KnightGuide).Init()
@@ -23561,7 +23562,7 @@ RunService.Heartbeat:Connect(function(dt)
 	end
 end)
 
--- Cinematic intro fly-over; first-throw guidance stays context driven by GameplayFeel (no welcome toast).
+-- Cinematic arrival; Sir Rowan owns tutorial navigation and instructions.
 task.spawn(function()
 	local ok, err = pcall(function()
 		require(Client.Intro).Play(HUD.Gui)
@@ -23572,9 +23573,13 @@ task.spawn(function()
 		HUD.Gui.Enabled = true
 		Effects.Letterbox(false)
 		local cover = player.PlayerGui:FindFirstChild("Intro")
-		if cover then cover:Destroy() end
+		if cover then
+			cover:Destroy()
+		end
 		local blur = game:GetService("Lighting"):FindFirstChild("TPFC_IntroBlur")
-		if blur then blur:Destroy() end
+		if blur then
+			blur:Destroy()
+		end
 		workspace:SetAttribute("TPFC_IntroPlaying", nil)
 	end
 end)
@@ -28146,7 +28151,13 @@ end
 
 ---------------------------------------------------------------- prompt ownership
 local prompts, signs = {}, {}
+local ownedStands = {}
 local activeStand
+local function cacheStand(prompt)
+	local index = player:GetAttribute("BaseIndex")
+	ownedStands[prompt] = index ~= nil and prompt:GetAttribute("BaseIndex") == index
+		and prompt:GetAttribute("FarmStation") == "Stand" or nil
+end
 local function applyPrompt(p)
 	local owned = player:GetAttribute("BaseIndex") ~= nil
 		and p:GetAttribute("BaseIndex") == player:GetAttribute("BaseIndex")
@@ -28161,8 +28172,9 @@ local function track(inst)
 	if inst:IsA("TextLabel") and inst:GetAttribute("FarmFeedback") then
 		signs[inst] = true
 	end
-	if inst:IsA("ProximityPrompt") and inst:GetAttribute("FarmPrompt") then
+	if inst:IsA("ProximityPrompt") and inst:GetAttribute("FarmPrompt") and not prompts[inst] then
 		prompts[inst] = true
+		cacheStand(inst)
 		applyPrompt(inst)
 		inst:GetAttributeChangedSignal("FarmAvailable"):Connect(function()
 			applyPrompt(inst)
@@ -28170,6 +28182,10 @@ local function track(inst)
 		inst.AncestryChanged:Connect(function()
 			if not inst:IsDescendantOf(game) then
 				prompts[inst] = nil
+				ownedStands[inst] = nil
+				if activeStand == inst then
+					activeStand = nil
+				end
 			end
 		end)
 	end
@@ -28185,39 +28201,51 @@ task.spawn(function()
 	bases.DescendantAdded:Connect(track)
 end)
 player:GetAttributeChangedSignal("BaseIndex"):Connect(function()
+	activeStand = nil
+	table.clear(ownedStands)
 	for p in pairs(prompts) do
+		cacheStand(p)
 		applyPrompt(p)
 	end
 end)
 
 -- The stand has four physical goods, but only the nearest available action is offered.
 -- Touch and gamepad use the same native prompt and hold interaction as keyboard.
-task.spawn(function()
-	while true do
-		task.wait(0.15)
-		local character = player.Character
-		local root = character and character:FindFirstChild("HumanoidRootPart")
-		local nearest, distance = nil, math.huge
-		for prompt in pairs(prompts) do
-			if
-				root
-				and prompt.Parent
-				and prompt:GetAttribute("FarmStation") == "Stand"
-				and prompt:GetAttribute("BaseIndex") == player:GetAttribute("BaseIndex")
-				and prompt:GetAttribute("FarmAvailable") ~= false
-			then
-				local d = (root.Position - prompt.Parent.WorldPosition).Magnitude
-				if prompt == activeStand then
-					d -= 0.2
-				end
-				if d < distance then
-					nearest, distance = prompt, d
-				end
+local function nearestStand(root)
+	local nearest, distance = nil, math.huge
+	if not root then
+		return nil
+	end
+	for prompt in pairs(ownedStands) do
+		if prompt.Parent and prompt:GetAttribute("FarmAvailable") ~= false then
+			local d = (root.Position - prompt.Parent.WorldPosition).Magnitude
+			if prompt == activeStand then
+				d -= 0.2
+			end
+			if d < distance then
+				nearest, distance = prompt, d
 			end
 		end
-		activeStand = nearest
-		for prompt in pairs(prompts) do
-			applyPrompt(prompt)
+	end
+	return nearest
+end
+task.spawn(function()
+	while script.Parent do
+		task.wait(0.15)
+		if not script.Parent then
+			return
+		end
+		local character = player.Character
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		local old = activeStand
+		activeStand = nearestStand(root)
+		if old ~= activeStand then
+			if old and old.Parent then
+				applyPrompt(old)
+			end
+			if activeStand then
+				applyPrompt(activeStand)
+			end
 		end
 	end
 end)
@@ -28961,99 +28989,13 @@ function Panel.Init()
 end
 return Panel
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX94"><Properties><string name="Name">GameplayFeel</string><ProtectedString name="Source"><![CDATA[-- Quiet, state-driven feedback around the complete play loop. No extra HUD buttons.
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
+<Item class="ModuleScript" referent="RBX94"><Properties><string name="Name">GameplayFeel</string><ProtectedString name="Source"><![CDATA[-- Batched treasury collection feedback. Sir Rowan owns tutorial guidance.
 local RS = game:GetService("ReplicatedStorage")
-local Config = require(RS.Shared.Config)
 local Format = require(RS.Shared.Format)
-local State = require(script.Parent.ClientState)
 local Settings = require(script.Parent.ClientSettings)
 local Sounds = require(script.Parent.Sounds)
 local Effects = require(script.Parent.Effects)
 local Feel = {}
-local player = Players.LocalPlayer
-local started = false
-function Feel.Start(TC, HUD)
-	if started then
-		return
-	end
-	started = true
-	local route = Instance.new("Folder")
-	route.Name = "FirstThrowGuide"
-	route.Parent = Effects.Folder
-	local markers = {}
-	for i = 1, 4 do
-		local p = Instance.new("Part")
-		p.Name = "ApproachMarker"
-		p.Anchored = true
-		p.CanCollide = false
-		p.CanQuery = false
-		p.CanTouch = false
-		p.CastShadow = false
-		p.Size = Vector3.new(1.3, 0.035, 1.3)
-		p.Color = Color3.fromRGB(241, 202, 115)
-		p.Material = Enum.Material.SmoothPlastic
-		p.CFrame = CFrame.new(0, 0.29, -55 + i * 4.6) * CFrame.Angles(0, math.pi / 4, 0)
-		p.Transparency = 1
-		p.Parent = route
-		markers[i] = p
-	end
-	local lastCount, firstCatchHint, readyHint = nil, false, false
-	local lastStep, lastZone = 0, nil
-	local acc = 0
-	RunService.Heartbeat:Connect(function(dt)
-		acc += dt
-		if acc < 0.1 then
-			return
-		end
-		acc = 0
-		local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-		local active = State.Loaded
-			and #State.Data.Creatures == 0
-			and root
-			and root.Position.Z < Config.ThrowZone.minZ
-			and root.Position.Z > -125
-			and not TC.Charging
-			and not TC.Submitting
-			and not TC.MyThrow
-			and not HUD.AnyPanelOpen()
-		for i, p in markers do
-			p.Transparency = active
-					and (Settings.ReducedMotion and 0.4 or 0.45 + 0.18 * math.sin(os.clock() * 2 - i * 0.7))
-				or 1
-		end
-		if not State.Loaded then
-			return
-		end
-		if HUD.InZone and not readyHint and #State.Data.Creatures == 0 and not HUD.AnyPanelOpen() then
-			readyHint = true
-			HUD.Notify("Hold to charge. Release in the gold zone for a perfect throw.", "info")
-		end
-		local count = #State.Data.Creatures
-		if lastCount == 0 and count > lastCount and not firstCatchHint then
-			firstCatchHint = true
-			task.delay(4, function()
-				if not HUD.AnyPanelOpen() then
-					HUD.Notify("Your garden earns coins. Walk up to its treasury to collect them.", "info")
-				end
-			end)
-		end
-		lastCount = count
-		-- One progress notification when training or upgrades newly unlock a zone's reach.
-		local max = (State.Data.MaxDistance or 40) * 1.15
-		local zone = "Forest"
-		for _, id in Config.WorldOrder do
-			if max >= Config.ZoneBounds[id][1] then
-				zone = id
-			end
-		end
-		if lastZone and zone ~= lastZone and max > lastStep then
-			HUD.Notify(Config.Worlds[zone].name .. " is now within throw range.", "success")
-		end
-		lastZone, lastStep = zone, max
-	end)
-end
 local pendingAmount, pendingPosition = 0, nil
 local moneyScheduled = false
 local lastMoneySound = -10
@@ -30720,13 +30662,13 @@ RunService.Heartbeat:Connect(function(dt)
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX101"><Properties><string name="Name">MenuWidgets</string><ProtectedString name="Source"><![CDATA[-- Gameplay widgets yield to the active menu, preserving their previous enabled state.
+<Item class="LocalScript" referent="RBX101"><Properties><string name="Name">MenuWidgets</string><ProtectedString name="Source"><![CDATA[-- Gameplay widgets yield to menus and the loading intro, preserving their enabled state.
 local player = game:GetService("Players").LocalPlayer
 local gui = player:WaitForChild("PlayerGui")
 local names = { MomentumUI = true, QuestPanel = true }
 local previous = setmetatable({}, { __mode = "k" })
 local function update()
-	local open = player:GetAttribute("TPFC_MenuOpen") == true
+	local open = player:GetAttribute("TPFC_MenuOpen") == true or workspace:GetAttribute("TPFC_IntroPlaying") == true
 	for _, screen in gui:GetChildren() do
 		if screen:IsA("ScreenGui") and names[screen.Name] then
 			if open then
@@ -30742,6 +30684,7 @@ local function update()
 	end
 end
 player:GetAttributeChangedSignal("TPFC_MenuOpen"):Connect(update)
+workspace:GetAttributeChangedSignal("TPFC_IntroPlaying"):Connect(update)
 gui.ChildAdded:Connect(update)
 update()
 ]]></ProtectedString></Properties></Item>

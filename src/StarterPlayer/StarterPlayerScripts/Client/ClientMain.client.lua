@@ -19,7 +19,9 @@ local Renderer = require(Client.CreatureRenderer)
 local TC = require(Client.ThrowController)
 local HUD = require(Client.HUD)
 -- cover the screen immediately (black + title) so nothing half-loaded shows; the fly-over starts once the map has replicated
-pcall(function() require(Client.Intro).Cover(HUD.Gui) end)
+pcall(function()
+	require(Client.Intro).Cover(HUD.Gui)
+end)
 local Feel = require(Client.GameplayFeel)
 local Panels = require(Client.Panels)
 
@@ -38,7 +40,6 @@ Panels.Init()
 HUD.TC = TC
 TC.OnThrowResult = HUD.ThrowFeedback
 HUD.Refresh()
-Feel.Start(TC, HUD)
 require(Client.ExpeditionPanel).Init()
 require(Client.ForgePanel).Init()
 require(Client.KnightGuide).Init()
@@ -269,7 +270,7 @@ RunService.Heartbeat:Connect(function(dt)
 	end
 end)
 
--- Cinematic intro fly-over; first-throw guidance stays context driven by GameplayFeel (no welcome toast).
+-- Cinematic arrival; Sir Rowan owns tutorial navigation and instructions.
 task.spawn(function()
 	local ok, err = pcall(function()
 		require(Client.Intro).Play(HUD.Gui)
@@ -280,9 +281,13 @@ task.spawn(function()
 		HUD.Gui.Enabled = true
 		Effects.Letterbox(false)
 		local cover = player.PlayerGui:FindFirstChild("Intro")
-		if cover then cover:Destroy() end
+		if cover then
+			cover:Destroy()
+		end
 		local blur = game:GetService("Lighting"):FindFirstChild("TPFC_IntroBlur")
-		if blur then blur:Destroy() end
+		if blur then
+			blur:Destroy()
+		end
 		workspace:SetAttribute("TPFC_IntroPlaying", nil)
 	end
 end)

@@ -18,7 +18,13 @@ end
 
 ---------------------------------------------------------------- prompt ownership
 local prompts, signs = {}, {}
+local ownedStands = {}
 local activeStand
+local function cacheStand(prompt)
+	local index = player:GetAttribute("BaseIndex")
+	ownedStands[prompt] = index ~= nil and prompt:GetAttribute("BaseIndex") == index
+		and prompt:GetAttribute("FarmStation") == "Stand" or nil
+end
 local function applyPrompt(p)
 	local owned = player:GetAttribute("BaseIndex") ~= nil
 		and p:GetAttribute("BaseIndex") == player:GetAttribute("BaseIndex")
@@ -33,8 +39,9 @@ local function track(inst)
 	if inst:IsA("TextLabel") and inst:GetAttribute("FarmFeedback") then
 		signs[inst] = true
 	end
-	if inst:IsA("ProximityPrompt") and inst:GetAttribute("FarmPrompt") then
+	if inst:IsA("ProximityPrompt") and inst:GetAttribute("FarmPrompt") and not prompts[inst] then
 		prompts[inst] = true
+		cacheStand(inst)
 		applyPrompt(inst)
 		inst:GetAttributeChangedSignal("FarmAvailable"):Connect(function()
 			applyPrompt(inst)
@@ -42,6 +49,10 @@ local function track(inst)
 		inst.AncestryChanged:Connect(function()
 			if not inst:IsDescendantOf(game) then
 				prompts[inst] = nil
+				ownedStands[inst] = nil
+				if activeStand == inst then
+					activeStand = nil
+				end
 			end
 		end)
 	end
@@ -57,39 +68,51 @@ task.spawn(function()
 	bases.DescendantAdded:Connect(track)
 end)
 player:GetAttributeChangedSignal("BaseIndex"):Connect(function()
+	activeStand = nil
+	table.clear(ownedStands)
 	for p in pairs(prompts) do
+		cacheStand(p)
 		applyPrompt(p)
 	end
 end)
 
 -- The stand has four physical goods, but only the nearest available action is offered.
 -- Touch and gamepad use the same native prompt and hold interaction as keyboard.
-task.spawn(function()
-	while true do
-		task.wait(0.15)
-		local character = player.Character
-		local root = character and character:FindFirstChild("HumanoidRootPart")
-		local nearest, distance = nil, math.huge
-		for prompt in pairs(prompts) do
-			if
-				root
-				and prompt.Parent
-				and prompt:GetAttribute("FarmStation") == "Stand"
-				and prompt:GetAttribute("BaseIndex") == player:GetAttribute("BaseIndex")
-				and prompt:GetAttribute("FarmAvailable") ~= false
-			then
-				local d = (root.Position - prompt.Parent.WorldPosition).Magnitude
-				if prompt == activeStand then
-					d -= 0.2
-				end
-				if d < distance then
-					nearest, distance = prompt, d
-				end
+local function nearestStand(root)
+	local nearest, distance = nil, math.huge
+	if not root then
+		return nil
+	end
+	for prompt in pairs(ownedStands) do
+		if prompt.Parent and prompt:GetAttribute("FarmAvailable") ~= false then
+			local d = (root.Position - prompt.Parent.WorldPosition).Magnitude
+			if prompt == activeStand then
+				d -= 0.2
+			end
+			if d < distance then
+				nearest, distance = prompt, d
 			end
 		end
-		activeStand = nearest
-		for prompt in pairs(prompts) do
-			applyPrompt(prompt)
+	end
+	return nearest
+end
+task.spawn(function()
+	while script.Parent do
+		task.wait(0.15)
+		if not script.Parent then
+			return
+		end
+		local character = player.Character
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		local old = activeStand
+		activeStand = nearestStand(root)
+		if old ~= activeStand then
+			if old and old.Parent then
+				applyPrompt(old)
+			end
+			if activeStand then
+				applyPrompt(activeStand)
+			end
 		end
 	end
 end)
