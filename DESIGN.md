@@ -51,11 +51,12 @@ appear only inside an open panel: a reserved footer for ordinary panels, or the
 existing expedition header. Closing the panel clears its feedback. Collection
 descriptions use inline panel text. No message box covers the player.
 
-Farm feedback uses fixed white signs on physical stations. No rising text or
-messages over the character. The Farm Stand offers its nearest available action;
-growing beds keep a timer without an action prompt. Feeding serves at most five
-items, with ordinary produce first. Selling the whole Pantry displays quantity
-and value and requires a one-second hold. Low VFX disables farm weather particles;
+Farm feedback uses fixed signs on physical stations. No rising text or
+messages over the character. Private prompts update through ownership and availability
+events; the retired stand has no polling loop. Growing beds keep a timer without
+an action prompt. Feeding serves at most five items, with ordinary produce first.
+The public SELL menu shows the crop list and total before its explicit sale action.
+Low VFX disables farm weather particles;
 Reduced Flashes removes weather grading and Reduced Motion removes aurora motion.
 
 Compact pet inventory puts search and Place best on one row and Collection in the

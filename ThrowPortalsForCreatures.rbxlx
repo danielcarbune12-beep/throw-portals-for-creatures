@@ -28347,7 +28347,7 @@ return Scene
 ]]></ProtectedString></Properties></Item>
 <Item class="LocalScript" referent="RBX94"><Properties><string name="Name">FarmClient</string><ProtectedString name="Source"><![CDATA[-- FarmClient: client side of the courtyard farm (server: FarmService).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > FarmClient (LocalScript)
---  * Shows only YOUR courtyard's farm prompts (beds, stand, board, chest); others' stay hidden.
+--  * Shows only YOUR courtyard's farm prompts (beds, feeding, board, chest); others' stay hidden.
 --  * Updates permanent physical farm signs. No screen toasts or character message bursts.
 
 local Players = game:GetService("Players")
@@ -28365,45 +28365,48 @@ end
 
 ---------------------------------------------------------------- prompt ownership
 local prompts, signs = {}, {}
-local ownedStands = {}
-local activeStand
-local function cacheStand(prompt)
-	local index = player:GetAttribute("BaseIndex")
-	ownedStands[prompt] = index ~= nil
-			and prompt:GetAttribute("BaseIndex") == index
-			and prompt:GetAttribute("FarmStation") == "Stand"
-		or nil
-end
 local function applyPrompt(p)
-	local owned = player:GetAttribute("BaseIndex") ~= nil
-		and p:GetAttribute("BaseIndex") == player:GetAttribute("BaseIndex")
-	local enabled = owned
-		and p:GetAttribute("FarmAvailable") ~= false
-		and (p:GetAttribute("FarmStation") ~= "Stand" or p == activeStand)
+	local index = player:GetAttribute("BaseIndex")
+	local owned = index ~= nil and p:GetAttribute("BaseIndex") == index
+	local enabled = owned and p:GetAttribute("FarmAvailable") ~= false
 	if p.Enabled ~= enabled then
 		p.Enabled = enabled
 	end
 end
 local function track(inst)
-	if inst:IsA("TextLabel") and inst:GetAttribute("FarmFeedback") then
-		signs[inst] = true
-	end
-	if inst:IsA("ProximityPrompt") and inst:GetAttribute("FarmPrompt") and not prompts[inst] then
-		prompts[inst] = true
-		cacheStand(inst)
-		applyPrompt(inst)
-		inst:GetAttributeChangedSignal("FarmAvailable"):Connect(function()
-			applyPrompt(inst)
-		end)
-		inst.AncestryChanged:Connect(function()
+	if inst:IsA("TextLabel") and inst:GetAttribute("FarmFeedback") and not signs[inst] then
+		local connection
+		connection = inst.AncestryChanged:Connect(function()
 			if not inst:IsDescendantOf(game) then
-				prompts[inst] = nil
-				ownedStands[inst] = nil
-				if activeStand == inst then
-					activeStand = nil
-				end
+				signs[inst] = nil
+				connection:Disconnect()
 			end
 		end)
+		signs[inst] = connection
+	end
+	if inst:IsA("ProximityPrompt") and inst:GetAttribute("FarmPrompt") and not prompts[inst] then
+		local connections = {}
+		prompts[inst] = connections
+		applyPrompt(inst)
+		for _, attribute in { "FarmAvailable", "BaseIndex" } do
+			table.insert(
+				connections,
+				inst:GetAttributeChangedSignal(attribute):Connect(function()
+					applyPrompt(inst)
+				end)
+			)
+		end
+		table.insert(
+			connections,
+			inst.AncestryChanged:Connect(function()
+				if not inst:IsDescendantOf(game) then
+					prompts[inst] = nil
+					for _, connection in connections do
+						connection:Disconnect()
+					end
+				end
+			end)
+		)
 	end
 end
 task.spawn(function()
@@ -28417,52 +28420,8 @@ task.spawn(function()
 	bases.DescendantAdded:Connect(track)
 end)
 player:GetAttributeChangedSignal("BaseIndex"):Connect(function()
-	activeStand = nil
-	table.clear(ownedStands)
 	for p in pairs(prompts) do
-		cacheStand(p)
 		applyPrompt(p)
-	end
-end)
-
--- The stand has four physical goods, but only the nearest available action is offered.
--- Touch and gamepad use the same native prompt and hold interaction as keyboard.
-local function nearestStand(root)
-	local nearest, distance = nil, math.huge
-	if not root then
-		return nil
-	end
-	for prompt in pairs(ownedStands) do
-		if prompt.Parent and prompt:GetAttribute("FarmAvailable") ~= false then
-			local d = (root.Position - prompt.Parent.WorldPosition).Magnitude
-			if prompt == activeStand then
-				d -= 0.2
-			end
-			if d < distance then
-				nearest, distance = prompt, d
-			end
-		end
-	end
-	return nearest
-end
-task.spawn(function()
-	while script.Parent do
-		task.wait(0.15)
-		if not script.Parent then
-			return
-		end
-		local character = player.Character
-		local root = character and character:FindFirstChild("HumanoidRootPart")
-		local old = activeStand
-		activeStand = nearestStand(root)
-		if old ~= activeStand then
-			if old and old.Parent then
-				applyPrompt(old)
-			end
-			if activeStand then
-				applyPrompt(activeStand)
-			end
-		end
 	end
 end)
 
