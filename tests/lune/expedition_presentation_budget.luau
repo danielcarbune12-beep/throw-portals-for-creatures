@@ -211,4 +211,76 @@ H.check(
 	screen.popup.Visible and screen.popup.Text == "CRIT -5",
 	"normal motion restores contained battle damage numbers"
 )
+local loads, entrances, jobs, preloadFailure = 0, 0, {}, false
+local portraitPage = { frame = { Visible = true } }
+local makePortrait = luau.load(between("local function portrait(", "\nlocal function clear(") .. "\nreturn portrait", {
+	environment = setmetatable({
+		page = portraitPage,
+		T = { Muted = "muted" },
+		UDim2 = H.roblox.UDim2,
+		Renderer = {
+			BuildPreview = function()
+				return {}
+			end,
+		},
+		K = {
+			viewport = function()
+				return { Destroying = { Connect = function() end } }
+			end,
+			label = function()
+				return {
+					Parent = true,
+					Destroy = function(self)
+						self.Parent = nil
+					end,
+				}
+			end,
+			Motion = {
+				Enter = function()
+					entrances += 1
+				end,
+			},
+		},
+		task = {
+			spawn = function(fn)
+				table.insert(jobs, fn)
+			end,
+		},
+		game = {
+			GetService = function()
+				return {
+					PreloadAsync = function()
+						loads += 1
+						if preloadFailure then
+							error("simulated asset delay/failure")
+						end
+					end,
+				}
+			end,
+		},
+	}, { __index = _G }),
+})()
+local scout = makePortrait({}, { c = "Mossbun" }, H.roblox.UDim2.fromScale(1, 1), true)
+H.check(scout.ImageTransparency == 1 and entrances == 0, "scout entrance waits for its actual portrait to load")
+jobs[1]()
+H.check(scout.ImageTransparency == 0 and entrances == 1 and loads == 1, "loaded scout reveals and animates together")
+makePortrait({}, { c = "Mossbun" }, H.roblox.UDim2.fromScale(1, 1), false)
+jobs[2]()
+H.check(entrances == 1, "scrolling catalogue portraits do not play repetitive entrance animations")
+makePortrait({}, { c = "Mossbun" }, H.roblox.UDim2.fromScale(1, 1), true)
+portraitPage.frame.Visible = false
+jobs[3]()
+H.check(entrances == 1, "closing the menu during preload suppresses the hidden entrance")
+local removed = makePortrait({}, { c = "Mossbun" }, H.roblox.UDim2.fromScale(1, 1), true)
+removed.Parent = nil
+portraitPage.frame.Visible = true
+jobs[4]()
+H.check(entrances == 1, "replaced portraits do not animate after their preload completes")
+preloadFailure = true
+local fallback = makePortrait({}, { c = "Mossbun" }, H.roblox.UDim2.fromScale(1, 1), true)
+jobs[5]()
+H.check(
+	fallback.ImageTransparency == 0 and entrances == 2,
+	"preload failure still reveals available native geometry without blocking the menu"
+)
 assert(H.summary() == 0, "Expedition presentation budget regressions")

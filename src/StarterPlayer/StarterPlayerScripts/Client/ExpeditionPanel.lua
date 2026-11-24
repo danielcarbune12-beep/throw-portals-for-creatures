@@ -189,7 +189,7 @@ local function message(text, color)
 	notice.TextSize = hasText and 14 or 20
 	notice.Visible = true
 end
-local function portrait(parent, pet, size)
+local function portrait(parent, pet, size, reveal)
 	local m = Renderer.BuildPreview(pet.c, pet.v)
 	local vp = K.viewport(m, size, false)
 	vp.Name = "PetPortrait"
@@ -211,6 +211,9 @@ local function portrait(parent, pet, size)
 		end)
 		if vp.Parent then
 			vp.ImageTransparency = 0
+			if reveal and page.frame.Visible then
+				K.Motion.Enter(vp, UDim2.new(), UDim2.fromOffset(0, 4))
+			end
 			if loading.Parent then
 				loading:Destroy()
 			end
@@ -403,8 +406,7 @@ updateSelection = function()
 		if selectedHeroKey ~= key then
 			selectedHeroKey = key
 			clear(selectedHero)
-			local vp = portrait(selectedHero, p, UDim2.fromScale(1, 1))
-			K.Motion.Enter(vp, UDim2.new(), UDim2.fromOffset(0, 4))
+			portrait(selectedHero, p, UDim2.fromScale(1, 1), true)
 		end
 	else
 		petMeta.Text = "Catch a pet in the Launch Hall"
@@ -481,8 +483,7 @@ render = function()
 		if activeKey ~= a.id then
 			activeKey = a.id
 			clear(activePortrait)
-			local scout = portrait(activePortrait, { c = a.creature, v = a.v }, UDim2.fromScale(1, 1))
-			K.Motion.Enter(scout, UDim2.new(), UDim2.fromOffset(0, 4))
+			portrait(activePortrait, { c = a.creature, v = a.v }, UDim2.fromScale(1, 1), true)
 			clear(activeSceneFrame)
 			activeSceneModel = Scene.Build(a.world)
 			-- The scout itself fights on the map: parent it before the viewport bakes/anchors welds.
@@ -497,7 +498,6 @@ render = function()
 			vp.Name = "ActiveBiomePreview"
 			vp.Parent = activeSceneFrame
 			vp.CurrentCamera.CFrame = CFrame.lookAt(Vector3.new(-25, 21, -29), Vector3.new(0, 1, 0))
-			K.Motion.Enter(vp, UDim2.new(), UDim2.fromOffset(0, 6))
 			fightCtx, fightView = nil, nil
 			local plan = battlePlanFor(a)
 			if plan then
