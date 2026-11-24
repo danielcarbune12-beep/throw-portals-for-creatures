@@ -17,6 +17,7 @@ local State = require(script.Parent.ClientState)
 local Effects = require(script.Parent.Effects)
 local Sounds = require(script.Parent.Sounds)
 local Renderer = require(script.Parent.CreatureRenderer)
+local EpicReveal = require(script.Parent.EpicReveal) -- cutscene for Mythical / Secret / Divine pulls
 local Settings = require(script.Parent.ClientSettings)
 local Builder = require(Shared.CreatureBuilder)
 local Timeline = require(Shared.PresentationTimeline)
@@ -933,7 +934,7 @@ Remotes.PortalOpened.OnClientEvent:Connect(function(info)
 		if mine then
 			Effects.Shake(rc.order >= 7 and 0.9 or 0.6, 0.4)
 			Sounds.Play("Rare")
-			Effects.RarityBanner(def, chanceText)
+			if not EpicReveal.Wants(def) then Effects.RarityBanner(def, chanceText) end -- the cutscene has its own title
 		end
 	elseif presentation and mine then
 		Effects.RarityBanner(def, chanceText)
@@ -945,7 +946,7 @@ Remotes.PortalOpened.OnClientEvent:Connect(function(info)
 		Sounds.PlayAt("Spawn", center, 1.2 - rc.order * 0.05)
 	end
 	local vsize, vmat = info.size, info.variant
-	Renderer.SpawnWild(info.id, info.creature, info.pos, info.owner, chanceText, vsize, vmat, presentation)
+	local wildEntry = Renderer.SpawnWild(info.id, info.creature, info.pos, info.owner, chanceText, vsize, vmat, presentation)
 	-- Big / Huge / Titan and Gold / Emerald / Ruby / Diamond get their own big callout
 	local special = vsize or vmat
 	if presentation and special and (mine or near) then
@@ -975,6 +976,13 @@ Remotes.PortalOpened.OnClientEvent:Connect(function(info)
 		-- Rarity caption and world label already show the odds; avoid a third floating label.
 		if not presentation or TC.InputBlocked or TC.SystemMenuOpen then
 			TC.StopFollow(true)
+		elseif EpicReveal.Wants(def) then
+			-- one of the very best pulls: hand the camera to the full cutscene until the catch
+			TC.StopFollow(true)
+			local ok, err = pcall(EpicReveal.Play, info, def, wildEntry, chanceText, Timeline.CatchDelay(def.rarity))
+			if not ok then
+				warn("[EpicReveal] " .. tostring(err))
+			end
 		elseif (rc.order >= 3 or special) and not Settings.ReducedMotion then
 			-- a GOOD pet (or a Big/Huge/Titan/Gold/gem one): zoom in and watch it through entrance + capture
 			local catchDur = Timeline.CaptureFor(def.rarity) -- capture timings live in PresentationTimeline

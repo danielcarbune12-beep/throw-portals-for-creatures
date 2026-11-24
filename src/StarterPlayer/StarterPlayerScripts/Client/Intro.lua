@@ -26,6 +26,8 @@ local Config = require(RS.Shared.Config)
 local CreatureData = require(RS.Shared.CreatureData)
 local Builder = require(RS.Shared.CreatureBuilder)
 local okPortal, Portal = pcall(require, RS.Shared.PortalBuilder)
+local okShow, IntroShow = pcall(require, script.Parent.IntroShow) -- the in-world creature show
+if not okShow then IntroShow = nil end
 if not okPortal then Portal = nil end
 
 local function tw(o, t, props, style, dir)
@@ -180,9 +182,18 @@ function Intro.Cover(hud)
 	local shine = K.new("UIGradient", { Rotation = 12, Offset = Vector2.new(-1, 0), Parent = line1,
 		Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.new(1, 1, 1)), ColorSequenceKeypoint.new(0.42, Color3.new(1, 1, 1)),
 			ColorSequenceKeypoint.new(0.5, CYAN), ColorSequenceKeypoint.new(0.58, Color3.new(1, 1, 1)), ColorSequenceKeypoint.new(1, Color3.new(1, 1, 1)) }) })
-	local skip = K.new("TextLabel", { Text = Reveal.Track("Click to skip"), Font = fnt("MontserratMedium", Enum.Font.GothamMedium), TextSize = 12,
-		TextColor3 = T.Muted, TextTransparency = 0.35, BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, 1),
-		Position = UDim2.new(1, -28, 1, -26), Size = UDim2.fromOffset(220, 16), TextXAlignment = Enum.TextXAlignment.Right, Parent = gui })
+	-- a real Skip button (clicks elsewhere are for tapping the portal)
+	local skip = K.new("TextButton", { Text = Reveal.Track("Skip intro") .. "  >>", Font = fnt("MontserratBold", Enum.Font.GothamBold), TextSize = 14,
+		TextColor3 = Color3.new(1, 1, 1), TextTransparency = 0.1, BackgroundColor3 = Color3.fromRGB(30, 22, 50), BackgroundTransparency = 0.35,
+		AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -20, 1, -20), Size = UDim2.fromOffset(150, 36), ZIndex = 20, Parent = gui })
+	K.new("UICorner", { CornerRadius = UDim.new(0, 10), Parent = skip })
+	skip.Activated:Connect(function()
+		skipped = true
+	end)
+	local tapHint = K.new("TextLabel", { Text = "TAP THE PORTAL!", Font = fnt("MontserratBlack", Enum.Font.GothamBlack), TextSize = 18,
+		TextColor3 = T.CinematicGold, BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -64),
+		Size = UDim2.fromOffset(420, 22), TextStrokeTransparency = 0.4, Parent = gui })
+	local summoned = 0
 	local loading = K.new("TextLabel", { Text = Reveal.Track("Opening the portal"), Font = fnt("MontserratBold", Enum.Font.GothamBold), TextSize = 13,
 		TextColor3 = T.CinematicGold, TextTransparency = 0.1, BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 1),
 		Position = UDim2.new(0.5, 0, 1, -40), Size = UDim2.fromOffset(420, 18), Parent = gui })
@@ -315,11 +326,42 @@ function Intro.Cover(hud)
 		end
 	end
 	gui.Destroying:Connect(cleanup)
-	ui = { gui = gui, black = black, skip = skip, loading = loading, hideTitle = hideTitle, waiting = true, blur = blur,
-		bar = bar, barBg = barBg, zoom = zoom, fadeArt = fadeArt }
 
+	-- tap the portal while the world loads: a creature bursts out every time
+	local tap = K.new("TextButton", { Text = "", BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromScale(1.15, 1.15), ZIndex = 15, Parent = portal })
+	tap.Activated:Connect(function()
+		if not ui or not ui.waiting then return end
+		summoned += 1
+		tapHint.Text = "SUMMONED: " .. summoned .. (summoned >= 10 and "  - PORTAL MASTER!" or "")
+		tapHint.TextColor3 = summoned >= 10 and Color3.fromRGB(255, 120, 200) or T.CinematicGold
+		portalScale.Scale = 0.9
+		tw(portalScale, 0.35, { Scale = 1 }, Enum.EasingStyle.Back)
+		if not calm then burstSparks() end
+		pcall(Sounds.Play, "Spawn", 1 + math.min(summoned, 12) * 0.04)
+		nextCreature()
+	end)
+
+	-- the title slams back in during the creature show
+	local function showTitle()
+		titleShown = true
+		titleScale.Scale = calm and 1 or 1.8
+		for _, l in ipairs({ line1, line2 }) do
+			tw(l, 0.2, { TextTransparency = 0 })
+			tw(l:FindFirstChildOfClass("UIStroke"), 0.2, { Transparency = 0.25 })
+		end
+		shine.Offset = Vector2.new(-1, 0)
+		tw(titleScale, 0.4, { Scale = 1 }, Enum.EasingStyle.Back)
+		tw(shine, 1, { Offset = Vector2.new(1, 0) }, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
+		pcall(Sounds.Play, "Rare", 1.05)
+	end
+	ui = { gui = gui, black = black, skip = skip, loading = loading, hideTitle = hideTitle, waiting = true, blur = blur,
+		bar = bar, barBg = barBg, zoom = zoom, fadeArt = fadeArt, showTitle = showTitle, tapHint = tapHint }
+
+	-- keyboard / gamepad skip; mouse and touch are for the portal and the Skip button
 	skipConn = UserInputService.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.Keyboard then
+		local key = input.KeyCode
+		if key == Enum.KeyCode.Space or key == Enum.KeyCode.Escape or key == Enum.KeyCode.Return or key == Enum.KeyCode.ButtonB then
 			skipped = true
 		end
 	end)
@@ -425,9 +467,35 @@ function Intro.Play(hud)
 		end
 		Effects.Letterbox(true)
 		camera.CameraType = Enum.CameraType.Scriptable
-		camera.CFrame = CFrame.lookAt(pts[1], looks[1])
-		local dir = (pts[2] - pts[1]).Unit
-		gate = skyGate(pts[1] + dir * 10, dir)
+		-- the creature show: sky portal, a dragon roaring past, a lion and a parade of pets
+		local showEnd
+		if IntroShow and not skipped and not Settings.ReducedMotion then
+			if u.tapHint then u.tapHint.Visible = false end
+			tw(black, 0.35, { BackgroundTransparency = 1 }, Enum.EasingStyle.Sine)
+			if u.fadeArt then u.fadeArt(0.35) end
+			local okShow, endCF = pcall(IntroShow.Run, {
+				camera = camera,
+				skipped = function()
+					return skipped or Settings.ReducedMotion
+				end,
+				title = u.showTitle,
+			})
+			if okShow and typeof(endCF) == "CFrame" then
+				showEnd = endCF
+			elseif not okShow then
+				warn("[IntroShow] " .. tostring(endCF))
+			end
+			hideTitle(0.4)
+		end
+		if showEnd then
+			-- dive from where the show ended, straight down to you
+			pts[1], looks[1] = showEnd.Position, showEnd.Position + showEnd.LookVector * 20
+			camera.CFrame = showEnd
+		else
+			camera.CFrame = CFrame.lookAt(pts[1], looks[1])
+			local dir = (pts[2] - pts[1]).Unit
+			gate = skyGate(pts[1] + dir * 10, dir)
+		end
 		RunService.RenderStepped:Wait()
 		tw(black, 0.35, { BackgroundTransparency = 1 }, Enum.EasingStyle.Sine)
 		if u.fadeArt then u.fadeArt(0.35) end

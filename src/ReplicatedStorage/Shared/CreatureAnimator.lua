@@ -336,7 +336,47 @@ function Animator:Step(dt: number)
 		end
 	end
 
+	-------------------------------------------------- idle life: sniffing, looking around, shaking off
+	if not self.life and not self.moving and not self.reactT and not self.sigT then
+		local ia = self.idleAct
+		if not ia then
+			ia = { next = self.rng:NextNumber(2, 6) }
+			self.idleAct = ia
+		end
+		if ia.kind then
+			ia.t += dt
+			local k = ia.t / ia.dur
+			if k >= 1 then
+				ia.kind, ia.next = nil, self.rng:NextNumber(4, 9)
+			else
+				local env = sin(k * math.pi)
+				if ia.kind == "sniff" then
+					pose.headPitch += env * 0.42 + sin(t * 16) * 0.035 * env
+					pose.crouch += env * 0.08
+				elseif ia.kind == "look" then
+					pose.headYaw += sin(k * math.pi) * 0.65 * ia.side
+					pose.headPitch -= env * 0.08
+				else -- shake it off
+					pose.headRoll += sin(k * math.pi * 7) * 0.28 * (1 - k)
+					pose.earL += sin(k * math.pi * 7) * 0.4 * (1 - k)
+					pose.earR -= sin(k * math.pi * 7) * 0.4 * (1 - k)
+				end
+			end
+		else
+			ia.next -= dt
+			if ia.next <= 0 then
+				local r = self.rng:NextNumber()
+				ia.kind = r < 0.45 and "sniff" or (r < 0.85 and "look" or "shake")
+				ia.t, ia.dur = 0, ia.kind == "shake" and 0.7 or (ia.kind == "sniff" and 1.6 or 1.8)
+				ia.side = self.rng:NextNumber() < 0.5 and -1 or 1
+			end
+		end
+	elseif self.idleAct then
+		self.idleAct.kind = nil
+	end
+
 	-------------------------------------------------- locomotion
+	self.headSteady = 0
 	local spd = clamp(self.speedNow / math.max(self.moveSpeed, 1), 0, 1.6)
 	local gait = self.gait
 	local gp = self.gaitPhase * TAU
@@ -363,19 +403,39 @@ function Animator:Step(dt: number)
 		end
 	elseif gait == "quad" or gait == "heavy" or gait == "biped" or gait == "bug6" then
 		local amp = (gait == "heavy" and 0.35 or (gait == "bug6" and 0.45 or 0.55)) * clamp(spd, 0, 1.3)
-		local trot = spd > 1.1
-		legSwing.amp = amp * (trot and 1.25 or 1)
-		pose.bob += abs(sin(gp)) * (gait == "heavy" and 0.08 or 0.12) * s * clamp(spd, 0, 1)
+		-- real gaits change with speed: a four-beat walk, a diagonal trot, then a rocking gallop
+		local mode = (spd > 1.25 and gait == "quad") and "gallop" or (spd > 0.75 and "trot" or "walk")
+		legSwing.mode = mode
+		legSwing.amp = amp * (mode == "gallop" and 1.4 or (mode == "trot" and 1.15 or 0.95))
+		local mk = clamp(spd, 0, 1)
+		if mode == "gallop" then
+			-- the whole body rocks nose-up / nose-down and floats between strides
+			pose.tiltX += sin(gp) * 0.14 * mk + 0.05
+			pose.bob += (sin(gp - 0.6) * 0.5 + 0.5) * 0.24 * s * mk
+		else
+			pose.bob += abs(sin(gp)) * (gait == "heavy" and 0.08 or 0.12) * s * mk
+		end
 		if gait == "heavy" then
-			pose.tiltZ += sin(gp) * 0.05 * spd
-			pose.yaw += sin(gp) * 0.06 * spd -- chest counter-rotation
+			pose.tiltZ += sin(gp) * 0.06 * spd
+			pose.yaw += sin(gp) * 0.07 * spd -- chest counter-rotation
 		elseif gait == "biped" then
 			pose.tiltZ += sin(gp) * 0.1 * spd -- waddle
 		else
 			pose.tiltX += 0.04 * spd
+			pose.tiltZ += sin(gp) * 0.035 * mk -- hips shift weight from side to side
 		end
+		-- the head stays steady while the body bobs (like a real animal's)
+		self.headSteady = (mode == "gallop" and -sin(gp) * 0.12 or -sin(gp * 2) * 0.05) * mk
 	elseif gait == "fly" or gait == "hover" then
 		hoverBob = sin(t * (gait == "hover" and 1.8 or 2.4) + self.seed) * 0.4 * s
+		-- the body lifts on every wing downstroke and sinks a little on the recovery
+		local fl0 = prof.flap
+		local rate = gait == "hover" and (fl0 and fl0[1] or 16) or ((fl0 and fl0[1] or 10) * (1 + spd * 0.3))
+		local xf = (t * rate / TAU) % 1
+		local lift = xf < 0.4 and sin(xf / 0.4 * math.pi) or -sin((xf - 0.4) / 0.6 * math.pi) * 0.4
+		if not (gait == "fly" and sin(t * 0.35 + self.seed) > 0.55) then
+			hoverBob += lift * (gait == "hover" and 0.06 or 0.14) * s
+		end
 		pose.tiltX += (gait == "hover" and 0.08 or 0.25) * spd
 		pose.tiltZ += -self.lean * (gait == "hover" and 0.3 or 0.8)
 		tuck = 0.6
@@ -450,7 +510,7 @@ function Animator:Step(dt: number)
 	end
 
 	-------------------------------------------------- head(s)
-	local headPitch = pose.headPitch - lookPitch
+	local headPitch = pose.headPitch - lookPitch + (self.headSteady or 0)
 	if rig.headEntry and not headIsBody then
 		local heads = rig.groups.heads
 		if heads and #heads > 1 then
@@ -528,9 +588,12 @@ function Animator:Step(dt: number)
 	-------------------------------------------------- generic tail with follow-through
 	local wag = (pose.tailWag > 0 or self.reactT) and 12 or (3 + spd * 4)
 	local wagAmp = 0.22 + pose.tailWag * 0.35
+	-- running lifts the tail and it swings against the body's sway, trailing a little behind
+	local tailLift = -clamp(spd, 0, 1.3) * 0.18
 	for i, e in ipairs(rig.tail) do
 		local ph = t * wag - i * 0.6
-		self:_set(e, CFrame.Angles(sin(ph * 0.5) * 0.06 - pose.tailCurl * 0.3, sin(ph) * (wagAmp + i * 0.03), 0))
+		local counter = sin(gp + math.pi - i * 0.5) * 0.14 * clamp(spd, 0, 1)
+		self:_set(e, CFrame.Angles(sin(ph * 0.5) * 0.06 - pose.tailCurl * 0.3 + tailLift, sin(ph) * (wagAmp + i * 0.03) + counter, 0))
 	end
 
 	-------------------------------------------------- legs / feet
@@ -540,7 +603,16 @@ function Animator:Step(dt: number)
 	for i, e in ipairs(legs) do
 		local phase = 0
 		if lk == "quad" then
-			phase = (i == 1 or i == 4) and 0 or math.pi -- diagonal pairs
+			local mode = legSwing.mode
+			if mode == "walk" then
+				-- four-beat walk: left-hind, left-fore, right-hind, right-fore
+				phase = ({ 0.5, 0, 0.75, 0.25 })[i] * TAU
+			elseif mode == "gallop" then
+				-- rotary gallop: the fronts land together, then the hinds push off
+				phase = ({ 0, 0.12, 0.55, 0.67 })[i] * TAU
+			else
+				phase = (i == 1 or i == 4) and 0 or math.pi -- trot: diagonal pairs
+			end
 		elseif lk == "bug6" then
 			phase = (i == 1 or i == 4 or i == 5) and 0 or math.pi -- alternating tripods
 		else
@@ -561,7 +633,7 @@ function Animator:Step(dt: number)
 				-- the knee also flexes while the foot swings forward
 				local dir = e.kneeDir or 1
 				local a = math.acos(clamp(1 - math.max(pose.crouch, 0) * s / (e.upperLen or s), -1, 1))
-				local flex = math.max(0, -math.cos(gp + phase)) * 0.55 * clamp(spd, 0, 1)
+				local flex = math.max(0, -math.cos(gp + phase)) * (legSwing.mode == "gallop" and 0.85 or (legSwing.mode == "trot" and 0.7 or 0.55)) * clamp(spd, 0, 1)
 				hipExtra = -a * dir
 				self:_set(e.knee, CFrame.Angles((a + flex) * dir, 0, 0))
 			end

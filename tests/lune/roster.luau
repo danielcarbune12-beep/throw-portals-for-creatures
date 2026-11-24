@@ -38,7 +38,7 @@ for id, name in pairs({ VoidCrystalHydra = "Prismatic Hydra", CottonCandyCloud =
 end
 -- economy/rarity constants unchanged
 check(Config.Rarities.Divine.income == 12000 and Config.Rarities.Common.income == 1, "income constants")
-check(Config.CatchDelay.Divine == 3.8 and Config.CatchDelay.Common == 2.4, "catch delays unchanged")
+check(Config.CatchDelay.Divine == 8.0 and Config.CatchDelay.Common == 2.4, "catch delays: epic pulls wait for their cutscene, the rest unchanged")
 check(Config.ThrowDistance(1, 0) == 40, "throw distance formula")
 
 ---------------------------------------------------------------- build every creature

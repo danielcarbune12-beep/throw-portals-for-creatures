@@ -66,7 +66,8 @@ Config.ThrowZone = { minZ = -34, maxZ = 4 }  -- inside the Launch Hall
 Config.BarrierZ = 6                         -- players can't walk past this (the lane is for portals only)
 -- seconds after the portal opens before the creature is caught into your inventory
 -- (long enough for its entrance animation to play)
-Config.CatchDelay = { Common = 2.4, Uncommon = 2.4, Rare = 2.6, Epic = 2.6, Legendary = 3.4, Mythical = 3.6, Secret = 3.0, Divine = 3.8 }
+-- Mythical / Secret / Divine wait longer so their full reveal cutscene (Client/EpicReveal) can play
+Config.CatchDelay = { Common = 2.4, Uncommon = 2.4, Rare = 2.6, Epic = 2.6, Legendary = 3.4, Mythical = 7.2, Secret = 6.8, Divine = 8.0 }
 
 function Config.InThrowZone(pos: Vector3): boolean
 	return pos.Z >= Config.ThrowZone.minZ and pos.Z <= Config.ThrowZone.maxZ and math.abs(pos.X) <= Config.HallHalfWidth

@@ -71,7 +71,8 @@ Config.ThrowZone = { minZ = -34, maxZ = 4 }  -- inside the Launch Hall
 Config.BarrierZ = 6                         -- players can't walk past this (the lane is for portals only)
 -- seconds after the portal opens before the creature is caught into your inventory
 -- (long enough for its entrance animation to play)
-Config.CatchDelay = { Common = 2.4, Uncommon = 2.4, Rare = 2.6, Epic = 2.6, Legendary = 3.4, Mythical = 3.6, Secret = 3.0, Divine = 3.8 }
+-- Mythical / Secret / Divine wait longer so their full reveal cutscene (Client/EpicReveal) can play
+Config.CatchDelay = { Common = 2.4, Uncommon = 2.4, Rare = 2.6, Epic = 2.6, Legendary = 3.4, Mythical = 7.2, Secret = 6.8, Divine = 8.0 }
 
 function Config.InThrowZone(pos: Vector3): boolean
 	return pos.Z >= Config.ThrowZone.minZ and pos.Z <= Config.ThrowZone.maxZ and math.abs(pos.X) <= Config.HallHalfWidth
@@ -604,7 +605,47 @@ function Animator:Step(dt: number)
 		end
 	end
 
+	-------------------------------------------------- idle life: sniffing, looking around, shaking off
+	if not self.life and not self.moving and not self.reactT and not self.sigT then
+		local ia = self.idleAct
+		if not ia then
+			ia = { next = self.rng:NextNumber(2, 6) }
+			self.idleAct = ia
+		end
+		if ia.kind then
+			ia.t += dt
+			local k = ia.t / ia.dur
+			if k >= 1 then
+				ia.kind, ia.next = nil, self.rng:NextNumber(4, 9)
+			else
+				local env = sin(k * math.pi)
+				if ia.kind == "sniff" then
+					pose.headPitch += env * 0.42 + sin(t * 16) * 0.035 * env
+					pose.crouch += env * 0.08
+				elseif ia.kind == "look" then
+					pose.headYaw += sin(k * math.pi) * 0.65 * ia.side
+					pose.headPitch -= env * 0.08
+				else -- shake it off
+					pose.headRoll += sin(k * math.pi * 7) * 0.28 * (1 - k)
+					pose.earL += sin(k * math.pi * 7) * 0.4 * (1 - k)
+					pose.earR -= sin(k * math.pi * 7) * 0.4 * (1 - k)
+				end
+			end
+		else
+			ia.next -= dt
+			if ia.next <= 0 then
+				local r = self.rng:NextNumber()
+				ia.kind = r < 0.45 and "sniff" or (r < 0.85 and "look" or "shake")
+				ia.t, ia.dur = 0, ia.kind == "shake" and 0.7 or (ia.kind == "sniff" and 1.6 or 1.8)
+				ia.side = self.rng:NextNumber() < 0.5 and -1 or 1
+			end
+		end
+	elseif self.idleAct then
+		self.idleAct.kind = nil
+	end
+
 	-------------------------------------------------- locomotion
+	self.headSteady = 0
 	local spd = clamp(self.speedNow / math.max(self.moveSpeed, 1), 0, 1.6)
 	local gait = self.gait
 	local gp = self.gaitPhase * TAU
@@ -631,19 +672,39 @@ function Animator:Step(dt: number)
 		end
 	elseif gait == "quad" or gait == "heavy" or gait == "biped" or gait == "bug6" then
 		local amp = (gait == "heavy" and 0.35 or (gait == "bug6" and 0.45 or 0.55)) * clamp(spd, 0, 1.3)
-		local trot = spd > 1.1
-		legSwing.amp = amp * (trot and 1.25 or 1)
-		pose.bob += abs(sin(gp)) * (gait == "heavy" and 0.08 or 0.12) * s * clamp(spd, 0, 1)
+		-- real gaits change with speed: a four-beat walk, a diagonal trot, then a rocking gallop
+		local mode = (spd > 1.25 and gait == "quad") and "gallop" or (spd > 0.75 and "trot" or "walk")
+		legSwing.mode = mode
+		legSwing.amp = amp * (mode == "gallop" and 1.4 or (mode == "trot" and 1.15 or 0.95))
+		local mk = clamp(spd, 0, 1)
+		if mode == "gallop" then
+			-- the whole body rocks nose-up / nose-down and floats between strides
+			pose.tiltX += sin(gp) * 0.14 * mk + 0.05
+			pose.bob += (sin(gp - 0.6) * 0.5 + 0.5) * 0.24 * s * mk
+		else
+			pose.bob += abs(sin(gp)) * (gait == "heavy" and 0.08 or 0.12) * s * mk
+		end
 		if gait == "heavy" then
-			pose.tiltZ += sin(gp) * 0.05 * spd
-			pose.yaw += sin(gp) * 0.06 * spd -- chest counter-rotation
+			pose.tiltZ += sin(gp) * 0.06 * spd
+			pose.yaw += sin(gp) * 0.07 * spd -- chest counter-rotation
 		elseif gait == "biped" then
 			pose.tiltZ += sin(gp) * 0.1 * spd -- waddle
 		else
 			pose.tiltX += 0.04 * spd
+			pose.tiltZ += sin(gp) * 0.035 * mk -- hips shift weight from side to side
 		end
+		-- the head stays steady while the body bobs (like a real animal's)
+		self.headSteady = (mode == "gallop" and -sin(gp) * 0.12 or -sin(gp * 2) * 0.05) * mk
 	elseif gait == "fly" or gait == "hover" then
 		hoverBob = sin(t * (gait == "hover" and 1.8 or 2.4) + self.seed) * 0.4 * s
+		-- the body lifts on every wing downstroke and sinks a little on the recovery
+		local fl0 = prof.flap
+		local rate = gait == "hover" and (fl0 and fl0[1] or 16) or ((fl0 and fl0[1] or 10) * (1 + spd * 0.3))
+		local xf = (t * rate / TAU) % 1
+		local lift = xf < 0.4 and sin(xf / 0.4 * math.pi) or -sin((xf - 0.4) / 0.6 * math.pi) * 0.4
+		if not (gait == "fly" and sin(t * 0.35 + self.seed) > 0.55) then
+			hoverBob += lift * (gait == "hover" and 0.06 or 0.14) * s
+		end
 		pose.tiltX += (gait == "hover" and 0.08 or 0.25) * spd
 		pose.tiltZ += -self.lean * (gait == "hover" and 0.3 or 0.8)
 		tuck = 0.6
@@ -718,7 +779,7 @@ function Animator:Step(dt: number)
 	end
 
 	-------------------------------------------------- head(s)
-	local headPitch = pose.headPitch - lookPitch
+	local headPitch = pose.headPitch - lookPitch + (self.headSteady or 0)
 	if rig.headEntry and not headIsBody then
 		local heads = rig.groups.heads
 		if heads and #heads > 1 then
@@ -796,9 +857,12 @@ function Animator:Step(dt: number)
 	-------------------------------------------------- generic tail with follow-through
 	local wag = (pose.tailWag > 0 or self.reactT) and 12 or (3 + spd * 4)
 	local wagAmp = 0.22 + pose.tailWag * 0.35
+	-- running lifts the tail and it swings against the body's sway, trailing a little behind
+	local tailLift = -clamp(spd, 0, 1.3) * 0.18
 	for i, e in ipairs(rig.tail) do
 		local ph = t * wag - i * 0.6
-		self:_set(e, CFrame.Angles(sin(ph * 0.5) * 0.06 - pose.tailCurl * 0.3, sin(ph) * (wagAmp + i * 0.03), 0))
+		local counter = sin(gp + math.pi - i * 0.5) * 0.14 * clamp(spd, 0, 1)
+		self:_set(e, CFrame.Angles(sin(ph * 0.5) * 0.06 - pose.tailCurl * 0.3 + tailLift, sin(ph) * (wagAmp + i * 0.03) + counter, 0))
 	end
 
 	-------------------------------------------------- legs / feet
@@ -808,7 +872,16 @@ function Animator:Step(dt: number)
 	for i, e in ipairs(legs) do
 		local phase = 0
 		if lk == "quad" then
-			phase = (i == 1 or i == 4) and 0 or math.pi -- diagonal pairs
+			local mode = legSwing.mode
+			if mode == "walk" then
+				-- four-beat walk: left-hind, left-fore, right-hind, right-fore
+				phase = ({ 0.5, 0, 0.75, 0.25 })[i] * TAU
+			elseif mode == "gallop" then
+				-- rotary gallop: the fronts land together, then the hinds push off
+				phase = ({ 0, 0.12, 0.55, 0.67 })[i] * TAU
+			else
+				phase = (i == 1 or i == 4) and 0 or math.pi -- trot: diagonal pairs
+			end
 		elseif lk == "bug6" then
 			phase = (i == 1 or i == 4 or i == 5) and 0 or math.pi -- alternating tripods
 		else
@@ -829,7 +902,7 @@ function Animator:Step(dt: number)
 				-- the knee also flexes while the foot swings forward
 				local dir = e.kneeDir or 1
 				local a = math.acos(clamp(1 - math.max(pose.crouch, 0) * s / (e.upperLen or s), -1, 1))
-				local flex = math.max(0, -math.cos(gp + phase)) * 0.55 * clamp(spd, 0, 1)
+				local flex = math.max(0, -math.cos(gp + phase)) * (legSwing.mode == "gallop" and 0.85 or (legSwing.mode == "trot" and 0.7 or 0.55)) * clamp(spd, 0, 1)
 				hipExtra = -a * dir
 				self:_set(e.knee, CFrame.Angles((a + flex) * dir, 0, 0))
 			end
@@ -24428,7 +24501,7 @@ return L
 ]]></ProtectedString></Properties></Item>
 </Item>
 </Item>
-<Item class="StarterPlayer" referent="RBX131"><Properties><string name="Name">StarterPlayer</string></Properties>
+<Item class="StarterPlayer" referent="RBX133"><Properties><string name="Name">StarterPlayer</string></Properties>
 <Item class="StarterPlayerScripts" referent="RBX80"><Properties><string name="Name">StarterPlayerScripts</string></Properties>
 <Item class="Folder" referent="RBX81"><Properties><string name="Name">Client</string></Properties>
 <Item class="ModuleScript" referent="RBX82"><Properties><string name="Name">BattleStage</string><ProtectedString name="Source"><![CDATA[-- BattleStage: the floating sky-island arena the battle scene plays on. A round island of the biome
@@ -27936,7 +28009,304 @@ end
 
 return E
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX93"><Properties><string name="Name">ExchangeView</string><ProtectedString name="Source"><![CDATA[-- Four direct trade signs linked to an architectural model of the sanctuary.
+<Item class="ModuleScript" referent="RBX93"><Properties><string name="Name">EpicReveal</string><ProtectedString name="Source"><![CDATA[-- EpicReveal: a full cutscene for your very best pulls only (Mythical, Secret, Divine).
+-- Location: StarterPlayer > StarterPlayerScripts > Client > EpicReveal (ModuleScript)
+--
+--   1. FREEZE    the world drains of colour, black bars slide in, a heartbeat - the camera cuts low and
+--                close to the portal while lightning cracks around it and pillars of light rise
+--   2. EMERGE    the creature charges up in the portal and does its signature entrance (Entrances);
+--                the camera pushes in with a slow dutch tilt
+--   3. BURST     a white flash, colour floods back stronger than before, the ground shockwaves
+--   4. HERO      the camera sweeps around the creature while its rarity slams onto the screen letter by
+--                letter, with its name and odds, bursts of its colour, a halo ring and god rays
+--   5. RETURN    the title fades and the view glides back to you just before the catch
+-- Secret pulls glitch the screen; Divine pulls turn the sky gold with a giant halo.
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local RS = game:GetService("ReplicatedStorage")
+local Config = require(RS.Shared.Config)
+local K = require(script.Parent.UIKit)
+local T = K.Theme
+local Effects = require(script.Parent.Effects)
+local Sounds = require(script.Parent.Sounds)
+local Settings = require(script.Parent.ClientSettings)
+local Reveal = {}
+
+local player = Players.LocalPlayer
+local V = Vector3.new
+local PI = math.pi
+local running
+
+Reveal.MinOrder = 6 -- Mythical and above
+
+function Reveal.Wants(def)
+	local r = def and Config.Rarities[def.rarity]
+	return r ~= nil and r.order >= Reveal.MinOrder and not Settings.ReducedMotion
+end
+
+local function smooth(k) k = math.clamp(k, 0, 1); return k * k * (3 - 2 * k) end
+local function tw(o, t, props, style, dir)
+	local x = TweenService:Create(o, TweenInfo.new(t, style or Enum.EasingStyle.Quart, dir or Enum.EasingDirection.Out), props)
+	x:Play()
+	return x
+end
+
+-- a jagged lightning bolt from the sky to the ground (neon segments that flicker out)
+local function bolt(at, color)
+	local folder = Effects.Folder or workspace
+	local pts = { at + V(math.random(-4, 4), 26, math.random(-4, 4)) }
+	for i = 1, 6 do
+		local last = pts[#pts]
+		table.insert(pts, last:Lerp(at, 1 / (7 - i)) + V(math.random(-15, 15) / 10, 0, math.random(-15, 15) / 10))
+	end
+	table.insert(pts, at)
+	local parts = {}
+	for i = 1, #pts - 1 do
+		local a, b = pts[i], pts[i + 1]
+		local p = Instance.new("Part")
+		p.Anchored, p.CanCollide, p.CanQuery, p.CanTouch, p.CastShadow = true, false, false, false, false
+		p.Material = Enum.Material.Neon
+		p.Color = color
+		p.Size = V(0.25, 0.25, (b - a).Magnitude)
+		p.CFrame = CFrame.lookAt((a + b) / 2, b)
+		p.Parent = folder
+		table.insert(parts, p)
+	end
+	pcall(Effects.Burst, at + V(0, 0.5, 0), ColorSequence.new(color), 10, 10, 0.6)
+	task.delay(0.08, function()
+		for _, p in ipairs(parts) do tw(p, 0.25, { Transparency = 1 }) end
+	end)
+	task.delay(0.4, function()
+		for _, p in ipairs(parts) do p:Destroy() end
+	end)
+end
+
+-- info: PortalOpened payload, def: creature, entry: the renderer entry, chanceText: "1 in 12,345"
+-- duration: seconds until the server catch (the cutscene hands the camera back a little before)
+function Reveal.Play(info, def, entry, chanceText, duration)
+	if running then running.stop() end
+	local rc = Config.Rarities[def.rarity]
+	local color = def.rarity == "Secret" and Color3.fromRGB(0, 255, 200) or rc.color
+	local secret, divine = def.rarity == "Secret", def.rarity == "Divine"
+	local camera = workspace.CurrentCamera
+	local saved = { type = camera.CameraType, fov = camera.FieldOfView, subject = camera.CameraSubject }
+	local pos = info.pos
+	local total = math.max(4.5, (duration or 6) - 0.5)
+	local alive = true
+	local conn
+	local state = {}
+	running = state
+
+	-- screen: bars, title card, flashes
+	local gui = K.new("ScreenGui", { Name = "EpicReveal", IgnoreGuiInset = true, ResetOnSpawn = false, DisplayOrder = 60,
+		Parent = player:WaitForChild("PlayerGui") })
+	local barTop = K.new("Frame", { BackgroundColor3 = Color3.new(0, 0, 0), Size = UDim2.new(1, 0, 0, 0), Parent = gui })
+	local barBot = K.new("Frame", { BackgroundColor3 = Color3.new(0, 0, 0), AnchorPoint = Vector2.new(0, 1), Position = UDim2.fromScale(0, 1),
+		Size = UDim2.new(1, 0, 0, 0), Parent = gui })
+	tw(barTop, 0.35, { Size = UDim2.new(1, 0, 0.12, 0) })
+	tw(barBot, 0.35, { Size = UDim2.new(1, 0, 0.12, 0) })
+	local flash = K.new("Frame", { BackgroundColor3 = Color3.new(1, 1, 1), BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = 9, Parent = gui })
+	local letters = {}
+	local word = string.upper(def.rarity)
+	local title = K.new("Frame", { BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.3),
+		Size = UDim2.new(1, 0, 0, 110), Parent = gui })
+	K.new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, HorizontalAlignment = Enum.HorizontalAlignment.Center,
+		VerticalAlignment = Enum.VerticalAlignment.Center, Padding = UDim.new(0, 6), Parent = title })
+	for i = 1, #word do
+		local l = K.new("TextLabel", { BackgroundTransparency = 1, Text = word:sub(i, i), Font = Enum.Font.GothamBlack, TextSize = 96,
+			TextColor3 = color, TextTransparency = 1, Size = UDim2.fromOffset(78, 110), LayoutOrder = i, Parent = title })
+		local st = K.new("UIStroke", { Color = Color3.new(0, 0, 0), Thickness = 4, Transparency = 1, Parent = l })
+		local sc = K.new("UIScale", { Scale = 2.6, Parent = l })
+		table.insert(letters, { l = l, st = st, sc = sc })
+	end
+	local name = K.new("TextLabel", { BackgroundTransparency = 1, Text = def.name, Font = Enum.Font.GothamBlack, TextSize = 46,
+		TextColor3 = Color3.new(1, 1, 1), TextTransparency = 1, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.43),
+		Size = UDim2.new(1, 0, 0, 56), Parent = gui })
+	local nameStroke = K.new("UIStroke", { Color = Color3.new(0, 0, 0), Thickness = 3, Transparency = 1, Parent = name })
+	local odds = K.new("TextLabel", { BackgroundTransparency = 1, Text = chanceText or "", Font = Enum.Font.GothamBold, TextSize = 26,
+		TextColor3 = T.CinematicGold, TextTransparency = 1, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.new(1, 0, 0, 30), Parent = gui })
+	local glitch = {}
+	if secret then
+		for i = 1, 6 do
+			table.insert(glitch, K.new("Frame", { BackgroundColor3 = i % 2 == 0 and Color3.fromRGB(255, 0, 170) or Color3.fromRGB(0, 255, 200),
+				BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, math.random(4, 22)), Position = UDim2.fromScale(0, math.random()), ZIndex = 8, Parent = gui }))
+		end
+	end
+
+	-- world: colour drained then flooded back, divine gold sky
+	local grade = Instance.new("ColorCorrectionEffect")
+	grade.Name = "EpicRevealGrade"
+	grade.Parent = camera
+	tw(grade, 0.4, { Saturation = -0.85, Brightness = -0.12, Contrast = 0.15 })
+	local halo
+	if divine then
+		halo = Instance.new("Part")
+		halo.Anchored, halo.CanCollide, halo.CanQuery, halo.CanTouch, halo.CastShadow = true, false, false, false, false
+		halo.Shape = Enum.PartType.Cylinder
+		halo.Material = Enum.Material.Neon
+		halo.Color = Color3.fromRGB(255, 236, 160)
+		halo.Transparency = 1
+		halo.Size = V(0.4, 1, 1)
+		halo.CFrame = CFrame.new(pos + V(0, 12, 0)) * CFrame.Angles(0, 0, PI / 2)
+		halo.Parent = Effects.Folder or workspace
+	end
+	pcall(Sounds.Play, "Whoosh", 0.6) -- (Charge is a looped sound)
+	pcall(Effects.Shake, 0.4, 0.4)
+
+	camera.CameraType = Enum.CameraType.Scriptable
+	local start = os.clock()
+	local fired = {}
+	local function once(key, t, fn)
+		if not fired[key] and (os.clock() - start) >= t then
+			fired[key] = true
+			pcall(fn)
+		end
+	end
+	local nextBolt = 0.2
+	local function creaturePos()
+		local m = entry and entry.model
+		local pp = m and m.PrimaryPart
+		return pp and pp.Position or pos
+	end
+	local portalFront = pos + V(0, 0, -1)
+
+	function state.stop()
+		if not alive then return end
+		alive = false
+		if conn then conn:Disconnect() end
+		running = nil
+		grade:Destroy()
+		if halo then halo:Destroy() end
+		gui:Destroy()
+		camera.CameraType = saved.type == Enum.CameraType.Scriptable and Enum.CameraType.Custom or saved.type
+		camera.FieldOfView = saved.fov
+		if saved.subject and saved.subject.Parent then
+			camera.CameraSubject = saved.subject
+		end
+	end
+
+	local startCF = camera.CFrame
+	conn = RunService.RenderStepped:Connect(function()
+		if not alive then return end
+		local t = os.clock() - start
+		local cp = creaturePos()
+		local cf
+		if t < 0.6 then
+			-- cut in close and low on the portal
+			local want = CFrame.lookAt(portalFront + V(-4, 2, -11), pos + V(0, 4, 0))
+			cf = startCF:Lerp(want, smooth(t / 0.5))
+			camera.FieldOfView = 70 - smooth(t / 0.6) * 18
+		elseif t < 2.6 then
+			-- push in with a slow dutch tilt while it emerges
+			local q = (t - 0.6) / 2
+			local eye = portalFront + V(-4 + q * 2, 2 + q * 0.6, -11 + q * 3.5)
+			cf = CFrame.lookAt(eye, cp:Lerp(pos + V(0, 3, 0), 0.4) + V(0, 1.5, 0)) * CFrame.Angles(0, 0, math.sin(q * PI) * 0.12)
+			camera.FieldOfView = 52 - q * 6
+		elseif t < total - 0.7 then
+			-- hero orbit around the creature
+			local q = (t - 2.6) / math.max(0.5, total - 3.3)
+			local a = -PI * 0.65 + q * PI * 1.3
+			local r = 9 - q * 1.5
+			local eye = cp + V(math.sin(a) * r, 2.2 + q * 2.5, -math.cos(a) * r)
+			cf = CFrame.lookAt(eye, cp + V(0, 1.6, 0))
+			camera.FieldOfView = 50
+		else
+			-- glide back toward the player
+			local q = smooth((t - (total - 0.7)) / 0.7)
+			local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+			local back = root and CFrame.lookAt(root.Position + V(0, 7, 16), root.Position + V(0, 2, 0)) or startCF
+			cf = camera.CFrame:Lerp(back, q * 0.35)
+			camera.FieldOfView = 50 + q * 20
+		end
+		camera.CFrame = cf
+
+		-- lightning and light pillars while it builds
+		if t < 2.4 and t >= nextBolt then
+			nextBolt = t + (secret and 0.22 or 0.32)
+			local a = math.random() * PI * 2
+			bolt(pos + V(math.cos(a) * math.random(4, 9), 0.2, math.sin(a) * math.random(4, 9)), color)
+		end
+		once("pillars", 0.7, function()
+			for i = 0, 3 do
+				local a = i / 4 * PI * 2 + PI / 4
+				Effects.LightBeam(pos + V(math.cos(a) * 6, 0, math.sin(a) * 6), color, 60, 2.4)
+			end
+			pcall(Sounds.Play, "Open", 0.6)
+		end)
+		-- the burst: flash, colour floods back, shockwave
+		once("burst", 2.5, function()
+			flash.BackgroundTransparency = 0.05
+			tw(flash, 0.6, { BackgroundTransparency = 1 })
+			tw(grade, 0.5, { Saturation = 0.35, Brightness = 0.05, Contrast = 0.1, TintColor = divine and Color3.fromRGB(255, 240, 200) or Color3.new(1, 1, 1) })
+			Effects.Shockwave(pos, color, 34, 1)
+			Effects.Burst(cp + V(0, 2, 0), ColorSequence.new(color, Color3.new(1, 1, 1)), 60, 26, 1.4)
+			Effects.Shake(0.9, 0.5)
+			pcall(Sounds.Play, "Rare", 0.9)
+		end)
+		-- the title slams in letter by letter
+		for i, L in ipairs(letters) do
+			once("letter" .. i, 2.75 + i * 0.07, function()
+				L.l.TextTransparency, L.st.Transparency = 0, 0.1
+				tw(L.sc, 0.35, { Scale = 1 }, Enum.EasingStyle.Back)
+			end)
+		end
+		once("name", 3.2 + #letters * 0.07, function()
+			tw(name, 0.4, { TextTransparency = 0 })
+			tw(nameStroke, 0.4, { Transparency = 0.2 })
+			tw(odds, 0.4, { TextTransparency = 0.05 })
+		end)
+		once("rays", 3.0, function()
+			Effects.LightBeam(cp, color, 120, total - 3.2)
+			Effects.Burst(cp + V(0, 3, 0), ColorSequence.new(color), 40, 18, 1.1)
+			if halo then
+				halo.Transparency = 0.2
+				tw(halo, 0.8, { Size = V(0.3, 26, 26), Transparency = 0.45 }, Enum.EasingStyle.Back)
+			end
+		end)
+		if t > 3 and t < total - 0.8 and math.floor(t * 3) ~= state.lastBurst then
+			state.lastBurst = math.floor(t * 3)
+			local a = math.random() * PI * 2
+			pcall(Effects.Burst, cp + V(math.cos(a) * 3, 2 + math.random() * 2, math.sin(a) * 3), ColorSequence.new(color, Color3.new(1, 1, 1)), 12, 10, 0.8)
+		end
+		-- secret glitch bars
+		for _, g in ipairs(glitch) do
+			if t < total - 0.5 and math.random() < 0.25 then
+				g.BackgroundTransparency = math.random() < 0.5 and 0.35 or 1
+				g.Position = UDim2.fromScale(0, math.random())
+			else
+				g.BackgroundTransparency = 1
+			end
+		end
+		-- fade out the title near the end
+		once("fade", total - 0.8, function()
+			for _, L in ipairs(letters) do
+				tw(L.l, 0.5, { TextTransparency = 1 })
+				tw(L.st, 0.5, { Transparency = 1 })
+			end
+			tw(name, 0.5, { TextTransparency = 1 })
+			tw(nameStroke, 0.5, { Transparency = 1 })
+			tw(odds, 0.5, { TextTransparency = 1 })
+			tw(barTop, 0.5, { Size = UDim2.new(1, 0, 0, 0) })
+			tw(barBot, 0.5, { Size = UDim2.new(1, 0, 0, 0) })
+			tw(grade, 0.6, { Saturation = 0, Brightness = 0, Contrast = 0 })
+			if halo then tw(halo, 0.6, { Transparency = 1 }) end
+		end)
+		if t >= total then
+			state.stop()
+		end
+	end)
+	return state
+end
+
+function Reveal.Stop()
+	if running then running.stop() end
+end
+
+return Reveal
+]]></ProtectedString></Properties></Item>
+<Item class="ModuleScript" referent="RBX94"><Properties><string name="Name">ExchangeView</string><ProtectedString name="Source"><![CDATA[-- Four direct trade signs linked to an architectural model of the sanctuary.
 local K = require(script.Parent.UIKit)
 local T = K.Theme
 local Craft = require(script.Parent.SanctuaryUI)
@@ -28169,7 +28539,7 @@ function E.Mount(hub, HUD)
 end
 return E
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX94"><Properties><string name="Name">ExpeditionArena</string><ProtectedString name="Source"><![CDATA[-- ExpeditionArena: the battle scene. You enter the expedition and watch your team fight on a floating
+<Item class="ModuleScript" referent="RBX95"><Properties><string name="Name">ExpeditionArena</string><ProtectedString name="Source"><![CDATA[-- ExpeditionArena: the battle scene. You enter the expedition and watch your team fight on a floating
 -- sky-island arena (BattleStage): the team walks out of its portal, every monster steps out of the
 -- monster portal in waves ("WAVE 2/6"), each pet attacks with its own move (slam, spin, sword slash,
 -- charge, bite), monsters hit back, the boss arrives with a quake, and the battle ends with a treasure
@@ -28790,7 +29160,7 @@ end
 
 return Arena
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX95"><Properties><string name="Name">ExpeditionFight</string><ProtectedString name="Source"><![CDATA[-- Animated expedition battle inside the journey-map ViewportFrame: the real pet walks the route,
+<Item class="ModuleScript" referent="RBX96"><Properties><string name="Name">ExpeditionFight</string><ProtectedString name="Source"><![CDATA[-- Animated expedition battle inside the journey-map ViewportFrame: the real pet walks the route,
 -- fights each biome monster (lunges, hits, sparks, knock-downs) and the camera follows the action.
 -- Timing comes from Shared/ExpeditionBattle, so it always matches the HUD mini-map.
 local RS = game:GetService("ReplicatedStorage")
@@ -29269,7 +29639,7 @@ end
 
 return Fight
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX96"><Properties><string name="Name">ExpeditionMiniMap</string><ProtectedString name="Source"><![CDATA[-- Always-on HUD mini-map for the active expedition: the route, every monster (waiting, fighting,
+<Item class="ModuleScript" referent="RBX97"><Properties><string name="Name">ExpeditionMiniMap</string><ProtectedString name="Source"><![CDATA[-- Always-on HUD mini-map for the active expedition: the route, every monster (waiting, fighting,
 -- defeated), the pet marker moving and lunging, live HP bars and a one-line battle log.
 local RS = game:GetService("ReplicatedStorage")
 local Config = require(RS.Shared.Config)
@@ -29491,7 +29861,7 @@ end
 
 return Mini
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX97"><Properties><string name="Name">ExpeditionPanel</string><ProtectedString name="Source"><![CDATA[-- Skyforge visual planning; all mission authority remains on the server.
+<Item class="ModuleScript" referent="RBX98"><Properties><string name="Name">ExpeditionPanel</string><ProtectedString name="Source"><![CDATA[-- Skyforge visual planning; all mission authority remains on the server.
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -30759,7 +31129,7 @@ function Panel.Init()
 end
 return Panel
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX98"><Properties><string name="Name">ExpeditionScene</string><ProtectedString name="Source"><![CDATA[-- Detailed, deterministic native biome vignettes for the expedition map.
+<Item class="ModuleScript" referent="RBX99"><Properties><string name="Name">ExpeditionScene</string><ProtectedString name="Source"><![CDATA[-- Detailed, deterministic native biome vignettes for the expedition map.
 local Config = require(game.ReplicatedStorage.Shared.Config)
 local Scene = {}
 local V, C = Vector3.new, Color3.fromRGB
@@ -30949,7 +31319,7 @@ function Scene.Build(id)
 end
 return Scene
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX99"><Properties><string name="Name">FarmClient</string><ProtectedString name="Source"><![CDATA[-- FarmClient: client side of the courtyard farm (server: FarmService).
+<Item class="LocalScript" referent="RBX100"><Properties><string name="Name">FarmClient</string><ProtectedString name="Source"><![CDATA[-- FarmClient: client side of the courtyard farm (server: FarmService).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > FarmClient (LocalScript)
 --  * Shows only YOUR courtyard's farm prompts (beds, feeding, board, chest); others' stay hidden.
 --  * Updates permanent physical farm signs. No screen toasts or character message bursts.
@@ -31382,7 +31752,7 @@ FarmFx.OnClientEvent:Connect(function(kind, d)
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX100"><Properties><string name="Name">FarmMarketPanel</string><ProtectedString name="Source"><![CDATA[-- Two physical entrances, one small shop. No additional HUD destination.
+<Item class="ModuleScript" referent="RBX101"><Properties><string name="Name">FarmMarketPanel</string><ProtectedString name="Source"><![CDATA[-- Two physical entrances, one small shop. No additional HUD destination.
 local Players = game:GetService("Players")
 local Http = game:GetService("HttpService")
 local RS = game:GetService("ReplicatedStorage")
@@ -31694,7 +32064,7 @@ end
 
 return Panel
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX101"><Properties><string name="Name">ForgePanel</string><ProtectedString name="Source"><![CDATA[-- The hall is the entry point. Explicit copies, visible odds, then a consumption confirmation.
+<Item class="ModuleScript" referent="RBX102"><Properties><string name="Name">ForgePanel</string><ProtectedString name="Source"><![CDATA[-- The hall is the entry point. Explicit copies, visible odds, then a consumption confirmation.
 local RS = game:GetService("ReplicatedStorage")
 local Http = game:GetService("HttpService")
 local Rules = require(RS.Shared.ForgeRules)
@@ -32212,7 +32582,7 @@ function Panel.Init()
 end
 return Panel
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX102"><Properties><string name="Name">GameplayFeel</string><ProtectedString name="Source"><![CDATA[-- Batched treasury collection feedback. Sir Rowan owns tutorial guidance.
+<Item class="ModuleScript" referent="RBX103"><Properties><string name="Name">GameplayFeel</string><ProtectedString name="Source"><![CDATA[-- Batched treasury collection feedback. Sir Rowan owns tutorial guidance.
 local RS = game:GetService("ReplicatedStorage")
 local Format = require(RS.Shared.Format)
 local Settings = require(script.Parent.ClientSettings)
@@ -32248,7 +32618,7 @@ function Feel.Money(amount, position)
 end
 return Feel
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX103"><Properties><string name="Name">GuildModel</string><ProtectedString name="Source"><![CDATA[-- An architectural model of the four sanctuary trades, made for the exchange folio.
+<Item class="ModuleScript" referent="RBX104"><Properties><string name="Name">GuildModel</string><ProtectedString name="Source"><![CDATA[-- An architectural model of the four sanctuary trades, made for the exchange folio.
 local Merchant = require(script.Parent.MerchantDisplay)
 local Portal = require(game:GetService("ReplicatedStorage").Shared.PortalBuilder)
 local K = require(script.Parent.UIKit)
@@ -32420,7 +32790,7 @@ function G.Pedestal(model)
 end
 return G
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX104"><Properties><string name="Name">HUD</string><ProtectedString name="Source"><![CDATA[-- Direct Pets, Shop and Expeditions navigation with a shared responsive panel layer.
+<Item class="ModuleScript" referent="RBX105"><Properties><string name="Name">HUD</string><ProtectedString name="Source"><![CDATA[-- Direct Pets, Shop and Expeditions navigation with a shared responsive panel layer.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Input = game:GetService("UserInputService")
@@ -32978,7 +33348,7 @@ end)
 task.defer(rescale)
 return HUD
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX105"><Properties><string name="Name">Intro</string><ProtectedString name="Source"><![CDATA[-- Intro: the portal arrival you see when you join.
+<Item class="ModuleScript" referent="RBX106"><Properties><string name="Name">Intro</string><ProtectedString name="Source"><![CDATA[-- Intro: the portal arrival you see when you join.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > Intro (ModuleScript)
 --
 --   Intro.Cover(hud)  runs the moment the client starts, entirely in 2D so it never waits on the map:
@@ -33006,6 +33376,8 @@ local Config = require(RS.Shared.Config)
 local CreatureData = require(RS.Shared.CreatureData)
 local Builder = require(RS.Shared.CreatureBuilder)
 local okPortal, Portal = pcall(require, RS.Shared.PortalBuilder)
+local okShow, IntroShow = pcall(require, script.Parent.IntroShow) -- the in-world creature show
+if not okShow then IntroShow = nil end
 if not okPortal then Portal = nil end
 
 local function tw(o, t, props, style, dir)
@@ -33160,9 +33532,18 @@ function Intro.Cover(hud)
 	local shine = K.new("UIGradient", { Rotation = 12, Offset = Vector2.new(-1, 0), Parent = line1,
 		Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.new(1, 1, 1)), ColorSequenceKeypoint.new(0.42, Color3.new(1, 1, 1)),
 			ColorSequenceKeypoint.new(0.5, CYAN), ColorSequenceKeypoint.new(0.58, Color3.new(1, 1, 1)), ColorSequenceKeypoint.new(1, Color3.new(1, 1, 1)) }) })
-	local skip = K.new("TextLabel", { Text = Reveal.Track("Click to skip"), Font = fnt("MontserratMedium", Enum.Font.GothamMedium), TextSize = 12,
-		TextColor3 = T.Muted, TextTransparency = 0.35, BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, 1),
-		Position = UDim2.new(1, -28, 1, -26), Size = UDim2.fromOffset(220, 16), TextXAlignment = Enum.TextXAlignment.Right, Parent = gui })
+	-- a real Skip button (clicks elsewhere are for tapping the portal)
+	local skip = K.new("TextButton", { Text = Reveal.Track("Skip intro") .. "  >>", Font = fnt("MontserratBold", Enum.Font.GothamBold), TextSize = 14,
+		TextColor3 = Color3.new(1, 1, 1), TextTransparency = 0.1, BackgroundColor3 = Color3.fromRGB(30, 22, 50), BackgroundTransparency = 0.35,
+		AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -20, 1, -20), Size = UDim2.fromOffset(150, 36), ZIndex = 20, Parent = gui })
+	K.new("UICorner", { CornerRadius = UDim.new(0, 10), Parent = skip })
+	skip.Activated:Connect(function()
+		skipped = true
+	end)
+	local tapHint = K.new("TextLabel", { Text = "TAP THE PORTAL!", Font = fnt("MontserratBlack", Enum.Font.GothamBlack), TextSize = 18,
+		TextColor3 = T.CinematicGold, BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -64),
+		Size = UDim2.fromOffset(420, 22), TextStrokeTransparency = 0.4, Parent = gui })
+	local summoned = 0
 	local loading = K.new("TextLabel", { Text = Reveal.Track("Opening the portal"), Font = fnt("MontserratBold", Enum.Font.GothamBold), TextSize = 13,
 		TextColor3 = T.CinematicGold, TextTransparency = 0.1, BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 1),
 		Position = UDim2.new(0.5, 0, 1, -40), Size = UDim2.fromOffset(420, 18), Parent = gui })
@@ -33295,11 +33676,42 @@ function Intro.Cover(hud)
 		end
 	end
 	gui.Destroying:Connect(cleanup)
-	ui = { gui = gui, black = black, skip = skip, loading = loading, hideTitle = hideTitle, waiting = true, blur = blur,
-		bar = bar, barBg = barBg, zoom = zoom, fadeArt = fadeArt }
 
+	-- tap the portal while the world loads: a creature bursts out every time
+	local tap = K.new("TextButton", { Text = "", BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromScale(1.15, 1.15), ZIndex = 15, Parent = portal })
+	tap.Activated:Connect(function()
+		if not ui or not ui.waiting then return end
+		summoned += 1
+		tapHint.Text = "SUMMONED: " .. summoned .. (summoned >= 10 and "  - PORTAL MASTER!" or "")
+		tapHint.TextColor3 = summoned >= 10 and Color3.fromRGB(255, 120, 200) or T.CinematicGold
+		portalScale.Scale = 0.9
+		tw(portalScale, 0.35, { Scale = 1 }, Enum.EasingStyle.Back)
+		if not calm then burstSparks() end
+		pcall(Sounds.Play, "Spawn", 1 + math.min(summoned, 12) * 0.04)
+		nextCreature()
+	end)
+
+	-- the title slams back in during the creature show
+	local function showTitle()
+		titleShown = true
+		titleScale.Scale = calm and 1 or 1.8
+		for _, l in ipairs({ line1, line2 }) do
+			tw(l, 0.2, { TextTransparency = 0 })
+			tw(l:FindFirstChildOfClass("UIStroke"), 0.2, { Transparency = 0.25 })
+		end
+		shine.Offset = Vector2.new(-1, 0)
+		tw(titleScale, 0.4, { Scale = 1 }, Enum.EasingStyle.Back)
+		tw(shine, 1, { Offset = Vector2.new(1, 0) }, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
+		pcall(Sounds.Play, "Rare", 1.05)
+	end
+	ui = { gui = gui, black = black, skip = skip, loading = loading, hideTitle = hideTitle, waiting = true, blur = blur,
+		bar = bar, barBg = barBg, zoom = zoom, fadeArt = fadeArt, showTitle = showTitle, tapHint = tapHint }
+
+	-- keyboard / gamepad skip; mouse and touch are for the portal and the Skip button
 	skipConn = UserInputService.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.Keyboard then
+		local key = input.KeyCode
+		if key == Enum.KeyCode.Space or key == Enum.KeyCode.Escape or key == Enum.KeyCode.Return or key == Enum.KeyCode.ButtonB then
 			skipped = true
 		end
 	end)
@@ -33405,9 +33817,35 @@ function Intro.Play(hud)
 		end
 		Effects.Letterbox(true)
 		camera.CameraType = Enum.CameraType.Scriptable
-		camera.CFrame = CFrame.lookAt(pts[1], looks[1])
-		local dir = (pts[2] - pts[1]).Unit
-		gate = skyGate(pts[1] + dir * 10, dir)
+		-- the creature show: sky portal, a dragon roaring past, a lion and a parade of pets
+		local showEnd
+		if IntroShow and not skipped and not Settings.ReducedMotion then
+			if u.tapHint then u.tapHint.Visible = false end
+			tw(black, 0.35, { BackgroundTransparency = 1 }, Enum.EasingStyle.Sine)
+			if u.fadeArt then u.fadeArt(0.35) end
+			local okShow, endCF = pcall(IntroShow.Run, {
+				camera = camera,
+				skipped = function()
+					return skipped or Settings.ReducedMotion
+				end,
+				title = u.showTitle,
+			})
+			if okShow and typeof(endCF) == "CFrame" then
+				showEnd = endCF
+			elseif not okShow then
+				warn("[IntroShow] " .. tostring(endCF))
+			end
+			hideTitle(0.4)
+		end
+		if showEnd then
+			-- dive from where the show ended, straight down to you
+			pts[1], looks[1] = showEnd.Position, showEnd.Position + showEnd.LookVector * 20
+			camera.CFrame = showEnd
+		else
+			camera.CFrame = CFrame.lookAt(pts[1], looks[1])
+			local dir = (pts[2] - pts[1]).Unit
+			gate = skyGate(pts[1] + dir * 10, dir)
+		end
 		RunService.RenderStepped:Wait()
 		tw(black, 0.35, { BackgroundTransparency = 1 }, Enum.EasingStyle.Sine)
 		if u.fadeArt then u.fadeArt(0.35) end
@@ -33471,7 +33909,7 @@ end
 
 return Intro
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX106"><Properties><string name="Name">IntroReadiness</string><ProtectedString name="Source"><![CDATA[-- Loading stages describe actual readiness, rather than a percentage of arbitrary instance counts.
+<Item class="ModuleScript" referent="RBX107"><Properties><string name="Name">IntroReadiness</string><ProtectedString name="Source"><![CDATA[-- Loading stages describe actual readiness, rather than a percentage of arbitrary instance counts.
 local Readiness = {}
 function Readiness.Resolve(state)
 	if not state.loaded or not state.map then
@@ -33490,7 +33928,235 @@ function Readiness.Resolve(state)
 end
 return Readiness
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX107"><Properties><string name="Name">KnightGuide</string><ProtectedString name="Source"><![CDATA[-- A short saved guide, with a real knight portrait and ground arrows on known hub paths.
+<Item class="ModuleScript" referent="RBX108"><Properties><string name="Name">IntroShow</string><ProtectedString name="Source"><![CDATA[-- IntroShow: the creature show that opens the game once the world is ready (played by Intro).
+-- Location: StarterPlayer > StarterPlayerScripts > Client > IntroShow (ModuleScript)
+--
+--   SKY      a giant portal tears open in the sky above the Launch Hall; a dragon bursts out of it,
+--            flies straight at the camera breathing fire and roars past overhead
+--   GROUND   the camera drops to the ground where a second portal opens: a lion leaps out and roars
+--            (shockwave), then a parade of little pets hops and runs out past the camera
+--   TITLE    everyone poses while the title slams in, then Intro dives the camera down to you
+-- Everything is built locally and removed afterwards; any click/key skip ends it at once.
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local RS = game:GetService("ReplicatedStorage")
+local CreatureData = require(RS.Shared.CreatureData)
+local Builder = require(RS.Shared.CreatureBuilder)
+local Animator = require(RS.Shared.CreatureAnimator)
+local Effects = require(script.Parent.Effects)
+local Sounds = require(script.Parent.Sounds)
+local okPortal, Portal = pcall(require, RS.Shared.PortalBuilder)
+local Show = {}
+
+local V = Vector3.new
+local PI = math.pi
+local player = Players.LocalPlayer
+
+local function smooth(k) k = math.clamp(k, 0, 1); return k * k * (3 - 2 * k) end
+local function pick(list)
+	local have = {}
+	for _, id in ipairs(list) do
+		if CreatureData.ById[id] then table.insert(have, id) end
+	end
+	return have[math.random(1, math.max(1, #have))] or CreatureData.List[1].id
+end
+
+local function groundAt(x, z, fallback)
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	local ignore = {}
+	if player.Character then table.insert(ignore, player.Character) end
+	if Effects.Folder then table.insert(ignore, Effects.Folder) end
+	params.FilterDescendantsInstances = ignore
+	local hit = workspace:Raycast(V(x, 400, z), V(0, -800, 0), params)
+	return hit and hit.Position.Y or fallback
+end
+
+-- a creature driven by its own animator (legs, wings and tail move while it travels)
+local function actor(id, folder, at, scale)
+	local model, rig = Builder.Build(id, scale)
+	for _, e in ipairs(rig.emitters or {}) do e.Enabled = true end
+	model.Parent = folder
+	local anim = Animator.new(rig, CFrame.new(at))
+	return { model = model, anim = anim, rig = rig }
+end
+local function place(a, pos, facing, dt, ground, spin)
+	local an = a.anim
+	local flat = V(pos.X - an.pos.X, 0, pos.Z - an.pos.Z)
+	if flat.Magnitude > 0.05 then
+		an:MoveTo(V(pos.X, an.pos.Y, pos.Z), math.max(6, flat.Magnitude / math.max(dt, 1 / 120) * 1.1))
+	else
+		an.moveTarget = nil
+		local yaw = math.atan2(-facing.X, -facing.Z) + (spin or 0)
+		an.yaw, an.targetYaw = yaw, yaw
+	end
+	an.groundY = pos.Y
+	an:Step(dt)
+end
+
+local function gate(folder, id, radius, at, facing)
+	if not (okPortal and Portal and Portal.BuildGate) then return nil end
+	local ok, g, refs = pcall(Portal.BuildGate, id, radius)
+	if not ok or not g then return nil end
+	g:PivotTo(CFrame.lookAt(at, at + facing))
+	for _, d in ipairs(g:GetDescendants()) do
+		if d:IsA("BasePart") then d.Anchored = true end
+	end
+	g:ScaleTo(0.05)
+	g.Parent = folder
+	return { model = g, refs = refs, cf = CFrame.lookAt(at, at + facing) }
+end
+
+local function call(pos, text, color)
+	if Effects.FloatingText then pcall(Effects.FloatingText, pos, text, color, 1.6) end
+end
+
+-- opts: { camera, skipped = function() -> bool, title = function() (show the title card) }
+-- Returns the camera CFrame it ended on, so the next shot can continue smoothly.
+function Show.Run(opts)
+	local camera = opts.camera or workspace.CurrentCamera
+	local folder = Instance.new("Folder")
+	folder.Name = "IntroShow"
+	folder.Parent = workspace
+	local fx = {}
+	local function cleanup()
+		for _, a in ipairs(fx) do pcall(a.anim.Destroy, a.anim) end
+		folder:Destroy()
+	end
+
+	-- the stage: in front of the Launch Hall (its open front faces +Z)
+	local g0 = groundAt(0, 70, 0)
+	local skyPortalAt = V(0, g0 + 48, 10)
+	local groundPortalAt = V(0, g0 + 5.2, 46)
+	local camGround = V(-7, g0 + 3.5, 82)
+	local sky = gate(folder, "Divine", 15, skyPortalAt, V(0, 0, 1))
+	local low = gate(folder, "Galaxy", 5, groundPortalAt, V(0, 0, 1))
+
+	local dragonId = pick({ "CosmicDragon", "Infernadrake", "ArchDrake", "EclipseDragon", "Crystalwing", "Bloomwyrm" })
+	local lionId = pick({ "PrismLion", "SeraphLion", "UmbraWolf", "AuroraFox", "BlizzardBear" })
+	local parade = { "Mossbun", "Emberpup", "Gumdrop", "Frostpaw", "CloudLamb", "AstroBlob", "Lollipup", "Gemmy" }
+	local dragon = actor(dragonId, folder, skyPortalAt + V(0, 0, -6), 2.4)
+	table.insert(fx, dragon)
+	local lion = actor(lionId, folder, groundPortalAt + V(0, -4.8, -3), 1.5)
+	table.insert(fx, lion)
+	local pets = {}
+	for i = 1, 5 do
+		local id = table.remove(parade, math.random(1, #parade))
+		if CreatureData.ById[id] then
+			local p = actor(id, folder, groundPortalAt + V(0, -4.8, -3), 1.1)
+			table.insert(pets, p)
+			table.insert(fx, p)
+		end
+	end
+
+	local start = os.clock()
+	local last = start
+	local done = {}
+	local function once(key, t, fn)
+		if not done[key] and os.clock() - start >= t then
+			done[key] = true
+			pcall(fn)
+		end
+	end
+	local DURATION = 6.2
+	local camCF = camera.CFrame
+	while os.clock() - start < DURATION do
+		if opts.skipped and opts.skipped() then break end
+		local now = os.clock()
+		local t, dt = now - start, now - last
+		last = now
+		-- portals grow and swirl
+		for _, gg in ipairs({ sky, low }) do
+			if gg then
+				local open = gg == sky and smooth(t / 0.7) or smooth((t - 2.4) / 0.5)
+				gg.model:ScaleTo(math.max(0.05, open))
+				gg.model:PivotTo(gg.cf)
+				if Portal.Spin then pcall(Portal.Spin, gg.refs, t) end
+			end
+		end
+		-- SKY: the dragon bursts out, flies at the camera and roars past overhead
+		local dp
+		if t < 2.6 then
+			local q = smooth(math.clamp((t - 0.5) / 1.9, 0, 1))
+			dp = skyPortalAt:Lerp(V(2, g0 + 30, 74), q) + V(math.sin(q * PI) * 6, math.sin(q * PI * 2) * 2, 0)
+		else
+			local q = math.clamp((t - 2.6) / 2, 0, 1)
+			dp = V(2, g0 + 30, 74):Lerp(V(-30, g0 + 46, 140), q)
+		end
+		place(dragon, dp, V(0, 0, 1), dt, nil)
+		dragon.anim.groundY = dp.Y
+		once("dragonOut", 0.55, function()
+			Effects.Burst(skyPortalAt, ColorSequence.new(Color3.fromRGB(255, 230, 150), Color3.fromRGB(255, 120, 60)), 40, 24, 1.4)
+			Effects.Shake(0.5, 0.4)
+			pcall(Sounds.Play, "Rare", 0.85)
+		end)
+		if t > 1.1 and t < 2.4 and math.floor(t * 8) ~= done.lastFire then
+			done.lastFire = math.floor(t * 8)
+			Effects.Burst(dp + V(0, 0, 4), ColorSequence.new(Color3.fromRGB(255, 210, 90), Color3.fromRGB(255, 80, 30)), 10, 18, 1.1)
+		end
+		once("dragonRoar", 1.4, function()
+			call(dp + V(0, 6, 0), "ROOOAR!", Color3.fromRGB(255, 160, 80))
+		end)
+		-- GROUND: the lion leaps out of the low portal and roars, then the parade runs out
+		local lp
+		local lionLand = groundPortalAt + V(0, -4.9, 14)
+		if t < 2.7 then
+			lp = groundPortalAt + V(0, -4.9, -3)
+		elseif t < 3.4 then
+			local q = (t - 2.7) / 0.7
+			lp = (groundPortalAt + V(0, -4.9, -1)):Lerp(lionLand, q) + V(0, 4 * q * (1 - q) * 5, 0)
+		else
+			lp = lionLand
+		end
+		place(lion, lp, V(0, 0, 1), dt)
+		once("lionRoar", 3.45, function()
+			Effects.Shockwave(lionLand, Color3.fromRGB(255, 220, 120), 22, 0.7)
+			Effects.Shake(0.7, 0.45)
+			call(lionLand + V(0, 7, 0), "ROAR!", Color3.fromRGB(255, 220, 120))
+			pcall(Sounds.Play, "Whoosh", 0.7)
+		end)
+		for i, p in ipairs(pets) do
+			local start2 = 3.6 + i * 0.22
+			local pp
+			if t < start2 then
+				pp = groundPortalAt + V(0, -4.9, -3)
+			else
+				local q = math.clamp((t - start2) / 1.8, 0, 1)
+				local lane = (i - 3) * 2.6
+				pp = (groundPortalAt + V(0, -4.9, 0)):Lerp(V(lane, g0, 70), q) + V(0, math.abs(math.sin(q * PI * 5)) * 0.8, 0)
+			end
+			place(p, pp, V(0, 0, 1), dt)
+			once("petPop" .. i, start2, function()
+				Effects.Burst(groundPortalAt, ColorSequence.new(Color3.fromRGB(150, 220, 255), Color3.fromRGB(255, 150, 230)), 10, 10, 0.7)
+			end)
+		end
+		once("title", 4.4, function()
+			if opts.title then opts.title() end
+		end)
+		-- camera: look up at the sky portal, track the dragon, drop to the ground for the lion and parade
+		local cf
+		if t < 2.4 then
+			local q = smooth(t / 2.4)
+			local eye = camGround + V(4, 2 + q * 2, 0)
+			cf = CFrame.lookAt(eye, skyPortalAt:Lerp(dp, q))
+		elseif t < 3.2 then
+			local q = smooth((t - 2.4) / 0.8)
+			cf = CFrame.lookAt(camGround + V(2 - q * 2, 4 - q, 0), dp:Lerp(lionLand + V(0, 2, 0), q))
+		else
+			local q = smooth((t - 3.2) / 3)
+			cf = CFrame.lookAt(camGround + V(-q * 3, 3 + q * 4, q * 6), lionLand + V(0, 2 + q * 3, 0))
+		end
+		camera.CFrame = cf
+		camCF = cf
+		RunService.RenderStepped:Wait()
+	end
+	cleanup()
+	return camCF
+end
+
+return Show
+]]></ProtectedString></Properties></Item>
+<Item class="ModuleScript" referent="RBX109"><Properties><string name="Name">KnightGuide</string><ProtectedString name="Source"><![CDATA[-- A short saved guide, with a real knight portrait and ground arrows on known hub paths.
 local RS = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Rules = require(RS.Shared.ForgeRules)
@@ -33928,7 +34594,7 @@ function Guide.Init()
 end
 return Guide
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX108"><Properties><string name="Name">LabelDeclutter</string><ProtectedString name="Source"><![CDATA[-- LabelDeclutter: keeps floating world labels (BillboardGuis) from piling on top of each other.
+<Item class="LocalScript" referent="RBX110"><Properties><string name="Name">LabelDeclutter</string><ProtectedString name="Source"><![CDATA[-- LabelDeclutter: keeps floating world labels (BillboardGuis) from piling on top of each other.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > LabelDeclutter (LocalScript)
 --
 -- Most labels are drawn at a fixed pixel size, so a label 30 studs away is as big on screen as one
@@ -34116,7 +34782,7 @@ RunService.Heartbeat:Connect(function(dt)
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX109"><Properties><string name="Name">MenuWidgets</string><ProtectedString name="Source"><![CDATA[-- Gameplay widgets yield to menus and the loading intro, preserving their enabled state.
+<Item class="LocalScript" referent="RBX111"><Properties><string name="Name">MenuWidgets</string><ProtectedString name="Source"><![CDATA[-- Gameplay widgets yield to menus and the loading intro, preserving their enabled state.
 local player = game:GetService("Players").LocalPlayer
 local gui = player:WaitForChild("PlayerGui")
 local names = { MomentumUI = true, QuestPanel = true }
@@ -34142,7 +34808,7 @@ workspace:GetAttributeChangedSignal("TPFC_IntroPlaying"):Connect(update)
 gui.ChildAdded:Connect(update)
 update()
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX110"><Properties><string name="Name">MerchantDisplay</string><ProtectedString name="Source"><![CDATA[-- A small, actual sanctuary shop display for the menu. No image or asset dependency.
+<Item class="ModuleScript" referent="RBX112"><Properties><string name="Name">MerchantDisplay</string><ProtectedString name="Source"><![CDATA[-- A small, actual sanctuary shop display for the menu. No image or asset dependency.
 local D = {}
 local C, V, CF = Color3.fromRGB, Vector3.new, CFrame.new
 local wood, stone, brass, slate = C(88, 62, 40), C(224, 221, 206), C(178, 142, 74), C(39, 65, 69)
@@ -34253,7 +34919,7 @@ function D.Emblem(kind)
 end
 return D
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX111"><Properties><string name="Name">MomentumUI</string><ProtectedString name="Source"><![CDATA[-- MomentumUI: shows the perfect-throw streak and the server-wide Rift Storm.
+<Item class="LocalScript" referent="RBX113"><Properties><string name="Name">MomentumUI</string><ProtectedString name="Source"><![CDATA[-- MomentumUI: shows the perfect-throw streak and the server-wide Rift Storm.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > MomentumUI (LocalScript)
 --
 --   * Streak badge (bottom centre): appears after a perfect throw, "PERFECT STREAK x3 · +15% luck",
@@ -34397,7 +35063,7 @@ RunService.Heartbeat:Connect(function(dt)
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX112"><Properties><string name="Name">MovementFov</string><ProtectedString name="Source"><![CDATA[-- Reversible sprint lens offset. Cinematics release it before saving their lens.
+<Item class="ModuleScript" referent="RBX114"><Properties><string name="Name">MovementFov</string><ProtectedString name="Source"><![CDATA[-- Reversible sprint lens offset. Cinematics release it before saving their lens.
 local Fov = {}
 local owner, offset, output
 local function close(a, b)
@@ -34433,7 +35099,7 @@ function Fov.Update(camera, target, dt)
 end
 return Fov
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX113"><Properties><string name="Name">Panels</string><ProtectedString name="Source"><![CDATA[-- Sanctuary shops, collection, index, customization and settings.
+<Item class="ModuleScript" referent="RBX115"><Properties><string name="Name">Panels</string><ProtectedString name="Source"><![CDATA[-- Sanctuary shops, collection, index, customization and settings.
 -- All spending and ownership changes use the existing authoritative server actions.
 local RS = game:GetService("ReplicatedStorage")
 local Http = game:GetService("HttpService")
@@ -35899,7 +36565,7 @@ function Panels.Init()
 end
 return Panels
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX114"><Properties><string name="Name">Plaque</string><ProtectedString name="Source"><![CDATA[-- Plaque: the carved rarity plaque from the reveal reference sheet (Actions/02_Rarity_Reveal_and_Capture):
+<Item class="ModuleScript" referent="RBX116"><Properties><string name="Name">Plaque</string><ProtectedString name="Source"><![CDATA[-- Plaque: the carved rarity plaque from the reveal reference sheet (Actions/02_Rarity_Reveal_and_Capture):
 -- a bevelled bar with pointed diamond ends, double gold trim, small gold diamond ornaments, serif caps,
 -- and gold laurels for the showcase tiers. Pixel sized, so it works in ScreenGuis and BillboardGuis.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > Plaque (ModuleScript)
@@ -36056,7 +36722,7 @@ end
 
 return P
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX115"><Properties><string name="Name">PlayerFeel</string><ProtectedString name="Source"><![CDATA[-- PlayerFeel: how the local player's character moves and feels.
+<Item class="LocalScript" referent="RBX117"><Properties><string name="Name">PlayerFeel</string><ProtectedString name="Source"><![CDATA[-- PlayerFeel: how the local player's character moves and feels.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > PlayerFeel (LocalScript)
 --
 --   * Run: hold Left Shift (PC), press L3 (gamepad) or tap the Run button (mobile, toggles).
@@ -36372,7 +37038,7 @@ task.spawn(function()
 	end
 end)
 ]]></ProtectedString></Properties></Item>
-<Item class="LocalScript" referent="RBX116"><Properties><string name="Name">QuestPanel</string><ProtectedString name="Source"><![CDATA[-- QuestPanel: compact parchment card on the right edge with today's quests, rebirth and boosts.
+<Item class="LocalScript" referent="RBX118"><Properties><string name="Name">QuestPanel</string><ProtectedString name="Source"><![CDATA[-- QuestPanel: compact parchment card on the right edge with today's quests, rebirth and boosts.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > QuestPanel (LocalScript)
 --
 -- Reads the server's Progress view from ClientState (Daily, Rebirths, RebirthCost, FriendsHere,
@@ -36726,7 +37392,7 @@ task.spawn(function()
 end)
 refresh()
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX117"><Properties><string name="Name">QuestTrackerLayout</string><ProtectedString name="Source"><![CDATA[-- Fit the tracker inside the GUI's safe area. Only its body scrolls; the header/tab remain reachable.
+<Item class="ModuleScript" referent="RBX119"><Properties><string name="Name">QuestTrackerLayout</string><ProtectedString name="Source"><![CDATA[-- Fit the tracker inside the GUI's safe area. Only its body scrolls; the header/tab remain reachable.
 local Layout = {}
 function Layout.Resolve(width, height, contentHeight)
 	local margin, header = 12, 48
@@ -36748,7 +37414,7 @@ function Layout.Resolve(width, height, contentHeight)
 end
 return Layout
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX118"><Properties><string name="Name">RevealTitle</string><ProtectedString name="Source"><![CDATA[-- RevealTitle: on-screen title for a creature reveal, styled after Actions/02_Rarity_Reveal_and_Capture.
+<Item class="ModuleScript" referent="RBX120"><Properties><string name="Name">RevealTitle</string><ProtectedString name="Source"><![CDATA[-- RevealTitle: on-screen title for a creature reveal, styled after Actions/02_Rarity_Reveal_and_Capture.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > RevealTitle (ModuleScript)
 --
 --   Common / Uncommon      nothing on screen: the carved plaque above the pet carries it (restrained tiers)
@@ -37064,7 +37730,7 @@ end
 
 return R
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX119"><Properties><string name="Name">SanctuaryUI</string><ProtectedString name="Source"><![CDATA[-- Medieval guild folios: carved oak, forged iron, vellum and a stitched binding.
+<Item class="ModuleScript" referent="RBX121"><Properties><string name="Name">SanctuaryUI</string><ProtectedString name="Source"><![CDATA[-- Medieval guild folios: carved oak, forged iron, vellum and a stitched binding.
 -- All ornament is inert. The reading surface stays light and the world stays visible.
 local T = require(script.Parent.UITheme)
 local Art = {}
@@ -37258,7 +37924,7 @@ function Art.Selected(button, selected)
 end
 return Art
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX120"><Properties><string name="Name">SceneLighting</string><ProtectedString name="Source"><![CDATA[-- The only runtime owner of scene light, atmosphere, clouds and grading.
+<Item class="ModuleScript" referent="RBX122"><Properties><string name="Name">SceneLighting</string><ProtectedString name="Source"><![CDATA[-- The only runtime owner of scene light, atmosphere, clouds and grading.
 local Lighting = game:GetService("Lighting")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
@@ -37344,7 +38010,7 @@ function Scene.Start()
 end
 return Scene
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX121"><Properties><string name="Name">Signatures</string><ProtectedString name="Source"><![CDATA[-- Signatures: every creature's own portal entrance. A MOVE is the kind of action (a lion rears up
+<Item class="ModuleScript" referent="RBX123"><Properties><string name="Name">Signatures</string><ProtectedString name="Source"><![CDATA[-- Signatures: every creature's own portal entrance. A MOVE is the kind of action (a lion rears up
 -- and roars, a wolf sits and howls, a dragon lands and breathes fire, a golem leaps and slams the
 -- ground, a fish arcs out with a splash, a penguin belly-slides...). Each species then adds its own
 -- call (the word that pops up: "ROAR!", "AWOO!", "NOOT!"), its own effect motif and its own little
@@ -37525,7 +38191,7 @@ end
 
 return S
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX122"><Properties><string name="Name">SkyforgeUI</string><ProtectedString name="Source"><![CDATA[-- Light sanctuary surfaces and large standalone navigation artwork.
+<Item class="ModuleScript" referent="RBX124"><Properties><string name="Name">SkyforgeUI</string><ProtectedString name="Source"><![CDATA[-- Light sanctuary surfaces and large standalone navigation artwork.
 local T = require(script.Parent.UITheme)
 local S = {}
 local pendingImages = {}
@@ -37722,7 +38388,7 @@ function S.Card(frame, icon)
 end
 return S
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX123"><Properties><string name="Name">Sounds</string><ProtectedString name="Source"><![CDATA[-- Restrained event audio. Built-in assets keep the game independent of uploaded audio.
+<Item class="ModuleScript" referent="RBX125"><Properties><string name="Name">Sounds</string><ProtectedString name="Source"><![CDATA[-- Restrained event audio. Built-in assets keep the game independent of uploaded audio.
 local SoundService = game:GetService("SoundService")
 local TweenService = game:GetService("TweenService")
 local Sounds = {}
@@ -37841,7 +38507,7 @@ function Sounds.Get(name)
 end
 return Sounds
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX124"><Properties><string name="Name">ThrowCinematic</string><ProtectedString name="Source"><![CDATA[-- ThrowCinematic: the throw cutscene (owner only). Full screen, no letterbox.
+<Item class="ModuleScript" referent="RBX126"><Properties><string name="Name">ThrowCinematic</string><ProtectedString name="Source"><![CDATA[-- ThrowCinematic: the throw cutscene (owner only). Full screen, no letterbox.
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ThrowCinematic (ModuleScript)
 --
 -- A short film in up to four camera shots, with HARD CUTS between them (w = wind-up seconds sent
@@ -38723,7 +39389,7 @@ end
 
 return Cine
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX125"><Properties><string name="Name">ThrowController</string><ProtectedString name="Source"><![CDATA[-- ThrowController: charge meter input, held-portal + arm wind-up, the portal flight arc,
+<Item class="ModuleScript" referent="RBX127"><Properties><string name="Name">ThrowController</string><ProtectedString name="Source"><![CDATA[-- ThrowController: charge meter input, held-portal + arm wind-up, the portal flight arc,
 -- landing bounce, portal gate opening and creature reveal choreography (for ALL players' throws).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > ThrowController (ModuleScript)
 
@@ -38742,6 +39408,7 @@ local State = require(script.Parent.ClientState)
 local Effects = require(script.Parent.Effects)
 local Sounds = require(script.Parent.Sounds)
 local Renderer = require(script.Parent.CreatureRenderer)
+local EpicReveal = require(script.Parent.EpicReveal) -- cutscene for Mythical / Secret / Divine pulls
 local Settings = require(script.Parent.ClientSettings)
 local Builder = require(Shared.CreatureBuilder)
 local Timeline = require(Shared.PresentationTimeline)
@@ -39658,7 +40325,7 @@ Remotes.PortalOpened.OnClientEvent:Connect(function(info)
 		if mine then
 			Effects.Shake(rc.order >= 7 and 0.9 or 0.6, 0.4)
 			Sounds.Play("Rare")
-			Effects.RarityBanner(def, chanceText)
+			if not EpicReveal.Wants(def) then Effects.RarityBanner(def, chanceText) end -- the cutscene has its own title
 		end
 	elseif presentation and mine then
 		Effects.RarityBanner(def, chanceText)
@@ -39670,7 +40337,7 @@ Remotes.PortalOpened.OnClientEvent:Connect(function(info)
 		Sounds.PlayAt("Spawn", center, 1.2 - rc.order * 0.05)
 	end
 	local vsize, vmat = info.size, info.variant
-	Renderer.SpawnWild(info.id, info.creature, info.pos, info.owner, chanceText, vsize, vmat, presentation)
+	local wildEntry = Renderer.SpawnWild(info.id, info.creature, info.pos, info.owner, chanceText, vsize, vmat, presentation)
 	-- Big / Huge / Titan and Gold / Emerald / Ruby / Diamond get their own big callout
 	local special = vsize or vmat
 	if presentation and special and (mine or near) then
@@ -39700,6 +40367,13 @@ Remotes.PortalOpened.OnClientEvent:Connect(function(info)
 		-- Rarity caption and world label already show the odds; avoid a third floating label.
 		if not presentation or TC.InputBlocked or TC.SystemMenuOpen then
 			TC.StopFollow(true)
+		elseif EpicReveal.Wants(def) then
+			-- one of the very best pulls: hand the camera to the full cutscene until the catch
+			TC.StopFollow(true)
+			local ok, err = pcall(EpicReveal.Play, info, def, wildEntry, chanceText, Timeline.CatchDelay(def.rarity))
+			if not ok then
+				warn("[EpicReveal] " .. tostring(err))
+			end
 		elseif (rc.order >= 3 or special) and not Settings.ReducedMotion then
 			-- a GOOD pet (or a Big/Huge/Titan/Gold/gem one): zoom in and watch it through entrance + capture
 			local catchDur = Timeline.CaptureFor(def.rarity) -- capture timings live in PresentationTimeline
@@ -39734,7 +40408,7 @@ end)
 
 return TC
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX126"><Properties><string name="Name">UIIcons</string><ProtectedString name="Source"><![CDATA[-- Original cutout art with immediately visible native geometry while images load.
+<Item class="ModuleScript" referent="RBX128"><Properties><string name="Name">UIIcons</string><ProtectedString name="Source"><![CDATA[-- Original cutout art with immediately visible native geometry while images load.
 local T = require(script.Parent.UITheme)
 local Sky = require(script.Parent.SkyforgeUI)
 local Icons = {}
@@ -39890,7 +40564,7 @@ function Icons.Draw(name, parent, size, color, position)
 end
 return Icons
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX127"><Properties><string name="Name">UIKit</string><ProtectedString name="Source"><![CDATA[-- Native sanctuary components. No uploaded icon/font dependency.
+<Item class="ModuleScript" referent="RBX129"><Properties><string name="Name">UIKit</string><ProtectedString name="Source"><![CDATA[-- Native sanctuary components. No uploaded icon/font dependency.
 local TweenService = game:GetService("TweenService")
 local Sounds = require(script.Parent.Sounds)
 local Settings = require(script.Parent.ClientSettings)
@@ -40267,7 +40941,7 @@ end
 
 return K
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX128"><Properties><string name="Name">UIMotion</string><ProtectedString name="Source"><![CDATA[-- Short, interruptible interface motion. No render loop or delayed gameplay actions.
+<Item class="ModuleScript" referent="RBX130"><Properties><string name="Name">UIMotion</string><ProtectedString name="Source"><![CDATA[-- Short, interruptible interface motion. No render loop or delayed gameplay actions.
 local TweenService = game:GetService("TweenService")
 local Settings = require(script.Parent.ClientSettings)
 local Theme = require(script.Parent.UITheme)
@@ -40422,7 +41096,7 @@ end)
 
 return Motion
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX129"><Properties><string name="Name">UITheme</string><ProtectedString name="Source"><![CDATA[-- Sanctuary UI tokens, shared by the HUD, icons and every shop.
+<Item class="ModuleScript" referent="RBX131"><Properties><string name="Name">UITheme</string><ProtectedString name="Source"><![CDATA[-- Sanctuary UI tokens, shared by the HUD, icons and every shop.
 -- Fonts: Builder Sans for controls and data, Merriweather for sanctuary headings;
 -- resolved with a fallback so an older client without these enums still renders.
 local function font(name, fallback)
@@ -40489,7 +41163,7 @@ function T.Rarity(name, config)
 end
 return T
 ]]></ProtectedString></Properties></Item>
-<Item class="ModuleScript" referent="RBX130"><Properties><string name="Name">WorldFx</string><ProtectedString name="Source"><![CDATA[-- WorldFx: ONE shared, staggered scheduler for environment motion on tagged map parts
+<Item class="ModuleScript" referent="RBX132"><Properties><string name="Name">WorldFx</string><ProtectedString name="Source"><![CDATA[-- WorldFx: ONE shared, staggered scheduler for environment motion on tagged map parts
 -- (no per-prop RenderStepped connections, no camera-following particles).
 -- Location: StarterPlayer > StarterPlayerScripts > Client > WorldFx (ModuleScript)
 --
