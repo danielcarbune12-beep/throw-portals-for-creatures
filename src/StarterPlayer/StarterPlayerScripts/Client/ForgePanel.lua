@@ -52,7 +52,17 @@ local function updateSelection()
 		button.Label.Text = (selected[uid] and "✓ " or "") .. label
 		button.BackgroundColor3 = selected[uid] and T.Gold or T.Raised
 		button.Label.TextColor3 = selected[uid] and T.Readable(T.Gold) or T.Text
+		K.setEnabled(button, not busy)
 	end
+	for _, button in pairs(groupButtons) do
+		if button:IsA("GuiButton") then
+			K.setEnabled(button, not busy)
+		end
+	end
+	K.setEnabled(gold, not busy)
+	K.setEnabled(ruby, not busy)
+	back.Label.TextColor3 = T.Text
+	K.setEnabled(back, not busy)
 	local chanceText = chance and (math.floor(chance * 100 + 0.5) .. "% success") or "Select 2 to 5 pets"
 	hint.Text = chance == 1 and ("Guaranteed · " .. #ids .. " selected pets become one " .. target .. ".")
 		or chance and (chanceText .. " · All " .. #ids .. " pets consumed, even on failure.")
@@ -74,6 +84,9 @@ end
 
 local render
 local function choose(group)
+	if busy then
+		return
+	end
 	selectedKey, selected, detailMode = group.key, {}, true
 	for i = 1, math.min(5, #group.pets) do
 		selected[group.pets[i].u] = true
@@ -210,7 +223,7 @@ render = function()
 end
 
 function Panel.Open(nextTarget)
-	if not ready then
+	if not ready or busy then
 		return
 	end
 	target = Rules.Input[nextTarget] ~= nil and nextTarget or "Gold"
@@ -382,7 +395,13 @@ function Panel.Init()
 		hint.TextSize = compact and 11 or 14
 		action.Size = UDim2.new(1, 0, 0, compact and 40 or 44)
 	end
-	panel.refresh = render
+	-- HUD already routes state updates to the open panel. Money-only updates do not
+	-- change recipes; rebuilding both lists also resets their scroll/focus unnecessarily.
+	panel.refresh = function(full)
+		if full ~= false then
+			render()
+		end
+	end
 	panel.onClose = function()
 		resetConfirmation()
 	end
@@ -394,6 +413,10 @@ function Panel.Init()
 			return
 		end
 		for _, recipe in { "Gold", "Ruby" } do
+			local existing = prompts[recipe]
+			if existing and existing.Parent and existing:IsDescendantOf(hall) then
+				continue
+			end
 			local anchor = hall:FindFirstChild(recipe .. "Station", true)
 			if anchor and (not prompts[recipe] or prompts[recipe].Parent ~= anchor) then
 				if prompts[recipe] then
@@ -417,17 +440,13 @@ function Panel.Init()
 			end
 		end
 	end
-	local elapsed = 0
-	game:GetService("RunService").Heartbeat:Connect(function(dt)
-		elapsed += dt
-		if elapsed >= 1 then
-			elapsed = 0
-			attach()
-		end
-	end)
-	State.Changed:Connect(function(full)
-		if full and HUD.IsOpen("Forge") then
-			render()
+	attach()
+	task.spawn(function()
+		while panel.frame.Parent do
+			task.wait(1)
+			if panel.frame.Parent then
+				attach()
+			end
 		end
 	end)
 	HUD.Rescale()

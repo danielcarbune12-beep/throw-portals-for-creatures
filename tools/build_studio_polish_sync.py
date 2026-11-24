@@ -11,6 +11,7 @@ FILES = (
     "KnightGuide.lua", "CreatureRenderer.lua", "CreatureBudget.lua", "Intro.lua",
     "IntroReadiness.lua", "QuestPanel.client.lua", "QuestTrackerLayout.lua",
     "ClientMain.client.lua", "FarmClient.client.lua", "MenuWidgets.client.lua", "GameplayFeel.lua",
+    "ForgePanel.lua",
 )
 BASELINE = "7c03f46"
 
