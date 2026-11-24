@@ -28155,8 +28155,10 @@ local ownedStands = {}
 local activeStand
 local function cacheStand(prompt)
 	local index = player:GetAttribute("BaseIndex")
-	ownedStands[prompt] = index ~= nil and prompt:GetAttribute("BaseIndex") == index
-		and prompt:GetAttribute("FarmStation") == "Stand" or nil
+	ownedStands[prompt] = index ~= nil
+			and prompt:GetAttribute("BaseIndex") == index
+			and prompt:GetAttribute("FarmStation") == "Stand"
+		or nil
 end
 local function applyPrompt(p)
 	local owned = player:GetAttribute("BaseIndex") ~= nil
@@ -28279,27 +28281,73 @@ local function feedback(station, text)
 end
 
 ---------------------------------------------------------------- weather (server-wide farm events)
--- Local-only visuals: static particle fields over the lobby and courtyards (not camera-following)
--- and a separate colour grade, so the lobby's own lighting/effects scripts are left untouched.
+-- Local weather fields follow the player at low frequency. SceneLighting owns the grade.
 local okSettings, Settings = pcall(require, script.Parent:WaitForChild("ClientSettings"))
 local function lowVfx()
 	return okSettings and Settings and Settings.LowVFX and Settings.LowVFX() or false
 end
 -- SceneLighting composes weather into the biome grade. Farming owns only
 -- its weather geometry, so weather and scene grading cannot fight each other.
-local LOOKS={Rain=true,GoldenHour=true,Starfall=true,Aurora=true}
+local LOOKS = { Rain = true, GoldenHour = true, Starfall = true, Aurora = true }
 local SPARK = "rbxasset://textures/particles/sparkles_main.dds"
 local weatherFolder
 
 -- Particle fields sit over the local character (offset), re-centred a few times a second (not per
 -- frame): a lobby-wide field spreads too thin to read from the player's camera.
 local followers = {}
+local shelterHall, shelterFloor
+local function weatherOrigin()
+	local char = player.Character
+	local root = char and char:FindFirstChild("HumanoidRootPart")
+	local camera = workspace.CurrentCamera
+	return root and root.Position or (camera and camera.CFrame.Position)
+end
+
+local function forgeSheltered(at)
+	local map = workspace:FindFirstChild("Map")
+	local start = map and map:FindFirstChild("Start")
+	local hall = start and start:FindFirstChild("GreatForgeHall")
+	if hall ~= shelterHall then
+		shelterHall, shelterFloor = hall, nil
+	end
+	if not hall or hall:GetAttribute("HallStyle") ~= "MedievalForge" or not hall:GetAttribute("TPFCGenerated") then
+		return false
+	end
+	if not shelterFloor or not shelterFloor:IsDescendantOf(hall) then
+		shelterFloor = hall:FindFirstChild("HallFoundation", true)
+	end
+	if not shelterFloor or not shelterFloor:IsA("BasePart") then
+		return false
+	end
+	-- The slate roof covers this footprint; its lowest edge is 22 studs above the floor.
+	-- Test local space so a moved/rotated hall works without raycasting thousands of details.
+	local p = shelterFloor.CFrame:PointToObjectSpace(at)
+	local size = shelterFloor.Size
+	return math.abs(p.X) < size.X / 2 - 0.5 and math.abs(p.Z) < size.Z / 2 - 0.5 and p.Y >= size.Y / 2 and p.Y < 21
+end
+
+local function updateWeatherField(f, at, sheltered)
+	if not f.part.Parent then
+		return
+	end
+	if at then
+		f.part.CFrame = CFrame.new(at) * f.offset
+	end
+	local enabled = at ~= nil and not sheltered
+	if f.emitter.Enabled ~= enabled then
+		f.emitter.Enabled = enabled
+		if not enabled then
+			-- Clear existing drops once on entering the hall, rather than letting them cross the roof.
+			f.emitter:Clear()
+		end
+	end
+end
+
 local function field(offset, size, props)
 	local p = Instance.new("Part")
 	p.Anchored, p.CanCollide, p.CanQuery, p.CanTouch = true, false, false, false
-	p.Transparency, p.Size, p.CFrame = 1, size, CFrame.new(0, 60, -235) * offset
+	p.Transparency, p.Size = 1, size
 	p.Parent = weatherFolder
-	table.insert(followers, { part = p, offset = offset })
 	local e = Instance.new("ParticleEmitter")
 	e.Shape = Enum.ParticleEmitterShape.Box
 	e.ShapeStyle = Enum.ParticleEmitterShapeStyle.Volume
@@ -28311,6 +28359,10 @@ local function field(offset, size, props)
 		e.Rate = 0
 	end
 	e.Parent = p
+	local f = { part = p, offset = offset, emitter = e }
+	local at = weatherOrigin()
+	updateWeatherField(f, at, at ~= nil and forgeSheltered(at))
+	table.insert(followers, f)
 	return p, e
 end
 
@@ -28329,16 +28381,13 @@ end
 
 local AREA = Vector3.new(120, 1, 120)
 task.spawn(function()
-	while true do
+	while script.Parent do
 		task.wait(0.3)
 		if #followers > 0 then
-			local char = player.Character
-			local root = char and char:FindFirstChild("HumanoidRootPart")
-			local at = root and root.Position or workspace.CurrentCamera.CFrame.Position
+			local at = weatherOrigin()
+			local sheltered = at ~= nil and forgeSheltered(at)
 			for _, f in ipairs(followers) do
-				if f.part.Parent then
-					f.part.CFrame = CFrame.new(at.X, at.Y, at.Z) * f.offset
-				end
+				updateWeatherField(f, at, sheltered)
 			end
 		end
 	end
